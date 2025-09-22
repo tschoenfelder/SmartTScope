@@ -1,0 +1,34 @@
+# .github/workflows/ci.yml
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        py: ["3.11"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.py }}
+          cache: 'pip'
+      - name: Install deps
+        run: |
+          pip install -e .[dev,win]
+      - name: Run tests (unit + UI, no hardware)
+        env:
+          SMARTTSCOPE_CAMERA: mock
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          pytest -m "not integration" --maxfail=1
+      - name: Lint & Typecheck
+        run: |
+          ruff check .
+          ruff format --check .
+          mypy src

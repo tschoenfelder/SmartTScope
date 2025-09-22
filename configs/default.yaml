@@ -1,0 +1,7 @@
+app:
+  title: "SmartTScope"
+  window:
+    width: 900
+    height: 600
+adapters:
+  camera: "mock"         # mock | opencv | picamera2

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SmartTScope"
+version = "0.1.0"
+description = "Modular Qt UI for Raspberry Pi cameras and devices (telescope, GPS, heater)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "SmartTScope Contributors"}]
+dependencies = [
+  "numpy>=1.26",
+  "pyside6>=6.6",
+  "PyYAML>=6.0.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-qt>=4", "mypy>=1.10", "ruff>=0.5", "types-PyYAML"]
+win = ["opencv-python>=4.9"]
+rpi = []  # install python3-picamera2 via apt on Raspberry Pi
+docs = ["mkdocs-material>=9.5"]
+
+[project.scripts]
+smarttscope = "smarttscope.app.main:main"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "integration: runs only on Raspberry Pi / real hardware",
+  "qt: uses Qt event loop",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"

@@ -1,19 +1,15 @@
 from __future__ import annotations
 from typing import Callable, List, Tuple
-import threading, time,contextlib
+import threading, time, contextlib
 import numpy as np
+from picamera2 import Picamera2
 from ..domain.ports import Camera, Frame
 
 class Picamera2Camera(Camera):
-    def __init__(self, index: int = 0, size: Tuple[int, int] = (1280, 720), name: str = "PiCam") -> None:
-        # Lazy import to keep non-Pi environments working
-        from picamera2 import Picamera2
-
+    def __init__(self, index: int = 0, size: Tuple[int,int]=(1280,720), name: str="PiCam") -> None:
         self.name = name
-        # explizit benennen ist robuster (versch. Picamera2-Versionen)
-        self._pi = Picamera2(camera_num=index)
-
-        self._pi.configure(self._pi.create_preview_configuration(main={"size": size, "format":"RGB888"}))
+        self._pi = Picamera2(camera_num=index)  # <— WICHTIG: camera_num
+        self._pi.configure(self._pi.create_preview_configuration(main={"size": size, "format": "RGB888"}))
         self._subs: List[Callable[[Frame], None]] = []
         self._run = False
         self._t: threading.Thread | None = None
@@ -41,46 +37,24 @@ class Picamera2Camera(Camera):
     def set_gain(self, gain: float) -> None:
         self._pi.set_controls({"AnalogueGain": float(gain)})
 
-    def subscribe(self, cb): 
-        self._subs.append(cb)
-
+    def subscribe(self, cb): self._subs.append(cb)
     def unsubscribe(self, cb):
-        if cb in self._subs:
+        with contextlib.suppress(ValueError):
             self._subs.remove(cb)
 
     def _loop(self) -> None:
-        # capture arrays while running; Picamera2 converts to numpy
         while self._run:
             try:
-                arr = self._pi.capture_array("main") # numpy RGB888
+                arr = self._pi.capture_array("main")
             except Exception:
-                # Kamera gestoppt/geschlossen -> sauber beenden
                 break
-
             for cb in list(self._subs):
                 try:
                     cb(arr)
-            except RuntimeError as ex:
-                    # typischer Qt-Fall: widget schon weg
+                except RuntimeError as ex:
                     if "wrapped C/C++ object" in str(ex):
                         with contextlib.suppress(ValueError):
                             self._subs.remove(cb)
                 except Exception:
-                    # anderen Callback-Fehler nicht den Thread killen lassen
                     pass
-
-            # let other threads breathe
-            time.sleep(0.0)
-
-##            for cb in list(self._subs):
-##                try:
-##                    cb(frame)
-##                except RuntimeError as ex:
-##                    # typischer Fall: Qt-Objekt bereits gelöscht -> Abo entfernen
-##                    if "wrapped C/C++ object" in str(ex):
-##                        with contextlib.suppress(ValueError):
-##                            self._subs.remove(cb)
-##                    # andere Fehler ignorieren, Thread am Leben halten
-##                except Exception:
-##                    pass
-                
+            time.sleep(0)

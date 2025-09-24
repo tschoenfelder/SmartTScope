@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Build/Packaging
+*.egg-info/
+build/
+dist/
+
+# Venv
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# App
+snapshots/

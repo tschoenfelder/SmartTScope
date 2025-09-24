@@ -13,5 +13,7 @@ def make_camera(adapter: Adapter = "mock") -> Camera:
         return OpenCVCamera(index=0, fps=60)
     if adapter == "picamera2":
         from ..adapters.camera_picamera2 import Picamera2Camera
-        return Picamera2Camera(index=0, size=(1280, 720))
+        import os
+        idx = int(os.getenv("SMARTTSCOPE_CAMERA_INDEX", "0"))
+        return Picamera2Camera(index=idx, size=(1280, 720))
     raise ValueError(f"Unknown camera adapter: {adapter}")

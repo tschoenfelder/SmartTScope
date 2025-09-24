@@ -3,6 +3,7 @@ import threading, time
 import numpy as np
 from typing import Callable, List
 from ..domain.ports import Camera, Frame
+import contextlib
 
 class MockCamera(Camera):
     def __init__(self, name: str = "MockCam", fps: int = 30, size: tuple[int,int,int] = (480, 640, 3)) -> None:
@@ -47,6 +48,15 @@ class MockCamera(Camera):
             x = int((np.sin(t) * 0.5 + 0.5) * (self._size[1]-50))
             frame[:, x:x+50, :] = 255
             for cb in list(self._subs):
-                cb(frame)
+                try:
+                    cb(frame)
+                except RuntimeError as ex:
+                    # typischer Fall: Qt-Objekt bereits gelöscht -> Abo entfernen
+                    if "wrapped C/C++ object" in str(ex):
+                        with contextlib.suppress(ValueError):
+                            self._subs.remove(cb)
+                    # andere Fehler ignorieren, Thread am Leben halten
+                except Exception:
+                    pass
             t += 0.1
             time.sleep(period)

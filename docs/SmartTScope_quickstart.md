@@ -307,9 +307,140 @@ export QT_QPA_PLATFORM=xcb vor dem Start setzen.
 ```
 
 4) Projekt später aktualisieren
+ a) einmalig
+```
+ sudo apt update
+ sudo apt install -y git python3-venv python3-pip python3-picamera2 rpicam-apps
+ # optional: falls große Wheels kompiliert werden:
+ sudo apt install -y build-essential libatlas-base-dev
+```
+
+ b) erstmalig
+  Option A1 – SSH (empfohlen für private Repos, ohne Token-Prompts)
+
+```
+
+# Deploy-Key erzeugen (passwortlos ist ok, da nur read-only auf Repo)
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519_smarttscope -C "pi-deploy"
+cat ~/.ssh/id_ed25519_smarttscope.pub
+```
+
+
+Den Public Key in GitHub unter Repository → Settings → Deploy keys → Add deploy key eintragen (Read-Only genügt).
+
+Dann klonen:
+
+```
+git clone git@github.com:tschoenfelder/SmartTScope.git
+cd SmartTScope
+```
+
+Python-Umgebung vorbereiten (VENV mit System-Paketen)
+
+So sieht die venv auch python3-picamera2 (kommt über apt).
+
 ```
 cd ~/SmartTScope
-git pull
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+
+# (optional) großer Temp auf NVMe/USB, falls /tmp klein ist:
+# mkdir -p /mnt/nvme/tmp && export TMPDIR=/mnt/nvme/tmp
+
+pip install --upgrade pip wheel
+pip install -e .[rpi]         # Projekt im Edit-Mode + RPi-Extras
+```
+
+  Option A2 – HTTPS (für öffentliche Repos oder mit PAT)
+```
+
+# Öffentliches Repo:
+git clone https://github.com/tschoenfelder/SmartTScope.git
+cd SmartTScope
+
+# Privates Repo ohne Interaktivität (PAT im RAM):
+# export GITHUB_TOKEN="DEIN_TOKEN_MIT_repo+workflow"
+# git -c http.extraheader="AUTHORIZATION: Basic $(printf "tschoenfelder:$GITHUB_TOKEN" | base64 -w0)" clone https://github.com/tschoenfelder/SmartTScope.git
+# cd SmartTScope
+```
+
+ c) Aktualisieren eines bestehenden Klons
+```
+cd ~/SmartTScope
+git fetch origin
+git switch main
+git pull --ff-only
+# bei lokalen Änderungen, die stören:
+# git stash -u && git pull --ff-only && git stash pop
+```
+
+```
 source .venv/bin/activate
 pip install -e .[rpi]   # zieht neue Python-Abhängigkeiten nach
 ```
+
+5) Starten (Dual-Cam Beispiel)
+```
+source ~/SmartTScope/.venv/bin/activate
+export SMARTTSCOPE_CAMERA=picamera2
+export SMARTTSCOPE_CAMERA_B=picamera2
+# Indizes gemäß `rpicam-hello --list-cameras`:
+export SMARTTSCOPE_CAMERA_INDEX=0
+export SMARTTSCOPE_CAMERA_B_INDEX=1
+
+python examples/dual_camera.py
+```
+
+Tipp: Kameras prüfen
+```
+rpicam-hello --list-cameras
+# einzeln testen:
+rpicam-hello --camera 0 -t 2000
+rpicam-hello --camera 1 -t 2000
+```
+
+6) Auf neueste Version aktualisieren (Kurzform – täglich)
+```
+cd ~/SmartTScope
+git pull --ff-only
+source .venv/bin/activate
+pip install -e .[rpi]
+```
+
+7) Troubleshooting (kurz)
+
+„Device busy/Resource is busy“
+Stelle sicher, dass zwei unterschiedliche Indizes verwendet werden und keine Fremdprozesse die Kamera halten:
+
+```
+pgrep -fa 'rpicam|libcamera' || true
+# testweise (nur wenn nötig) User-Services pausieren:
+systemctl --user stop pipewire wireplumber 2>/dev/null || true
+```
+
+Picamera2 nicht gefunden
+Venv neu mit System-Site-Packages anlegen:
+
+```
+rm -rf .venv
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install -e .[rpi]
+```
+
+
+Sicherstellen, dass der richtige Code aktiv ist
+
+```
+python - <<'PY'
+import smarttscope, inspect
+import smarttscope.app.factory as f
+print("smarttscope:", inspect.getsourcefile(smarttscope))
+print("factory.py:", inspect.getsourcefile(f))
+PY
+```
+
+
+
+
+

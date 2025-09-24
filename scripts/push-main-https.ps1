@@ -18,10 +18,10 @@ Set-Location (Resolve-RepoRoot (Get-Location))
 # Remote sicher auf HTTPS
 git remote set-url origin https://github.com/tschoenfelder/SmartTScope.git 2>$null
 
-# ASKPASS setzen (liest Username/Token automatisch)
-$ask = Join-Path $PSScriptRoot "git-askpass.ps1"
+# ASKPASS: auf CMD-SHIM zeigen (nicht auf .ps1!)
+$ask = Join-Path $PSScriptRoot "git-askpass.cmd"
 $env:GIT_ASKPASS = $ask
-$env:SSH_ASKPASS = $ask   # harmless fallback
+$env:SSH_ASKPASS = $ask  # harmless fallback
 
 # Optional committen
 $st = git status --porcelain=v1

@@ -31,22 +31,22 @@ function Ensure-SshAgent {
 
 function Ensure-KeyLoaded([string]$KeyPath) {
   if (-not (Test-Path $KeyPath)) { throw "Key nicht gefunden: $KeyPath" }
-  $ids = & ssh-add -l 2>$null
+  $sshAdd = "$env:WINDIR\System32\OpenSSH\ssh-add.exe"
+  $ids = & $sshAdd -l 2>$null
   if ($LASTEXITCODE -ne 0 -or ($ids -match 'no identities')) {
     Write-Host "ssh-agent: lade Key (24h)..." -ForegroundColor Cyan
-    & ssh-add -t 86400 $KeyPath | Out-Null
+    & $sshAdd -t 86400 $KeyPath | Out-Null
     return
   }
   $pub = (Get-Content ($KeyPath + ".pub") -ErrorAction SilentlyContinue) -join ''
   if ($pub) {
-    $loaded = & ssh-add -L 2>$null
+    $loaded = & $sshAdd -L 2>$null
     if (-not ($loaded -match ([regex]::Escape(($pub -split '\s+')[1])))) {
       Write-Host "ssh-agent: füge gewünschten Key hinzu (24h)..." -ForegroundColor Cyan
-      & ssh-add -t 86400 $KeyPath | Out-Null
+      & $sshAdd -t 86400 $KeyPath | Out-Null
     }
   }
 }
-
 # --- Start ---
 $repo = Resolve-RepoRoot $RepoPath
 if (-not $repo) { throw "Hier ist kein Git-Repository. (Startordner: $RepoPath)" }
@@ -58,6 +58,9 @@ $GitExe = (Get-Command git -CommandType Application -ErrorAction Stop).Source
 
 Ensure-SshAgent
 Ensure-KeyLoaded -KeyPath $KeyPath
+
+# erzwinge Windows-OpenSSH für Git
+$env:GIT_SSH_COMMAND = "$env:WINDIR\System32\OpenSSH\ssh.exe"
 
 # optional committen, wenn es Änderungen gibt
 $status = & $GitExe status --porcelain=v1

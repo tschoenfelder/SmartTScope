@@ -1,0 +1,1 @@
+.\scripts\push-main.ps1 -CommitMessage "Dual-cam: Picamera2 index fix + factory wiring" -MergeCurrentToMain Repo: "C:\Users\U070420\OneDrive - Lufthansa Group\Local Documents\SmartTScope"

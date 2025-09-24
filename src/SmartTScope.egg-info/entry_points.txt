@@ -1,2 +1,0 @@
-[console_scripts]
-smarttscope = smarttscope.app.main:main

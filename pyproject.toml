@@ -17,9 +17,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-qt>=4", "mypy>=1.10", "ruff>=0.5", "types-PyYAML"]
+dev = [
+  "pytest>=8",
+  "pytest-qt>=4",
+  "pytest-asyncio>=0.23",  # <-- NEU
+  "mypy>=1.10",
+  "ruff>=0.5",
+  "types-PyYAML"
+]
 win = ["opencv-python>=4.9"]
-rpi = []  # install python3-picamera2 via apt on Raspberry Pi
+rpi = [
+  "numpy>=1.24,<1.27",
+  "PyYAML>=6",
+  "pyside6>=6.6",
+] # install python3-picamera2 via apt on Raspberry Pi
 docs = ["mkdocs-material>=9.5"]
 
 [project.scripts]
@@ -33,6 +44,7 @@ markers = [
   "integration: runs only on Raspberry Pi / real hardware",
   "qt: uses Qt event loop",
 ]
+asyncio_mode = "auto"      # <-- NEU: pytest-asyncio integriert den Loop automatisch
 
 [tool.ruff]
 line-length = 100

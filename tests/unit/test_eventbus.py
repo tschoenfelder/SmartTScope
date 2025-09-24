@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import pytest
 from smarttscope.services.eventbus import EventBus
 
@@ -12,3 +13,5 @@ async def test_eventbus_pubsub():
     await asyncio.sleep(0.01)
     assert got.get("lat") == 50.1
     task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task

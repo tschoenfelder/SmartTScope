@@ -1,17 +1,20 @@
 from __future__ import annotations
 from typing import Literal
+import os
 from ..domain.ports import Camera
 
 Adapter = Literal["mock", "opencv", "picamera2"]
 
-def make_camera(adapter: Adapter = "mock") -> Camera:
+def make_camera(adapter: Adapter = "mock", index: int | None = None) -> Camera:
     if adapter == "mock":
         from ..adapters.camera_mock import MockCamera
         return MockCamera(fps=60, size=(480, 640, 3))
     if adapter == "opencv":
         from ..adapters.camera_opencv import OpenCVCamera
-        return OpenCVCamera(index=0, fps=60)
+        idx = index if index is not None else int(os.getenv("SMARTTSCOPE_CAMERA_INDEX", "0"))
+        return OpenCVCamera(index=idx, fps=60)
     if adapter == "picamera2":
         from ..adapters.camera_picamera2 import Picamera2Camera
-        return Picamera2Camera(index=0, size=(1280, 720))
+        idx = index if index is not None else int(os.getenv("SMARTTSCOPE_CAMERA_INDEX", "0"))
+        return Picamera2Camera(index=idx, size=(1280, 720))
     raise ValueError(f"Unknown camera adapter: {adapter}")

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Protocol, runtime_checkable, Callable, Dict
+from typing import Protocol, runtime_checkable, Callable, Dict, Any
 import numpy as np
 
 Frame = np.ndarray  # HxWxC uint8/uint16

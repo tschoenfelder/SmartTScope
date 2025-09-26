@@ -2,7 +2,13 @@
 [CmdletBinding()]
 param([string]$CommitMessage, [switch]$MergeCurrentToMain)
 
+$env:GIT_MERGE_AUTOEDIT = "no"
 $ErrorActionPreference = 'Stop'
+$env:GIT_EDITOR = $trueExe
+$env:GIT_SEQUENCE_EDITOR = $trueExe
+$env:VISUAL = $trueExe
+$env:EDITOR = $trueExe
+
 
 function Resolve-RepoRoot([string]$startDir) {
   $d = (Resolve-Path -LiteralPath $startDir).Path
@@ -21,23 +27,26 @@ git remote set-url origin https://github.com/tschoenfelder/SmartTScope.git 2>$nu
 # ASKPASS: auf CMD-SHIM zeigen (nicht auf .ps1!)
 $ask = Join-Path $PSScriptRoot "git-askpass.cmd"
 $env:GIT_ASKPASS = $ask
-$env:SSH_ASKPASS = $ask  # harmless fallback
+$env:SSH_ASKPASS = $ask  # fallback
+$env:GIT_MERGE_AUTOEDIT = 'no'  # Editor bei Auto-Merges unterdrücken
 
 # Optional committen
 $st = git status --porcelain=v1
 if ($CommitMessage -and $st) {
   git add -A
-  git commit -m $CommitMessage
+  git -c core.editor=true commit -m $CommitMessage
 }
+
 
 git fetch origin
 
-# Optional: aktuellen Branch -> main mergen
+# Optional: aktuellen Branch -> main mergen (ohne irgendeinen Editor)
 $cur = (git rev-parse --abbrev-ref HEAD).Trim()
 if ($cur -ne 'main' -and $MergeCurrentToMain) {
+  $feature = $cur
   git switch main
   git pull --ff-only origin main
-  git merge --no-ff $cur
+  git -c core.editor=true -c sequence.editor=true merge --ff-only $feature
 }
 
 # Auf main wechseln & pushen

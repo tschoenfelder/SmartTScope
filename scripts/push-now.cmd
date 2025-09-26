@@ -1,19 +1,25 @@
 @echo off
-rem --- AskPass fest verdrahten (liesst Token aus gh_pat.txt via git-askpass.bat) ---
+rem --- AskPass fest verdrahten ---
 set "GIT_ASKPASS=%~dp0git-askpass.bat"
 set "SSH_ASKPASS=%GIT_ASKPASS%"
 set GIT_TERMINAL_PROMPT=0
 
-rem --- Credential-Helper lokal aus ---
-git config --local credential.helper "" 1>nul 2>nul
+rem --- Nur committen, wenn Änderungen da sind ---
+git diff --quiet && git diff --cached --quiet
+if errorlevel 1 (
+  git add -A || goto :err
+  if "%~1"=="" (
+    git -c core.editor=true commit -m "chore: sync" || goto :err
+  ) else (
+    git -c core.editor=true commit -m "%*" || goto :err
+  )
+)
 
-rem --- Commit mit kompletter Message aus allen Argumenten ---
-git add -A
-git -c core.editor=true commit -m "%*"
-
-rem --- Push auf origin/main (nur ausfuehren, wenn du gerade auf main bist) ---
-git push -u origin main
-
+rem --- Push nach main ---
+git push -u origin main || goto :err
 echo OK: Push done
 exit /b 0
-^Z
+
+:err
+echo ERROR: Git-Befehl fehlgeschlagen (Code %ERRORLEVEL%)
+exit /b 1

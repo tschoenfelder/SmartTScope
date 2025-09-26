@@ -1,3 +1,5 @@
-:: scripts\git-askpass.cmd
 @echo off
-powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0git-askpass.ps1" %*
+setlocal
+set PS1=%~dp0git-askpass.ps1
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%PS1%" %*
+endlocal

@@ -20,7 +20,7 @@ goto findroot
 :rootok
 cd /d "%ROOT%"
 
-rem --- Remote auf HTTPS setzen & Credential-Helper abschalten ---
+rem --- Remote auf HTTPS setzen & Credential-Helper lokal deaktivieren ---
 git remote set-url origin https://github.com/tschoenfelder/SmartTScope.git
 git config --local credential.helper ""
 

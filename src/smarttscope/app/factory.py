@@ -28,7 +28,7 @@ def make_camera(which: str|None=None, index: int|None=None, size=(1280,720)) -> 
     - which: 'picamera2', 'opencv', 'mock' oder None -> aus ENV SMARTTSCOPE_CAMERA
     - index: Kameraindex (Default 0)
 """
-    cam_name = cam_name or os.getenv("SMARTTSCOPE_CAMERA", "picamera2").lower()
+    cam_name = which or os.getenv("SMARTTSCOPE_CAMERA", "picamera2").lower()
     cams = REGISTRY["camera"]
     if cam_name not in cams:
         available = ", ".join(cams.keys())

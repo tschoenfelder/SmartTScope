@@ -1,15 +1,44 @@
 from __future__ import annotations
 from typing import Callable, List, Tuple
 import threading, time, contextlib
+import logging
 from collections import deque
 import numpy as np
 from picamera2 import Picamera2
 from ..domain.ports import Camera, Frame
 
+logger = logging.getLogger(__name__)
+
+class CameraBusyError(RuntimeError):
+    """Wird geworfen, wenn die Kamera (vermutlich) belegt ist."""
+    pass
+
 class Picamera2Camera(Camera):
     def __init__(self, index: int = 0, size: Tuple[int,int]=(1280,720), name: str="PiCam") -> None:
         self.name = name
-        self._pi = Picamera2(camera_num=index)  # <— WICHTIG: camera_num
+##        self._pi = Picamera2(camera_num=index)  # <— WICHTIG: camera_num
+        # Robust öffnen: bis zu 6 Versuche in 3 Sekunden
+        last_exc = None
+        for _ in range(6):
+            try:
+                self._pi = Picamera2(camera_num=index)   # wichtig: camera_num
+                break
+            except Exception as e:
+                last_exc = e
+                time.sleep(0.5)
+        else:
+            msg = (
+                f"[{self.name}] Kamera (index={index}) konnte nicht geöffnet werden – "
+                "vermutlich belegt. Hinweise:\n"
+                "  • Prüfe, ob pipewire/wireplumber die Kamera greifen:\n"
+                "      systemctl --user stop wireplumber pipewire pipewire-pulse\n"
+                "  • Schließe rpicam-Tools / alte Python-Prozesse:\n"
+                "      pkill -f 'rpicam-|dual_camera.py'\n"
+                "  • Teste kurz: rpicam-hello --camera {index} -t 500\n"
+                "Setze SMARTTSCOPE_NO_FALLBACK=1, um den Fallback zu deaktivieren."
+            )
+            logger.warning(msg)
+            raise CameraBusyError(msg) from last_exc
 
         cfg = self._pi.create_video_configuration(
             main={"size": size, "format": "RGB888"},

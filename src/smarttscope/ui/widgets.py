@@ -57,7 +57,9 @@ class CameraView(QWidget):
         self._frames = 0
         self._fps_lbl = QLabel("0.0 FPS", self)
         self._fps_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
+        if cam and hasattr(cam, "name") and str(getattr(cam, "name")).startswith("MOCK"):
+            self._fps_lbl.setStyleSheet("color:#888; font-style:italic;")
+            self._fps_lbl.setText("MOCK – waiting…")
 ##        self._fps_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
 ##        self._fps_lbl.setStyleSheet("QLabel{background:rgba(0,0,0,120);color:white;padding:2px 6px;border-radius:6px;}")
         self._fps_lbl.setStyleSheet("color:#888; font-size:11px;")

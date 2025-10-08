@@ -7,8 +7,12 @@ export SMARTTSCOPE_CAMERA_B_INDEX=1
 export SMARTTSCOPE_GPS=mock
 export SMARTTSCOPE_TELESCOPE=mock
 
-systemd-run --user --scope -p CPUQuota=60% -p MemoryMax=800M -p Nice=10 -p IOSchedulingClass=idle \
-  taskset -c 1-3 env SMARTTSCOPE_PREVIEW_STREAM=lores SMARTTSCOPE_MAX_FPS=0 SMARTTSCOPE_UI_FPS=15 \
-  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
-  python examples/dual_camera.py
-
+systemd-run --user --scope \
+  -p CPUQuota=60% \
+  -p MemoryMax=800M \
+  -p IOWeight=100 \
+  taskset -c 1-3 nice -n 10 ionice -c 3 \
+  env SMARTTSCOPE_PREVIEW_STREAM=lores SMARTTSCOPE_MAX_FPS=0 SMARTTSCOPE_UI_FPS=15 \
+      OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+      python examples/dual_camera.py
+	  

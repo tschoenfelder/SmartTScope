@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os, sys, importlib.util, logging
 from typing import Any
 from ..adapters import REGISTRY
@@ -6,7 +7,9 @@ try:
     from ..adapters.camera_picamera2 import CameraBusyError as PiCamBusyError
 except Exception:
     class PiCamBusyError(Exception): pass
-    
+
+log = logging.getLogger(__name__)
+
 def _has_module(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
@@ -20,7 +23,12 @@ def _profile() -> str:
     return p
 
 def make_camera(which: str|None=None, index: int|None=None, size=(1280,720)) -> Any:
-    cam_name = cam_name or os.getenv("SMARTTSCOPE_CAMERA", "picamera2")
+    """
+    Erzeuge Kamera-Adapter.
+    - which: 'picamera2', 'opencv', 'mock' oder None -> aus ENV SMARTTSCOPE_CAMERA
+    - index: Kameraindex (Default 0)
+"""
+    cam_name = cam_name or os.getenv("SMARTTSCOPE_CAMERA", "picamera2").lower()
     cams = REGISTRY["camera"]
     if cam_name not in cams:
         available = ", ".join(cams.keys())
@@ -64,10 +72,21 @@ def make_camera(which: str|None=None, index: int|None=None, size=(1280,720)) -> 
 ##    except TypeError:
 ##        return cls()  # z.B. Mock ohne Args
 
-def make_camera_b() -> Any:
-    prof = _profile()
-    cam_b = os.getenv("SMARTTSCOPE_CAMERA_B")
-    if not cam_b:
-        cam_b = "picamera2" if (prof == "rpi" and "picamera2" in REGISTRY["camera"]) else "mock"
-    idx = int(os.getenv("SMARTTSCOPE_CAMERA_B_INDEX", "1" if cam_b == "picamera2" else "0"))
-    return make_camera(which=cam_b, index=idx)
+def make_camera_b(which: str | None = None, *, index: int | None = None, size=(1280, 720)) -> Any:
+    """
+    Zweite Kamera, liest standardmäßig eigene ENV-Variablen:
+      SMARTTSCOPE_CAMERA_B, SMARTTSCOPE_CAMERA_B_INDEX
+    Fällt zurück auf picamera2 / Index 1.
+    """
+    cam_name = (which or os.getenv("SMARTTSCOPE_CAMERA_B") or "picamera2").lower()
+    idx = index if index is not None else int(os.getenv("SMARTTSCOPE_CAMERA_B_INDEX", "1"))
+    return make_camera(cam_name, index=idx, size=size)
+##
+##def make_camera_b() -> Any:
+##    prof = _profile()
+##    cam_b = os.getenv("SMARTTSCOPE_CAMERA_B")
+##    if not cam_b:
+##        cam_b = "picamera2" if (prof == "rpi" and "picamera2" in REGISTRY["camera"]) else "mock"
+##    idx = int(os.getenv("SMARTTSCOPE_CAMERA_B_INDEX", "1" if cam_b == "picamera2" else "0"))
+##    return make_camera(which=cam_b, index=idx)
+##

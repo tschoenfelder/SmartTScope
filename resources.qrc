@@ -1,0 +1,19 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="icons/sync.svg">icons/sync_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24.svg</file>
+    <file alias="icons/sync_disabled.svg">icons/sync_disabled_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24.svg</file>
+    <file alias="icons/block.svg">icons/block_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24.svg</file>
+
+    <file alias="icons/target.svg">icons/target.svg</file>
+
+    <file alias="icons/gps_fixed.svg">icons/gps_fixed.svg</file>
+    <file alias="icons/gps_not_fixed.svg">icons/gps_not_fixed.svg</file>
+    <file alias="icons/gps_off.svg">icons/gps_off.svg</file>
+
+    <file alias="icons/locate.svg">icons/locate.svg</file>
+    <file alias="icons/locate-fixed.svg">icons/locate-fixed.svg</file>
+    <file alias="icons/locate-off.svg">icons/locate-off.svg</file>
+
+    <file alias="icons/radio_button_checked.svg">icons/radio_button_checked_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24.svg</file>
+  </qresource>
+</RCC>

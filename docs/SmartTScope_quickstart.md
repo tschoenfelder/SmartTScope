@@ -440,7 +440,79 @@ print("factory.py:", inspect.getsourcefile(f))
 PY
 ```
 
+Push local changes to git:
+Option A – Lokale Commits behalten und auf origin/main rebased
+
+(empfohlen, wenn du deine Raspi-Änderungen behalten willst)
+
+```
+git fetch origin
+git rebase origin/main
+# bei Konflikten: Dateien lösen, dann
+git add <gelöste/dateien>
+git rebase --continue
 
 
+Danach ist dein lokaler Branch = origin/main + deine Commits oben drauf.
+Wenn du nicht pushen willst (Raspi nur Konsument): fertig.
+Falls du die Raspi-Commits teilen willst: als separaten Branch hochladen:
+
+git switch -c pi-work
+git push -u origin pi-work
+```
+
+Option B – Lokale Commits verwerfen und exakt auf Remote gehen
+
+(wenn deine Raspi-Änderungen nicht wichtig sind)
+
+```
+git fetch origin
+git reset --hard origin/main
+git clean -fdX   # optional: untracked/ignorierte Buildfiles weg
+```
 
 
+Jetzt entspricht dein Arbeitsbaum exakt origin/main.
+
+Option C – Merge-Commit zulassen (kein FF, kein Rebase)
+
+(einfach, aber Geschichte wird „verzweigt“)
+
+```
+git fetch origin
+git merge origin/main     # löst Konflikte aus wie üblich
+```
+
+Hilfreiche Checks (vorher / nachher)
+```
+git status -sb
+git log --oneline --decorate --graph --all --max-count=20
+```
+
+
+Wenn stash dir „Keine lokalen Änderungen“ meldete, heißt das nur: keine uncommitteten Änderungen.
+Die Divergenz kommt von lokalen Commits → darum scheitert --ff-only.
+
+Tipp: Wenn du künftig immer rebasen willst:
+
+```
+git config --global pull.rebase true
+```
+
+
+Dann reicht git pull (ohne --ff-only) und Git rebased automatisch statt zu mergen.
+
+QT Designer übersetzen:
+pyside6-rcc resources.qrc -o resources_rc.py
+pyside6-uic SmartTScope.ui -o ui_smarttscope.py
+
+
+Credits:
+Icons: 
+https://composables.com/
+Lucide (ISC)
+Tabler Icons (MIT
+https://fluent2.microsoft.design
+https://icons.getbootstrap.com/
+https://github.com/google/material-design-icons/
+https://fonts.google.com/icons?

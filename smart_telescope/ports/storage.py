@@ -1,11 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-
-
-@dataclass
-class SavedArtifacts:
-    image_path: str
-    log_path: str
 
 
 class StoragePort(ABC):
@@ -13,4 +6,13 @@ class StoragePort(ABC):
     def has_free_space(self) -> bool: ...
 
     @abstractmethod
-    def save(self, image_data: bytes, session_log: dict) -> SavedArtifacts: ...
+    def save_image(self, image_data: bytes, session_id: str) -> str:
+        """Persist the stacked image. Returns the absolute path written."""
+        ...
+
+    @abstractmethod
+    def save_log(self, session_log: dict, session_id: str) -> str:
+        """Persist the session log JSON. Returns the absolute path written.
+        Note: the stored dict will not contain its own log path (inherent self-reference).
+        """
+        ...

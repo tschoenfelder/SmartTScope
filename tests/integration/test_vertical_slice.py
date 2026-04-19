@@ -104,6 +104,7 @@ class TestHappyPath:
             assert ts.completed_at >= ts.started_at
 
     def test_session_log_serializes_to_dict(self):
+        # to_dict() on the in-memory log after run — all fields are populated.
         runner, _ = make_runner()
         log = runner.run()
         d = log.to_dict()
@@ -111,14 +112,20 @@ class TestHappyPath:
         assert d["target"]["name"] == "M42"
         assert d["frames_integrated"] == 10
         assert d["saved_artifacts"]["image"] is not None
-        assert d["saved_artifacts"]["log"] is not None
+        assert d["saved_artifacts"]["log"] is not None  # log_path set on in-memory log
+        assert d["completed_at"] is not None
 
     def test_session_log_written_to_storage(self):
+        # Checks the dict that was actually persisted by storage.save_log().
         storage = MockStorage()
         runner, _ = make_runner(storage=storage)
         runner.run()
-        assert storage.saved_log["final_state"] == "SAVED"
-        assert storage.saved_log["target"]["name"] == "M42"
+        d = storage.saved_log
+        assert d["final_state"] == "SAVED"
+        assert d["target"]["name"] == "M42"
+        assert d["completed_at"] is not None              # set before serialization
+        assert d["saved_artifacts"]["image"] is not None  # image path known before serialization
+        assert d["saved_artifacts"]["log"] is None        # inherent self-reference: log can't know its own path
 
     def test_starts_from_parked_mount(self):
         mount = MockMount(initial_state=MountState.PARKED)

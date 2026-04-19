@@ -1,4 +1,4 @@
-from ...ports.storage import StoragePort, SavedArtifacts
+from ...ports.storage import StoragePort
 
 
 class MockStorage(StoragePort):
@@ -10,10 +10,10 @@ class MockStorage(StoragePort):
     def has_free_space(self) -> bool:
         return not self._disk_full
 
-    def save(self, image_data: bytes, session_log: dict) -> SavedArtifacts:
+    def save_image(self, image_data: bytes, session_id: str) -> str:
         self.saved_image = image_data
+        return "/mock/session_result.png"
+
+    def save_log(self, session_log: dict, session_id: str) -> str:
         self.saved_log = session_log
-        return SavedArtifacts(
-            image_path="/mock/session_result.png",
-            log_path="/mock/session_log.json",
-        )
+        return "/mock/session_log.json"

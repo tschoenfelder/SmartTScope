@@ -1,7 +1,8 @@
 import math
+import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from ..domain.session import SessionLog, StageTimestamp
@@ -23,14 +24,21 @@ PREVIEW_FRAMES = 3
 STACK_DEPTH = 10
 PREVIEW_EXPOSURE_S = 5.0
 STACK_EXPOSURE_S = 30.0
+SLEW_TIMEOUT_S = 120.0
+SLEW_POLL_INTERVAL_S = 2.0
 
 StateCallback = Callable[[SessionState], None]
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 @dataclass
 class OpticalProfile:
     name: str
     pixel_scale_arcsec: float  # hint passed to plate solver
+
 
 # Built-in profiles for the C8 platform
 C8_NATIVE   = OpticalProfile("C8-native",   pixel_scale_arcsec=0.38)
@@ -71,7 +79,7 @@ class VerticalSliceRunner:
             target_ra=M42_RA,
             target_dec=M42_DEC,
             optical_config=self._profile.name,
-            started_at=datetime.utcnow(),
+            started_at=_now(),
         )
         self._transition(log, SessionState.IDLE)
 
@@ -88,7 +96,8 @@ class VerticalSliceRunner:
             log.failure_reason = err.reason
             self._transition(log, SessionState.FAILED)
         finally:
-            log.completed_at = datetime.utcnow()
+            if log.completed_at is None:
+                log.completed_at = _now()
             self._mount.disconnect()
             self._camera.disconnect()
 
@@ -154,8 +163,8 @@ class VerticalSliceRunner:
         self._start_stage(log, "goto")
         if not self._mount.goto(M42_RA, M42_DEC):
             raise WorkflowError("goto", "GoTo command rejected by mount")
-        if self._mount.is_slewing():
-            raise WorkflowError("goto", "Mount stalled — slew did not complete")
+        # Poll until slew completes — is_slewing() returning True immediately after goto is normal.
+        self._wait_for_slew("goto")
         self._finish_stage(log, "goto")
         self._transition(log, SessionState.SLEWED)
 
@@ -175,9 +184,11 @@ class VerticalSliceRunner:
                 self._transition(log, SessionState.CENTERED)
                 return
             if i < MAX_RECENTER_ITERATIONS:
-                self._mount.goto(M42_RA, M42_DEC)
+                if not self._mount.goto(M42_RA, M42_DEC):
+                    raise WorkflowError("recenter", f"Correction slew rejected by mount (iteration {i})")
+                self._wait_for_slew("recenter")
 
-        # Tolerance not met — degrade gracefully, do not abort
+        # Tolerance not met after all iterations — degrade gracefully, do not abort
         log.centering_state = SessionState.CENTERING_DEGRADED.name
         log.warnings.append(
             f"Centering: exceeded {MAX_RECENTER_ITERATIONS} iterations; "
@@ -212,14 +223,32 @@ class VerticalSliceRunner:
         if not self._storage.has_free_space():
             raise WorkflowError("save", "Disk full — cannot save session artifacts")
         stacked = self._stacker.get_current_stack()
-        # Transition before serialising so the stored log reflects the final state.
-        self._transition(log, SessionState.SAVED)
-        artifacts = self._storage.save(stacked.data, log.to_dict())
-        log.saved_image_path = artifacts.image_path
-        log.saved_log_path = artifacts.log_path
+
+        # Save image first — path is then available before log serialization.
+        image_path = self._storage.save_image(stacked.data, log.session_id)
+        log.saved_image_path = image_path
+
+        # Record completion time and finish stage timestamp before serializing,
+        # so the stored log contains complete timestamps.
+        log.completed_at = _now()
         self._finish_stage(log, "save")
+        self._transition(log, SessionState.SAVED)
+
+        # Serialize now: state=SAVED, completed_at set, image_path known, save stage complete.
+        # saved_log_path is intentionally absent from the stored dict (inherent self-reference).
+        log_path = self._storage.save_log(log.to_dict(), log.session_id)
+        log.saved_log_path = log_path
 
     # --- helpers ---
+
+    def _wait_for_slew(self, stage: str) -> None:
+        """Poll mount until slewing stops or timeout. Raises WorkflowError on timeout."""
+        elapsed = 0.0
+        while self._mount.is_slewing():
+            time.sleep(SLEW_POLL_INTERVAL_S)
+            elapsed += SLEW_POLL_INTERVAL_S
+            if elapsed >= SLEW_TIMEOUT_S:
+                raise WorkflowError(stage, f"Slew timed out after {SLEW_TIMEOUT_S:.0f}s")
 
     def _transition(self, log: SessionLog, state: SessionState) -> None:
         log.state = state
@@ -227,12 +256,12 @@ class VerticalSliceRunner:
             self._on_state_change(state)
 
     def _start_stage(self, log: SessionLog, name: str) -> None:
-        log.stage_timestamps.append(StageTimestamp(stage=name, started_at=datetime.utcnow()))
+        log.stage_timestamps.append(StageTimestamp(stage=name, started_at=_now()))
 
     def _finish_stage(self, log: SessionLog, name: str) -> None:
         for ts in reversed(log.stage_timestamps):
             if ts.stage == name and ts.completed_at is None:
-                ts.completed_at = datetime.utcnow()
+                ts.completed_at = _now()
                 return
 
 

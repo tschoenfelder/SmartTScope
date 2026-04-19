@@ -1,6 +1,6 @@
 # Hardware Platform
 
-**Summary**: The target hardware for the SmartTelescope application: a Celestron C8 OTA, Raspberry Pi 5 compute unit, and OnStep V4 mount controller.
+**Summary**: The target hardware for the SmartTelescope application: a Celestron C8 OTA, Raspberry Pi 5 compute unit, OnStep V4 mount controller, and ToupTek imaging camera.
 
 **Sources**: SmartTelescope.md
 
@@ -24,6 +24,12 @@ The SmartTelescope application is built around a specific hardware stack rather 
 - Must maintain thermal and resource stability during concurrent stacking and solving workloads
 - Local-first operation — no cloud dependency
 - Target platform for all server-side application logic
+
+### ToupTek Camera
+- Imaging sensor for frame capture and stacking
+- Driver interface: INDI or ToupTek SDK
+- Pixel size and sensor dimensions determine pixel scale per optical profile
+- Replaces ZWO ASI as the target sensor platform
 
 ### OnStep V4 Mount Controller
 - Open-source GoTo mount controller

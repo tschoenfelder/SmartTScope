@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-19 — Hardware update: camera changed to ToupTek
+
+**Pages updated**:
+- `hardware-platform.md` — added ToupTek camera section; updated summary
+- `vertical-slice-mvp.md` — replaced ZWO ASI SDK references with ToupTek SDK
+- `README.md` — updated hardware table
+
+---
+
 ## 2026-04-19 — Walking skeleton implementation
 
 **Source**: vertical-slice-mvp.md (spec), implementation

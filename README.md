@@ -13,7 +13,7 @@ A user powers on, connects via an app, selects a target, and the system autonomo
 | Celestron C8 (2032 mm, f/10) | Optical tube |
 | Raspberry Pi 5 | Onboard compute |
 | OnStep V4 | GoTo mount controller |
-| ZWO ASI camera (TBD) | Imaging sensor |
+| ToupTek camera (TBD) | Imaging sensor |
 
 ## Current state
 

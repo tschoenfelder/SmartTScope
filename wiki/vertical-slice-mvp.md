@@ -46,7 +46,7 @@ This slice is the first shippable proof-of-concept. It is not a demo and not a p
 - Session state is `CONNECTED` after this stage.
 
 **Key interfaces**:
-- Camera: INDI or ASI SDK — `connect()`, `capture(exposure_sec)`, `get_image() → FITS`
+- Camera: INDI or ToupTek SDK — `connect()`, `capture(exposure_sec)`, `get_image() → FITS`
 - Mount: OnStep LX200 serial protocol over USB/UART — `connect()`, `get_state()`, `sync(ra, dec)`, `goto(ra, dec)`, `set_tracking(on)`
 - Focuser: INDI or direct USB — `connect()`, `move(steps)`, `get_position()`
 
@@ -205,7 +205,7 @@ Each stage transition is explicit. The backend never skips a state. A failure in
 
 | Component | Responsibility | Library candidate |
 |---|---|---|
-| Camera driver | capture FITS frames | INDI / ZWO ASI SDK |
+| Camera driver | capture FITS frames | INDI / ToupTek SDK |
 | Mount driver | OnStep LX200 protocol | custom serial, or INDI |
 | Plate solver | sky position from image | astap (local) or astrometry.net local |
 | Stretcher | auto-stretch FITS for display | astropy, numpy |

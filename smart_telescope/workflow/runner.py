@@ -170,6 +170,7 @@ class VerticalSliceRunner:
             offset = _angular_offset_arcmin(result.ra, result.dec, M42_RA, M42_DEC)
             log.centering_offset_arcmin = round(offset, 2)
             if offset <= CENTERING_TOLERANCE_ARCMIN:
+                log.centering_state = SessionState.CENTERED.name
                 self._finish_stage(log, "recenter")
                 self._transition(log, SessionState.CENTERED)
                 return
@@ -177,6 +178,7 @@ class VerticalSliceRunner:
                 self._mount.goto(M42_RA, M42_DEC)
 
         # Tolerance not met — degrade gracefully, do not abort
+        log.centering_state = SessionState.CENTERING_DEGRADED.name
         log.warnings.append(
             f"Centering: exceeded {MAX_RECENTER_ITERATIONS} iterations; "
             f"final offset {log.centering_offset_arcmin:.1f} arcmin — continuing in degraded mode"

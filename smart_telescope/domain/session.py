@@ -27,6 +27,7 @@ class SessionLog:
     plate_solve_attempts: int = 0
     centering_offset_arcmin: float = 0.0
     centering_iterations: int = 0
+    centering_state: Optional[str] = None  # "CENTERED" or "CENTERING_DEGRADED"
     warnings: List[str] = field(default_factory=list)
     failure_stage: Optional[str] = None
     failure_reason: Optional[str] = None
@@ -59,6 +60,7 @@ class SessionLog:
             "plate_solve_attempts": self.plate_solve_attempts,
             "centering_offset_arcmin": self.centering_offset_arcmin,
             "centering_iterations": self.centering_iterations,
+            "centering_state": self.centering_state,
             "warnings": self.warnings,
             "failure_stage": self.failure_stage,
             "failure_reason": self.failure_reason,

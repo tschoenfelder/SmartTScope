@@ -220,6 +220,7 @@
   },
   "active": "d30059c3ab826236",
   "lastOpenFiles": [
+    "smart_telescope/adapters/astap/solver.py.tmp.50108.1776634234884",
     "smart_telescope/adapters/replay/__pycache__/__init__.cpython-310.pyc",
     "smart_telescope/adapters/replay/__pycache__/camera.cpython-310.pyc",
     "smart_telescope/adapters/replay/__pycache__",
@@ -230,7 +231,6 @@
     "tests/integration/test_real_solver_replay.py",
     "smart_telescope/adapters/replay/camera.py",
     "smart_telescope/adapters/astap/solver.py",
-    "smart_telescope/adapters/astap/solver.py.tmp.50108.1776633312218",
     "tests/fixtures/README.md",
     "wiki/vertical-slice-mvp.md",
     "wiki/requirements-review.md",

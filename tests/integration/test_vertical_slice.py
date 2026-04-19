@@ -80,6 +80,12 @@ class TestHappyPath:
         log = runner.run()
         assert log.warnings == []
 
+    def test_centering_state_is_centered_on_clean_run(self):
+        runner, _ = make_runner()
+        log = runner.run()
+        assert log.centering_state == "CENTERED"
+        assert log.to_dict()["centering_state"] == "CENTERED"
+
     def test_no_failure_fields_on_success(self):
         runner, _ = make_runner()
         log = runner.run()
@@ -175,6 +181,13 @@ class TestRecenterExceedsIterations:
         runner.run()
         assert SessionState.CENTERING_DEGRADED in states
         assert SessionState.CENTERED not in states
+
+    def test_centering_state_is_degraded_in_log(self):
+        solver = MockSolver(results=[self._far_solve] * 30)
+        runner, _ = make_runner(solver=solver)
+        log = runner.run()
+        assert log.centering_state == "CENTERING_DEGRADED"
+        assert log.to_dict()["centering_state"] == "CENTERING_DEGRADED"
 
     def test_centering_warning_logged(self):
         solver = MockSolver(results=[self._far_solve] * 30)

@@ -11,6 +11,7 @@ To enable:
   3. Re-run pytest
 """
 
+import textwrap
 import pytest
 from pathlib import Path
 
@@ -46,18 +47,82 @@ COORD_TOLERANCE_DEG = 1.0
 # Helpers
 # ---------------------------------------------------------------------------
 
-def make_hybrid_runner(camera, solver, profile=C8_NATIVE):
+def make_hybrid_runner(camera, solver, profile=C8_NATIVE, storage=None):
     states = []
     runner = VerticalSliceRunner(
         camera=camera,
         mount=MockMount(),
         solver=solver,
         stacker=MockStacker(),
-        storage=MockStorage(),
+        storage=storage or MockStorage(),
         optical_profile=profile,
         on_state_change=states.append,
     )
     return runner, states
+
+
+# ---------------------------------------------------------------------------
+# _parse_ini unit tests — no ASTAP or FITS required
+# ---------------------------------------------------------------------------
+
+class TestAstapParseIni:
+    """Pure Python tests for _parse_ini: cover RA conversion and failure modes."""
+
+    def _write_ini(self, tmp_path, content: str) -> Path:
+        p = tmp_path / "frame.ini"
+        p.write_text(textwrap.dedent(content))
+        return p
+
+    def test_ra_converted_from_degrees_to_hours(self, tmp_path):
+        ini = self._write_ini(tmp_path, """
+            [Solution]
+            PLATESOLVED=T
+            CRVAL1=83.82270
+            CRVAL2=-5.39110
+            CROTA2=0.0
+        """)
+        result = AstapSolver._parse_ini(ini)
+        assert result.success
+        assert abs(result.ra - 83.82270 / 15.0) < 1e-6, "RA must be degrees/15"
+
+    def test_dec_stays_in_degrees(self, tmp_path):
+        ini = self._write_ini(tmp_path, """
+            [Solution]
+            PLATESOLVED=T
+            CRVAL1=83.82270
+            CRVAL2=-5.39110
+            CROTA2=0.0
+        """)
+        result = AstapSolver._parse_ini(ini)
+        assert result.success
+        assert abs(result.dec - (-5.39110)) < 1e-6, "Dec must remain in degrees"
+
+    def test_unsolved_returns_failure(self, tmp_path):
+        ini = self._write_ini(tmp_path, """
+            [Solution]
+            PLATESOLVED=F
+            WARNING=No stars found
+        """)
+        result = AstapSolver._parse_ini(ini)
+        assert not result.success
+        assert "No stars found" in result.error
+
+    def test_empty_ini_returns_failure(self, tmp_path):
+        ini = self._write_ini(tmp_path, "")
+        result = AstapSolver._parse_ini(ini)
+        assert not result.success
+
+    def test_position_angle_parsed(self, tmp_path):
+        ini = self._write_ini(tmp_path, """
+            [Solution]
+            PLATESOLVED=T
+            CRVAL1=83.82270
+            CRVAL2=-5.39110
+            CROTA2=178.3
+        """)
+        result = AstapSolver._parse_ini(ini)
+        assert result.success
+        assert abs(result.pa - 178.3) < 1e-4
 
 
 # ---------------------------------------------------------------------------
@@ -181,16 +246,27 @@ class TestRealSolverReplay:
         assert SessionState.SAVED   in states
 
     def test_session_log_written_with_real_coords(self):
+        storage = MockStorage()
         camera = ReplayCamera([str(FITS_M42)])
         solver = AstapSolver()
-        storage = MockStorage()
-        runner, _ = make_hybrid_runner(camera, solver)
-        runner._storage = storage
+        runner, _ = make_hybrid_runner(camera, solver, storage=storage)
         log = runner.run()
         assert log.state == SessionState.SAVED
         d = storage.saved_log
         assert d["target"]["name"] == "M42"
         assert d["optical_config"] == "C8-native"
+
+    def test_centering_state_in_log(self):
+        """centering_state must be CENTERED or CENTERING_DEGRADED — never None after recenter."""
+        camera = ReplayCamera([str(FITS_M42)])
+        solver = AstapSolver()
+        runner, _ = make_hybrid_runner(camera, solver)
+        log = runner.run()
+        assert log.centering_state in ("CENTERED", "CENTERING_DEGRADED"), (
+            f"centering_state was {log.centering_state!r}"
+        )
+        d = log.to_dict()
+        assert d["centering_state"] in ("CENTERED", "CENTERING_DEGRADED")
 
 
 @needs_astap

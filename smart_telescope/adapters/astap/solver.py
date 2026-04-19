@@ -98,7 +98,6 @@ class AstapSolver(SolverPort):
         try:
             ra_deg  = float(cfg.get(section, "CRVAL1"))   # RA in degrees
             dec_deg = float(cfg.get(section, "CRVAL2"))   # Dec in degrees
-            cdelt   = abs(float(cfg.get(section, "CDELT2", fallback="0")))
             pa      = float(cfg.get(section, "CROTA2", fallback="0"))
         except (ValueError, configparser.NoOptionError) as exc:
             return SolveResult(success=False, error=f"ASTAP .ini parse error: {exc}")

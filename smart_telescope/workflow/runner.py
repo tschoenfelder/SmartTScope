@@ -1,5 +1,6 @@
 import math
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Optional
 
@@ -15,7 +16,6 @@ from ..ports.storage import StoragePort
 M42_RA = 5.5881   # hours  (05h 35m 17.3s)
 M42_DEC = -5.391  # degrees (−05° 23′ 28″)
 
-PIXEL_SCALE_HINT = 0.20          # arcsec/px, C8 native
 CENTERING_TOLERANCE_ARCMIN = 2.0
 MAX_RECENTER_ITERATIONS = 3
 SOLVE_MAX_ATTEMPTS = 2
@@ -25,6 +25,17 @@ PREVIEW_EXPOSURE_S = 5.0
 STACK_EXPOSURE_S = 30.0
 
 StateCallback = Callable[[SessionState], None]
+
+
+@dataclass
+class OpticalProfile:
+    name: str
+    pixel_scale_arcsec: float  # hint passed to plate solver
+
+# Built-in profiles for the C8 platform
+C8_NATIVE   = OpticalProfile("C8-native",   pixel_scale_arcsec=0.38)
+C8_REDUCER  = OpticalProfile("C8-reducer",  pixel_scale_arcsec=0.60)
+C8_BARLOW2X = OpticalProfile("C8-barlow2x", pixel_scale_arcsec=0.19)
 
 
 class WorkflowError(Exception):
@@ -42,6 +53,7 @@ class VerticalSliceRunner:
         solver: SolverPort,
         stacker: StackerPort,
         storage: StoragePort,
+        optical_profile: OpticalProfile = C8_NATIVE,
         on_state_change: Optional[StateCallback] = None,
     ) -> None:
         self._camera = camera
@@ -49,6 +61,7 @@ class VerticalSliceRunner:
         self._solver = solver
         self._stacker = stacker
         self._storage = storage
+        self._profile = optical_profile
         self._on_state_change = on_state_change
 
     def run(self) -> SessionLog:
@@ -57,7 +70,7 @@ class VerticalSliceRunner:
             target_name="M42",
             target_ra=M42_RA,
             target_dec=M42_DEC,
-            optical_config="C8-native",
+            optical_config=self._profile.name,
             started_at=datetime.utcnow(),
         )
         self._transition(log, SessionState.IDLE)
@@ -81,18 +94,18 @@ class VerticalSliceRunner:
 
         return log
 
-    # --- pipeline definition ---
+    # --- pipeline ---
 
     def _stage_pipeline(self) -> list:
         return [
-            ("connect", self._stage_connect),
+            ("connect",          self._stage_connect),
             ("initialize_mount", self._stage_initialize_mount),
-            ("align", self._stage_align),
-            ("goto", self._stage_goto),
-            ("recenter", self._stage_recenter),
-            ("preview", self._stage_preview),
-            ("stack", self._stage_stack),
-            ("save", self._stage_save),
+            ("align",            self._stage_align),
+            ("goto",             self._stage_goto),
+            ("recenter",         self._stage_recenter),
+            ("preview",          self._stage_preview),
+            ("stack",            self._stage_stack),
+            ("save",             self._stage_save),
         ]
 
     # --- stages ---
@@ -122,10 +135,10 @@ class VerticalSliceRunner:
     def _stage_align(self, log: SessionLog) -> None:
         self._start_stage(log, "align")
         exposures = [5.0, 10.0]
-        for attempt, exposure in enumerate(exposures[:SOLVE_MAX_ATTEMPTS], start=1):
+        for exposure in exposures[:SOLVE_MAX_ATTEMPTS]:
             log.plate_solve_attempts += 1
             frame = self._camera.capture(exposure)
-            result = self._solver.solve(frame.data, PIXEL_SCALE_HINT)
+            result = self._solver.solve(frame.data, self._profile.pixel_scale_arcsec)
             if result.success:
                 if not self._mount.sync(result.ra, result.dec):
                     raise WorkflowError("align", "Mount sync after plate solve failed")
@@ -151,7 +164,7 @@ class VerticalSliceRunner:
         for i in range(1, MAX_RECENTER_ITERATIONS + 1):
             log.centering_iterations = i
             frame = self._camera.capture(10.0)
-            result = self._solver.solve(frame.data, PIXEL_SCALE_HINT)
+            result = self._solver.solve(frame.data, self._profile.pixel_scale_arcsec)
             if not result.success:
                 raise WorkflowError("recenter", f"Plate solve failed during recentering (iteration {i})")
             offset = _angular_offset_arcmin(result.ra, result.dec, M42_RA, M42_DEC)
@@ -163,19 +176,20 @@ class VerticalSliceRunner:
             if i < MAX_RECENTER_ITERATIONS:
                 self._mount.goto(M42_RA, M42_DEC)
 
+        # Tolerance not met — degrade gracefully, do not abort
         log.warnings.append(
             f"Centering: exceeded {MAX_RECENTER_ITERATIONS} iterations; "
-            f"final offset {log.centering_offset_arcmin:.1f} arcmin — continuing"
+            f"final offset {log.centering_offset_arcmin:.1f} arcmin — continuing in degraded mode"
         )
         self._finish_stage(log, "recenter")
-        self._transition(log, SessionState.CENTERED)
+        self._transition(log, SessionState.CENTERING_DEGRADED)
 
     def _stage_preview(self, log: SessionLog) -> None:
         self._start_stage(log, "preview")
         self._transition(log, SessionState.PREVIEWING)
         for _ in range(PREVIEW_FRAMES):
             self._camera.capture(PREVIEW_EXPOSURE_S)
-            # Real implementation: auto-stretch frame and push via WebSocket
+            # Real implementation: auto-stretch and push via WebSocket
         self._finish_stage(log, "preview")
 
     def _stage_stack(self, log: SessionLog) -> None:
@@ -187,7 +201,7 @@ class VerticalSliceRunner:
             stacked = self._stacker.add_frame(StackFrame(data=frame.data, frame_number=i))
             log.frames_integrated = stacked.frames_integrated
             log.frames_rejected = stacked.frames_rejected
-            # Real implementation: push stacked image via WebSocket after each frame
+            # Real implementation: push updated stack via WebSocket
         self._finish_stage(log, "stack")
         self._transition(log, SessionState.STACK_COMPLETE)
 

@@ -9,7 +9,8 @@ class SessionState(Enum):
     MOUNT_READY = auto()
     ALIGNED = auto()
     SLEWED = auto()
-    CENTERED = auto()
+    CENTERED = auto()            # centered within tolerance
+    CENTERING_DEGRADED = auto()  # max iterations exceeded; session continues with warning
     PREVIEWING = auto()
     STACKING = auto()
     STACK_COMPLETE = auto()

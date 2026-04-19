@@ -169,6 +169,13 @@ class TestRecenterExceedsIterations:
         log = runner.run()
         assert log.state == SessionState.SAVED
 
+    def test_centering_degraded_state_emitted(self):
+        solver = MockSolver(results=[self._far_solve] * 30)
+        runner, states = make_runner(solver=solver)
+        runner.run()
+        assert SessionState.CENTERING_DEGRADED in states
+        assert SessionState.CENTERED not in states
+
     def test_centering_warning_logged(self):
         solver = MockSolver(results=[self._far_solve] * 30)
         runner, _ = make_runner(solver=solver)

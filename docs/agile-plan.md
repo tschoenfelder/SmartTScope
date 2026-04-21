@@ -67,7 +67,7 @@ The current `pyproject.toml` has one dev dependency: `pytest`. A production Pyth
 [project]
 name = "smart-telescope"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.29",
@@ -81,6 +81,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",  # async FastAPI endpoint tests
     "pytest-cov>=5.0",       # coverage reporting
+    "pytest-mock>=3.15",     # mocker fixture for subprocess/SDK mocking
     "ruff>=0.4",             # linting + formatting (replaces flake8 + isort + black)
     "mypy>=1.10",            # static type checking
     "pyserial>=3.5",         # OnStep serial adapter
@@ -88,14 +89,17 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ANN"]
-ignore = ["ANN101", "ANN102"]
+ignore = []  # ANN101/ANN102 removed in ruff 0.4 — do not list them
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]  # no return-type annotations required in tests
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 strict = true
 ignore_missing_imports = true   # for hardware SDKs without stubs
 
@@ -192,25 +196,27 @@ This is not a feature sprint. It is a prerequisite sprint. It runs once and is n
 
 | ID | Story / Task | Points | AC |
 |---|---|---|---|
-| S0-1 | Upgrade dev environment to Python 3.11; fix pyproject.toml | 1 | `python --version` → 3.11 in CI |
-| S0-2 | Add ruff, mypy, pytest-asyncio, pytest-cov to dev deps | 1 | `ruff check .` and `mypy smart_telescope/` pass with zero errors |
-| S0-3 | Add GitHub Actions CI: lint → typecheck → test on push | 2 | Green badge on first commit |
-| S0-4 | Add structured logging (stdlib `logging`) to all stage transitions | 1 | Every state transition emits a named log line at INFO level |
-| S0-5 | Add `FocuserPort` ABC; add `MockFocuser`; wire into runner | 2 | Runner connects focuser; test covers focuser connect failure |
-| S0-6 | Add `stop()` to `MountPort`; add `asyncio.Event` cancellation to runner | 2 | Test: cancellation event set during slew wait raises WorkflowError |
-| S0-7 | Introduce `FitsFrame` domain type; migrate all ports | 3 | mypy passes; ReplayCamera returns correct width/height from header |
-| S0-8 | Fix test coverage gaps (slew timeout, unpark failure, recenter failure, stacker failure, offset unit) | 2 | Coverage ≥ 80% on CI |
-| S0-9 | Move mock tests to `tests/unit/`; rename integration tests correctly | 1 | Directory structure matches test type |
+| ID | Story / Task | Points | AC | Status |
+|---|---|---|---|---|
+| S0-1 | Upgrade dev environment to Python 3.13; fix pyproject.toml | 1 | `python --version` → 3.13 in CI | ✓ Done |
+| S0-2 | Add ruff, mypy, pytest-asyncio, pytest-cov, pytest-mock to dev deps | 1 | `ruff check .` and `mypy smart_telescope/` pass with zero errors | ✓ Done |
+| S0-3 | Add GitHub Actions CI: lint → typecheck → test on push | 2 | Green badge on first commit | ✓ Done |
+| S0-4 | Add structured logging (stdlib `logging`) to all stage transitions | 1 | Every state transition emits a named log line at INFO level | ✓ Done |
+| S0-5 | Add `FocuserPort` ABC; add `MockFocuser`; wire into runner | 2 | Runner connects focuser; test covers focuser connect failure | ✓ Done |
+| S0-6 | Add `stop()` to `MountPort`; add `threading.Event` cancellation to runner | 2 | Test: cancellation event set during slew wait raises WorkflowError | ✓ Done |
+| S0-7 | Introduce `FitsFrame` domain type; migrate all ports | 3 | mypy passes; ReplayCamera returns correct width/height from header | Deferred → Sprint 1 |
+| S0-8 | Fix test coverage gaps (slew timeout, unpark failure, recenter failure, stacker failure, offset unit) | 2 | Coverage ≥ 80% on CI | ✓ Done |
+| S0-9 | Move mock tests to `tests/unit/`; rename integration tests correctly | 1 | Directory structure matches test type | ✓ Done |
 
-**Total**: 15 points (indicative). If 15 points is too much for one developer in one week, drop S0-7 to sprint 1 and do it before the first hardware work.
+**Total**: 15 points. S0-7 deferred to Sprint 1 (unblocked: astropy 7.2 available on Python 3.13).
 
 ### Sprint 0 Definition of Done
 
-- [ ] CI green on Python 3.11: lint + typecheck + test + coverage gate
-- [ ] Zero mypy errors in `smart_telescope/`
-- [ ] `FocuserPort` in ports/, mocked, wired into runner
-- [ ] `MountPort.stop()` exists and is tested
-- [ ] Coverage ≥ 80%
+- [x] CI green on Python 3.13: lint + typecheck + test + coverage gate
+- [x] Zero mypy errors in `smart_telescope/`
+- [x] `FocuserPort` in ports/, mocked, wired into runner
+- [x] `MountPort.stop()` exists and is tested
+- [x] Coverage ≥ 80% (actual: 98%)
 
 ---
 

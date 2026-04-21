@@ -74,28 +74,48 @@ The target deployment platform is **Raspberry Pi OS (64-bit)** running on a Rasp
 
 ## Installation
 
-### 1. Clone the repository
+### Raspberry Pi 5 (one-command setup)
+
+An automated installer handles Python 3.13, system libraries, the virtual environment, and package installation:
+
+```bash
+git clone https://github.com/tschoenfelder/SmartTScope.git
+cd SmartTScope
+bash scripts/install_pi.sh
+```
+
+To also install the ASTAP plate solver in the same step:
+
+```bash
+bash scripts/install_pi.sh --with-astap
+```
+
+The script verifies the installation by running the full unit and integration suite before exiting. See [`scripts/install_pi.sh`](scripts/install_pi.sh) for details.
+
+### Manual installation (Windows / Linux / macOS)
+
+#### 1. Clone the repository
 
 ```bash
 git clone https://github.com/tschoenfelder/SmartTScope.git
 cd SmartTScope
 ```
 
-### 2. Install runtime dependencies
+#### 2. Install runtime dependencies
 
 ```bash
 pip install -e .
 ```
 
-### 3. Install development dependencies
+#### 3. Install development dependencies
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-This installs the test runner, coverage tool, linter, type checker, and all supporting packages.
+This installs the test runner, coverage tool, linter, type checker, mock library, and all supporting packages.
 
-### 4. (Optional) Install ASTAP for real plate-solver tests
+#### 4. (Optional) Install ASTAP for real plate-solver tests
 
 1. Download ASTAP from [https://www.hnsky.org/astap.htm](https://www.hnsky.org/astap.htm).
 2. Install to the default location:
@@ -133,7 +153,7 @@ pytest tests/unit/ tests/integration/
 
 The coverage gate is configured in `pyproject.toml`. The suite fails if coverage drops below **80%** (currently 98%).
 
-Hardware tests are excluded from the standard run and only execute when `HW_TESTS=1` is set:
+Hardware tests are excluded from the standard run. They live in a separate workflow (`hardware.yml`) triggered manually via `workflow_dispatch`, or can be run locally with:
 
 ```bash
 HW_TESTS=1 pytest tests/hardware/
@@ -263,7 +283,11 @@ tests/
 
 .github/
   workflows/
-    ci.yml      Lint → type check → test + coverage on push / pull request
+    ci.yml        Lint → type check → test + coverage on push / pull request
+    hardware.yml  Hardware tests — manual trigger only (workflow_dispatch)
+
+scripts/
+  install_pi.sh  Automated installer for Raspberry Pi 5
 
 wiki/           Planning knowledge base (Markdown)
 docs/           Architecture reviews, milestone plan, agile plan, test strategy
@@ -273,13 +297,17 @@ docs/           Architecture reviews, milestone plan, agile plan, test strategy
 
 ## Continuous integration
 
-GitHub Actions runs on every push and pull request to `master`:
+GitHub Actions runs on every push and pull request to `master` or `main`.
+
+**`ci.yml`** — runs automatically:
 
 1. `ruff check smart_telescope/ tests/` — zero lint errors
 2. `mypy smart_telescope/` — zero type errors (strict mode)
 3. `pytest tests/unit/ tests/integration/` — all tests pass, coverage ≥ 80%
 
-Hardware tests run on demand via `workflow_dispatch`.
+**`hardware.yml`** — manual trigger only (`workflow_dispatch`):
+
+4. `HW_TESTS=1 pytest tests/hardware/` — real-hardware tests on demand
 
 ---
 

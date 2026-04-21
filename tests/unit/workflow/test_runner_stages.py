@@ -11,20 +11,15 @@ Pattern:
         runner._stage_initialize_mount(make_log())
     assert exc.value.stage == "initialize_mount"
 """
-import subprocess
-from datetime import datetime, timezone
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 import smart_telescope.workflow.runner as runner_module
-from smart_telescope.domain.session import SessionLog
 from smart_telescope.domain.states import SessionState
-from smart_telescope.ports.camera import CameraPort, Frame
-from smart_telescope.ports.mount import MountPort, MountPosition, MountState
-from smart_telescope.ports.solver import SolverPort, SolveResult
-from smart_telescope.ports.stacker import StackerPort, StackedImage
-from smart_telescope.ports.storage import StoragePort
+from smart_telescope.ports.mount import MountState
+from smart_telescope.ports.solver import SolveResult, SolverPort
+from smart_telescope.ports.stacker import StackedImage
 from smart_telescope.workflow.runner import (
     C8_BARLOW2X,
     C8_NATIVE,
@@ -35,7 +30,6 @@ from smart_telescope.workflow.runner import (
     WorkflowError,
 )
 from tests.conftest import make_log, make_unit_runner
-
 
 # ── Stage: connect ─────────────────────────────────────────────────────────
 
@@ -255,23 +249,27 @@ class TestWaitForSlew:
     def test_raises_workflow_error_on_timeout(self, mount_mock):
         mount_mock.is_slewing.return_value = True
         runner = make_unit_runner(mount=mount_mock)
-        with patch("smart_telescope.workflow.runner.time.sleep"), \
-             patch.object(runner_module, "SLEW_TIMEOUT_S", 4.0), \
-             patch.object(runner_module, "SLEW_POLL_INTERVAL_S", 2.0):
-            with pytest.raises(WorkflowError) as exc:
-                runner._wait_for_slew("goto")
+        with (
+            patch("smart_telescope.workflow.runner.time.sleep"),
+            patch.object(runner_module, "SLEW_TIMEOUT_S", 4.0),
+            patch.object(runner_module, "SLEW_POLL_INTERVAL_S", 2.0),
+            pytest.raises(WorkflowError) as exc,
+        ):
+            runner._wait_for_slew("goto")
         assert exc.value.stage == "goto"
         assert "timed out" in exc.value.reason.lower()
 
     def test_timeout_error_names_duration(self, mount_mock):
         mount_mock.is_slewing.return_value = True
         runner = make_unit_runner(mount=mount_mock)
-        with patch("smart_telescope.workflow.runner.time.sleep"), \
-             patch.object(runner_module, "SLEW_TIMEOUT_S", 4.0), \
-             patch.object(runner_module, "SLEW_POLL_INTERVAL_S", 2.0):
-            with pytest.raises(WorkflowError) as exc:
-                runner._wait_for_slew("goto")
-        assert "4" in exc.value.reason  # duration appears in message
+        with (
+            patch("smart_telescope.workflow.runner.time.sleep"),
+            patch.object(runner_module, "SLEW_TIMEOUT_S", 4.0),
+            patch.object(runner_module, "SLEW_POLL_INTERVAL_S", 2.0),
+            pytest.raises(WorkflowError) as exc,
+        ):
+            runner._wait_for_slew("goto")
+        assert "4" in exc.value.reason
 
 
 # ── Stage: recenter ────────────────────────────────────────────────────────
@@ -341,6 +339,17 @@ class TestStageRecenter:
         with pytest.raises(WorkflowError) as exc:
             runner._stage_recenter(make_log())
         assert exc.value.stage == "recenter"
+
+    def test_correction_slew_rejection_raises_workflow_error(self, mount_mock):
+        far = SolveResult(success=True, ra=6.5, dec=-7.0)
+        solver = Mock(spec=SolverPort)
+        solver.solve.return_value = far
+        mount_mock.goto.return_value = False
+        runner = make_unit_runner(solver=solver, mount=mount_mock)
+        with pytest.raises(WorkflowError) as exc:
+            runner._stage_recenter(make_log())
+        assert exc.value.stage == "recenter"
+        assert "slew" in exc.value.reason.lower() or "correction" in exc.value.reason.lower()
 
 
 # ── Stage: stack ───────────────────────────────────────────────────────────

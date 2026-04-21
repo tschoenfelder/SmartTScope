@@ -1,17 +1,22 @@
+import logging
 import math
+import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from datetime import UTC, datetime
 
 from ..domain.session import SessionLog, StageTimestamp
 from ..domain.states import SessionState
 from ..ports.camera import CameraPort
+from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort, StackFrame
 from ..ports.storage import StoragePort
+
+logger = logging.getLogger(__name__)
 
 # Target: M42 Orion Nebula
 M42_RA = 5.5881   # hours  (05h 35m 17.3s)
@@ -31,7 +36,7 @@ StateCallback = Callable[[SessionState], None]
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -61,18 +66,26 @@ class VerticalSliceRunner:
         solver: SolverPort,
         stacker: StackerPort,
         storage: StoragePort,
+        focuser: FocuserPort,
         optical_profile: OpticalProfile = C8_NATIVE,
-        on_state_change: Optional[StateCallback] = None,
+        on_state_change: StateCallback | None = None,
     ) -> None:
         self._camera = camera
         self._mount = mount
         self._solver = solver
         self._stacker = stacker
         self._storage = storage
+        self._focuser = focuser
         self._profile = optical_profile
         self._on_state_change = on_state_change
+        self._stop_event = threading.Event()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._mount.stop()
 
     def run(self) -> SessionLog:
+        self._stop_event.clear()
         log = SessionLog(
             session_id=str(uuid.uuid4()),
             target_name="M42",
@@ -100,12 +113,13 @@ class VerticalSliceRunner:
                 log.completed_at = _now()
             self._mount.disconnect()
             self._camera.disconnect()
+            self._focuser.disconnect()
 
         return log
 
     # --- pipeline ---
 
-    def _stage_pipeline(self) -> list:
+    def _stage_pipeline(self) -> list[tuple[str, Callable[[SessionLog], None]]]:
         return [
             ("connect",          self._stage_connect),
             ("initialize_mount", self._stage_initialize_mount),
@@ -123,6 +137,8 @@ class VerticalSliceRunner:
         self._start_stage(log, "connect")
         if not self._camera.connect():
             raise WorkflowError("connect", "Camera failed to connect")
+        if not self._focuser.connect():
+            raise WorkflowError("connect", "Focuser failed to connect")
         if not self._mount.connect():
             raise WorkflowError("connect", "Mount failed to connect")
         self._finish_stage(log, "connect")
@@ -132,10 +148,12 @@ class VerticalSliceRunner:
         self._start_stage(log, "initialize_mount")
         state = self._mount.get_state()
         if state == MountState.AT_LIMIT:
-            raise WorkflowError("initialize_mount", "Mount is at a hardware limit — resolve before continuing")
-        if state == MountState.PARKED:
-            if not self._mount.unpark():
-                raise WorkflowError("initialize_mount", "Unpark command rejected by mount")
+            raise WorkflowError(
+                "initialize_mount",
+                "Mount is at a hardware limit — resolve before continuing",
+            )
+        if state == MountState.PARKED and not self._mount.unpark():
+            raise WorkflowError("initialize_mount", "Unpark command rejected by mount")
         if not self._mount.enable_tracking():
             raise WorkflowError("initialize_mount", "Could not enable sidereal tracking")
         self._finish_stage(log, "initialize_mount")
@@ -156,7 +174,8 @@ class VerticalSliceRunner:
                 return
         raise WorkflowError(
             "align",
-            f"Plate solve failed after {SOLVE_MAX_ATTEMPTS} attempts — check sky conditions and polar alignment",
+            f"Plate solve failed after {SOLVE_MAX_ATTEMPTS} attempts — "
+            "check sky conditions and polar alignment",
         )
 
     def _stage_goto(self, log: SessionLog) -> None:
@@ -175,7 +194,10 @@ class VerticalSliceRunner:
             frame = self._camera.capture(10.0)
             result = self._solver.solve(frame.data, self._profile.pixel_scale_arcsec)
             if not result.success:
-                raise WorkflowError("recenter", f"Plate solve failed during recentering (iteration {i})")
+                raise WorkflowError(
+                    "recenter",
+                    f"Plate solve failed during recentering (iteration {i})",
+                )
             offset = _angular_offset_arcmin(result.ra, result.dec, M42_RA, M42_DEC)
             log.centering_offset_arcmin = round(offset, 2)
             if offset <= CENTERING_TOLERANCE_ARCMIN:
@@ -185,7 +207,10 @@ class VerticalSliceRunner:
                 return
             if i < MAX_RECENTER_ITERATIONS:
                 if not self._mount.goto(M42_RA, M42_DEC):
-                    raise WorkflowError("recenter", f"Correction slew rejected by mount (iteration {i})")
+                    raise WorkflowError(
+                        "recenter",
+                        f"Correction slew rejected by mount (iteration {i})",
+                    )
                 self._wait_for_slew("recenter")
 
         # Tolerance not met after all iterations — degrade gracefully, do not abort
@@ -242,9 +267,11 @@ class VerticalSliceRunner:
     # --- helpers ---
 
     def _wait_for_slew(self, stage: str) -> None:
-        """Poll mount until slewing stops or timeout. Raises WorkflowError on timeout."""
+        """Poll mount until slewing stops, stop requested, or timeout."""
         elapsed = 0.0
         while self._mount.is_slewing():
+            if self._stop_event.is_set():
+                raise WorkflowError(stage, "Slew cancelled by stop request")
             time.sleep(SLEW_POLL_INTERVAL_S)
             elapsed += SLEW_POLL_INTERVAL_S
             if elapsed >= SLEW_TIMEOUT_S:
@@ -252,6 +279,7 @@ class VerticalSliceRunner:
 
     def _transition(self, log: SessionLog, state: SessionState) -> None:
         log.state = state
+        logger.info("session=%s state=%s", log.session_id, state.name)
         if self._on_state_change:
             self._on_state_change(state)
 

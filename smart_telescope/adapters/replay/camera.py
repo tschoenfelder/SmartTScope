@@ -19,10 +19,7 @@ class ReplayCamera(CameraPort):
 
     def connect(self) -> bool:
         missing = [p for p in self._paths if not p.exists()]
-        if missing:
-            # Return False per port contract; caller surfaces this as a connect failure.
-            return False
-        return True
+        return not missing
 
     def capture(self, exposure_seconds: float) -> Frame:
         path = self._paths[self._index % len(self._paths)]

@@ -1,11 +1,9 @@
-from typing import Optional
-
-from ...ports.stacker import StackerPort, StackFrame, StackedImage
+from ...ports.stacker import StackedImage, StackerPort, StackFrame
 
 
 class MockStacker(StackerPort):
-    def __init__(self, fail_on_frame: Optional[int] = None) -> None:
-        self._frames: list = []
+    def __init__(self, fail_on_frame: int | None = None) -> None:
+        self._frames: list[StackFrame] = []
         self._fail_on_frame = fail_on_frame
 
     def reset(self) -> None:

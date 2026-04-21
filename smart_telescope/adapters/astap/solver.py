@@ -3,15 +3,13 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
-from ...ports.solver import SolverPort, SolveResult
+from ...ports.solver import SolveResult, SolverPort
 
-# Default install path on Windows; also checked via PATH
 _ASTAP_DEFAULT = Path("C:/Program Files/astap/astap.exe")
 
 
-def find_astap() -> Optional[str]:
+def find_astap() -> str | None:
     """Return path to astap executable, or None if not found."""
     on_path = shutil.which("astap")
     if on_path:
@@ -31,17 +29,18 @@ class AstapSolver(SolverPort):
 
     def __init__(
         self,
-        astap_path: Optional[str] = None,
+        astap_path: str | None = None,
         search_radius_deg: float = 30.0,
-        downsample: int = 0,          # 0 = auto
+        downsample: int = 0,
         timeout_seconds: int = 60,
     ) -> None:
-        self._astap = astap_path or find_astap()
-        if not self._astap:
+        resolved = astap_path or find_astap()
+        if not resolved:
             raise RuntimeError(
                 "ASTAP not found. Install from https://www.hnsky.org/astap.htm "
                 "or pass astap_path explicitly."
             )
+        self._astap: str = resolved
         self._search_radius = search_radius_deg
         self._downsample = downsample
         self._timeout = timeout_seconds
@@ -51,13 +50,13 @@ class AstapSolver(SolverPort):
             fits_path = Path(tmpdir) / "frame.fits"
             fits_path.write_bytes(frame_data)
 
-            cmd = [
+            cmd: list[str] = [
                 self._astap,
                 "-f", str(fits_path),
                 "-r", str(self._search_radius),
                 "-z", str(self._downsample),
                 "-scale", str(round(pixel_scale_hint, 4)),
-                "-o", str(fits_path.with_suffix("")),   # output prefix
+                "-o", str(fits_path.with_suffix("")),
             ]
 
             try:
@@ -76,7 +75,10 @@ class AstapSolver(SolverPort):
             if not ini_path.exists():
                 return SolveResult(
                     success=False,
-                    error=f"ASTAP produced no output (exit {proc.returncode}): {proc.stderr.strip()}",
+                    error=(
+                        f"ASTAP produced no output (exit {proc.returncode}): "
+                        f"{proc.stderr.strip()}"
+                    ),
                 )
 
             return self._parse_ini(ini_path)
@@ -86,7 +88,11 @@ class AstapSolver(SolverPort):
         cfg = configparser.ConfigParser()
         cfg.read(ini_path)
 
-        section = "Solution" if cfg.has_section("Solution") else cfg.sections()[0] if cfg.sections() else None
+        section = (
+            "Solution" if cfg.has_section("Solution")
+            else cfg.sections()[0] if cfg.sections()
+            else None
+        )
         if section is None:
             return SolveResult(success=False, error="ASTAP .ini has no sections")
 
@@ -96,15 +102,15 @@ class AstapSolver(SolverPort):
             return SolveResult(success=False, error=warning or "ASTAP: PLATESOLVED=F")
 
         try:
-            ra_deg  = float(cfg.get(section, "CRVAL1"))   # RA in degrees
-            dec_deg = float(cfg.get(section, "CRVAL2"))   # Dec in degrees
-            pa      = float(cfg.get(section, "CROTA2", fallback="0"))
+            ra_deg = float(cfg.get(section, "CRVAL1"))
+            dec_deg = float(cfg.get(section, "CRVAL2"))
+            pa = float(cfg.get(section, "CROTA2", fallback="0"))
         except (ValueError, configparser.NoOptionError) as exc:
             return SolveResult(success=False, error=f"ASTAP .ini parse error: {exc}")
 
         return SolveResult(
             success=True,
-            ra=ra_deg / 15.0,   # convert degrees → hours to match port contract
+            ra=ra_deg / 15.0,
             dec=dec_deg,
             pa=pa,
         )

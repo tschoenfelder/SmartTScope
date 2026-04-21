@@ -1,6 +1,5 @@
-from typing import List, Optional
 
-from ...ports.solver import SolverPort, SolveResult
+from ...ports.solver import SolveResult, SolverPort
 
 # M42 coordinates — default happy-path solve result
 _M42_SOLVE = SolveResult(success=True, ra=5.5881, dec=-5.391, pa=0.0)
@@ -9,7 +8,7 @@ _M42_SOLVE = SolveResult(success=True, ra=5.5881, dec=-5.391, pa=0.0)
 class MockSolver(SolverPort):
     def __init__(
         self,
-        results: Optional[List[SolveResult]] = None,
+        results: list[SolveResult] | None = None,
         always_fail: bool = False,
     ) -> None:
         if always_fail:

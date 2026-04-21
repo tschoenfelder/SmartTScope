@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -9,7 +8,7 @@ class SolveResult:
     ra: float = 0.0    # hours
     dec: float = 0.0   # degrees
     pa: float = 0.0    # position angle, degrees
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class SolverPort(ABC):

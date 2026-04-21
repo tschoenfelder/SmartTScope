@@ -7,13 +7,10 @@ and well-formed output. The _parse_ini logic is tested separately in
 test_parse_ini.py — keep the two concerns apart.
 """
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from smart_telescope.adapters.astap.solver import AstapSolver
-
 
 FAKE_ASTAP = "/fake/astap"
 FAKE_FITS = b"SIMPLE  =                    T"   # minimal FITS-ish bytes

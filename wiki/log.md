@@ -4,6 +4,26 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-21 — Sprint 0 executed: dev pipeline + TDD foundation
+
+**What changed**:
+- `pyproject.toml` — Python version pin relaxed to >=3.10; ruff target-version py310; mypy python_version 3.10; ANN excluded from test files
+- `smart_telescope/ports/focuser.py` — new `FocuserPort` ABC (connect, disconnect, move, get_position)
+- `smart_telescope/ports/mount.py` — added `stop()` abstract method
+- `smart_telescope/adapters/mock/focuser.py` — new `MockFocuser` (fail_connect, move, position)
+- `smart_telescope/adapters/mock/mount.py` — implemented `stop()`
+- `smart_telescope/workflow/runner.py` — added: structured logging (INFO per state transition), focuser wired into connect stage and cleanup, `stop()` + `threading.Event` cancellation, `_wait_for_slew` checks stop event, `run()` clears event on entry
+- `tests/unit/workflow/test_logging.py` — 6 logging tests (TDD: RED → GREEN)
+- `tests/unit/workflow/test_focuser.py` — 12 focuser tests (TDD: RED → GREEN)
+- `tests/unit/workflow/test_cancellation.py` — 6 cancellation tests (TDD: RED → GREEN)
+- `tests/unit/adapters/test_replay_camera.py` — 8 ReplayCamera unit tests
+- `.github/workflows/ci.yml` — GitHub Actions: lint → typecheck → test + coverage gate on push/PR
+- All source files ruff-clean and mypy-strict-clean
+
+**Result**: 133 tests passing, 15 skipped (hardware), 98% coverage. Ruff clean. Mypy clean. CI configured.
+
+---
+
 ## 2026-04-19 — Hardware update: camera changed to ToupTek
 
 **Pages updated**:

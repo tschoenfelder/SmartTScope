@@ -48,5 +48,8 @@ class MockMount(MountPort):
     def is_slewing(self) -> bool:
         return False  # mocks resolve instantly
 
+    def stop(self) -> None:
+        self._state = MountState.UNPARKED
+
     def disconnect(self) -> None:
         self._state = MountState.PARKED

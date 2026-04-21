@@ -9,17 +9,17 @@ Capture counts per happy-path run:
   total      : 15
 """
 
-import pytest
 
-from smart_telescope.domain.states import SessionState
-from smart_telescope.ports.solver import SolveResult
-from smart_telescope.ports.mount import MountState
-from smart_telescope.workflow.runner import VerticalSliceRunner
 from smart_telescope.adapters.mock.camera import MockCamera
+from smart_telescope.adapters.mock.focuser import MockFocuser
 from smart_telescope.adapters.mock.mount import MockMount
 from smart_telescope.adapters.mock.solver import MockSolver
 from smart_telescope.adapters.mock.stacker import MockStacker
 from smart_telescope.adapters.mock.storage import MockStorage
+from smart_telescope.domain.states import SessionState
+from smart_telescope.ports.mount import MountState
+from smart_telescope.ports.solver import SolveResult
+from smart_telescope.workflow.runner import VerticalSliceRunner
 
 EXPECTED_HAPPY_PATH_STATES = [
     SessionState.IDLE,
@@ -43,6 +43,7 @@ def make_runner(**overrides) -> tuple[VerticalSliceRunner, list[SessionState]]:
         solver=overrides.get("solver", MockSolver()),
         stacker=overrides.get("stacker", MockStacker()),
         storage=overrides.get("storage", MockStorage()),
+        focuser=overrides.get("focuser", MockFocuser()),
         on_state_change=states.append,
     )
     return runner, states
@@ -96,7 +97,10 @@ class TestHappyPath:
         runner, _ = make_runner()
         log = runner.run()
         stage_names = [ts.stage for ts in log.stage_timestamps]
-        expected = ("connect", "initialize_mount", "align", "goto", "recenter", "preview", "stack", "save")
+        expected = (
+            "connect", "initialize_mount", "align", "goto",
+            "recenter", "preview", "stack", "save",
+        )
         for name in expected:
             assert name in stage_names, f"Stage '{name}' missing from timestamps"
         for ts in log.stage_timestamps:
@@ -123,9 +127,9 @@ class TestHappyPath:
         d = storage.saved_log
         assert d["final_state"] == "SAVED"
         assert d["target"]["name"] == "M42"
-        assert d["completed_at"] is not None              # set before serialization
-        assert d["saved_artifacts"]["image"] is not None  # image path known before serialization
-        assert d["saved_artifacts"]["log"] is None        # inherent self-reference: log can't know its own path
+        assert d["completed_at"] is not None
+        assert d["saved_artifacts"]["image"] is not None
+        assert d["saved_artifacts"]["log"] is None  # self-reference: log can't know its own path
 
     def test_starts_from_parked_mount(self):
         mount = MockMount(initial_state=MountState.PARKED)

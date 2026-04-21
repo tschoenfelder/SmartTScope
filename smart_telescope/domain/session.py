@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List
 
 from .states import SessionState
 
@@ -9,7 +8,7 @@ from .states import SessionState
 class StageTimestamp:
     stage: str
     started_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 @dataclass
@@ -21,21 +20,21 @@ class SessionLog:
     optical_config: str
     started_at: datetime
     state: SessionState = SessionState.IDLE
-    stage_timestamps: List[StageTimestamp] = field(default_factory=list)
+    stage_timestamps: list[StageTimestamp] = field(default_factory=list)
     frames_integrated: int = 0
     frames_rejected: int = 0
     plate_solve_attempts: int = 0
     centering_offset_arcmin: float = 0.0
     centering_iterations: int = 0
-    centering_state: Optional[str] = None  # "CENTERED" or "CENTERING_DEGRADED"
-    warnings: List[str] = field(default_factory=list)
-    failure_stage: Optional[str] = None
-    failure_reason: Optional[str] = None
-    saved_image_path: Optional[str] = None
-    saved_log_path: Optional[str] = None
-    completed_at: Optional[datetime] = None
+    centering_state: str | None = None  # "CENTERED" or "CENTERING_DEGRADED"
+    warnings: list[str] = field(default_factory=list)
+    failure_stage: str | None = None
+    failure_reason: str | None = None
+    saved_image_path: str | None = None
+    saved_log_path: str | None = None
+    completed_at: datetime | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "session_id": self.session_id,
             "target": {

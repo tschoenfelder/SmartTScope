@@ -1,5 +1,3 @@
-from typing import Optional
-
 from ...ports.camera import CameraPort, Frame
 
 
@@ -7,7 +5,7 @@ class MockCamera(CameraPort):
     def __init__(
         self,
         fail_connect: bool = False,
-        fail_on_capture: Optional[int] = None,
+        fail_on_capture: int | None = None,
     ) -> None:
         self._fail_connect = fail_connect
         self._fail_on_capture = fail_on_capture

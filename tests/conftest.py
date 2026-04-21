@@ -6,17 +6,17 @@ Individual tests override specific attributes for the scenario under test.
 Hand-rolled fakes (MockCamera, MockMount, …) stay in tests/integration/ — they
 are not used in unit tests.
 """
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
 
 from smart_telescope.domain.session import SessionLog
-from smart_telescope.domain.states import SessionState
 from smart_telescope.ports.camera import CameraPort, Frame
+from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
-from smart_telescope.ports.solver import SolverPort, SolveResult
-from smart_telescope.ports.stacker import StackerPort, StackedImage
+from smart_telescope.ports.solver import SolveResult, SolverPort
+from smart_telescope.ports.stacker import StackedImage, StackerPort
 from smart_telescope.ports.storage import StoragePort
 from smart_telescope.workflow.runner import (
     C8_NATIVE,
@@ -24,7 +24,6 @@ from smart_telescope.workflow.runner import (
     M42_RA,
     VerticalSliceRunner,
 )
-
 
 # ── Primitive builders ─────────────────────────────────────────────────────
 
@@ -44,7 +43,7 @@ def make_log() -> SessionLog:
         target_ra=M42_RA,
         target_dec=M42_DEC,
         optical_config=C8_NATIVE.name,
-        started_at=datetime(2026, 4, 21, 21, 0, 0, tzinfo=timezone.utc),
+        started_at=datetime(2026, 4, 21, 21, 0, 0, tzinfo=UTC),
     )
 
 
@@ -97,6 +96,14 @@ def storage_mock() -> Mock:
     return sto
 
 
+@pytest.fixture()
+def focuser_mock() -> Mock:
+    foc = Mock(spec=FocuserPort)
+    foc.connect.return_value = True
+    foc.get_position.return_value = 0
+    return foc
+
+
 # ── Runner factory ─────────────────────────────────────────────────────────
 
 
@@ -106,6 +113,7 @@ def make_unit_runner(
     solver: Mock | None = None,
     stacker: Mock | None = None,
     storage: Mock | None = None,
+    focuser: Mock | None = None,
     optical_profile=C8_NATIVE,
 ) -> VerticalSliceRunner:
     """
@@ -139,6 +147,10 @@ def make_unit_runner(
             "has_free_space.return_value": True,
             "save_image.return_value": "/data/result.png",
             "save_log.return_value": "/data/log.json",
+        }),
+        focuser=focuser if focuser is not None else Mock(spec=FocuserPort, **{
+            "connect.return_value": True,
+            "get_position.return_value": 0,
         }),
         optical_profile=optical_profile,
     )

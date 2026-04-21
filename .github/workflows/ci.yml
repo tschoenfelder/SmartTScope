@@ -8,7 +8,7 @@ on:
 
 jobs:
   quality:
-    name: Lint · Type · Test
+    name: Lint + Type + Test
     runs-on: ubuntu-latest
 
     steps:

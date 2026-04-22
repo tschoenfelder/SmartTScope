@@ -1,7 +1,5 @@
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
-
-import numpy as np
 
 from ...domain.frame import FitsFrame
 from ...ports.camera import CameraPort
@@ -28,9 +26,8 @@ class ReplayCamera(CameraPort):
     def capture(self, exposure_seconds: float) -> FitsFrame:
         path = self._paths[self._index % len(self._paths)]
         self._index += 1
-        data = path.read_bytes()
-        pixels: np.ndarray[Any, np.dtype[Any]] = np.zeros((1, 1), dtype=np.float32)
-        return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure_seconds, data=data)
+        frame = FitsFrame.from_fits_bytes(path.read_bytes())
+        return replace(frame, exposure_seconds=exposure_seconds)
 
     def disconnect(self) -> None:
         pass

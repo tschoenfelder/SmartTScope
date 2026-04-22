@@ -1,4 +1,9 @@
-from ...ports.camera import CameraPort, Frame
+from typing import Any
+
+import numpy as np
+
+from ...domain.frame import FitsFrame
+from ...ports.camera import CameraPort
 
 
 class MockCamera(CameraPort):
@@ -14,11 +19,12 @@ class MockCamera(CameraPort):
     def connect(self) -> bool:
         return not self._fail_connect
 
-    def capture(self, exposure_seconds: float) -> Frame:
+    def capture(self, exposure_seconds: float) -> FitsFrame:
         self._capture_count += 1
         if self._fail_on_capture is not None and self._capture_count == self._fail_on_capture:
             raise RuntimeError(f"MockCamera: capture failed (call #{self._capture_count})")
-        return Frame(data=b"MOCK_FITS", width=3096, height=2080, exposure_seconds=exposure_seconds)
+        pixels: np.ndarray[Any, np.dtype[Any]] = np.zeros((2080, 3096), dtype=np.float32)
+        return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure_seconds)
 
     def disconnect(self) -> None:
         pass

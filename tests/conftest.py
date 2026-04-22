@@ -7,12 +7,15 @@ Hand-rolled fakes (MockCamera, MockMount, …) stay in tests/integration/ — th
 are not used in unit tests.
 """
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
+from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.domain.session import SessionLog
-from smart_telescope.ports.camera import CameraPort, Frame
+from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
 from smart_telescope.ports.solver import SolveResult, SolverPort
@@ -28,8 +31,9 @@ from smart_telescope.workflow.runner import (
 # ── Primitive builders ─────────────────────────────────────────────────────
 
 
-def make_frame(exposure: float = 5.0) -> Frame:
-    return Frame(data=b"FAKE_FITS", width=3096, height=2080, exposure_seconds=exposure)
+def make_frame(exposure: float = 5.0) -> FitsFrame:
+    pixels: np.ndarray[Any, np.dtype[Any]] = np.zeros((2080, 3096), dtype=np.float32)
+    return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure, data=b"FAKE_FITS")
 
 
 def make_stacked(n: int = 1) -> StackedImage:

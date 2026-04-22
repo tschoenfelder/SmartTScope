@@ -1,6 +1,10 @@
 from pathlib import Path
+from typing import Any
 
-from ...ports.camera import CameraPort, Frame
+import numpy as np
+
+from ...domain.frame import FitsFrame
+from ...ports.camera import CameraPort
 
 
 class ReplayCamera(CameraPort):
@@ -21,11 +25,12 @@ class ReplayCamera(CameraPort):
         missing = [p for p in self._paths if not p.exists()]
         return not missing
 
-    def capture(self, exposure_seconds: float) -> Frame:
+    def capture(self, exposure_seconds: float) -> FitsFrame:
         path = self._paths[self._index % len(self._paths)]
         self._index += 1
         data = path.read_bytes()
-        return Frame(data=data, width=0, height=0, exposure_seconds=exposure_seconds)
+        pixels: np.ndarray[Any, np.dtype[Any]] = np.zeros((1, 1), dtype=np.float32)
+        return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure_seconds, data=data)
 
     def disconnect(self) -> None:
         pass

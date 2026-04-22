@@ -1,13 +1,6 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
-
-@dataclass
-class Frame:
-    data: bytes
-    width: int
-    height: int
-    exposure_seconds: float
+from ..domain.frame import FitsFrame
 
 
 class CameraPort(ABC):
@@ -15,7 +8,7 @@ class CameraPort(ABC):
     def connect(self) -> bool: ...
 
     @abstractmethod
-    def capture(self, exposure_seconds: float) -> Frame: ...
+    def capture(self, exposure_seconds: float) -> FitsFrame: ...
 
     @abstractmethod
     def disconnect(self) -> None: ...

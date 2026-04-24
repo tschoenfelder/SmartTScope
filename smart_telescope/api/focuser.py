@@ -33,13 +33,17 @@ def focuser_status(focuser: FocuserPort = Depends(deps.get_focuser)) -> FocuserS
 
 
 @router.post("/move")
-def focuser_move(body: MoveRequest, focuser: FocuserPort = Depends(deps.get_focuser)) -> dict[str, bool]:
+def focuser_move(
+    body: MoveRequest, focuser: FocuserPort = Depends(deps.get_focuser)
+) -> dict[str, bool]:
     focuser.move(body.position)
     return {"ok": True}
 
 
 @router.post("/nudge")
-def focuser_nudge(body: NudgeRequest, focuser: FocuserPort = Depends(deps.get_focuser)) -> dict[str, int]:
+def focuser_nudge(
+    body: NudgeRequest, focuser: FocuserPort = Depends(deps.get_focuser)
+) -> dict[str, int]:
     current = focuser.get_position()
     target = current + body.delta
     focuser.move(target)

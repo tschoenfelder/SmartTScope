@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from astropy.io import fits  # type: ignore[import-untyped]
+from astropy.io import fits
 
 
 @dataclass(frozen=True)

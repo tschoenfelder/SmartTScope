@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -27,10 +29,8 @@ def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
     state = mount.get_state()
     pos = None
     if state not in (MountState.PARKED, MountState.UNKNOWN):
-        try:
+        with contextlib.suppress(Exception):
             pos = mount.get_position()
-        except Exception:
-            pass
     return MountStatus(
         state=state.name.lower(),
         ra=pos.ra if pos else None,

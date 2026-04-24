@@ -10,7 +10,6 @@ from astropy.io import fits
 from smart_telescope.adapters.simulator.camera import SimulatorCamera
 from smart_telescope.domain.frame import FitsFrame
 
-
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 

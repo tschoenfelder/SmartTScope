@@ -1,11 +1,12 @@
 """Unit tests for mount API endpoints — no hardware required."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 
-from smart_telescope.app import app
+import pytest
+from fastapi.testclient import TestClient
+
 from smart_telescope.api import deps
+from smart_telescope.app import app
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
 
 client = TestClient(app)
@@ -170,7 +171,9 @@ class TestMountGoto:
         m = _mock_mount()
         _inject(m)
         client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39})
-        m.goto.assert_called_once_with(pytest.approx(5.58, abs=0.01), pytest.approx(-5.39, abs=0.01))
+        m.goto.assert_called_once_with(
+            pytest.approx(5.58, abs=0.01), pytest.approx(-5.39, abs=0.01)
+        )
 
     def test_returns_422_when_body_missing(self) -> None:
         _inject(_mock_mount())

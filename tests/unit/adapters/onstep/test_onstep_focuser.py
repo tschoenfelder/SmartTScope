@@ -42,7 +42,9 @@ class TestConnect:
         sent = b"".join(c[0][0] for c in instance.write.call_args_list)
         assert b":FA#" in sent
 
-    def test_connect_returns_false_when_focuser_not_active(self, mocker: pytest.MonkeyPatch) -> None:
+    def test_connect_returns_false_when_focuser_not_active(
+        self, mocker: pytest.MonkeyPatch
+    ) -> None:
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.focuser.serial.Serial")
         mock_serial.return_value.readline.return_value = b"0"
         assert _make_focuser().connect() is False

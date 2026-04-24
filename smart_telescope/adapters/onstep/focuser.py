@@ -44,7 +44,7 @@ class OnStepFocuser(FocuserPort):
         if self._serial is None:
             return ""
         self._serial.write(cmd.encode())
-        return self._serial.readline().decode(errors="replace").rstrip("#\r\n")
+        return bytes(self._serial.readline()).decode(errors="replace").rstrip("#\r\n")
 
     def _send_no_reply(self, cmd: str) -> None:
         if self._serial is not None:

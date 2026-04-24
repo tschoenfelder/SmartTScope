@@ -1,11 +1,12 @@
 """Unit tests for focuser API endpoints — no hardware required."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import MagicMock
 
-from smart_telescope.app import app
+import pytest
+from fastapi.testclient import TestClient
+
 from smart_telescope.api import deps
+from smart_telescope.app import app
 from smart_telescope.ports.focuser import FocuserPort
 
 client = TestClient(app)

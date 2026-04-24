@@ -14,7 +14,9 @@ from smart_telescope.ports.mount import MountPosition, MountState
 from .fake_serial import FakeOnStepSerial
 
 
-def _mount(state: str = "parked", ra: float = 0.0, dec: float = 0.0) -> tuple[OnStepMount, FakeOnStepSerial]:
+def _mount(
+    state: str = "parked", ra: float = 0.0, dec: float = 0.0
+) -> tuple[OnStepMount, FakeOnStepSerial]:
     fake = FakeOnStepSerial(initial_state=state, initial_ra=ra, initial_dec=dec)
     mount = OnStepMount(port="/dev/ttyUSB0")
     mount._serial = fake

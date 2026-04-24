@@ -6,7 +6,7 @@ import threading
 from typing import Any
 
 import numpy as np
-from astropy.io import fits  # type: ignore[import-untyped]
+from astropy.io import fits
 
 from ...domain.frame import FitsFrame
 from ...ports.camera import CameraPort
@@ -50,7 +50,7 @@ class ToupcamCamera(CameraPort):
 
     def connect(self) -> bool:
         try:
-            import toupcam as _tc  # type: ignore[import]
+            import toupcam as _tc
         except ImportError:
             return False
 

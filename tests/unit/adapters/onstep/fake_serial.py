@@ -15,6 +15,8 @@ State transitions:
 
 from __future__ import annotations
 
+import contextlib
+
 from smart_telescope.adapters.onstep.mount import (
     _format_dec,
     _format_ra,
@@ -92,18 +94,14 @@ class FakeOnStepSerial:
 
         if cmd.startswith(":Sr"):
             ra_str = cmd[3:].rstrip("#")
-            try:
+            with contextlib.suppress(ValueError, IndexError):
                 self._target_ra = _parse_ra(ra_str)
-            except (ValueError, IndexError):
-                pass
             return b"1"
 
         if cmd.startswith(":Sd"):
             dec_str = cmd[3:].rstrip("#")
-            try:
+            with contextlib.suppress(ValueError, IndexError):
                 self._target_dec = _parse_dec(dec_str)
-            except (ValueError, IndexError):
-                pass
             return b"1"
 
         if cmd == ":MS#":

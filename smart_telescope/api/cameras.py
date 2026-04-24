@@ -39,7 +39,7 @@ class CameraScanResult(BaseModel):
 @router.get("/cameras", response_model=CameraScanResult)
 def scan_cameras() -> CameraScanResult:
     try:
-        import toupcam  # type: ignore[import]
+        import toupcam
     except ImportError:
         return CameraScanResult(sdk_available=False, cameras=[])
 

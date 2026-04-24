@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import serial
 
 from ...ports.mount import MountPort, MountPosition, MountState
@@ -69,7 +71,7 @@ class OnStepMount(MountPort):
         if self._serial is None:
             return b""
         self._serial.write(cmd.encode())
-        return self._serial.readline()
+        return bytes(self._serial.readline())
 
     def _send(self, cmd: str) -> str:
         return self._raw_send(cmd).decode(errors="replace").rstrip("#\r\n")
@@ -115,7 +117,5 @@ class OnStepMount(MountPort):
 
     def stop(self) -> None:
         if self._serial is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._serial.write(b":Q#")
-            except Exception:
-                pass

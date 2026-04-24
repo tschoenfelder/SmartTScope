@@ -447,7 +447,7 @@ class TestStop:
         mount.stop()
 
     def test_stop_returns_none(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         mount = _make_mount()
         mount.connect()
         result = mount.stop()

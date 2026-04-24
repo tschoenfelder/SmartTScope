@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 
 from smart_telescope.adapters.touptek.camera import (
+    _EVENT_DISCONNECTED,
+    _EVENT_ERROR,
+    _EVENT_IMAGE,
     ToupcamCamera,
     _camera_event,
-    _EVENT_IMAGE,
-    _EVENT_ERROR,
-    _EVENT_DISCONNECTED,
 )
 from smart_telescope.domain.frame import FitsFrame
 

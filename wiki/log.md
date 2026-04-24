@@ -4,6 +4,27 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-24 — M1 API complete: session/connect, solver validation, simulator wiring
+
+**What changed**:
+
+- `smart_telescope/api/session.py` (NEW) — `POST /api/session/connect`:
+  - Returns `{camera, mount, focuser, solver}` per-device `{status, error, action}`
+  - Always HTTP 200; named error + suggested action for each failed device
+  - `solver` field checks ASTAP executable and G17 catalog presence
+- `smart_telescope/api/solver.py` (NEW) — `GET /api/solver/status`:
+  - Returns `{astap, catalog, ready}` — ASTAP path, catalog dir, boolean readiness
+- `smart_telescope/adapters/astap/solver.py` — added `find_g17_catalog(astap_exe)`:
+  - Searches executable directory first, then `~/.astap`, `/usr/share/astap`, `C:/ProgramData/astap`
+  - Detects G17 catalog by presence of `.290` extension files
+- `smart_telescope/api/deps.py` — added `SIMULATOR_FITS_DIR` env var:
+  - Priority: `ONSTEP_PORT` → real hardware; `SIMULATOR_FITS_DIR` → SimulatorCamera + SimulatorMount + SimulatorFocuser; neither → mocks
+- Tests: 437 passing, 89% coverage
+
+**Result**: All three M1 API stories complete. Remaining M1 gate items require hardware (SP-1/SP-2 on Pi).
+
+---
+
 ## 2026-04-24 — SimulatorMount and SimulatorFocuser
 
 **What changed**:

@@ -8,9 +8,9 @@ A user powers on, connects via an app, selects a target, and the system autonomo
 
 ## Release state
 
-**v0.1.0 — Sprint 1/2 in progress**
+**v0.1.0 — Sprint 1/2 in progress (M1 API complete)**
 
-380 unit tests, 86% coverage, CI green. The core 8-stage session pipeline runs end-to-end. Real hardware adapters for the OnStep mount and focuser are complete. A ToupTek camera adapter is written and unit-tested (hardware validation pending). A FastAPI REST layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached.
+437 unit tests, 89% coverage, CI green. The core 8-stage session pipeline runs end-to-end. Real hardware adapters for the OnStep mount and focuser are complete. A ToupTek camera adapter is written and unit-tested (hardware validation pending). A FastAPI REST layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached. The M1 session connect API (`POST /api/session/connect`) validates camera, mount, focuser, and solver readiness in a single call.
 
 ---
 
@@ -242,6 +242,8 @@ A FastAPI application (`app.py`) runs on uvicorn and provides:
 | `GET /api/focuser/status` | Position, moving flag |
 | `POST /api/focuser/move` / `nudge` / `stop` | Focuser commands |
 | `GET /api/cameras` | Enumerate connected ToupTek cameras via SDK |
+| `POST /api/session/connect` | Connect all devices; returns per-device `{status, error, action}` |
+| `GET /api/solver/status` | Check ASTAP executable and G17 catalog presence |
 
 Set `ONSTEP_PORT=/dev/ttyUSB0` to route API calls to real hardware; omit it to use simulator adapters.
 
@@ -296,7 +298,6 @@ When ASTAP and fixture FITS files are present, the real solver adapter replaces 
 
 The following are planned for future milestones and are **not** yet implemented:
 
-- `POST /session/connect` unified connect endpoint (M1 deliverable)
 - WebSocket live preview push (M3)
 - Live stacking with real frame registration (astroalign / ccdproc)
 - Autofocus (M6 — Season 2)
@@ -335,10 +336,12 @@ smart_telescope/
     astap/        ASTAP plate-solver subprocess adapter
     replay/       FITS replay camera for integration testing
   api/
-    deps.py       Singleton dependency providers; ONSTEP_PORT env var selects hardware
+    deps.py       Singleton dependency providers; ONSTEP_PORT / SIMULATOR_FITS_DIR env vars
     mount.py      GET /api/mount/status, POST /api/mount/{unpark,track,stop,goto}
     focuser.py    GET /api/focuser/status, POST /api/focuser/{move,nudge,stop}
     cameras.py    GET /api/cameras — ToupTek SDK camera enumeration
+    session.py    POST /api/session/connect — per-device {status, error, action}
+    solver.py     GET /api/solver/status — ASTAP + G17 catalog presence check
     event_log.py  Thread-safe circular log for serial command tracing
   app.py          FastAPI application factory
   static/

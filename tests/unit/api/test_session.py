@@ -1,5 +1,6 @@
 """Unit tests for POST /api/session/connect."""
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +10,25 @@ from smart_telescope.app import app
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort
+
+
+def _patch_solver_ok(astap: str = "/usr/bin/astap", catalog: Path | None = None):
+    """Patch solver checks to report ready — avoids ASTAP installation dependency."""
+    if catalog is None:
+        catalog = Path("/tmp/astap_catalog")
+    return patch.multiple(
+        "smart_telescope.api.session",
+        _find_astap=lambda: astap,
+        _find_catalog=lambda exe: catalog,
+    )
+
+
+def _patch_solver_missing() -> object:
+    return patch.multiple(
+        "smart_telescope.api.session",
+        _find_astap=lambda: None,
+        _find_catalog=lambda exe: None,
+    )
 
 client = TestClient(app)
 
@@ -210,3 +230,57 @@ class TestAllFail:
         )
         r = client.post("/api/session/connect")
         assert r.status_code == 200
+
+
+# ── solver validation ─────────────────────────────────────────────────────────
+
+
+class TestSolverValidation:
+    def test_solver_field_present_in_response(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_solver_ok():
+            body = client.post("/api/session/connect").json()
+        assert "solver" in body
+
+    def test_solver_ok_when_astap_and_catalog_found(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_solver_ok():
+            body = client.post("/api/session/connect").json()
+        assert body["solver"]["status"] == "ok"
+
+    def test_solver_error_when_astap_missing(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_solver_missing():
+            body = client.post("/api/session/connect").json()
+        assert body["solver"]["status"] == "error"
+
+    def test_solver_error_has_message_when_astap_missing(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_solver_missing():
+            body = client.post("/api/session/connect").json()
+        assert body["solver"]["error"]
+
+    def test_solver_error_has_action_when_astap_missing(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_solver_missing():
+            body = client.post("/api/session/connect").json()
+        assert body["solver"]["action"]
+
+    def test_solver_error_when_catalog_missing(self, tmp_path: Path) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with patch.multiple(
+            "smart_telescope.api.session",
+            _find_astap=lambda: "/usr/bin/astap",
+            _find_catalog=lambda exe: None,
+        ):
+            body = client.post("/api/session/connect").json()
+        assert body["solver"]["status"] == "error"
+        assert body["solver"]["action"]
+
+    def test_devices_still_checked_when_solver_missing(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_solver_missing():
+            body = client.post("/api/session/connect").json()
+        assert body["camera"]["status"] == "ok"
+        assert body["mount"]["status"] == "ok"
+        assert body["focuser"]["status"] == "ok"

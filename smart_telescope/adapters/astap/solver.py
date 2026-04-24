@@ -8,6 +8,12 @@ from ...ports.solver import SolveResult, SolverPort
 
 _ASTAP_DEFAULT = Path("C:/Program Files/astap/astap.exe")
 
+_CATALOG_SEARCH_DIRS: list[Path] = [
+    Path.home() / ".astap",
+    Path("/usr/share/astap"),
+    Path("C:/ProgramData/astap"),
+]
+
 
 def find_astap() -> str | None:
     """Return path to astap executable, or None if not found."""
@@ -16,6 +22,18 @@ def find_astap() -> str | None:
         return on_path
     if _ASTAP_DEFAULT.exists():
         return str(_ASTAP_DEFAULT)
+    return None
+
+
+def find_g17_catalog(astap_exe: str | None = None) -> Path | None:
+    """Return directory containing G17 catalog (.290 files), or None."""
+    search: list[Path] = []
+    if astap_exe:
+        search.append(Path(astap_exe).parent)
+    search.extend(_CATALOG_SEARCH_DIRS)
+    for d in search:
+        if d.is_dir() and any(d.glob("*.290")):
+            return d
     return None
 
 

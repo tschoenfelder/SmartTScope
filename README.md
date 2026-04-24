@@ -8,9 +8,9 @@ A user powers on, connects via an app, selects a target, and the system autonomo
 
 ## Release state
 
-**v0.1.0 — Sprint 0 complete (foundation + TDD pipeline)**
+**v0.1.0 — Sprint 1/2 in progress**
 
-The dev pipeline is fully operational on Python 3.13: lint (ruff), type checking (mypy strict), 133 unit and integration tests, 98% coverage, and GitHub Actions CI on every push. The core 8-stage session pipeline runs end-to-end using mock adapters. Real mount, camera, and live-stacking adapters are developed from Sprint 1.
+380 unit tests, 86% coverage, CI green. The core 8-stage session pipeline runs end-to-end. Real hardware adapters for the OnStep mount and focuser are complete. A ToupTek camera adapter is written and unit-tested (hardware validation pending). A FastAPI REST layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached.
 
 ---
 
@@ -55,9 +55,11 @@ The dev pipeline is fully operational on Python 3.13: lint (ruff), type checking
 | pytest-asyncio | 0.23 | Async endpoint tests |
 | pytest-cov | 5.0 | Coverage reporting and gate |
 | pytest-mock | 3.15 | Mock fixtures |
+| httpx | 0.27 | FastAPI test client |
 | ruff | 0.4 | Linting and formatting |
 | mypy | 1.10 | Static type checking (strict mode) |
 | pyserial | 3.5 | OnStep serial adapter |
+| build | 1.0 | Wheel builder (`scripts/build_dist.py`) |
 
 ### Plate solver (optional — required for real-solver tests)
 
@@ -91,6 +93,30 @@ bash scripts/install_pi.sh --with-astap
 ```
 
 The script verifies the installation by running the full unit and integration suite before exiting. See [`scripts/install_pi.sh`](scripts/install_pi.sh) for details.
+
+### Install from a pre-built wheel (fastest)
+
+A wheel ships all `smart_telescope` modules and registers the `smarttscope` CLI entry point. Build one with the build agent, then copy it to any target machine:
+
+```bash
+# On the development machine
+python scripts/build_dist.py
+
+# On the target machine (Pi or otherwise)
+pip install dist/smart_telescope-0.1.0-py3-none-any.whl
+```
+
+The script also writes `requirements.txt` with the five runtime packages, useful for a clean venv:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install dist/smart_telescope-0.1.0-py3-none-any.whl
+```
+
+See `scripts/build_dist.py --help` for options (`--sdist`, `--check`).
+
+---
 
 ### Manual installation (Windows / Linux / macOS)
 
@@ -151,7 +177,7 @@ Strict mode. Zero errors required.
 pytest tests/unit/ tests/integration/
 ```
 
-The coverage gate is configured in `pyproject.toml`. The suite fails if coverage drops below **80%** (currently 98%).
+The coverage gate is configured in `pyproject.toml`. The suite fails if coverage drops below **80%** (currently 86%).
 
 Hardware tests are excluded from the standard run. They live in a separate workflow (`hardware.yml`) triggered manually via `workflow_dispatch`, or can be run locally with:
 
@@ -182,9 +208,9 @@ See `tests/fixtures/README.md` for FITS acquisition guidance.
 
 ## What this release supports
 
-### Session pipeline (fully mocked, end-to-end)
+### Session pipeline (end-to-end)
 
-The v0.1.0 vertical slice runs the complete 8-stage session pipeline:
+The complete 8-stage session pipeline runs with mock, simulator, or real hardware adapters:
 
 ```
 IDLE → CONNECTED → MOUNT_READY → ALIGNED → SLEWED → CENTERED
@@ -203,6 +229,39 @@ Each stage is explicit. No stage is skipped. A failure surfaces a named error an
 | Live preview | 5-second auto-stretched JPEG frames pushed to client |
 | Live stacking | 10 × 30-second frames, registered and mean-stacked; client updated after each frame |
 | Save | PNG output + JSON session log with full metadata |
+
+### REST API and control panel
+
+A FastAPI application (`app.py`) runs on uvicorn and provides:
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Static HTML control panel (auto-refreshes on load) |
+| `GET /api/mount/status` | RA, Dec, state |
+| `POST /api/mount/unpark` / `track` / `stop` / `goto` | Mount commands |
+| `GET /api/focuser/status` | Position, moving flag |
+| `POST /api/focuser/move` / `nudge` / `stop` | Focuser commands |
+| `GET /api/cameras` | Enumerate connected ToupTek cameras via SDK |
+
+Set `ONSTEP_PORT=/dev/ttyUSB0` to route API calls to real hardware; omit it to use simulator adapters.
+
+### Hardware adapters
+
+| Adapter | Status |
+|---|---|
+| `OnStepMount` | Complete — LX200 serial protocol; connect, goto, sync, track, stop, park |
+| `OnStepFocuser` | Complete — F-command set; move (absolute), is_moving, stop |
+| `ToupcamCamera` | Written and unit-tested; hardware validation pending hardware access |
+
+### Simulator adapters
+
+Three simulator adapters let the full app run without hardware attached. Each supports a configurable delay parameter so the app loop can be exercised in real time:
+
+| Adapter | Constructor param | Behaviour |
+|---|---|---|
+| `SimulatorCamera(data_dir, speed=0.0)` | `speed` | Serves real FITS frames from disk; `speed=1.0` paces delivery to match exposure time |
+| `SimulatorMount(slew_time_s=0.0)` | `slew_time_s` | Simulates SLEWING → TRACKING transition after the configured delay |
+| `SimulatorFocuser(move_time_s=0.0)` | `move_time_s` | Simulates focuser travel; `is_moving()` returns True until the timer fires |
 
 ### Emergency stop
 
@@ -226,28 +285,27 @@ When ASTAP and fixture FITS files are present, the real solver adapter replaces 
 - Failure detection on unsolvable (blank/noise) frames
 - Pixel-scale hint passing (~0.38 arcsec/px for C8 native)
 
-### Replay camera adapter
+### Simulator and replay camera adapters
 
-A FITS-replay camera adapter serves pre-recorded frames from disk, enabling integration tests without live hardware.
+- **SimulatorCamera** — serves real FITS frames from a directory; configurable delivery speed
+- **ReplayCamera** — serves an explicit ordered list of frames for deterministic integration tests
 
 ---
 
 ## What this release does not support
 
-The following are planned for future milestones and are **not** implemented in v0.1.0:
+The following are planned for future milestones and are **not** yet implemented:
 
-- Real camera driver (ToupTek SDK / INDI)
-- Real mount driver (OnStep LX200 serial protocol)
-- Real focuser driver
+- `POST /session/connect` unified connect endpoint (M1 deliverable)
+- WebSocket live preview push (M3)
 - Live stacking with real frame registration (astroalign / ccdproc)
-- `FitsFrame` typed domain object (deferred to Sprint 1)
-- Autofocus
+- Autofocus (M6 — Season 2)
 - Optical profile switching at runtime
 - Multi-target or multi-night sessions
 - Mosaic mode
 - Meridian flip handling
 - Error recovery beyond surface-and-halt
-- Mobile or web client UI
+- Native mobile client (iOS / Android)
 - Scheduled observations
 - Share / export workflow
 
@@ -257,29 +315,43 @@ The following are planned for future milestones and are **not** implemented in v
 
 ```
 smart_telescope/
-  domain/       SessionState enum, SessionLog model
-  ports/        Abstract interfaces
-    camera.py   CameraPort — connect, capture, disconnect
-    focuser.py  FocuserPort — connect, move, get_position, disconnect
-    mount.py    MountPort — connect, goto, sync, stop, disconnect
-    solver.py   SolverPort — solve(frame, pixel_scale) → SolveResult
-    stacker.py  StackerPort — reset, add_frame, get_current_stack
-    storage.py  StoragePort — save_image, save_log, has_free_space
+  domain/         SessionState enum, FitsFrame, SessionLog
+  ports/          Abstract interfaces
+    camera.py     CameraPort — connect, capture, disconnect
+    focuser.py    FocuserPort — connect, move, get_position, is_moving, stop
+    mount.py      MountPort — connect, goto, sync, stop, disconnect
+    solver.py     SolverPort — solve(frame, pixel_scale) → SolveResult
+    stacker.py    StackerPort — reset, add_frame, get_current_stack
+    storage.py    StoragePort — save_image, save_log, has_free_space
   workflow/
-    runner.py   VerticalSliceRunner — 8-stage pipeline, stop(), logging
+    _types.py     WorkflowError, OpticalProfile, constants
+    stages.py     Pure stage functions (connect, align, goto, recenter, …)
+    runner.py     VerticalSliceRunner — orchestration, stop(), logging
   adapters/
-    mock/       Deterministic fakes for all ports (camera, mount, focuser, …)
-    astap/      Real ASTAP plate-solver adapter
-    replay/     FITS replay camera for integration testing
+    mock/         Deterministic fakes for all ports (unit tests)
+    simulator/    Time-simulated adapters — SimulatorCamera, SimulatorMount, SimulatorFocuser
+    onstep/       Real OnStep V4 adapters — OnStepMount, OnStepFocuser (serial)
+    touptek/      ToupcamCamera — ToupTek SDK, RAW-16, software trigger
+    astap/        ASTAP plate-solver subprocess adapter
+    replay/       FITS replay camera for integration testing
+  api/
+    deps.py       Singleton dependency providers; ONSTEP_PORT env var selects hardware
+    mount.py      GET /api/mount/status, POST /api/mount/{unpark,track,stop,goto}
+    focuser.py    GET /api/focuser/status, POST /api/focuser/{move,nudge,stop}
+    cameras.py    GET /api/cameras — ToupTek SDK camera enumeration
+    event_log.py  Thread-safe circular log for serial command tracing
+  app.py          FastAPI application factory
+  static/
+    index.html    Mount + focuser control panel; auto-refreshes on load
 
 tests/
-  unit/         Stage-isolation tests — Mock(spec=Port), fast, no pipeline
-    workflow/   Runner stage tests, logging tests, cancellation tests
-    adapters/   Adapter unit tests (ASTAP subprocess, ReplayCamera)
-    domain/     SessionLog serialisation tests
-  integration/  Full pipeline tests with hand-rolled fakes
-  hardware/     Real-hardware tests (skipped unless HW_TESTS=1)
-  fixtures/     Place FITS frames here (see fixtures/README.md)
+  unit/           Stage-isolation tests — fast, no real I/O
+    workflow/     Runner, stage, logging, cancellation tests
+    adapters/     Adapter unit tests (OnStep, ToupTek, simulator, replay)
+    api/          FastAPI endpoint tests (httpx TestClient)
+  integration/    Full pipeline tests with hand-rolled fakes
+  hardware/       Real-hardware tests (skipped unless HW_TESTS=1)
+  fixtures/       Place FITS frames here (see fixtures/README.md)
 
 .github/
   workflows/
@@ -287,6 +359,7 @@ tests/
     hardware.yml  Hardware tests — manual trigger only (workflow_dispatch)
 
 scripts/
+  build_dist.py  Build agent — generates requirements.txt and wheel
   install_pi.sh  Automated installer for Raspberry Pi 5
 
 wiki/           Planning knowledge base (Markdown)

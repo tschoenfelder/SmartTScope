@@ -4,7 +4,7 @@
 
 **Sources**: SmartTelescope.md
 
-**Last updated**: 2026-04-19
+**Last updated**: 2026-04-23
 
 ---
 
@@ -27,12 +27,15 @@ The SmartTelescope application is built around a specific hardware stack rather 
 
 ### ToupTek Camera
 - Imaging sensor for frame capture and stacking
-- Driver interface: INDI or ToupTek SDK
+- Driver interface: official ToupTek SDK (`toupcam.py` + native library) — see [[touptek-sdk]]
+- Operates in software-trigger RAW-16 mode; calibration (flat/dark) handled by our pipeline, not the SDK
 - Pixel size and sensor dimensions determine pixel scale per optical profile
-- Replaces ZWO ASI as the target sensor platform
+- Python adapter: `smart_telescope/adapters/touptek/camera.py` implements `CameraPort`
 
 ### OnStep V4 Mount Controller
 - Open-source GoTo mount controller
+- Protocol: LX200 serial over `/dev/ttyUSB_ONSTEP0` at 9600 baud — see [[onstep-protocol]]
+- Controls both mount (slew, track, park) and focuser (position, move, temperature compensation) via the same serial port
 - Must be connected, initialized, unparked, and tracked via app at session start
 - Handles slewing, tracking, and mount limits
 - Meridian flip detection and execution falls to this layer (Full tier)

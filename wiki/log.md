@@ -4,6 +4,93 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-24 — SimulatorMount and SimulatorFocuser
+
+**What changed**:
+
+- `smart_telescope/adapters/simulator/mount.py` (NEW) — `SimulatorMount(slew_time_s=0.0)`:
+  - `connect()` always returns True
+  - `goto()` immediately sets position; enters SLEWING → TRACKING via `threading.Timer` when `slew_time_s > 0`
+  - `stop()` cancels pending timer and sets state to UNPARKED
+  - `disconnect()` cancels pending timer and sets state to PARKED
+  - Thread-safe (all state protected by `threading.Lock`)
+- `smart_telescope/adapters/simulator/focuser.py` (NEW) — `SimulatorFocuser(move_time_s=0.0)`:
+  - `move()` immediately updates position (instant) or enters moving state via timer
+  - `stop()` cancels pending timer without changing position
+  - `disconnect()` cancels pending timer and clears moving state
+  - Thread-safe
+- `tests/unit/adapters/simulator/test_simulator_mount.py` (NEW) — 24 tests
+- `tests/unit/adapters/simulator/test_simulator_focuser.py` (NEW) — 20 tests
+
+**Result**: 380 tests passing, 86.32% coverage. Ruff clean. Mypy clean.
+
+---
+
+## 2026-04-24 — OnStep focuser adapter, mount/focuser API + UI
+
+**What changed**:
+
+- `smart_telescope/ports/focuser.py` — added `is_moving() -> bool` and `stop() -> None` abstract methods
+- `smart_telescope/adapters/mock/focuser.py` — implemented `is_moving()` (returns False) and `stop()` (no-op)
+- `smart_telescope/adapters/onstep/focuser.py` (NEW) — `OnStepFocuser` implementing `FocuserPort`:
+  - `connect()`: opens serial, sends `:FA#`, requires reply `"1"` (focuser active)
+  - `get_position()`: `:FG#` → int
+  - `move(steps)`: `:FS{steps}#` (absolute positioning)
+  - `is_moving()`: `:FT#` → True if reply is `"M"`
+  - `stop()`: `:FQ#` (no reply)
+- `smart_telescope/api/deps.py` (NEW) — singleton dependency providers for mount and focuser; mocks by default; uses real OnStep adapters when `ONSTEP_PORT` env var is set
+- `smart_telescope/api/mount.py` (NEW) — FastAPI router with: `GET /api/mount/status`, `POST /api/mount/unpark`, `/track`, `/stop`, `/goto`
+- `smart_telescope/api/focuser.py` (NEW) — FastAPI router with: `GET /api/focuser/status`, `POST /api/focuser/move`, `/nudge`, `/stop`
+- `smart_telescope/app.py` — includes mount and focuser routers
+- `smart_telescope/static/index.html` — Mount panel (state badge, RA/Dec, Unpark/Track/Stop/GoTo) and Focuser panel (position, ±1000/±100/±10 nudge buttons, absolute move, Stop); both panels auto-refresh on load
+- `tests/unit/adapters/onstep/test_onstep_focuser.py` (NEW) — 23 adapter tests
+- `tests/unit/api/test_mount.py` (NEW) — 19 API tests
+- `tests/unit/api/test_focuser.py` (NEW) — 22 API tests
+
+**Result**: 333 tests passing, 87% coverage.
+
+---
+
+## 2026-04-24 — Ingest: OnStep Command Protocol (official wiki)
+
+**Source**: https://onstep.groups.io/g/main/wiki/23755 (retrieved 2026-04-24)
+
+**Pages created**:
+- `onstep-protocol.md` — full LX200 command reference: slewing, tracking, park, sync, focuser (all F-commands), date/time, site, firmware; includes adapter implementation notes and two flagged discrepancies
+
+**Pages updated**:
+- `hardware-platform.md` — OnStep section now references the protocol page and notes shared serial port for mount + focuser
+- `index.md` — added onstep-protocol entry
+
+**Key findings**:
+- **Absolute focuser position command confirmed**: `:FS[n]#` (e.g. `:FS1000#` → moves to step 1000, returns 0 or 1). This is what `OnStepFocuser.move(position)` must use.
+- **Relative move also available**: `:FR[±n]#` (no reply) — useful for nudge operations.
+- **Focuser motion status**: `:FT#` → `M#` (moving) or `S#` (stopped) — enables non-blocking polling.
+- **Two discrepancies flagged** vs current `OnStepMount` adapter:
+  1. Unpark: spec says `:hR#`, adapter uses `:hU#` — believed to be a V4 vs OnStepX version difference; needs verification on hardware.
+  2. Slewing indicator: spec says reply is `0x7F` (DEL), adapter checks for `|` (0x7C) — also likely version-specific; verify on hardware.
+
+---
+
+## 2026-04-23 — Ingest: ToupTek SDK interface description + ToupcamCamera adapter
+
+**Source**: resources/touptek/toupcam.py, resources/touptek/samples/simplest.py
+
+**Pages created**:
+- `touptek-sdk.md` — SDK architecture (ctypes wrapper), trigger modes, RAW-16 capture flow, TEC cooling, built-in correction pipeline, filter wheel, event constants, and project adapter design note
+
+**Pages updated**:
+- `hardware-platform.md` — expanded ToupTek Camera section: SDK driver choice, RAW-16 mode decision, adapter location
+- `index.md` — added touptek-sdk entry
+
+**Code created**:
+- `smart_telescope/adapters/touptek/camera.py` — `ToupcamCamera` implementing `CameraPort`; software-trigger RAW-16 mode; threading.Event callback bridge; ctypes buffer; float32 FitsFrame output
+- `tests/unit/adapters/touptek/test_touptek_camera.py` — 24 unit tests (connect, capture, disconnect), all green, no hardware required
+
+**Key design decision**: SDK's built-in FFC/DFC corrections are bypassed (`TOUPCAM_OPTION_RAW = 1`); our stacking pipeline handles calibration frame subtraction.
+
+---
+
 ## 2026-04-22 — Documentation update: Pi installer, reviewer corrections, Sprint 0 close
 
 **What changed**:

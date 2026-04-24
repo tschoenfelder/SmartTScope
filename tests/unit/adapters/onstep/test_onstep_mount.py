@@ -36,7 +36,6 @@ import serial
 from smart_telescope.adapters.onstep.mount import OnStepMount
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
 
-
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _make_mount(

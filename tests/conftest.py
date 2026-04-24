@@ -6,6 +6,7 @@ Individual tests override specific attributes for the scenario under test.
 Hand-rolled fakes (MockCamera, MockMount, …) stay in tests/integration/ — they
 are not used in unit tests.
 """
+import threading
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import Mock
@@ -15,6 +16,7 @@ import pytest
 
 from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.domain.session import SessionLog
+from smart_telescope.domain.states import SessionState
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
@@ -27,6 +29,7 @@ from smart_telescope.workflow.runner import (
     M42_RA,
     VerticalSliceRunner,
 )
+from smart_telescope.workflow.stages import StageContext
 
 # ── Primitive builders ─────────────────────────────────────────────────────
 
@@ -111,6 +114,47 @@ def focuser_mock() -> Mock:
 # ── Runner factory ─────────────────────────────────────────────────────────
 
 
+def _default_mocks(
+    camera: Mock | None,
+    mount: Mock | None,
+    solver: Mock | None,
+    stacker: Mock | None,
+    storage: Mock | None,
+    focuser: Mock | None,
+) -> tuple[Mock, Mock, Mock, Mock, Mock, Mock]:
+    cam = camera if camera is not None else Mock(spec=CameraPort, **{
+        "connect.return_value": True,
+        "capture.return_value": make_frame(),
+    })
+    mnt = mount if mount is not None else Mock(spec=MountPort, **{
+        "connect.return_value": True,
+        "get_state.return_value": MountState.PARKED,
+        "unpark.return_value": True,
+        "enable_tracking.return_value": True,
+        "sync.return_value": True,
+        "goto.return_value": True,
+        "is_slewing.return_value": False,
+        "get_position.return_value": MountPosition(ra=M42_RA, dec=M42_DEC),
+    })
+    slv = solver if solver is not None else Mock(spec=SolverPort, **{
+        "solve.return_value": SolveResult(success=True, ra=M42_RA, dec=M42_DEC),
+    })
+    stk = stacker if stacker is not None else Mock(spec=StackerPort, **{
+        "add_frame.return_value": make_stacked(1),
+        "get_current_stack.return_value": make_stacked(10),
+    })
+    sto = storage if storage is not None else Mock(spec=StoragePort, **{
+        "has_free_space.return_value": True,
+        "save_image.return_value": "/data/result.png",
+        "save_log.return_value": "/data/log.json",
+    })
+    foc = focuser if focuser is not None else Mock(spec=FocuserPort, **{
+        "connect.return_value": True,
+        "get_position.return_value": 0,
+    })
+    return cam, mnt, slv, stk, sto, foc
+
+
 def make_unit_runner(
     camera: Mock | None = None,
     mount: Mock | None = None,
@@ -120,41 +164,42 @@ def make_unit_runner(
     focuser: Mock | None = None,
     optical_profile=C8_NATIVE,
 ) -> VerticalSliceRunner:
-    """
-    Create a VerticalSliceRunner with fresh happy-path mocks for every port
-    not explicitly supplied. Use this in unit tests that call stage methods
-    directly rather than runner.run().
-    """
+    cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
     return VerticalSliceRunner(
-        camera=camera if camera is not None else Mock(spec=CameraPort, **{
-            "connect.return_value": True,
-            "capture.return_value": make_frame(),
-        }),
-        mount=mount if mount is not None else Mock(spec=MountPort, **{
-            "connect.return_value": True,
-            "get_state.return_value": MountState.PARKED,
-            "unpark.return_value": True,
-            "enable_tracking.return_value": True,
-            "sync.return_value": True,
-            "goto.return_value": True,
-            "is_slewing.return_value": False,
-            "get_position.return_value": MountPosition(ra=M42_RA, dec=M42_DEC),
-        }),
-        solver=solver if solver is not None else Mock(spec=SolverPort, **{
-            "solve.return_value": SolveResult(success=True, ra=M42_RA, dec=M42_DEC),
-        }),
-        stacker=stacker if stacker is not None else Mock(spec=StackerPort, **{
-            "add_frame.return_value": make_stacked(1),
-            "get_current_stack.return_value": make_stacked(10),
-        }),
-        storage=storage if storage is not None else Mock(spec=StoragePort, **{
-            "has_free_space.return_value": True,
-            "save_image.return_value": "/data/result.png",
-            "save_log.return_value": "/data/log.json",
-        }),
-        focuser=focuser if focuser is not None else Mock(spec=FocuserPort, **{
-            "connect.return_value": True,
-            "get_position.return_value": 0,
-        }),
+        camera=cam,
+        mount=mnt,
+        solver=slv,
+        stacker=stk,
+        storage=sto,
+        focuser=foc,
         optical_profile=optical_profile,
+    )
+
+
+def make_stage_ctx(
+    camera: Mock | None = None,
+    mount: Mock | None = None,
+    solver: Mock | None = None,
+    stacker: Mock | None = None,
+    storage: Mock | None = None,
+    focuser: Mock | None = None,
+    optical_profile=C8_NATIVE,
+    stop_event: threading.Event | None = None,
+    on_transition=None,
+) -> StageContext:
+    cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
+
+    def _noop_transition(log: SessionLog, state: SessionState) -> None:
+        log.state = state
+
+    return StageContext(
+        camera=cam,
+        mount=mnt,
+        solver=slv,
+        stacker=stk,
+        storage=sto,
+        focuser=foc,
+        profile=optical_profile,
+        stop_event=stop_event if stop_event is not None else threading.Event(),
+        on_transition=on_transition if on_transition is not None else _noop_transition,
     )

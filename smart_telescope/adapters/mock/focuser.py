@@ -17,3 +17,9 @@ class MockFocuser(FocuserPort):
 
     def get_position(self) -> int:
         return self._position
+
+    def is_moving(self) -> bool:
+        return False
+
+    def stop(self) -> None:
+        pass

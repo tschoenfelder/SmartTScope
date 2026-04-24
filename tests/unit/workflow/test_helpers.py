@@ -1,7 +1,7 @@
 """Unit tests for pure helper functions in the workflow runner."""
 import pytest
 
-from smart_telescope.workflow.runner import _angular_offset_arcmin
+from smart_telescope.workflow.stages import _angular_offset_arcmin
 
 
 class TestAngularOffsetArcmin:

@@ -14,6 +14,8 @@ Table of contents for the SmartTelescope knowledge base.
 ## Hardware and products
 
 - [hardware-platform](hardware-platform.md) — Target build: Celestron C8 + Raspberry Pi 5 + OnStep V4
+- [touptek-sdk](touptek-sdk.md) — ToupTek toupcam SDK: architecture, trigger/RAW/TEC/filter-wheel API, and adapter design
+- [onstep-protocol](onstep-protocol.md) — Full LX200 command reference for OnStep V4: mount, focuser, park, tracking, with adapter implementation notes
 - [seestar-s50](seestar-s50.md) — ZWO Seestar S50 reference smart telescope
 - [vaonis-vespera](vaonis-vespera.md) — Vaonis Vespera Pro reference smart telescope
 

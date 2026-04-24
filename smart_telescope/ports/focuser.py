@@ -13,3 +13,9 @@ class FocuserPort(ABC):
 
     @abstractmethod
     def get_position(self) -> int: ...
+
+    @abstractmethod
+    def is_moving(self) -> bool: ...
+
+    @abstractmethod
+    def stop(self) -> None: ...

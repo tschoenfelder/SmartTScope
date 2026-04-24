@@ -1,21 +1,21 @@
 """
-Unit tests for VerticalSliceRunner — one stage at a time.
+Unit tests for workflow stage functions — one stage at a time.
 
-Each test class exercises a single stage method by calling it directly on a runner
-whose collaborators are Mock(spec=Port) objects. This isolates the stage logic
-from all other stages and from the full pipeline execution order.
+Each test class exercises a single stage function by calling it directly
+with a StageContext whose collaborators are Mock(spec=Port) objects.
+This isolates each stage from all others and from the full pipeline.
 
 Pattern:
-    runner = make_unit_runner(mount=failing_mount)
+    ctx = make_stage_ctx(mount=failing_mount)
     with pytest.raises(WorkflowError) as exc:
-        runner._stage_initialize_mount(make_log())
+        stage_initialize_mount(ctx, make_log())
     assert exc.value.stage == "initialize_mount"
 """
 from unittest.mock import Mock, patch
 
 import pytest
 
-import smart_telescope.workflow.runner as runner_module
+import smart_telescope.workflow.stages as stages_module
 from smart_telescope.domain.states import SessionState
 from smart_telescope.ports.mount import MountState
 from smart_telescope.ports.solver import SolveResult, SolverPort
@@ -29,55 +29,56 @@ from smart_telescope.workflow.runner import (
     SOLVE_MAX_ATTEMPTS,
     WorkflowError,
 )
-from tests.conftest import make_log, make_unit_runner
+from smart_telescope.workflow.stages import (
+    _wait_for_slew,
+    stage_align,
+    stage_connect,
+    stage_goto,
+    stage_initialize_mount,
+    stage_recenter,
+    stage_save,
+    stage_stack,
+)
+from tests.conftest import make_log, make_stage_ctx, make_unit_runner
 
 # ── Stage: connect ─────────────────────────────────────────────────────────
 
 
 class TestStageConnect:
     def test_happy_path_transitions_to_connected(self):
-        runner = make_unit_runner()
+        ctx = make_stage_ctx()
         log = make_log()
-        runner._stage_connect(log)
+        stage_connect(ctx, log)
         assert log.state == SessionState.CONNECTED
 
     def test_camera_connect_called_exactly_once(self, camera_mock):
-        runner = make_unit_runner(camera=camera_mock)
-        runner._stage_connect(make_log())
+        ctx = make_stage_ctx(camera=camera_mock)
+        stage_connect(ctx, make_log())
         camera_mock.connect.assert_called_once()
 
     def test_camera_failure_raises_at_connect_stage(self, camera_mock):
         camera_mock.connect.return_value = False
-        runner = make_unit_runner(camera=camera_mock)
+        ctx = make_stage_ctx(camera=camera_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_connect(make_log())
+            stage_connect(ctx, make_log())
         assert exc.value.stage == "connect"
         assert "Camera" in exc.value.reason
 
     def test_mount_not_contacted_when_camera_fails(self, camera_mock, mount_mock):
         """Early-exit: if camera fails, mount connect must not be attempted."""
         camera_mock.connect.return_value = False
-        runner = make_unit_runner(camera=camera_mock, mount=mount_mock)
+        ctx = make_stage_ctx(camera=camera_mock, mount=mount_mock)
         with pytest.raises(WorkflowError):
-            runner._stage_connect(make_log())
+            stage_connect(ctx, make_log())
         mount_mock.connect.assert_not_called()
 
     def test_mount_failure_raises_at_connect_stage(self, mount_mock):
         mount_mock.connect.return_value = False
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_connect(make_log())
+            stage_connect(ctx, make_log())
         assert exc.value.stage == "connect"
         assert "Mount" in exc.value.reason
-
-    def test_stage_timestamp_recorded(self):
-        runner = make_unit_runner()
-        log = make_log()
-        runner._stage_connect(log)
-        stage_names = [ts.stage for ts in log.stage_timestamps]
-        assert "connect" in stage_names
-        for ts in log.stage_timestamps:
-            assert ts.completed_at is not None
 
 
 # ── Stage: initialize_mount ────────────────────────────────────────────────
@@ -86,45 +87,45 @@ class TestStageConnect:
 class TestStageInitializeMount:
     def test_parked_mount_calls_unpark_then_tracking(self, mount_mock):
         mount_mock.get_state.return_value = MountState.PARKED
-        runner = make_unit_runner(mount=mount_mock)
-        runner._stage_initialize_mount(make_log())
+        ctx = make_stage_ctx(mount=mount_mock)
+        stage_initialize_mount(ctx, make_log())
         mount_mock.unpark.assert_called_once()
         mount_mock.enable_tracking.assert_called_once()
 
     def test_unparked_mount_skips_unpark(self, mount_mock):
         mount_mock.get_state.return_value = MountState.UNPARKED
-        runner = make_unit_runner(mount=mount_mock)
-        runner._stage_initialize_mount(make_log())
+        ctx = make_stage_ctx(mount=mount_mock)
+        stage_initialize_mount(ctx, make_log())
         mount_mock.unpark.assert_not_called()
         mount_mock.enable_tracking.assert_called_once()
 
     def test_at_limit_raises_before_unpark(self, mount_mock):
         mount_mock.get_state.return_value = MountState.AT_LIMIT
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_initialize_mount(make_log())
+            stage_initialize_mount(ctx, make_log())
         assert "limit" in exc.value.reason.lower()
         mount_mock.unpark.assert_not_called()
 
     def test_unpark_failure_raises_workflow_error(self, mount_mock):
         mount_mock.get_state.return_value = MountState.PARKED
         mount_mock.unpark.return_value = False
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_initialize_mount(make_log())
+            stage_initialize_mount(ctx, make_log())
         assert "Unpark" in exc.value.reason
 
     def test_tracking_failure_raises_workflow_error(self, mount_mock):
         mount_mock.enable_tracking.return_value = False
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_initialize_mount(make_log())
+            stage_initialize_mount(ctx, make_log())
         assert "tracking" in exc.value.reason.lower()
 
     def test_transitions_to_mount_ready(self, mount_mock):
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         log = make_log()
-        runner._stage_initialize_mount(log)
+        stage_initialize_mount(ctx, log)
         assert log.state == SessionState.MOUNT_READY
 
 
@@ -133,20 +134,20 @@ class TestStageInitializeMount:
 
 class TestStageAlign:
     def test_successful_first_solve_syncs_mount(self, solver_mock, mount_mock):
-        runner = make_unit_runner(solver=solver_mock, mount=mount_mock)
-        runner._stage_align(make_log())
+        ctx = make_stage_ctx(solver=solver_mock, mount=mount_mock)
+        stage_align(ctx, make_log())
         mount_mock.sync.assert_called_once_with(M42_RA, M42_DEC)
 
     def test_first_success_records_one_attempt(self, solver_mock):
-        runner = make_unit_runner(solver=solver_mock)
+        ctx = make_stage_ctx(solver=solver_mock)
         log = make_log()
-        runner._stage_align(log)
+        stage_align(ctx, log)
         assert log.plate_solve_attempts == 1
 
     def test_transitions_to_aligned_on_success(self, solver_mock):
-        runner = make_unit_runner(solver=solver_mock)
+        ctx = make_stage_ctx(solver=solver_mock)
         log = make_log()
-        runner._stage_align(log)
+        stage_align(ctx, log)
         assert log.state == SessionState.ALIGNED
 
     @pytest.mark.parametrize("profile,expected_scale", [
@@ -155,8 +156,8 @@ class TestStageAlign:
         (C8_BARLOW2X, 0.19),
     ])
     def test_pixel_scale_comes_from_optical_profile(self, solver_mock, profile, expected_scale):
-        runner = make_unit_runner(solver=solver_mock, optical_profile=profile)
-        runner._stage_align(make_log())
+        ctx = make_stage_ctx(solver=solver_mock, optical_profile=profile)
+        stage_align(ctx, make_log())
         _, actual_scale = solver_mock.solve.call_args.args
         assert actual_scale == pytest.approx(expected_scale)
 
@@ -166,35 +167,35 @@ class TestStageAlign:
             SolveResult(success=False, error="no stars"),
             SolveResult(success=True, ra=M42_RA, dec=M42_DEC),
         ]
-        runner = make_unit_runner(solver=solver, mount=mount_mock)
+        ctx = make_stage_ctx(solver=solver, mount=mount_mock)
         log = make_log()
-        runner._stage_align(log)
+        stage_align(ctx, log)
         assert log.plate_solve_attempts == 2
         assert log.state == SessionState.ALIGNED
 
     def test_both_attempts_fail_raises_workflow_error(self):
         solver = Mock(spec=SolverPort)
         solver.solve.return_value = SolveResult(success=False, error="no stars")
-        runner = make_unit_runner(solver=solver)
+        ctx = make_stage_ctx(solver=solver)
         log = make_log()
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_align(log)
+            stage_align(ctx, log)
         assert exc.value.stage == "align"
         assert log.plate_solve_attempts == SOLVE_MAX_ATTEMPTS
 
     def test_sync_failure_raises_workflow_error(self, solver_mock, mount_mock):
         mount_mock.sync.return_value = False
-        runner = make_unit_runner(solver=solver_mock, mount=mount_mock)
+        ctx = make_stage_ctx(solver=solver_mock, mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_align(make_log())
+            stage_align(ctx, make_log())
         assert "sync" in exc.value.reason.lower()
 
     def test_sync_not_called_when_solve_fails(self, mount_mock):
         solver = Mock(spec=SolverPort)
         solver.solve.return_value = SolveResult(success=False, error="no stars")
-        runner = make_unit_runner(solver=solver, mount=mount_mock)
+        ctx = make_stage_ctx(solver=solver, mount=mount_mock)
         with pytest.raises(WorkflowError):
-            runner._stage_align(make_log())
+            stage_align(ctx, make_log())
         mount_mock.sync.assert_not_called()
 
 
@@ -203,21 +204,21 @@ class TestStageAlign:
 
 class TestStageGoto:
     def test_goto_called_with_m42_coordinates(self, mount_mock):
-        runner = make_unit_runner(mount=mount_mock)
-        runner._stage_goto(make_log())
+        ctx = make_stage_ctx(mount=mount_mock)
+        stage_goto(ctx, make_log())
         mount_mock.goto.assert_called_once_with(M42_RA, M42_DEC)
 
     def test_goto_rejection_raises_workflow_error(self, mount_mock):
         mount_mock.goto.return_value = False
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_goto(make_log())
+            stage_goto(ctx, make_log())
         assert exc.value.stage == "goto"
 
     def test_transitions_to_slewed(self, mount_mock):
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         log = make_log()
-        runner._stage_goto(log)
+        stage_goto(ctx, log)
         assert log.state == SessionState.SLEWED
 
 
@@ -227,48 +228,48 @@ class TestStageGoto:
 class TestWaitForSlew:
     def test_resolves_immediately_when_not_slewing(self, mount_mock):
         mount_mock.is_slewing.return_value = False
-        runner = make_unit_runner(mount=mount_mock)
-        runner._wait_for_slew("test_stage")
+        ctx = make_stage_ctx(mount=mount_mock)
+        _wait_for_slew(ctx, "test_stage")
         mount_mock.is_slewing.assert_called_once()
 
     def test_polls_until_slewing_stops(self, mount_mock):
         mount_mock.is_slewing.side_effect = [True, True, False]
-        runner = make_unit_runner(mount=mount_mock)
-        with patch("smart_telescope.workflow.runner.time.sleep") as mock_sleep:
-            runner._wait_for_slew("test_stage")
+        ctx = make_stage_ctx(mount=mount_mock)
+        with patch("smart_telescope.workflow.stages.time.sleep") as mock_sleep:
+            _wait_for_slew(ctx, "test_stage")
         assert mount_mock.is_slewing.call_count == 3
         assert mock_sleep.call_count == 2
 
     def test_sleep_uses_configured_interval(self, mount_mock):
         mount_mock.is_slewing.side_effect = [True, False]
-        runner = make_unit_runner(mount=mount_mock)
-        with patch("smart_telescope.workflow.runner.time.sleep") as mock_sleep:
-            runner._wait_for_slew("test_stage")
-        mock_sleep.assert_called_once_with(runner_module.SLEW_POLL_INTERVAL_S)
+        ctx = make_stage_ctx(mount=mount_mock)
+        with patch("smart_telescope.workflow.stages.time.sleep") as mock_sleep:
+            _wait_for_slew(ctx, "test_stage")
+        mock_sleep.assert_called_once_with(stages_module.SLEW_POLL_INTERVAL_S)
 
     def test_raises_workflow_error_on_timeout(self, mount_mock):
         mount_mock.is_slewing.return_value = True
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with (
-            patch("smart_telescope.workflow.runner.time.sleep"),
-            patch.object(runner_module, "SLEW_TIMEOUT_S", 4.0),
-            patch.object(runner_module, "SLEW_POLL_INTERVAL_S", 2.0),
+            patch("smart_telescope.workflow.stages.time.sleep"),
+            patch.object(stages_module, "SLEW_TIMEOUT_S", 4.0),
+            patch.object(stages_module, "SLEW_POLL_INTERVAL_S", 2.0),
             pytest.raises(WorkflowError) as exc,
         ):
-            runner._wait_for_slew("goto")
+            _wait_for_slew(ctx, "goto")
         assert exc.value.stage == "goto"
         assert "timed out" in exc.value.reason.lower()
 
     def test_timeout_error_names_duration(self, mount_mock):
         mount_mock.is_slewing.return_value = True
-        runner = make_unit_runner(mount=mount_mock)
+        ctx = make_stage_ctx(mount=mount_mock)
         with (
-            patch("smart_telescope.workflow.runner.time.sleep"),
-            patch.object(runner_module, "SLEW_TIMEOUT_S", 4.0),
-            patch.object(runner_module, "SLEW_POLL_INTERVAL_S", 2.0),
+            patch("smart_telescope.workflow.stages.time.sleep"),
+            patch.object(stages_module, "SLEW_TIMEOUT_S", 4.0),
+            patch.object(stages_module, "SLEW_POLL_INTERVAL_S", 2.0),
             pytest.raises(WorkflowError) as exc,
         ):
-            runner._wait_for_slew("goto")
+            _wait_for_slew(ctx, "goto")
         assert "4" in exc.value.reason
 
 
@@ -277,23 +278,22 @@ class TestWaitForSlew:
 
 class TestStageRecenter:
     def test_centered_on_first_iteration(self, solver_mock, mount_mock):
-        # Solver returns exact M42 position → offset is 0
         solver_mock.solve.return_value = SolveResult(success=True, ra=M42_RA, dec=M42_DEC)
-        runner = make_unit_runner(solver=solver_mock, mount=mount_mock)
+        ctx = make_stage_ctx(solver=solver_mock, mount=mount_mock)
         log = make_log()
-        runner._stage_recenter(log)
+        stage_recenter(ctx, log)
         assert log.state == SessionState.CENTERED
         assert log.centering_iterations == 1
         assert log.centering_offset_arcmin == pytest.approx(0.0, abs=0.01)
 
     def test_centered_on_second_iteration(self, mount_mock):
-        far = SolveResult(success=True, ra=6.5, dec=-7.0)   # far off
-        near = SolveResult(success=True, ra=M42_RA, dec=M42_DEC)  # on target
+        far = SolveResult(success=True, ra=6.5, dec=-7.0)
+        near = SolveResult(success=True, ra=M42_RA, dec=M42_DEC)
         solver = Mock(spec=SolverPort)
         solver.solve.side_effect = [far, near]
-        runner = make_unit_runner(solver=solver, mount=mount_mock)
+        ctx = make_stage_ctx(solver=solver, mount=mount_mock)
         log = make_log()
-        runner._stage_recenter(log)
+        stage_recenter(ctx, log)
         assert log.state == SessionState.CENTERED
         assert log.centering_iterations == 2
 
@@ -302,18 +302,17 @@ class TestStageRecenter:
         near = SolveResult(success=True, ra=M42_RA, dec=M42_DEC)
         solver = Mock(spec=SolverPort)
         solver.solve.side_effect = [far, near]
-        runner = make_unit_runner(solver=solver, mount=mount_mock)
-        runner._stage_recenter(make_log())
-        # goto must be called once for the correction slew
+        ctx = make_stage_ctx(solver=solver, mount=mount_mock)
+        stage_recenter(ctx, make_log())
         mount_mock.goto.assert_called_once_with(M42_RA, M42_DEC)
 
     def test_degrades_after_max_iterations(self):
         far = SolveResult(success=True, ra=6.5, dec=-7.0)
         solver = Mock(spec=SolverPort)
         solver.solve.return_value = far
-        runner = make_unit_runner(solver=solver)
+        ctx = make_stage_ctx(solver=solver)
         log = make_log()
-        runner._stage_recenter(log)
+        stage_recenter(ctx, log)
         assert log.state == SessionState.CENTERING_DEGRADED
         assert log.centering_iterations == 3
         assert log.centering_offset_arcmin > 2.0
@@ -321,23 +320,23 @@ class TestStageRecenter:
     def test_degraded_session_logs_warning(self):
         solver = Mock(spec=SolverPort)
         solver.solve.return_value = SolveResult(success=True, ra=6.5, dec=-7.0)
-        runner = make_unit_runner(solver=solver)
+        ctx = make_stage_ctx(solver=solver)
         log = make_log()
-        runner._stage_recenter(log)
+        stage_recenter(ctx, log)
         assert any("Centering" in w for w in log.warnings)
 
     def test_centering_state_is_never_none_after_recenter(self, solver_mock):
-        runner = make_unit_runner(solver=solver_mock)
+        ctx = make_stage_ctx(solver=solver_mock)
         log = make_log()
-        runner._stage_recenter(log)
+        stage_recenter(ctx, log)
         assert log.centering_state is not None
 
     def test_solve_failure_during_recenter_raises_workflow_error(self):
         solver = Mock(spec=SolverPort)
         solver.solve.return_value = SolveResult(success=False, error="cloud")
-        runner = make_unit_runner(solver=solver)
+        ctx = make_stage_ctx(solver=solver)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_recenter(make_log())
+            stage_recenter(ctx, make_log())
         assert exc.value.stage == "recenter"
 
     def test_correction_slew_rejection_raises_workflow_error(self, mount_mock):
@@ -345,9 +344,9 @@ class TestStageRecenter:
         solver = Mock(spec=SolverPort)
         solver.solve.return_value = far
         mount_mock.goto.return_value = False
-        runner = make_unit_runner(solver=solver, mount=mount_mock)
+        ctx = make_stage_ctx(solver=solver, mount=mount_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_recenter(make_log())
+            stage_recenter(ctx, make_log())
         assert exc.value.stage == "recenter"
         assert "slew" in exc.value.reason.lower() or "correction" in exc.value.reason.lower()
 
@@ -357,46 +356,43 @@ class TestStageRecenter:
 
 class TestStageStack:
     def test_correct_number_of_frames_captured(self, camera_mock, stacker_mock):
-        runner = make_unit_runner(camera=camera_mock, stacker=stacker_mock)
-        runner._stage_stack(make_log())
-        assert camera_mock.capture.call_count == runner_module.STACK_DEPTH
+        ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
+        stage_stack(ctx, make_log())
+        assert camera_mock.capture.call_count == stages_module.STACK_DEPTH
 
     def test_each_frame_uses_stack_exposure(self, camera_mock, stacker_mock):
-        runner = make_unit_runner(camera=camera_mock, stacker=stacker_mock)
-        runner._stage_stack(make_log())
+        ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
+        stage_stack(ctx, make_log())
         for c in camera_mock.capture.call_args_list:
-            assert c.args[0] == pytest.approx(runner_module.STACK_EXPOSURE_S)
+            assert c.args[0] == pytest.approx(stages_module.STACK_EXPOSURE_S)
 
     def test_stacker_reset_called_before_frames(self, stacker_mock):
-        runner = make_unit_runner(stacker=stacker_mock)
-        runner._stage_stack(make_log())
-        # reset() must be first call on stacker
+        ctx = make_stage_ctx(stacker=stacker_mock)
+        stage_stack(ctx, make_log())
         first_call = stacker_mock.method_calls[0]
         assert first_call[0] == "reset"
 
     def test_frames_integrated_count_recorded_in_log(self, stacker_mock):
         stacker_mock.add_frame.side_effect = [
             StackedImage(data=b"S", frames_integrated=i, frames_rejected=0)
-            for i in range(1, runner_module.STACK_DEPTH + 1)
+            for i in range(1, stages_module.STACK_DEPTH + 1)
         ]
-        runner = make_unit_runner(stacker=stacker_mock)
+        ctx = make_stage_ctx(stacker=stacker_mock)
         log = make_log()
-        runner._stage_stack(log)
-        assert log.frames_integrated == runner_module.STACK_DEPTH
+        stage_stack(ctx, log)
+        assert log.frames_integrated == stages_module.STACK_DEPTH
 
     def test_stacker_error_mid_stack_propagates(self, camera_mock, stacker_mock):
-        # Stage methods raise the raw exception; run() wraps it in WorkflowError.
-        # This test verifies the raw exception escapes the stage.
-        # The WorkflowError wrapping is covered in tests/integration/.
+        # Stage functions raise the raw exception; run() wraps it in WorkflowError.
         stacker_mock.add_frame.side_effect = RuntimeError("OOM during registration")
-        runner = make_unit_runner(camera=camera_mock, stacker=stacker_mock)
+        ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
         with pytest.raises(RuntimeError, match="OOM during registration"):
-            runner._stage_stack(make_log())
+            stage_stack(ctx, make_log())
 
     def test_transitions_to_stack_complete(self, stacker_mock):
-        runner = make_unit_runner(stacker=stacker_mock)
+        ctx = make_stage_ctx(stacker=stacker_mock)
         log = make_log()
-        runner._stage_stack(log)
+        stage_stack(ctx, log)
         assert log.state == SessionState.STACK_COMPLETE
 
 
@@ -405,17 +401,17 @@ class TestStageStack:
 
 class TestStageSave:
     def test_image_and_log_paths_recorded(self, stacker_mock, storage_mock):
-        runner = make_unit_runner(stacker=stacker_mock, storage=storage_mock)
+        ctx = make_stage_ctx(stacker=stacker_mock, storage=storage_mock)
         log = make_log()
-        runner._stage_save(log)
+        stage_save(ctx, log)
         assert log.saved_image_path == "/data/result.png"
         assert log.saved_log_path == "/data/log.json"
 
     def test_disk_full_raises_workflow_error_before_write(self, storage_mock):
         storage_mock.has_free_space.return_value = False
-        runner = make_unit_runner(storage=storage_mock)
+        ctx = make_stage_ctx(storage=storage_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_save(make_log())
+            stage_save(ctx, make_log())
         assert exc.value.stage == "save"
         storage_mock.save_image.assert_not_called()
 
@@ -423,8 +419,8 @@ class TestStageSave:
         stacker_mock.get_current_stack.return_value = StackedImage(
             data=b"REAL_STACK", frames_integrated=10, frames_rejected=0
         )
-        runner = make_unit_runner(stacker=stacker_mock, storage=storage_mock)
-        runner._stage_save(make_log())
+        ctx = make_stage_ctx(stacker=stacker_mock, storage=storage_mock)
+        stage_save(ctx, make_log())
         storage_mock.save_image.assert_called_once()
         saved_data = storage_mock.save_image.call_args.args[0]
         assert saved_data == b"REAL_STACK"
@@ -438,14 +434,14 @@ class TestStageSave:
             return "/data/log.json"
 
         storage_mock.save_log.side_effect = capture_log
-        runner = make_unit_runner(stacker=stacker_mock, storage=storage_mock)
-        runner._stage_save(make_log())
+        ctx = make_stage_ctx(stacker=stacker_mock, storage=storage_mock)
+        stage_save(ctx, make_log())
         assert stored["saved_artifacts"]["image"] == "/data/result.png"
 
     def test_transitions_to_saved(self, stacker_mock, storage_mock):
-        runner = make_unit_runner(stacker=stacker_mock, storage=storage_mock)
+        ctx = make_stage_ctx(stacker=stacker_mock, storage=storage_mock)
         log = make_log()
-        runner._stage_save(log)
+        stage_save(ctx, log)
         assert log.state == SessionState.SAVED
 
     def test_completed_at_set_before_log_is_written(self, stacker_mock, storage_mock):
@@ -457,6 +453,19 @@ class TestStageSave:
             return "/data/log.json"
 
         storage_mock.save_log.side_effect = capture_log
-        runner = make_unit_runner(stacker=stacker_mock, storage=storage_mock)
-        runner._stage_save(make_log())
+        ctx = make_stage_ctx(stacker=stacker_mock, storage=storage_mock)
+        stage_save(ctx, make_log())
         assert stored["completed_at"] is not None
+
+
+# ── Runner orchestration ───────────────────────────────────────────────────
+
+
+class TestRunnerOrchestration:
+    def test_start_and_finish_stage_records_complete_timestamp(self):
+        runner = make_unit_runner()
+        log = make_log()
+        runner._start_stage(log, "connect")
+        runner._finish_stage(log, "connect")
+        ts = next(t for t in log.stage_timestamps if t.stage == "connect")
+        assert ts.completed_at is not None

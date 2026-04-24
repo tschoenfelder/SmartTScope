@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartTelescope</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0d1117;
+      --surface:      #161b22;
+      --border:       #30363d;
+      --text:         #e6edf3;
+      --muted:        #8b949e;
+      --accent:       #388bfd;
+      --accent-hi:    #58a6ff;
+      --success:      #3fb950;
+      --warning:      #d29922;
+      --danger:       #f85149;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── header ── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 0.875rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    header h1 { font-size: 1.125rem; font-weight: 600; }
+    .pill {
+      font-size: 0.7rem;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.15rem 0.55rem;
+    }
+
+    /* ── main layout ── */
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2.5rem;
+    }
+
+    /* ── section ── */
+    .section {}
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .toolbar h2 { font-size: 1rem; font-weight: 600; flex: 1; }
+
+    /* ── buttons ── */
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.45rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hi); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.danger { background: var(--danger); }
+    button.danger:hover:not(:disabled) { background: #ff6b63; }
+    button.secondary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    button.secondary:hover:not(:disabled) { border-color: var(--accent); }
+
+    /* ── status line ── */
+    .status-line {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      min-height: 1.25rem;
+    }
+    .status-line.error { color: var(--danger); }
+
+    /* ── card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+    }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--success); }
+    .dot-yellow { background: var(--warning); }
+    .dot-red    { background: var(--danger);  }
+    .dot-grey   { background: var(--muted);   }
+
+    /* ── state badge ── */
+    .state-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      margin-left: auto;
+    }
+    .state-parked   { background: rgba(139,148,158,0.15); color: var(--muted); }
+    .state-unparked { background: rgba(210,153,34,0.15);  color: var(--warning); }
+    .state-tracking { background: rgba(63,185,80,0.15);   color: var(--success); }
+    .state-slewing  { background: rgba(56,139,253,0.15);  color: var(--accent-hi); }
+    .state-unknown  { background: rgba(139,148,158,0.15); color: var(--muted); }
+    .state-at_limit { background: rgba(248,81,73,0.15);   color: var(--danger); }
+
+    /* ── params grid ── */
+    .params {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem 1.5rem;
+    }
+    .param { display: flex; flex-direction: column; gap: 0.2rem; }
+    .param-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .param-value { font-size: 0.875rem; }
+    .mono { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.8rem; }
+
+    /* ── features ── */
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 1rem;
+      padding-top: 0.875rem;
+      border-top: 1px solid var(--border);
+    }
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      background: rgba(56,139,253,0.12);
+      color: var(--accent-hi);
+      border: 1px solid rgba(56,139,253,0.25);
+    }
+
+    /* ── controls row ── */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      padding-top: 0.875rem;
+      border-top: 1px solid var(--border);
+      align-items: center;
+    }
+    .controls-spacer { flex: 1; }
+
+    /* ── goto / move row ── */
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+    input[type="number"], input[type="text"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+      padding: 0.4rem 0.65rem;
+      width: 9ch;
+      outline: none;
+    }
+    input[type="number"]:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    label { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── nudge buttons ── */
+    .nudge-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+    button.nudge { padding: 0.4rem 0.6rem; font-size: 0.78rem; min-width: 2.8rem; }
+
+    /* ── camera grid ── */
+    .camera-grid { display: grid; gap: 1rem; }
+
+    /* ── spinner ── */
+    .spin {
+      display: inline-block;
+      width: 13px; height: 13px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.55s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SmartTelescope</h1>
+  <span class="pill">v0.1</span>
+</header>
+
+<main>
+
+  <!-- ── Mount ──────────────────────────────────────────────────────────── -->
+  <section class="section" id="mount-section">
+    <div class="toolbar">
+      <h2>Mount</h2>
+      <button onclick="refreshMount()">Refresh</button>
+    </div>
+    <div id="mount-status" class="status-line"></div>
+    <div id="mount-card"></div>
+  </section>
+
+  <!-- ── Focuser ────────────────────────────────────────────────────────── -->
+  <section class="section" id="focuser-section">
+    <div class="toolbar">
+      <h2>Focuser</h2>
+      <button onclick="refreshFocuser()">Refresh</button>
+    </div>
+    <div id="focuser-status" class="status-line"></div>
+    <div id="focuser-card"></div>
+  </section>
+
+  <!-- ── Cameras ────────────────────────────────────────────────────────── -->
+  <section class="section">
+    <div class="toolbar">
+      <h2>Connected Cameras</h2>
+      <button id="scan-btn" onclick="scan()">Scan</button>
+    </div>
+    <div id="camera-status" class="status-line"></div>
+    <div id="camera-grid" class="camera-grid"></div>
+  </section>
+
+</main>
+
+<script>
+  /* ── utilities ─────────────────────────────────────────────────────────── */
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function setStatus(id, msg, isError = false) {
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.className = 'status-line' + (isError ? ' error' : '');
+  }
+
+  async function apiPost(url, body) {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text || `Server error ${resp.status}`);
+    }
+    return resp.json();
+  }
+
+  /* ── Mount ─────────────────────────────────────────────────────────────── */
+
+  const _MOUNT_DOT = {
+    parked: 'dot-grey', unparked: 'dot-yellow',
+    tracking: 'dot-green', slewing: 'dot-green',
+    at_limit: 'dot-red', unknown: 'dot-grey',
+  };
+
+  function mountCard(data) {
+    const state  = data.state || 'unknown';
+    const dotCls = _MOUNT_DOT[state] || 'dot-grey';
+    const ra  = data.ra  != null ? (+data.ra).toFixed(4)  + ' h'  : '—';
+    const dec = data.dec != null ? (+data.dec).toFixed(4) + ' °' : '—';
+
+    return `
+      <div class="card">
+        <div class="card-title">
+          <span class="dot ${dotCls}"></span>
+          OnStep Mount
+          <span class="state-badge state-${state}">${state}</span>
+        </div>
+        <div class="params">
+          <div class="param">
+            <span class="param-label">RA</span>
+            <span class="param-value mono" id="mount-ra">${escHtml(ra)}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Dec</span>
+            <span class="param-value mono" id="mount-dec">${escHtml(dec)}</span>
+          </div>
+        </div>
+        <div class="controls">
+          <button class="secondary" onclick="mountAction('unpark')">Unpark</button>
+          <button class="secondary" onclick="mountAction('track')">Enable Tracking</button>
+          <span class="controls-spacer"></span>
+          <button class="danger" onclick="mountAction('stop')">Stop</button>
+        </div>
+        <div class="input-row">
+          <label>GoTo RA</label>
+          <input type="number" id="goto-ra" step="0.001" placeholder="h" style="width:9ch">
+          <label>Dec</label>
+          <input type="number" id="goto-dec" step="0.001" placeholder="°" style="width:9ch">
+          <button onclick="mountGoto()">GoTo</button>
+        </div>
+      </div>`;
+  }
+
+  async function refreshMount() {
+    setStatus('mount-status', '');
+    try {
+      const data = await (await fetch('/api/mount/status')).json();
+      document.getElementById('mount-card').innerHTML = mountCard(data);
+    } catch (err) {
+      setStatus('mount-status', String(err), true);
+    }
+  }
+
+  async function mountAction(action) {
+    setStatus('mount-status', '');
+    try {
+      await apiPost(`/api/mount/${action}`);
+      await refreshMount();
+    } catch (err) {
+      setStatus('mount-status', `${action} failed: ${err}`, true);
+    }
+  }
+
+  async function mountGoto() {
+    const ra  = parseFloat(document.getElementById('goto-ra').value);
+    const dec = parseFloat(document.getElementById('goto-dec').value);
+    if (isNaN(ra) || isNaN(dec)) {
+      setStatus('mount-status', 'Enter valid RA and Dec values first.', true);
+      return;
+    }
+    setStatus('mount-status', '');
+    try {
+      await apiPost('/api/mount/goto', { ra, dec });
+      await refreshMount();
+    } catch (err) {
+      setStatus('mount-status', `GoTo failed: ${err}`, true);
+    }
+  }
+
+  /* ── Focuser ───────────────────────────────────────────────────────────── */
+
+  function focuserCard(data) {
+    const pos    = data.position ?? '—';
+    const moving = data.moving ?? false;
+    const dotCls = moving ? 'dot-yellow' : 'dot-green';
+    const motionLabel = moving ? 'Moving…' : 'Stopped';
+
+    return `
+      <div class="card">
+        <div class="card-title">
+          <span class="dot ${dotCls}"></span>
+          OnStep Focuser
+          <span class="state-badge ${moving ? 'state-slewing' : 'state-tracking'}">${motionLabel}</span>
+        </div>
+        <div class="params">
+          <div class="param">
+            <span class="param-label">Position (steps)</span>
+            <span class="param-value mono" id="focuser-pos">${pos}</span>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="nudge-group">
+            <button class="secondary nudge" onclick="nudge(-1000)">−1000</button>
+            <button class="secondary nudge" onclick="nudge(-100)">−100</button>
+            <button class="secondary nudge" onclick="nudge(-10)">−10</button>
+            <button class="secondary nudge" onclick="nudge(10)">+10</button>
+            <button class="secondary nudge" onclick="nudge(100)">+100</button>
+            <button class="secondary nudge" onclick="nudge(1000)">+1000</button>
+          </div>
+          <span class="controls-spacer"></span>
+          <button class="danger" onclick="focuserStop()">Stop</button>
+        </div>
+        <div class="input-row">
+          <label>Move to</label>
+          <input type="number" id="focuser-target" step="1" placeholder="steps" style="width:10ch">
+          <button onclick="focuserMoveTo()">Move</button>
+        </div>
+      </div>`;
+  }
+
+  async function refreshFocuser() {
+    setStatus('focuser-status', '');
+    try {
+      const data = await (await fetch('/api/focuser/status')).json();
+      document.getElementById('focuser-card').innerHTML = focuserCard(data);
+    } catch (err) {
+      setStatus('focuser-status', String(err), true);
+    }
+  }
+
+  async function nudge(delta) {
+    setStatus('focuser-status', '');
+    try {
+      await apiPost('/api/focuser/nudge', { delta });
+      await refreshFocuser();
+    } catch (err) {
+      setStatus('focuser-status', `Nudge failed: ${err}`, true);
+    }
+  }
+
+  async function focuserMoveTo() {
+    const pos = parseInt(document.getElementById('focuser-target').value, 10);
+    if (isNaN(pos)) {
+      setStatus('focuser-status', 'Enter a valid step position first.', true);
+      return;
+    }
+    setStatus('focuser-status', '');
+    try {
+      await apiPost('/api/focuser/move', { position: pos });
+      await refreshFocuser();
+    } catch (err) {
+      setStatus('focuser-status', `Move failed: ${err}`, true);
+    }
+  }
+
+  async function focuserStop() {
+    setStatus('focuser-status', '');
+    try {
+      await apiPost('/api/focuser/stop');
+      await refreshFocuser();
+    } catch (err) {
+      setStatus('focuser-status', `Stop failed: ${err}`, true);
+    }
+  }
+
+  /* ── Cameras ───────────────────────────────────────────────────────────── */
+
+  async function scan() {
+    const btn    = document.getElementById('scan-btn');
+    const grid   = document.getElementById('camera-grid');
+    setStatus('camera-status', '');
+    grid.innerHTML = '';
+    btn.disabled   = true;
+    btn.innerHTML  = '<span class="spin"></span>Scanning…';
+
+    try {
+      const resp = await fetch('/api/cameras');
+      if (!resp.ok) throw new Error(`Server error ${resp.status}`);
+      const data = await resp.json();
+
+      if (!data.sdk_available) {
+        setStatus('camera-status',
+          'ToupTek SDK not available — place toupcam.py and the native library on the Python path.',
+          true);
+        return;
+      }
+
+      const n = data.cameras.length;
+      if (n === 0) {
+        setStatus('camera-status', 'No cameras found. Check USB connections and try again.');
+        return;
+      }
+
+      setStatus('camera-status', `${n} camera${n !== 1 ? 's' : ''} found.`);
+      grid.innerHTML = data.cameras.map(cameraCard).join('');
+
+    } catch (err) {
+      setStatus('camera-status', String(err), true);
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'Scan';
+    }
+  }
+
+  function cameraCard(cam) {
+    const resStr = cam.resolutions
+      .map(r => `${r[0]} × ${r[1]}`)
+      .join(', ');
+
+    const [px, py] = cam.pixel_size_um;
+    const pxStr = px === py
+      ? `${px.toFixed(2)} µm`
+      : `${px.toFixed(2)} × ${py.toFixed(2)} µm`;
+
+    const idDisplay = cam.id.length > 24 ? cam.id.slice(0, 24) + '…' : cam.id;
+
+    const features = [
+      cam.has_mono  ? 'Monochrome' : 'Colour',
+      cam.usb3      ? 'USB 3.0'   : 'USB 2.0',
+      cam.has_raw16   && 'RAW 16-bit',
+      cam.has_tec     && 'TEC Cooler',
+      cam.has_fan     && 'Cooling Fan',
+    ].filter(Boolean).map(f => `<span class="badge">${f}</span>`).join('');
+
+    return `
+      <div class="card">
+        <div class="card-title">
+          <span class="dot dot-green"></span>
+          ${escHtml(cam.display_name)}
+        </div>
+        <div class="params">
+          <div class="param">
+            <span class="param-label">Model</span>
+            <span class="param-value">${escHtml(cam.model_name)}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Pixel size</span>
+            <span class="param-value">${pxStr}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Preview resolutions</span>
+            <span class="param-value">${resStr || '—'}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Still presets</span>
+            <span class="param-value">${cam.still_count}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Speed levels</span>
+            <span class="param-value">${cam.max_speed + 1}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Camera ID</span>
+            <span class="param-value mono">${escHtml(idDisplay)}</span>
+          </div>
+        </div>
+        <div class="features">${features}</div>
+      </div>`;
+  }
+
+  /* ── init ──────────────────────────────────────────────────────────────── */
+  refreshMount();
+  refreshFocuser();
+</script>
+
+</body>
+</html>

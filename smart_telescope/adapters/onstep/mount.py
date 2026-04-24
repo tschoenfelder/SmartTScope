@@ -6,7 +6,6 @@ import serial
 
 from ...ports.mount import MountPort, MountPosition, MountState
 
-
 # ── sexagesimal helpers ────────────────────────────────────────────────────────
 
 def _format_ra(ra: float) -> str:

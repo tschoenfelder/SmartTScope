@@ -10,7 +10,8 @@ import pytest
 
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.workflow.runner import WorkflowError
-from tests.conftest import make_log, make_unit_runner
+from smart_telescope.workflow.stages import stage_connect
+from tests.conftest import make_log, make_stage_ctx, make_unit_runner
 
 
 @pytest.fixture()
@@ -40,15 +41,15 @@ class TestFocuserPort:
 
 class TestStageConnectWithFocuser:
     def test_connect_calls_focuser_connect(self, focuser_mock: Mock) -> None:
-        runner = make_unit_runner(focuser=focuser_mock)
-        runner._stage_connect(make_log())
+        ctx = make_stage_ctx(focuser=focuser_mock)
+        stage_connect(ctx, make_log())
         focuser_mock.connect.assert_called_once()
 
     def test_focuser_failure_raises_at_connect_stage(self, focuser_mock: Mock) -> None:
         focuser_mock.connect.return_value = False
-        runner = make_unit_runner(focuser=focuser_mock)
+        ctx = make_stage_ctx(focuser=focuser_mock)
         with pytest.raises(WorkflowError) as exc:
-            runner._stage_connect(make_log())
+            stage_connect(ctx, make_log())
         assert exc.value.stage == "connect"
         assert "Focuser" in exc.value.reason
 
@@ -59,9 +60,9 @@ class TestStageConnectWithFocuser:
         from smart_telescope.ports.mount import MountPort
         focuser_mock.connect.return_value = False
         mount_mock = M(spec=MountPort)
-        runner = make_unit_runner(focuser=focuser_mock, mount=mount_mock)
+        ctx = make_stage_ctx(focuser=focuser_mock, mount=mount_mock)
         with pytest.raises(WorkflowError):
-            runner._stage_connect(make_log())
+            stage_connect(ctx, make_log())
         mount_mock.connect.assert_not_called()
 
     def test_run_disconnects_focuser_on_completion(self, focuser_mock: Mock) -> None:

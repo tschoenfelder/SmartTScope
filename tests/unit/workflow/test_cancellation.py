@@ -4,14 +4,15 @@ S0-6: MountPort.stop() + emergency-stop cancellation — unit tests.
 Calling runner.stop() during a slew must halt the mount and raise WorkflowError
 so the session fails cleanly rather than hanging forever.
 """
+import threading
 from unittest.mock import Mock, patch
 
 import pytest
 
-import smart_telescope.workflow.runner as runner_module
 from smart_telescope.ports.mount import MountPort
 from smart_telescope.workflow.runner import WorkflowError
-from tests.conftest import make_unit_runner
+from smart_telescope.workflow.stages import _wait_for_slew
+from tests.conftest import make_stage_ctx, make_unit_runner
 
 
 class TestMountPortStop:
@@ -61,17 +62,15 @@ class TestCancellationDuringSlew:
             "connect.return_value": True,
             "is_slewing.return_value": True,
         })
-        runner = make_unit_runner(mount=mount)
-
-        # Set the stop event before entering the poll loop so it's caught immediately
-        runner._stop_event.set()
+        stop_event = threading.Event()
+        stop_event.set()
+        ctx = make_stage_ctx(mount=mount, stop_event=stop_event)
 
         with (
-            patch("smart_telescope.workflow.runner.time.sleep"),
-            patch.object(runner_module, "SLEW_TIMEOUT_S", 120.0),
+            patch("smart_telescope.workflow.stages.time.sleep"),
             pytest.raises(WorkflowError) as exc,
         ):
-            runner._wait_for_slew("goto")
+            _wait_for_slew(ctx, "goto")
 
         assert exc.value.stage == "goto"
         assert "stop" in exc.value.reason.lower() or "cancel" in exc.value.reason.lower()

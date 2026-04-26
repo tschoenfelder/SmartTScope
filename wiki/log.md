@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-26 — SP-1 + SP-2: hardware spike scripts
+
+**What changed**:
+
+- `scripts/spikes/sp1_touptek_arm64.py` — SP-1 spike: checks ARM64 platform, locates `libtoupcam.so`, imports the SDK, enumerates cameras, attempts software-trigger RAW-16 capture. Writes FITS if `--fits-out` path given. Reports PASS / PARTIAL (SDK ok, no camera) / FAIL.
+- `scripts/spikes/sp2_astap_pi.py` — SP-2 spike: checks ASTAP binary (ARM64), locates G17 catalog (`.290` files), runs a timed full-sky solve on a provided FITS (or synthetic blank to verify the binary). Reports solve time vs. 60 s threshold. Reports memory snapshot via `free -h`.
+
+**How to run on Pi 5**:
+```
+# SP-1 (camera must be connected for full PASS)
+python scripts/spikes/sp1_touptek_arm64.py --fits-out /tmp/sp1_frame.fits
+
+# SP-2 (sky FITS required for solve-time measurement)
+python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
+```
+
+**Prerequisities**:
+- SP-1: place `libtoupcam.so` (ARM64) next to the script (download from ToupTek)
+- SP-2: `sudo dpkg -i astap_arm64.deb`; G17 catalog in `~/.astap/`
+
+---
+
 ## 2026-04-26 — S0-7: FitsFrame migration — typed domain object throughout pipeline
 
 **What changed**:

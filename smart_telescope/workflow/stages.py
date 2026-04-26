@@ -19,7 +19,7 @@ from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
-from ..ports.stacker import StackerPort, StackFrame
+from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 from ._types import (
     CENTERING_TOLERANCE_ARCMIN,
@@ -83,7 +83,7 @@ def stage_align(ctx: StageContext, log: SessionLog) -> None:
     for exposure in [5.0, 10.0][:SOLVE_MAX_ATTEMPTS]:
         log.plate_solve_attempts += 1
         frame = ctx.camera.capture(exposure)
-        result = ctx.solver.solve(frame.data, ctx.profile.pixel_scale_arcsec)
+        result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec)
         if result.success:
             if not ctx.mount.sync(result.ra, result.dec):
                 raise WorkflowError("align", "Mount sync after plate solve failed")
@@ -107,7 +107,7 @@ def stage_recenter(ctx: StageContext, log: SessionLog) -> None:
     for i in range(1, MAX_RECENTER_ITERATIONS + 1):
         log.centering_iterations = i
         frame = ctx.camera.capture(10.0)
-        result = ctx.solver.solve(frame.data, ctx.profile.pixel_scale_arcsec)
+        result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec)
         if not result.success:
             raise WorkflowError(
                 "recenter",
@@ -146,7 +146,7 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
     ctx.stacker.reset()
     for i in range(1, STACK_DEPTH + 1):
         frame = ctx.camera.capture(STACK_EXPOSURE_S)
-        stacked = ctx.stacker.add_frame(StackFrame(data=frame.data, frame_number=i))
+        stacked = ctx.stacker.add_frame(frame, i)
         log.frames_integrated = stacked.frames_integrated
         log.frames_rejected = stacked.frames_rejected
     ctx.on_transition(log, SessionState.STACK_COMPLETE)

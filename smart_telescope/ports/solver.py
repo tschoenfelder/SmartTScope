@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from ..domain.frame import FitsFrame
+
 
 @dataclass
 class SolveResult:
@@ -13,4 +15,4 @@ class SolveResult:
 
 class SolverPort(ABC):
     @abstractmethod
-    def solve(self, frame_data: bytes, pixel_scale_hint: float) -> SolveResult: ...
+    def solve(self, frame: FitsFrame, pixel_scale_hint: float) -> SolveResult: ...

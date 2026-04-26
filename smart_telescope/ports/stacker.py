@@ -1,11 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-
-@dataclass
-class StackFrame:
-    data: bytes
-    frame_number: int
+from ..domain.frame import FitsFrame
 
 
 @dataclass
@@ -20,7 +16,7 @@ class StackerPort(ABC):
     def reset(self) -> None: ...
 
     @abstractmethod
-    def add_frame(self, frame: StackFrame) -> StackedImage: ...
+    def add_frame(self, frame: FitsFrame, frame_number: int) -> StackedImage: ...
 
     @abstractmethod
     def get_current_stack(self) -> StackedImage: ...

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from ...domain.frame import FitsFrame
 from ...ports.solver import SolveResult, SolverPort
 
 _ASTAP_DEFAULT = Path("C:/Program Files/astap/astap.exe")
@@ -63,10 +64,10 @@ class AstapSolver(SolverPort):
         self._downsample = downsample
         self._timeout = timeout_seconds
 
-    def solve(self, frame_data: bytes, pixel_scale_hint: float) -> SolveResult:
+    def solve(self, frame: FitsFrame, pixel_scale_hint: float) -> SolveResult:
         with tempfile.TemporaryDirectory() as tmpdir:
             fits_path = Path(tmpdir) / "frame.fits"
-            fits_path.write_bytes(frame_data)
+            fits_path.write_bytes(frame.to_fits_bytes())
 
             cmd: list[str] = [
                 self._astap,

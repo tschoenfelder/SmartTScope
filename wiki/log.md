@@ -4,6 +4,26 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-26 — S0-7: FitsFrame migration — typed domain object throughout pipeline
+
+**What changed**:
+
+- `smart_telescope/domain/frame.py` — added `to_fits_bytes()`:
+  - Returns `self.data` if cached bytes are present (file-loaded frames)
+  - Otherwise serializes `pixels+header` via astropy (hardware-captured frames, e.g. ToupcamCamera)
+- `smart_telescope/ports/solver.py` — `solve(frame_data: bytes, ...)` → `solve(frame: FitsFrame, ...)`
+- `smart_telescope/ports/stacker.py` — removed `StackFrame` dataclass; `add_frame(StackFrame)` → `add_frame(frame: FitsFrame, frame_number: int)`
+- `smart_telescope/adapters/astap/solver.py` — writes `frame.to_fits_bytes()` to temp file
+- `smart_telescope/adapters/mock/solver.py` — updated signature
+- `smart_telescope/adapters/mock/stacker.py` — removed `StackFrame`; uses `_count` instead of `_frames` list
+- `smart_telescope/workflow/stages.py` — removed `StackFrame` import; passes `frame` directly to solver and stacker; no more `.data` extraction
+- `tests/unit/adapters/astap/test_subprocess.py` — updated to construct `FitsFrame` instead of passing raw bytes
+- `tests/integration/test_real_solver_replay.py` — updated `solve()` calls; added missing `focuser=MockFocuser()`
+
+**Result**: 473 tests passing, 96% coverage. Ruff clean. Mypy clean (47 source files). S0-7 complete.
+
+---
+
 ## 2026-04-24 — M1 API complete: session/connect, solver validation, simulator wiring
 
 **What changed**:

@@ -33,6 +33,16 @@ class FitsFrame:
     def width(self) -> int:
         return int(self.pixels.shape[1])
 
+    def to_fits_bytes(self) -> bytes:
+        """Return raw FITS bytes, serializing from pixels if no cached bytes exist."""
+        if self.data:
+            return self.data
+        hdr = self.header if isinstance(self.header, fits.Header) else fits.Header()
+        hdu = fits.PrimaryHDU(data=self.pixels, header=hdr)
+        buf = io.BytesIO()
+        fits.HDUList([hdu]).writeto(buf)
+        return buf.getvalue()
+
     @classmethod
     def from_fits_bytes(cls, raw: bytes) -> FitsFrame:
         try:

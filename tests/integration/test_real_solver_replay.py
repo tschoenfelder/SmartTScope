@@ -17,10 +17,12 @@ from pathlib import Path
 import pytest
 
 from smart_telescope.adapters.astap.solver import AstapSolver, find_astap
+from smart_telescope.adapters.mock.focuser import MockFocuser
 from smart_telescope.adapters.mock.mount import MockMount
 from smart_telescope.adapters.mock.stacker import MockStacker
 from smart_telescope.adapters.mock.storage import MockStorage
 from smart_telescope.adapters.replay.camera import ReplayCamera
+from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.domain.states import SessionState
 from smart_telescope.workflow.runner import C8_NATIVE, VerticalSliceRunner
 
@@ -57,6 +59,7 @@ def make_hybrid_runner(camera, solver, profile=C8_NATIVE, storage=None):
         solver=solver,
         stacker=MockStacker(),
         storage=storage or MockStorage(),
+        focuser=MockFocuser(),
         optical_profile=profile,
         on_state_change=states.append,
     )
@@ -136,14 +139,14 @@ class TestAstapParseIni:
 class TestAstapSolverUnit:
     def test_solve_succeeds_on_m42_frame(self):
         solver = AstapSolver()
-        data = FITS_M42.read_bytes()
-        result = solver.solve(data, C8_NATIVE.pixel_scale_arcsec)
+        frame = FitsFrame.from_fits_bytes(FITS_M42.read_bytes())
+        result = solver.solve(frame, C8_NATIVE.pixel_scale_arcsec)
         assert result.success, f"Solve failed: {result.error}"
 
     def test_solved_ra_is_near_m42(self):
         solver = AstapSolver()
-        data = FITS_M42.read_bytes()
-        result = solver.solve(data, C8_NATIVE.pixel_scale_arcsec)
+        frame = FitsFrame.from_fits_bytes(FITS_M42.read_bytes())
+        result = solver.solve(frame, C8_NATIVE.pixel_scale_arcsec)
         assert result.success
         ra_deg = result.ra * 15.0
         assert abs(ra_deg - M42_RA_DEG) < COORD_TOLERANCE_DEG, (
@@ -152,8 +155,8 @@ class TestAstapSolverUnit:
 
     def test_solved_dec_is_near_m42(self):
         solver = AstapSolver()
-        data = FITS_M42.read_bytes()
-        result = solver.solve(data, C8_NATIVE.pixel_scale_arcsec)
+        frame = FitsFrame.from_fits_bytes(FITS_M42.read_bytes())
+        result = solver.solve(frame, C8_NATIVE.pixel_scale_arcsec)
         assert result.success
         assert abs(result.dec - M42_DEC_DEG) < COORD_TOLERANCE_DEG, (
             f"Dec {result.dec:.3f}° is more than {COORD_TOLERANCE_DEG}° from M42"
@@ -162,8 +165,8 @@ class TestAstapSolverUnit:
     def test_wrong_pixel_scale_fails_or_degrades(self):
         """A wildly wrong scale hint (5"/px) should fail or return implausible coords."""
         solver = AstapSolver()
-        data = FITS_M42.read_bytes()
-        result = solver.solve(data, pixel_scale_hint=5.0)
+        frame = FitsFrame.from_fits_bytes(FITS_M42.read_bytes())
+        result = solver.solve(frame, pixel_scale_hint=5.0)
         if result.success:
             ra_deg = result.ra * 15.0
             off_ra  = abs(ra_deg  - M42_RA_DEG)
@@ -179,14 +182,14 @@ class TestAstapSolverUnit:
 class TestAstapSolverUnsolvable:
     def test_blank_frame_fails(self):
         solver = AstapSolver()
-        data = FITS_BLANK.read_bytes()
-        result = solver.solve(data, C8_NATIVE.pixel_scale_arcsec)
+        frame = FitsFrame.from_fits_bytes(FITS_BLANK.read_bytes())
+        result = solver.solve(frame, C8_NATIVE.pixel_scale_arcsec)
         assert not result.success
 
     def test_failure_has_error_message(self):
         solver = AstapSolver()
-        data = FITS_BLANK.read_bytes()
-        result = solver.solve(data, C8_NATIVE.pixel_scale_arcsec)
+        frame = FitsFrame.from_fits_bytes(FITS_BLANK.read_bytes())
+        result = solver.solve(frame, C8_NATIVE.pixel_scale_arcsec)
         assert result.error is not None and len(result.error) > 0
 
 

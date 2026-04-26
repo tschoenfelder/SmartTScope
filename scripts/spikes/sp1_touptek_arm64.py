@@ -101,18 +101,10 @@ def check_library() -> Path | None:
 
 def check_sdk_import(lib_path: Path) -> object | None:
     section("3. SDK import")
-    sdk_dir = SCRIPT_DIR.parent.parent / "resources" / "touptek"
-    if str(sdk_dir) not in sys.path:
-        sys.path.insert(0, str(sdk_dir))
-    # Also put the .so next to toupcam.py so it can find it
-    sdk_so = sdk_dir / "libtoupcam.so"
-    if not sdk_so.exists() and lib_path.exists():
-        try:
-            import shutil
-            shutil.copy(lib_path, sdk_so)
-            print(f"{INFO}  Copied {lib_path} → {sdk_so}")
-        except Exception as e:
-            print(f"{INFO}  Could not copy .so to SDK dir: {e}")
+    # Prefer toupcam.py copied here by setup_touptek_pi.sh; fall back to repo source
+    for p in [SCRIPT_DIR, SCRIPT_DIR.parent.parent / "resources" / "touptek"]:
+        if (p / "toupcam.py").exists() and str(p) not in sys.path:
+            sys.path.insert(0, str(p))
 
     try:
         import toupcam  # type: ignore[import]

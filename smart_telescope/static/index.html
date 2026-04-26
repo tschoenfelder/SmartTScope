@@ -216,6 +216,49 @@
     /* ── camera grid ── */
     .camera-grid { display: grid; gap: 1rem; }
 
+    /* ── preview panel ── */
+    .preview-frame {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .preview-frame img {
+      max-width: 100%;
+      display: block;
+    }
+    .preview-placeholder {
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 2rem;
+      text-align: center;
+      pointer-events: none;
+    }
+    .preview-overlay {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.5);
+      font-family: ui-monospace, monospace;
+    }
+    .ws-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .ws-live       { background: var(--success); }
+    .ws-connecting { background: var(--warning); animation: pulse 1s ease infinite; }
+    .ws-stopped    { background: var(--muted); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
     /* ── spinner ── */
     .spin {
       display: inline-block;
@@ -255,6 +298,34 @@
     </div>
     <div id="focuser-status" class="status-line"></div>
     <div id="focuser-card"></div>
+  </section>
+
+  <!-- ── Live Preview ─────────────────────────────────────────────────── -->
+  <section class="section" id="preview-section">
+    <div class="toolbar">
+      <h2>Live Preview</h2>
+      <span id="preview-ws-status" style="font-size:0.8rem;color:var(--muted)">
+        <span class="ws-dot ws-stopped"></span>Stopped
+      </span>
+    </div>
+    <div id="preview-status" class="status-line"></div>
+    <div class="preview-frame" id="preview-frame">
+      <div class="preview-placeholder" id="preview-placeholder">
+        Press Start to begin live preview
+      </div>
+      <img id="preview-img" alt="" style="display:none">
+      <div class="preview-overlay" id="preview-overlay"></div>
+    </div>
+    <div class="controls" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+      <label>Exposure</label>
+      <input type="number" id="preview-exposure" value="2" min="0.1" max="60" step="0.5"
+             style="width:7ch">
+      <label>s</label>
+      <button id="preview-start-btn" onclick="previewStart()">Start</button>
+      <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+      <span class="controls-spacer"></span>
+      <span id="preview-count" style="font-size:0.78rem;color:var(--muted)"></span>
+    </div>
   </section>
 
   <!-- ── Cameras ────────────────────────────────────────────────────────── -->
@@ -561,6 +632,98 @@
         </div>
         <div class="features">${features}</div>
       </div>`;
+  }
+
+  /* ── Live Preview ──────────────────────────────────────────────────────── */
+
+  let _ws         = null;
+  let _frameCount = 0;
+  let _reconnect  = true;  // false when user explicitly stopped
+  let _reconnectTimer = null;
+
+  function _setWsStatus(state) {
+    // state: 'live' | 'connecting' | 'stopped'
+    const labels = { live: 'Live', connecting: 'Connecting…', stopped: 'Stopped' };
+    const el = document.getElementById('preview-ws-status');
+    el.innerHTML =
+      `<span class="ws-dot ws-${state}"></span>${labels[state] || state}`;
+  }
+
+  function previewStart() {
+    _reconnect = true;
+    _connectWs();
+  }
+
+  function previewStop() {
+    _reconnect = false;
+    clearTimeout(_reconnectTimer);
+    if (_ws) { _ws.close(1000, 'user stop'); _ws = null; }
+    document.getElementById('preview-start-btn').disabled = false;
+    document.getElementById('preview-stop-btn').disabled  = true;
+    _setWsStatus('stopped');
+    setStatus('preview-status', '');
+  }
+
+  function _connectWs() {
+    if (_ws) { _ws.close(); _ws = null; }
+
+    const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
+    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}`;
+
+    _setWsStatus('connecting');
+    setStatus('preview-status', '');
+    document.getElementById('preview-start-btn').disabled = true;
+    document.getElementById('preview-stop-btn').disabled  = false;
+
+    _ws = new WebSocket(url);
+    _ws.binaryType = 'blob';
+
+    _ws.onopen = () => {
+      _frameCount = 0;
+      _setWsStatus('live');
+    };
+
+    _ws.onmessage = (ev) => {
+      const img = document.getElementById('preview-img');
+      const ph  = document.getElementById('preview-placeholder');
+
+      // Revoke the previous object URL to avoid memory leaks
+      if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+
+      img.src     = URL.createObjectURL(ev.data);
+      img.style.display = 'block';
+      ph.style.display  = 'none';
+
+      _frameCount++;
+      const now = new Date().toLocaleTimeString();
+      document.getElementById('preview-count').textContent =
+        `${_frameCount} frame${_frameCount !== 1 ? 's' : ''}`;
+      document.getElementById('preview-overlay').textContent =
+        `#${_frameCount} · ${now}`;
+    };
+
+    _ws.onerror = () => {
+      setStatus('preview-status', 'WebSocket error — check server', true);
+    };
+
+    _ws.onclose = (ev) => {
+      _ws = null;
+      if (_reconnect && ev.code !== 1000) {
+        // Abnormal close: schedule reconnect
+        _setWsStatus('connecting');
+        setStatus('preview-status', `Disconnected (code ${ev.code}) — reconnecting in 3 s…`);
+        _reconnectTimer = setTimeout(_connectWs, 3000);
+      } else if (!_reconnect) {
+        // User stopped
+        _setWsStatus('stopped');
+      } else {
+        // Normal close from server side — just reset UI
+        _setWsStatus('stopped');
+        document.getElementById('preview-start-btn').disabled = false;
+        document.getElementById('preview-stop-btn').disabled  = true;
+      }
+    };
   }
 
   /* ── init ──────────────────────────────────────────────────────────────── */

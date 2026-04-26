@@ -4,6 +4,32 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-26 — Sprint 5: WebSocket live preview (M3 foundation)
+
+**What changed**:
+
+- `smart_telescope/domain/stretch.py` (NEW) — `auto_stretch(pixels) → uint8`:
+  - 0.5th–99.5th percentile clip + linear scale to [0, 255]
+  - Uniform/zero arrays return black (handles MockCamera gracefully)
+- `smart_telescope/api/preview.py` (NEW) — `GET /ws/preview?exposure=<s>`:
+  - Accepts WebSocket, loops: `capture → stretch → JPEG → send_bytes`
+  - Uses `asyncio.to_thread` for the blocking camera call
+  - Exposure validated: 0 < exposure ≤ 60 s; invalid values close with 403
+  - Handles `WebSocketDisconnect` and abrupt `RuntimeError` cleanly
+- `smart_telescope/app.py` — preview router included
+- `smart_telescope/static/index.html` — Live Preview panel:
+  - Start/Stop buttons with exposure input
+  - `<img>` element updated via Blob URL on each binary WebSocket message
+  - Frame counter + last-frame timestamp overlay
+  - Auto-reconnect on abnormal close (3 s delay); no reconnect on user Stop
+  - Connecting / Live / Stopped dot indicator
+- `tests/unit/domain/test_stretch.py` (NEW) — 9 stretch tests
+- `tests/unit/api/test_preview.py` (NEW) — 16 WebSocket endpoint tests
+
+**Result**: 495 tests passing, 96% coverage. Ruff clean. Mypy clean (49 source files).
+
+---
+
 ## 2026-04-26 — SP-1 + SP-2: hardware spike scripts
 
 **What changed**:

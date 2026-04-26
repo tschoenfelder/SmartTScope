@@ -15,15 +15,18 @@ from ..adapters.mock.camera import MockCamera
 from ..adapters.mock.focuser import MockFocuser
 from ..adapters.mock.mount import MockMount
 from ..adapters.mock.stacker import MockStacker
+from ..adapters.mock.storage import MockStorage
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
 from ..ports.stacker import StackerPort
+from ..ports.storage import StoragePort
 
 _camera: CameraPort | None = None
 _mount: MountPort | None = None
 _focuser: FocuserPort | None = None
 _stacker: StackerPort | None = None
+_storage: StoragePort | None = None
 
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
@@ -77,10 +80,25 @@ def get_stacker() -> StackerPort:
     return _stacker
 
 
+def get_storage() -> StoragePort:
+    global _storage
+    if _storage is None:
+        storage_dir = os.environ.get("STORAGE_DIR", "")
+        if storage_dir:
+            from pathlib import Path
+
+            from ..adapters.disk_storage.storage import DiskStorage
+            _storage = DiskStorage(Path(storage_dir))
+        else:
+            _storage = MockStorage()
+    return _storage
+
+
 def reset() -> None:
     """Reset cached singletons (used in tests)."""
-    global _camera, _mount, _focuser, _stacker
+    global _camera, _mount, _focuser, _stacker, _storage
     _camera = None
     _mount = None
     _focuser = None
     _stacker = None
+    _storage = None

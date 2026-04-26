@@ -1,12 +1,13 @@
 """Unit tests for mount API endpoints — no hardware required."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps
 from smart_telescope.app import app
+from smart_telescope.domain.solar import SolarPosition
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
 
 client = TestClient(app)
@@ -178,3 +179,89 @@ class TestMountGoto:
     def test_returns_422_when_body_missing(self) -> None:
         _inject(_mock_mount())
         assert client.post("/api/mount/goto", json={}).status_code == 422
+
+
+# ── Solar gate tests ───────────────────────────────────────────────────────────
+
+_SUN_AT = SolarPosition(ra_hours=6.0, dec_deg=23.0)
+_SOLAR_RA = 6.0
+_SOLAR_DEC = 23.0
+_SAFE_RA = 18.0   # 180° away — always safe
+
+
+def _sun_mock(pos: SolarPosition = _SUN_AT):
+    return patch("smart_telescope.api.mount.is_solar_target", wraps=_patched_is_solar(pos))
+
+
+def _patched_is_solar(sun: SolarPosition):
+    from smart_telescope.domain.solar import is_solar_target as _real
+
+    def _inner(ra: float, dec: float, **kw):
+        return _real(ra, dec, sun=sun, **kw)
+
+    return _inner
+
+
+class TestMountGotoSolarGate:
+    def test_solar_target_returns_403(self) -> None:
+        _inject(_mock_mount())
+        with patch(
+            "smart_telescope.api.mount.is_solar_target",
+            return_value=(True, 3.5),
+        ):
+            r = client.post("/api/mount/goto", json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC})
+        assert r.status_code == 403
+
+    def test_solar_403_body_contains_error_key(self) -> None:
+        _inject(_mock_mount())
+        with patch(
+            "smart_telescope.api.mount.is_solar_target",
+            return_value=(True, 3.5),
+        ):
+            r = client.post("/api/mount/goto", json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC})
+        assert r.json()["detail"]["error"] == "solar_exclusion"
+
+    def test_solar_403_body_contains_separation(self) -> None:
+        _inject(_mock_mount())
+        with patch(
+            "smart_telescope.api.mount.is_solar_target",
+            return_value=(True, 3.5),
+        ):
+            r = client.post("/api/mount/goto", json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC})
+        assert r.json()["detail"]["sun_separation_deg"] == pytest.approx(3.5, abs=0.01)
+
+    def test_safe_target_passes_gate(self) -> None:
+        _inject(_mock_mount())
+        with patch(
+            "smart_telescope.api.mount.is_solar_target",
+            return_value=(False, 120.0),
+        ):
+            r = client.post("/api/mount/goto", json={"ra": _SAFE_RA, "dec": 0.0})
+        assert r.status_code == 200
+
+    def test_confirm_solar_bypasses_gate(self) -> None:
+        _inject(_mock_mount())
+        r = client.post(
+            "/api/mount/goto?confirm_solar=true",
+            json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC},
+        )
+        assert r.status_code == 200
+
+    def test_confirm_solar_skips_is_solar_target_call(self) -> None:
+        _inject(_mock_mount())
+        with patch("smart_telescope.api.mount.is_solar_target") as mock_gate:
+            client.post(
+                "/api/mount/goto?confirm_solar=true",
+                json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC},
+            )
+        mock_gate.assert_not_called()
+
+    def test_goto_not_called_when_solar_blocked(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        with patch(
+            "smart_telescope.api.mount.is_solar_target",
+            return_value=(True, 3.5),
+        ):
+            client.post("/api/mount/goto", json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC})
+        m.goto.assert_not_called()

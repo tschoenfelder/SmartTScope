@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import contextlib
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from ..domain.solar import is_solar_target
 from ..ports.mount import MountPort, MountState
 from . import deps
 
@@ -61,7 +62,18 @@ def mount_stop(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
 
 
 @router.post("/goto")
-def mount_goto(body: GotoRequest, mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+def mount_goto(
+    body: GotoRequest,
+    mount: MountPort = Depends(deps.get_mount),
+    confirm_solar: bool = Query(default=False),
+) -> dict[str, bool]:
+    if not confirm_solar:
+        blocked, sep = is_solar_target(body.ra, body.dec)
+        if blocked:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
+            )
     ok = mount.goto(body.ra, body.dec)
     if not ok:
         raise HTTPException(status_code=500, detail="GoTo failed")

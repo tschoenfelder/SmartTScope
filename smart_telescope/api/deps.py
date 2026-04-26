@@ -14,13 +14,16 @@ import os
 from ..adapters.mock.camera import MockCamera
 from ..adapters.mock.focuser import MockFocuser
 from ..adapters.mock.mount import MockMount
+from ..adapters.mock.stacker import MockStacker
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
+from ..ports.stacker import StackerPort
 
 _camera: CameraPort | None = None
 _mount: MountPort | None = None
 _focuser: FocuserPort | None = None
+_stacker: StackerPort | None = None
 
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
@@ -63,9 +66,21 @@ def get_focuser() -> FocuserPort:
     return _focuser
 
 
+def get_stacker() -> StackerPort:
+    global _stacker
+    if _stacker is None:
+        try:
+            from ..adapters.numpy_stacker.stacker import NumpyStacker
+            _stacker = NumpyStacker()
+        except ImportError:
+            _stacker = MockStacker()
+    return _stacker
+
+
 def reset() -> None:
     """Reset cached singletons (used in tests)."""
-    global _camera, _mount, _focuser
+    global _camera, _mount, _focuser, _stacker
     _camera = None
     _mount = None
     _focuser = None
+    _stacker = None

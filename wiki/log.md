@@ -4,6 +4,53 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-26 — Sprint 6: NumpyStacker with astroalign registration
+
+**What changed**:
+
+- `smart_telescope/adapters/numpy_stacker/stacker.py` (NEW) — `NumpyStacker(StackerPort)`:
+  - First frame stored as reference (no astroalign needed)
+  - Subsequent frames: `astroalign.register(frame, reference)` → mean-stack on success
+  - Registration failures: silently rejected, count incremented
+  - `get_current_stack()` / `add_frame()` return FITS bytes of mean-stacked float32 array
+  - `astroalign` imported at module level as `_aa`; gracefully set to `None` if not installed
+  - `ImportError` raised only if second frame attempted without astroalign present
+- `smart_telescope/api/deps.py` — `get_stacker()` added:
+  - Returns `NumpyStacker` when astroalign available
+  - Falls back to `MockStacker` if `ImportError` (tests, no-astroalign environments)
+- `tests/unit/adapters/numpy_stacker/test_numpy_stacker.py` (NEW) — 17 tests:
+  - `autouse` fixture patches module-level `_aa` → identity mock (no astroalign required on dev machine)
+  - Tests cover reset, first-frame reference, registration success/failure, mean arithmetic, SNR improvement
+
+**Result**: 497 tests passing. Ruff clean. Mypy clean.
+
+---
+
+## 2026-04-26 — Sprint 4: Solar exclusion gate (M2 safety)
+
+**What changed**:
+
+- `smart_telescope/domain/solar.py` (NEW) — Solar position + exclusion gate:
+  - `sun_position_now() → SolarPosition` via astropy `get_sun(Time.now())`
+  - `angular_separation_deg(ra1_h, dec1_d, ra2_h, dec2_d) → float` (degrees)
+  - `is_solar_target(ra_h, dec_d, *, threshold_deg=10.0, sun=None) → (bool, float)`
+  - Threshold default: 10° exclusion zone around the Sun
+- `smart_telescope/api/mount.py` — Solar gate added to `POST /api/mount/goto`:
+  - Calls `is_solar_target()` before every slew (unless `?confirm_solar=true`)
+  - Returns HTTP 403 with `{"error": "solar_exclusion", "sun_separation_deg": N}` when blocked
+  - `confirm_solar=true` bypasses gate entirely (explicit acknowledgement pattern)
+- `scripts/spikes/sp3_astroalign_feasibility.py` (NEW) — SP-3 spike:
+  - Generates synthetic 2080×3096 frames with 80 Gaussian PSF stars
+  - Applies known pixel offset to source frame
+  - Calls `astroalign.register()` + `find_transform()`; verifies residual < 2 px
+  - Reports timing vs. 30 s budget; advises on downsampling if over budget
+- `tests/unit/domain/test_solar.py` (NEW) — 14 solar domain tests
+- `tests/unit/api/test_mount.py` — 7 new solar gate tests added to `TestMountGotoSolarGate`
+
+**Result**: 480 tests passing. Ruff clean. Mypy clean.
+
+---
+
 ## 2026-04-26 — Sprint 5: WebSocket live preview (M3 foundation)
 
 **What changed**:

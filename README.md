@@ -8,9 +8,11 @@ A user powers on, connects via an app, selects a target, and the system autonomo
 
 ## Release state
 
-**v0.1.0 — Sprint 8 complete**
+**v0.1.0 — Sprint 10 complete**
 
-542 unit tests, 80%+ coverage, CI green. The core 8-stage session pipeline runs end-to-end with stop-event cancel, tracking-lost guard, and periodic mid-stack recentering. Real hardware adapters for the OnStep mount, focuser, and ToupTek camera are complete and unit-tested (hardware validation pending full field test). A FastAPI REST + WebSocket layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached. The `scripts/start.sh` launcher activates the venv, exports hardware configuration, and starts the server in one command.
+616 unit tests, 91%+ coverage, CI green. The core 8-stage session pipeline runs end-to-end with stop-event cancel, tracking-lost guard, and periodic mid-stack recentering. Real hardware adapters for the OnStep mount, focuser, and ToupTek camera are complete and unit-tested (hardware validation pending full field test). A FastAPI REST + WebSocket layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached.
+
+The Sky Shot MVP flow is end-to-end from a cold parked state: Connect All → GoTo Sky (auto-unparks, computes meridian RA/Dec from LST and observer latitude) → Snap → Park. The 110-object Messier catalog is bundled; type a designation or common name in the Target box to fill RA/Dec for GoTo. Observer location defaults to Usingen, Hesse (50.336°N 8.533°E) and is overridable via `OBSERVER_LAT` / `OBSERVER_LON` env vars.
 
 ---
 
@@ -301,11 +303,15 @@ A FastAPI application (`app.py`) runs on uvicorn and provides:
 | `GET /` | Static HTML control panel (auto-refreshes on load) |
 | `GET /api/mount/status` | RA, Dec, state |
 | `POST /api/mount/unpark` / `track` / `stop` / `goto` | Mount commands |
+| `POST /api/mount/park` / `disable_tracking` | Park and stop tracking |
+| `POST /api/mount/goto_sky?elevation=80` | Slew to meridian at elevation (auto-unparks, solar gate applied) |
 | `GET /api/focuser/status` | Position, moving flag |
 | `POST /api/focuser/move` / `nudge` / `stop` | Focuser commands |
 | `GET /api/cameras` | Enumerate connected ToupTek cameras via SDK |
 | `POST /api/session/connect` | Connect all devices; returns per-device `{status, error, action}` |
 | `GET /api/solver/status` | Check ASTAP executable and G17 catalog presence |
+| `GET /api/catalog/search?q=m42` | Search the bundled 110-object Messier catalog |
+| `GET /api/catalog/objects` | Full catalog list |
 | `WS /ws/preview` | Stream live auto-stretched JPEG frames from the camera |
 | `WS /ws/stack` | Stream the current mean stack as JPEG + frame-count metadata |
 
@@ -315,7 +321,7 @@ Adapter selection is controlled by environment variables (see [Starting the serv
 
 | Adapter | Status |
 |---|---|
-| `OnStepMount` | Complete — LX200 serial protocol; connect, goto, sync, track, stop, park |
+| `OnStepMount` | Complete — LX200 serial protocol; connect, goto, sync, track, stop, park, disable_tracking |
 | `OnStepFocuser` | Complete — F-command set; move (absolute), is_moving, stop |
 | `ToupcamCamera` | Written and unit-tested; hardware validation pending hardware access |
 
@@ -363,7 +369,7 @@ When ASTAP and fixture FITS files are present, the real solver adapter replaces 
 The following are planned for future milestones and are **not** yet implemented:
 
 - Live stacking with real frame registration (astroalign / ccdproc)
-- Autofocus (M6 — Season 2)
+- Autofocus (electronic focus curve / V-curve)
 - Optical profile switching at runtime
 - Multi-target or multi-night sessions
 - Mosaic mode
@@ -372,6 +378,7 @@ The following are planned for future milestones and are **not** yet implemented:
 - Native mobile client (iOS / Android)
 - Scheduled observations
 - Share / export workflow
+- NGC / IC catalog (only Messier is bundled today)
 
 ---
 
@@ -379,11 +386,11 @@ The following are planned for future milestones and are **not** yet implemented:
 
 ```
 smart_telescope/
-  domain/         SessionState enum, FitsFrame, SessionLog
+  domain/         SessionState enum, FitsFrame, SessionLog, Messier catalog
   ports/          Abstract interfaces
     camera.py     CameraPort — connect, capture, disconnect
     focuser.py    FocuserPort — connect, move, get_position, is_moving, stop
-    mount.py      MountPort — connect, goto, sync, stop, disconnect
+    mount.py      MountPort — connect, goto, sync, stop, park, disable_tracking, disconnect
     solver.py     SolverPort — solve(frame, pixel_scale) → SolveResult
     stacker.py    StackerPort — reset, add_frame, get_current_stack
     storage.py    StoragePort — save_image, save_log, has_free_space
@@ -400,9 +407,10 @@ smart_telescope/
     replay/       FITS replay camera for integration testing
   api/
     deps.py       Singleton dependency providers; TOUPTEK_INDEX / ONSTEP_PORT / SIMULATOR_FITS_DIR
-    mount.py      GET /api/mount/status, POST /api/mount/{unpark,track,stop,goto}
+    mount.py      GET /api/mount/status, POST /api/mount/{unpark,track,stop,goto,park,disable_tracking,goto_sky}
     focuser.py    GET /api/focuser/status, POST /api/focuser/{move,nudge,stop}
     cameras.py    GET /api/cameras — ToupTek SDK camera enumeration
+    catalog.py    GET /api/catalog/{search,objects} — bundled 110-object Messier catalog
     session.py    POST /api/session/connect — per-device {status, error, action}
     solver.py     GET /api/solver/status — ASTAP + G17 catalog presence check
     preview.py    WS /ws/preview — auto-stretched JPEG live preview

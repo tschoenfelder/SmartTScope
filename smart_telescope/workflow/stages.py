@@ -28,6 +28,7 @@ from ._types import (
     MAX_RECENTER_ITERATIONS,
     PREVIEW_EXPOSURE_S,
     PREVIEW_FRAMES,
+    RECENTER_EVERY_N_FRAMES,
     SLEW_POLL_INTERVAL_S,
     SLEW_TIMEOUT_S,
     SOLVE_MAX_ATTEMPTS,
@@ -145,6 +146,21 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
     ctx.on_transition(log, SessionState.STACKING)
     ctx.stacker.reset()
     for i in range(1, STACK_DEPTH + 1):
+        if ctx.stop_event.is_set():
+            raise WorkflowError("stack", "Stack cancelled by stop request")
+
+        mount_state = ctx.mount.get_state()
+        if mount_state not in (MountState.TRACKING, MountState.SLEWING):
+            raise WorkflowError(
+                "stack",
+                f"Tracking lost during frame {i} (mount state: {mount_state.name})",
+            )
+
+        if i > 1 and (i - 1) % RECENTER_EVERY_N_FRAMES == 0:
+            log.warnings.append(f"Periodic recenter before frame {i}")
+            stage_recenter(ctx, log)
+            ctx.on_transition(log, SessionState.STACKING)
+
         frame = ctx.camera.capture(STACK_EXPOSURE_S)
         stacked = ctx.stacker.add_frame(frame, i)
         log.frames_integrated = stacked.frames_integrated

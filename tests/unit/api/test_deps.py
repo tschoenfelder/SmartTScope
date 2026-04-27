@@ -58,6 +58,51 @@ class TestSimulatorMode:
         assert cam._data_dir == tmp_path
 
 
+# ── ToupTek camera mode (TOUPTEK_INDEX set) ───────────────────────────────────
+
+
+class TestToupcamMode:
+    def test_camera_is_touptek(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from smart_telescope.adapters.touptek.camera import ToupcamCamera
+
+        monkeypatch.setenv("TOUPTEK_INDEX", "0")
+        assert isinstance(deps.get_camera(), ToupcamCamera)
+
+    def test_touptek_index_passed_to_adapter(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from smart_telescope.adapters.touptek.camera import ToupcamCamera
+
+        monkeypatch.setenv("TOUPTEK_INDEX", "1")
+        cam = deps.get_camera()
+        assert isinstance(cam, ToupcamCamera)
+        assert cam._index == 1
+
+    def test_touptek_overrides_simulator_for_camera(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from smart_telescope.adapters.touptek.camera import ToupcamCamera
+
+        monkeypatch.setenv("TOUPTEK_INDEX", "0")
+        monkeypatch.setenv("SIMULATOR_FITS_DIR", str(tmp_path))
+        assert isinstance(deps.get_camera(), ToupcamCamera)
+
+    def test_touptek_camera_with_onstep_mount(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from smart_telescope.adapters.onstep.mount import OnStepMount
+        from smart_telescope.adapters.touptek.camera import ToupcamCamera
+
+        monkeypatch.setenv("TOUPTEK_INDEX", "0")
+        monkeypatch.setenv("ONSTEP_PORT", "/dev/ttyUSB0")
+        assert isinstance(deps.get_camera(), ToupcamCamera)
+        deps.reset()
+        assert isinstance(deps.get_mount(), OnStepMount)
+
+    def test_simulator_mount_still_used_when_only_touptek_set(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv("TOUPTEK_INDEX", "0")
+        monkeypatch.setenv("SIMULATOR_FITS_DIR", str(tmp_path))
+        assert isinstance(deps.get_mount(), SimulatorMount)
+
+
 # ── hardware mode (ONSTEP_PORT set) ───────────────────────────────────────────
 
 

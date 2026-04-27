@@ -8,9 +8,9 @@ A user powers on, connects via an app, selects a target, and the system autonomo
 
 ## Release state
 
-**v0.1.0 — Sprint 1/2 in progress (M1 API complete)**
+**v0.1.0 — Sprint 8 complete**
 
-437 unit tests, 89% coverage, CI green. The core 8-stage session pipeline runs end-to-end. Real hardware adapters for the OnStep mount and focuser are complete. A ToupTek camera adapter is written and unit-tested (hardware validation pending). A FastAPI REST layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached. The M1 session connect API (`POST /api/session/connect`) validates camera, mount, focuser, and solver readiness in a single call.
+542 unit tests, 80%+ coverage, CI green. The core 8-stage session pipeline runs end-to-end with stop-event cancel, tracking-lost guard, and periodic mid-stack recentering. Real hardware adapters for the OnStep mount, focuser, and ToupTek camera are complete and unit-tested (hardware validation pending full field test). A FastAPI REST + WebSocket layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached. The `scripts/start.sh` launcher activates the venv, exports hardware configuration, and starts the server in one command.
 
 ---
 
@@ -151,6 +151,68 @@ This installs the test runner, coverage tool, linter, type checker, mock library
 
 ---
 
+## Starting the server
+
+### Hardware mode (Raspberry Pi)
+
+```bash
+bash scripts/start.sh
+```
+
+The script auto-detects the virtual environment (`.venv/` or in-place venv), exports hardware configuration, creates the image storage directory, and starts uvicorn on `http://0.0.0.0:8000`.
+
+Default configuration:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ONSTEP_PORT` | `/dev/ttyACM0` | Serial port for the OnStep mount controller |
+| `TOUPTEK_INDEX` | `0` | Zero-based index into `Toupcam.EnumV2()` device list |
+| `STORAGE_DIR` | `~/smarttscope_data` | Directory for saved PNG images and JSON session logs |
+
+Any variable can be overridden by prefixing the command:
+
+```bash
+ONSTEP_PORT=/dev/ttyUSB0 bash scripts/start.sh          # different serial port
+TOUPTEK_INDEX=1 bash scripts/start.sh                    # second camera
+STORAGE_DIR=/mnt/ssd/astro bash scripts/start.sh         # external drive
+```
+
+The script prints a pre-flight summary before starting:
+
+```
+══════════════════════════════════════════════════
+  SmartTScope  2026-04-27 21:03:00
+══════════════════════════════════════════════════
+
+  ·  Python   : Python 3.13.3
+  ·  Project  : /home/astro/astro_sw/SmartTScope
+
+  ✓  Mount    : OnStep  →  /dev/ttyACM0
+  ✓  Camera   : ToupTek index 0
+  ✓  Storage  : /home/astro/smarttscope_data
+
+── Starting server ───────────────────────────────
+```
+
+If the serial device is not found, a warning is printed but the server still starts (the device may connect after the mount powers on).
+
+### Simulator mode (no hardware required)
+
+```bash
+SIMULATOR_FITS_DIR=~/fits bash scripts/start.sh
+```
+
+Activates `SimulatorCamera`, `SimulatorMount`, and `SimulatorFocuser`. Provide a directory of `.fits` files for the camera to replay.
+
+### Pi pull-and-test (update + verify before starting)
+
+```bash
+bash scripts/pi_pull_and_test.sh   # pull latest, reinstall deps, run unit tests
+bash scripts/start.sh              # start once tests pass
+```
+
+---
+
 ## Running the dev pipeline
 
 Run all three checks before committing. CI enforces the same sequence on every push.
@@ -244,8 +306,10 @@ A FastAPI application (`app.py`) runs on uvicorn and provides:
 | `GET /api/cameras` | Enumerate connected ToupTek cameras via SDK |
 | `POST /api/session/connect` | Connect all devices; returns per-device `{status, error, action}` |
 | `GET /api/solver/status` | Check ASTAP executable and G17 catalog presence |
+| `WS /ws/preview` | Stream live auto-stretched JPEG frames from the camera |
+| `WS /ws/stack` | Stream the current mean stack as JPEG + frame-count metadata |
 
-Set `ONSTEP_PORT=/dev/ttyUSB0` to route API calls to real hardware; omit it to use simulator adapters.
+Adapter selection is controlled by environment variables (see [Starting the server](#starting-the-server)). Omit all hardware variables to fall back to mock adapters for development.
 
 ### Hardware adapters
 
@@ -298,7 +362,6 @@ When ASTAP and fixture FITS files are present, the real solver adapter replaces 
 
 The following are planned for future milestones and are **not** yet implemented:
 
-- WebSocket live preview push (M3)
 - Live stacking with real frame registration (astroalign / ccdproc)
 - Autofocus (M6 — Season 2)
 - Optical profile switching at runtime
@@ -336,16 +399,18 @@ smart_telescope/
     astap/        ASTAP plate-solver subprocess adapter
     replay/       FITS replay camera for integration testing
   api/
-    deps.py       Singleton dependency providers; ONSTEP_PORT / SIMULATOR_FITS_DIR env vars
+    deps.py       Singleton dependency providers; TOUPTEK_INDEX / ONSTEP_PORT / SIMULATOR_FITS_DIR
     mount.py      GET /api/mount/status, POST /api/mount/{unpark,track,stop,goto}
     focuser.py    GET /api/focuser/status, POST /api/focuser/{move,nudge,stop}
     cameras.py    GET /api/cameras — ToupTek SDK camera enumeration
     session.py    POST /api/session/connect — per-device {status, error, action}
     solver.py     GET /api/solver/status — ASTAP + G17 catalog presence check
+    preview.py    WS /ws/preview — auto-stretched JPEG live preview
+    stack.py      WS /ws/stack — live mean-stack JPEG + frame-count metadata
     event_log.py  Thread-safe circular log for serial command tracing
   app.py          FastAPI application factory
   static/
-    index.html    Mount + focuser control panel; auto-refreshes on load
+    index.html    Mount + focuser + live preview control panel
 
 tests/
   unit/           Stage-isolation tests — fast, no real I/O
@@ -364,6 +429,8 @@ tests/
 scripts/
   build_dist.py  Build agent — generates requirements.txt and wheel
   install_pi.sh  Automated installer for Raspberry Pi 5
+  start.sh       Hardware startup script — activates venv, exports config, starts server
+  pi_pull_and_test.sh  Pull latest code and run unit suite on the Pi
 
 wiki/           Planning knowledge base (Markdown)
 docs/           Architecture reviews, milestone plan, agile plan, test strategy

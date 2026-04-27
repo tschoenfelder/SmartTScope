@@ -12,8 +12,9 @@ from ...domain.frame import FitsFrame
 from ...ports.camera import CameraPort
 
 # Event constants from toupcam SDK — stable protocol values, not imported at runtime.
-_EVENT_IMAGE = 0x0004
-_EVENT_ERROR = 0x0080
+_EVENT_IMAGE        = 0x0004
+_EVENT_TRIGGER_FAIL = 0x0007
+_EVENT_ERROR        = 0x0080
 _EVENT_DISCONNECTED = 0x0081
 
 
@@ -132,6 +133,9 @@ class ToupcamCamera(CameraPort):
 def _camera_event(event: int, ctx: ToupcamCamera) -> None:
     """SDK callback fired from a native thread; must be fast and non-blocking."""
     if event == _EVENT_IMAGE:
+        ctx._frame_ready.set()
+    elif event == _EVENT_TRIGGER_FAIL:
+        ctx._capture_error = RuntimeError("Camera trigger failed — check exposure settings")
         ctx._frame_ready.set()
     elif event == _EVENT_DISCONNECTED:
         ctx._capture_error = RuntimeError("Camera disconnected during capture")

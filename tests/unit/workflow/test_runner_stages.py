@@ -357,12 +357,14 @@ class TestStageRecenter:
 class TestStageStack:
     def test_correct_number_of_frames_captured(self, camera_mock, stacker_mock):
         ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
-        stage_stack(ctx, make_log())
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
+            stage_stack(ctx, make_log())
         assert camera_mock.capture.call_count == stages_module.STACK_DEPTH
 
     def test_each_frame_uses_stack_exposure(self, camera_mock, stacker_mock):
         ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
-        stage_stack(ctx, make_log())
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
+            stage_stack(ctx, make_log())
         for c in camera_mock.capture.call_args_list:
             assert c.args[0] == pytest.approx(stages_module.STACK_EXPOSURE_S)
 
@@ -392,8 +394,69 @@ class TestStageStack:
     def test_transitions_to_stack_complete(self, stacker_mock):
         ctx = make_stage_ctx(stacker=stacker_mock)
         log = make_log()
-        stage_stack(ctx, log)
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
+            stage_stack(ctx, log)
         assert log.state == SessionState.STACK_COMPLETE
+
+    def test_stop_event_set_before_start_cancels_stack(self, stacker_mock):
+        import threading
+        stop = threading.Event()
+        stop.set()
+        ctx = make_stage_ctx(stacker=stacker_mock, stop_event=stop)
+        with pytest.raises(WorkflowError) as exc:
+            stage_stack(ctx, make_log())
+        assert exc.value.stage == "stack"
+        assert "cancel" in exc.value.reason.lower() or "stop" in exc.value.reason.lower()
+        stacker_mock.add_frame.assert_not_called()
+
+    def test_tracking_lost_raises_workflow_error(self, stacker_mock, mount_mock):
+        mount_mock.get_state.return_value = MountState.PARKED
+        ctx = make_stage_ctx(stacker=stacker_mock, mount=mount_mock)
+        with pytest.raises(WorkflowError) as exc:
+            stage_stack(ctx, make_log())
+        assert exc.value.stage == "stack"
+        assert "tracking" in exc.value.reason.lower()
+
+    def test_slewing_state_is_accepted_during_stack(self, stacker_mock, mount_mock):
+        mount_mock.get_state.return_value = MountState.SLEWING
+        ctx = make_stage_ctx(stacker=stacker_mock, mount=mount_mock)
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
+            log = make_log()
+            stage_stack(ctx, log)
+        assert log.state == SessionState.STACK_COMPLETE
+
+    def test_periodic_recenter_fires_at_configured_cadence(self, stacker_mock, mount_mock, solver_mock):
+        # STACK_DEPTH=10, RECENTER_EVERY_N_FRAMES=5 → recenter fires once (before frame 6)
+        solver_mock.solve.return_value = __import__(
+            "smart_telescope.ports.solver", fromlist=["SolveResult"]
+        ).SolveResult(success=True, ra=M42_RA, dec=M42_DEC)
+        ctx = make_stage_ctx(stacker=stacker_mock, mount=mount_mock, solver=solver_mock)
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 5):
+            stage_stack(ctx, make_log())
+        # 10 stack frames + 1 recenter capture (at iteration 6)
+        assert ctx.camera.capture.call_count == stages_module.STACK_DEPTH + 1
+
+    def test_periodic_recenter_re_transitions_to_stacking(self, stacker_mock, mount_mock, solver_mock):
+        solver_mock.solve.return_value = __import__(
+            "smart_telescope.ports.solver", fromlist=["SolveResult"]
+        ).SolveResult(success=True, ra=M42_RA, dec=M42_DEC)
+        states: list = []
+
+        def capture_transitions(log, state):
+            log.state = state
+            states.append(state)
+
+        ctx = make_stage_ctx(
+            stacker=stacker_mock,
+            mount=mount_mock,
+            solver=solver_mock,
+            on_transition=capture_transitions,
+        )
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 5):
+            stage_stack(ctx, make_log())
+        # Should see STACKING → CENTERED → STACKING (again) → STACK_COMPLETE
+        assert states.count(SessionState.STACKING) >= 2
+        assert SessionState.STACK_COMPLETE in states
 
 
 # ── Stage: save ────────────────────────────────────────────────────────────

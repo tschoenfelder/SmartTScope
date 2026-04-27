@@ -50,3 +50,4 @@ PREVIEW_EXPOSURE_S         = 5.0
 STACK_EXPOSURE_S           = 30.0
 SLEW_TIMEOUT_S             = 120.0
 SLEW_POLL_INTERVAL_S       = 2.0
+RECENTER_EVERY_N_FRAMES    = 5   # mid-stack recenter cadence

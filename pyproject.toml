@@ -34,6 +34,9 @@ dev = [
 where = ["."]
 include = ["smart_telescope*"]
 
+[tool.setuptools.package-data]
+"smart_telescope" = ["static/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py313"

@@ -2,9 +2,15 @@
 
 Adapter selection priority (highest first):
 
-  ONSTEP_PORT set        → OnStepMount + OnStepFocuser + MockCamera (real hardware)
-  SIMULATOR_FITS_DIR set → SimulatorCamera + SimulatorMount + SimulatorFocuser
-  (neither)              → MockCamera + MockMount + MockFocuser (unit-test default)
+  Camera:
+    TOUPTEK_INDEX set  → ToupcamCamera(index=int(TOUPTEK_INDEX))
+    SIMULATOR_FITS_DIR → SimulatorCamera
+    (neither)          → MockCamera (unit-test default)
+
+  Mount + Focuser:
+    ONSTEP_PORT set    → OnStepMount + OnStepFocuser (real hardware)
+    SIMULATOR_FITS_DIR → SimulatorMount + SimulatorFocuser
+    (neither)          → MockMount + MockFocuser (unit-test default)
 """
 
 from __future__ import annotations
@@ -30,22 +36,35 @@ _storage: StoragePort | None = None
 
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
-    onstep_port = os.environ.get("ONSTEP_PORT", "")
-    if onstep_port:
-        from ..adapters.onstep.focuser import OnStepFocuser
-        from ..adapters.onstep.mount import OnStepMount
-        return MockCamera(), OnStepMount(onstep_port), OnStepFocuser(onstep_port)
+    touptek_index = os.environ.get("TOUPTEK_INDEX", "")
+    onstep_port   = os.environ.get("ONSTEP_PORT", "")
+    sim_dir       = os.environ.get("SIMULATOR_FITS_DIR", "")
 
-    sim_dir = os.environ.get("SIMULATOR_FITS_DIR", "")
-    if sim_dir:
+    # Camera — selected independently of mount
+    camera: CameraPort
+    if touptek_index:
+        from ..adapters.touptek.camera import ToupcamCamera
+        camera = ToupcamCamera(index=int(touptek_index))
+    elif sim_dir:
         from pathlib import Path
 
         from ..adapters.simulator.camera import SimulatorCamera
+        camera = SimulatorCamera(Path(sim_dir))
+    else:
+        camera = MockCamera()
+
+    # Mount + Focuser
+    if onstep_port:
+        from ..adapters.onstep.focuser import OnStepFocuser
+        from ..adapters.onstep.mount import OnStepMount
+        return camera, OnStepMount(onstep_port), OnStepFocuser(onstep_port)
+    if sim_dir:
+        from pathlib import Path
+
         from ..adapters.simulator.focuser import SimulatorFocuser
         from ..adapters.simulator.mount import SimulatorMount
-        return SimulatorCamera(Path(sim_dir)), SimulatorMount(), SimulatorFocuser()
-
-    return MockCamera(), MockMount(), MockFocuser()
+        return camera, SimulatorMount(), SimulatorFocuser()
+    return camera, MockMount(), MockFocuser()
 
 
 def get_camera() -> CameraPort:

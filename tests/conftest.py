@@ -69,7 +69,7 @@ def camera_mock() -> Mock:
 def mount_mock() -> Mock:
     mnt = Mock(spec=MountPort)
     mnt.connect.return_value = True
-    mnt.get_state.return_value = MountState.PARKED
+    mnt.get_state.return_value = MountState.TRACKING
     mnt.unpark.return_value = True
     mnt.enable_tracking.return_value = True
     mnt.sync.return_value = True
@@ -128,7 +128,7 @@ def _default_mocks(
     })
     mnt = mount if mount is not None else Mock(spec=MountPort, **{
         "connect.return_value": True,
-        "get_state.return_value": MountState.PARKED,
+        "get_state.return_value": MountState.TRACKING,
         "unpark.return_value": True,
         "enable_tracking.return_value": True,
         "sync.return_value": True,

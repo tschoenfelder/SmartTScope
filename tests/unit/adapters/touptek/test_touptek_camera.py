@@ -10,6 +10,7 @@ from smart_telescope.adapters.touptek.camera import (
     _EVENT_DISCONNECTED,
     _EVENT_ERROR,
     _EVENT_IMAGE,
+    _EVENT_TRIGGER_FAIL,
     ToupcamCamera,
     _camera_event,
 )
@@ -173,6 +174,15 @@ class TestCapture:
         cam = _connect(tc)
         tc.Toupcam.Open.return_value.Trigger.side_effect = lambda n: _fire(cam, _EVENT_ERROR)
         with pytest.raises(RuntimeError, match="error"):
+            cam.capture(0.001)
+
+    def test_raises_runtime_on_trigger_fail_event(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        tc.Toupcam.Open.return_value.Trigger.side_effect = lambda n: _fire(
+            cam, _EVENT_TRIGGER_FAIL
+        )
+        with pytest.raises(RuntimeError, match="trigger"):
             cam.capture(0.001)
 
     def test_raises_runtime_on_disconnect_event(self) -> None:

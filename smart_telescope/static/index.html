@@ -493,6 +493,10 @@
           <label>Target</label>
           <input type="text" id="catalog-query" placeholder="M42, Orion…" style="width:12ch"
                  oninput="catalogSearch()" autocomplete="off">
+          <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+            <input type="checkbox" id="catalog-observable" onchange="catalogSearch()">
+            <span>Observable</span>
+          </label>
           <span id="catalog-results" style="position:relative"></span>
         </div>
         <div class="input-row">
@@ -822,21 +826,30 @@
 
   function catalogSearch() {
     clearTimeout(_catalogTimer);
-    const q = document.getElementById('catalog-query').value.trim();
-    const container = document.getElementById('catalog-results');
+    const q          = document.getElementById('catalog-query').value.trim();
+    const observable = document.getElementById('catalog-observable')?.checked;
+    const container  = document.getElementById('catalog-results');
     if (q.length < 1) { container.innerHTML = ''; return; }
     _catalogTimer = setTimeout(async () => {
       try {
-        const items = await (await fetch(`/api/catalog/search?q=${encodeURIComponent(q)}&limit=8`)).json();
-        if (!items.length) { container.innerHTML = ''; return; }
+        let url = `/api/catalog/search?q=${encodeURIComponent(q)}&limit=8`;
+        if (observable) url += '&min_altitude=20';
+        const items = await (await fetch(url)).json();
+        if (!items.length) { container.innerHTML = '<div class="catalog-dropdown"><div class="catalog-item" style="color:var(--muted)">No results</div></div>'; return; }
         container.innerHTML = `<div class="catalog-dropdown">${
-          items.map(it => `
+          items.map(it => {
+            const altStr = it.altitude_deg !== null
+              ? `<span class="ci-alt" style="font-size:0.72rem;color:${it.altitude_deg >= 20 ? 'var(--success)' : 'var(--warning)'}">↑${it.altitude_deg.toFixed(0)}°</span>`
+              : '';
+            return `
             <div class="catalog-item"
                  onclick="catalogSelect(${it.ra_hours},${it.dec_deg},'${escHtml(it.name)}')">
               <span class="ci-name">${escHtml(it.name)}</span>
               <span class="ci-common">${escHtml(it.common_name)}</span>
               <span class="ci-coords">${it.ra_hours.toFixed(3)}h ${it.dec_deg >= 0 ? '+' : ''}${it.dec_deg.toFixed(2)}°</span>
-            </div>`).join('')
+              ${altStr}
+            </div>`;
+          }).join('')
         }</div>`;
       } catch { container.innerHTML = ''; }
     }, 200);

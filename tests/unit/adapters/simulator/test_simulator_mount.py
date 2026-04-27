@@ -178,3 +178,50 @@ class TestStop:
         m.disconnect()
         assert m.get_state() == MountState.PARKED
         assert m.is_slewing() is False
+
+
+# ── park ───────────────────────────────────────────────────────────────────────
+
+
+class TestPark:
+    def test_park_returns_true(self) -> None:
+        assert SimulatorMount().park() is True
+
+    def test_park_sets_state_parked(self) -> None:
+        m = SimulatorMount()
+        m.unpark()
+        m.enable_tracking()
+        m.park()
+        assert m.get_state() == MountState.PARKED
+
+    def test_park_cancels_active_slew(self) -> None:
+        m = SimulatorMount(slew_time_s=0.5)
+        m.goto(5.5, -5.4)
+        assert m.is_slewing() is True
+        m.park()
+        assert m.get_state() == MountState.PARKED
+        assert m.is_slewing() is False
+
+
+# ── disable_tracking ───────────────────────────────────────────────────────────
+
+
+class TestDisableTracking:
+    def test_disable_tracking_returns_true(self) -> None:
+        m = SimulatorMount()
+        m.unpark()
+        m.enable_tracking()
+        assert m.disable_tracking() is True
+
+    def test_disable_tracking_leaves_unparked_state(self) -> None:
+        m = SimulatorMount()
+        m.unpark()
+        m.enable_tracking()
+        m.disable_tracking()
+        assert m.get_state() == MountState.UNPARKED
+
+    def test_disable_tracking_noop_when_not_tracking(self) -> None:
+        m = SimulatorMount()
+        m.unpark()
+        assert m.disable_tracking() is True
+        assert m.get_state() == MountState.UNPARKED

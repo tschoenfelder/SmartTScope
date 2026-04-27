@@ -64,7 +64,7 @@ class TestOnStepMountPortContract:
         abstract = {
             "connect", "disconnect", "get_state", "unpark",
             "enable_tracking", "get_position", "sync", "goto",
-            "is_slewing", "stop",
+            "is_slewing", "stop", "park", "disable_tracking",
         }
         for method_name in abstract:
             assert hasattr(mount, method_name), f"Missing method: {method_name}"
@@ -452,3 +452,57 @@ class TestStop:
         mount.connect()
         result = mount.stop()
         assert result is None
+
+
+# ── park ──────────────────────────────────────────────────────────────────────
+
+
+class TestPark:
+    def test_park_sends_hP_command(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b"#"
+        mount = _make_mount()
+        mount.connect()
+        mount.park()
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":hP#" in sent
+
+    def test_park_returns_true(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b"#"
+        mount = _make_mount()
+        mount.connect()
+        assert mount.park() is True
+
+
+# ── disable_tracking ──────────────────────────────────────────────────────────
+
+
+class TestDisableTracking:
+    def test_disable_tracking_sends_Td_command(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b"1"
+        mount = _make_mount()
+        mount.connect()
+        mount.disable_tracking()
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":Td#" in sent
+
+    def test_disable_tracking_returns_true_when_acknowledged(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b"1"
+        mount = _make_mount()
+        mount.connect()
+        assert mount.disable_tracking() is True
+
+    def test_disable_tracking_returns_false_when_rejected(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b"0"
+        mount = _make_mount()
+        mount.connect()
+        assert mount.disable_tracking() is False

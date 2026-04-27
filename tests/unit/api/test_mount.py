@@ -20,6 +20,8 @@ def _mock_mount(
     unpark_ok: bool = True,
     track_ok: bool = True,
     goto_ok: bool = True,
+    park_ok: bool = True,
+    disable_tracking_ok: bool = True,
 ) -> MagicMock:
     m = MagicMock(spec=MountPort)
     m.get_state.return_value = state
@@ -27,6 +29,8 @@ def _mock_mount(
     m.unpark.return_value = unpark_ok
     m.enable_tracking.return_value = track_ok
     m.goto.return_value = goto_ok
+    m.park.return_value = park_ok
+    m.disable_tracking.return_value = disable_tracking_ok
     return m
 
 
@@ -265,3 +269,145 @@ class TestMountGotoSolarGate:
         ):
             client.post("/api/mount/goto", json={"ra": _SOLAR_RA, "dec": _SOLAR_DEC})
         m.goto.assert_not_called()
+
+
+# ── POST /api/mount/park ───────────────────────────────────────────────────────
+
+
+class TestMountPark:
+    def test_returns_200_on_success(self) -> None:
+        _inject(_mock_mount(park_ok=True))
+        assert client.post("/api/mount/park").status_code == 200
+
+    def test_returns_ok_true(self) -> None:
+        _inject(_mock_mount(park_ok=True))
+        assert client.post("/api/mount/park").json() == {"ok": True}
+
+    def test_returns_500_when_park_fails(self) -> None:
+        _inject(_mock_mount(park_ok=False))
+        assert client.post("/api/mount/park").status_code == 500
+
+    def test_calls_park_on_mount(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        client.post("/api/mount/park")
+        m.park.assert_called_once()
+
+
+# ── POST /api/mount/disable_tracking ──────────────────────────────────────────
+
+
+class TestMountDisableTracking:
+    def test_returns_200_on_success(self) -> None:
+        _inject(_mock_mount(disable_tracking_ok=True))
+        assert client.post("/api/mount/disable_tracking").status_code == 200
+
+    def test_returns_ok_true(self) -> None:
+        _inject(_mock_mount(disable_tracking_ok=True))
+        assert client.post("/api/mount/disable_tracking").json() == {"ok": True}
+
+    def test_returns_500_when_disable_fails(self) -> None:
+        _inject(_mock_mount(disable_tracking_ok=False))
+        assert client.post("/api/mount/disable_tracking").status_code == 500
+
+    def test_calls_disable_tracking_on_mount(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        client.post("/api/mount/disable_tracking")
+        m.disable_tracking.assert_called_once()
+
+
+# ── POST /api/mount/goto_sky ───────────────────────────────────────────────────
+
+_FIXED_LST = 12.345  # hours — arbitrary but deterministic
+
+
+def _mock_time(lst_hours: float = _FIXED_LST):
+    """Return a patch context that makes Time.now().sidereal_time(...).hour == lst_hours."""
+    mock_lst = MagicMock()
+    mock_lst.hour = lst_hours
+    mock_now = MagicMock()
+    mock_now.sidereal_time.return_value = mock_lst
+    return patch("smart_telescope.api.mount.Time") , mock_now
+
+
+class TestMountGotoSky:
+    def _inject_safe(self):
+        m = _mock_mount()
+        _inject(m)
+        return m
+
+    def test_returns_200_on_success(self) -> None:
+        m = self._inject_safe()
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                r = client.post("/api/mount/goto_sky?elevation=80")
+        assert r.status_code == 200
+
+    def test_response_has_required_fields(self) -> None:
+        m = self._inject_safe()
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                data = client.post("/api/mount/goto_sky?elevation=80").json()
+        assert {"ra", "dec", "elevation_deg", "lst_hours"} <= data.keys()
+
+    def test_lst_returned_in_response(self) -> None:
+        m = self._inject_safe()
+        time_patch, mock_now = _mock_time(_FIXED_LST)
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                data = client.post("/api/mount/goto_sky?elevation=80").json()
+        assert data["lst_hours"] == pytest.approx(_FIXED_LST, abs=0.001)
+
+    def test_dec_computed_from_lat_and_elevation(self) -> None:
+        # Dec = OBSERVER_LAT - (90 - elevation) = 50.336 - 10 = 40.336 at elevation=80
+        m = self._inject_safe()
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                data = client.post("/api/mount/goto_sky?elevation=80").json()
+        assert data["dec"] == pytest.approx(50.336 - (90.0 - 80.0), abs=0.01)
+
+    def test_elevation_below_60_returns_422(self) -> None:
+        self._inject_safe()
+        r = client.post("/api/mount/goto_sky?elevation=59")
+        assert r.status_code == 422
+
+    def test_elevation_above_89_returns_422(self) -> None:
+        self._inject_safe()
+        r = client.post("/api/mount/goto_sky?elevation=90")
+        assert r.status_code == 422
+
+    def test_calls_goto_on_mount(self) -> None:
+        m = self._inject_safe()
+        time_patch, mock_now = _mock_time(_FIXED_LST)
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                client.post("/api/mount/goto_sky?elevation=80")
+        m.goto.assert_called_once()
+
+    def test_solar_blocked_returns_403(self) -> None:
+        self._inject_safe()
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(True, 4.0)):
+                r = client.post("/api/mount/goto_sky?elevation=80")
+        assert r.status_code == 403
+
+    def test_goto_failure_returns_500(self) -> None:
+        m = _mock_mount(goto_ok=False)
+        _inject(m)
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                r = client.post("/api/mount/goto_sky?elevation=80")
+        assert r.status_code == 500

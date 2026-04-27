@@ -276,6 +276,10 @@
 <header>
   <h1>SmartTelescope</h1>
   <span class="pill">v0.1</span>
+  <span class="controls-spacer" style="flex:1"></span>
+  <button id="connect-all-btn" onclick="connectAll()" style="font-size:0.8rem">
+    Connect All
+  </button>
 </header>
 
 <main>
@@ -288,6 +292,55 @@
     </div>
     <div id="mount-status" class="status-line"></div>
     <div id="mount-card"></div>
+  </section>
+
+  <!-- ── Sky Shot ──────────────────────────────────────────────────────── -->
+  <section class="section" id="skyshot-section">
+    <div class="toolbar">
+      <h2>Sky Shot</h2>
+    </div>
+    <div id="skyshot-status" class="status-line"></div>
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="skyshot-dot"></span>
+        Meridian Sky Position
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Target elevation</span>
+          <span class="param-value">
+            <input type="number" id="skyshot-elevation" value="80" min="60" max="89" step="1"
+                   style="width:6ch" oninput="updateElevationLabel()">
+            <span id="elevation-label" style="font-size:0.78rem;color:var(--muted)"> °</span>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Computed RA</span>
+          <span class="param-value mono" id="skyshot-ra">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Computed Dec</span>
+          <span class="param-value mono" id="skyshot-dec">—</span>
+        </div>
+      </div>
+      <div class="controls" style="margin-top:1rem;padding-top:0.875rem;border-top:1px solid var(--border)">
+        <button id="skyshot-goto-btn" onclick="skyGoto()">GoTo Sky</button>
+        <button id="skyshot-snap-btn" onclick="skySnap()" class="secondary" disabled>Snap</button>
+        <button id="skyshot-park-btn" onclick="skyPark()" class="secondary">Park after Snap</button>
+        <span class="controls-spacer"></span>
+        <span id="skyshot-snap-count" style="font-size:0.78rem;color:var(--muted)"></span>
+      </div>
+      <div class="preview-frame" id="skyshot-frame" style="margin-top:1rem;display:none">
+        <div class="preview-placeholder" id="skyshot-placeholder">Snap to capture a frame</div>
+        <img id="skyshot-img" alt="" style="display:none">
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Connect All status ─────────────────────────────────────────────── -->
+  <section class="section" id="connect-status-section" style="display:none">
+    <div class="toolbar"><h2>Connection Status</h2></div>
+    <div id="connect-status-grid" class="params"></div>
   </section>
 
   <!-- ── Focuser ────────────────────────────────────────────────────────── -->
@@ -404,7 +457,9 @@
         <div class="controls">
           <button class="secondary" onclick="mountAction('unpark')">Unpark</button>
           <button class="secondary" onclick="mountAction('track')">Enable Tracking</button>
+          <button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>
           <span class="controls-spacer"></span>
+          <button class="secondary" onclick="mountAction('park')">Park</button>
           <button class="danger" onclick="mountAction('stop')">Stop</button>
         </div>
         <div class="input-row">
@@ -726,7 +781,141 @@
     };
   }
 
+  /* ── Connect All ──────────────────────────────────────────────────────── */
+
+  async function connectAll() {
+    const btn = document.getElementById('connect-all-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Connecting…';
+
+    try {
+      const data = await apiPost('/api/session/connect');
+      const section = document.getElementById('connect-status-section');
+      const grid    = document.getElementById('connect-status-grid');
+      section.style.display = '';
+
+      grid.innerHTML = Object.entries(data).map(([device, info]) => {
+        const ok   = info.status === 'ok';
+        const dot  = ok ? 'dot-green' : 'dot-red';
+        const msg  = ok ? 'Connected' : (info.error || 'Failed');
+        return `
+          <div class="param">
+            <span class="param-label" style="display:flex;align-items:center;gap:0.4rem">
+              <span class="dot ${dot}" style="width:7px;height:7px"></span>${escHtml(device)}
+            </span>
+            <span class="param-value" style="font-size:0.8rem">${escHtml(msg)}</span>
+          </div>`;
+      }).join('');
+
+      await refreshMount();
+      await refreshFocuser();
+    } catch (err) {
+      alert('Connect All failed: ' + err);
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'Connect All';
+    }
+  }
+
+  /* ── Sky Shot ──────────────────────────────────────────────────────────── */
+
+  let _skyshotWs = null;
+
+  function updateElevationLabel() {
+    document.getElementById('elevation-label').textContent =
+      ' °  →  Dec ≈ ' + skyDec().toFixed(1) + '°';
+  }
+
+  function skyDec() {
+    // Approximate: Dec = lat - (90 - elevation).
+    // We don't know lat client-side, so just show the calculation hint.
+    const el = parseFloat(document.getElementById('skyshot-elevation').value) || 80;
+    return el - 90 + 50.3; // rough Usingen latitude placeholder
+  }
+
+  async function skyGoto() {
+    const el  = parseFloat(document.getElementById('skyshot-elevation').value) || 80;
+    const btn = document.getElementById('skyshot-goto-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Slewing…';
+    setStatus('skyshot-status', '');
+    try {
+      const data = await (await fetch(`/api/mount/goto_sky?elevation=${el}`, { method: 'POST' })).json();
+      if (data.error) throw new Error(JSON.stringify(data));
+      document.getElementById('skyshot-ra').textContent  = data.ra.toFixed(4)  + ' h';
+      document.getElementById('skyshot-dec').textContent = data.dec.toFixed(4) + ' °';
+      document.getElementById('skyshot-dot').className = 'dot dot-green';
+      document.getElementById('skyshot-frame').style.display = '';
+      document.getElementById('skyshot-snap-btn').disabled = false;
+      setStatus('skyshot-status', `Slewing to RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(2)}° — wait for mount to settle`);
+      await refreshMount();
+    } catch (err) {
+      setStatus('skyshot-status', 'GoTo sky failed: ' + err, true);
+      document.getElementById('skyshot-dot').className = 'dot dot-red';
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'GoTo Sky';
+    }
+  }
+
+  function skySnap() {
+    if (_skyshotWs) { _skyshotWs.close(); _skyshotWs = null; }
+
+    const btn = document.getElementById('skyshot-snap-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Snapping…';
+    setStatus('skyshot-status', '');
+
+    const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
+    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
+    _skyshotWs = new WebSocket(`${proto}://${location.host}/ws/preview?exposure=${exposure}`);
+    _skyshotWs.binaryType = 'blob';
+
+    _skyshotWs.onmessage = (ev) => {
+      const img = document.getElementById('skyshot-img');
+      const ph  = document.getElementById('skyshot-placeholder');
+      if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+      img.src = URL.createObjectURL(ev.data);
+      img.style.display = 'block';
+      ph.style.display  = 'none';
+      document.getElementById('skyshot-snap-count').textContent = 'Frame captured';
+      setStatus('skyshot-status', 'Frame captured successfully.');
+      _skyshotWs.close();
+      _skyshotWs = null;
+    };
+
+    _skyshotWs.onerror = () => {
+      setStatus('skyshot-status', 'Snap failed — WebSocket error', true);
+      btn.disabled  = false;
+      btn.innerHTML = 'Snap';
+    };
+
+    _skyshotWs.onclose = () => {
+      btn.disabled  = false;
+      btn.innerHTML = 'Snap';
+    };
+  }
+
+  async function skyPark() {
+    const btn = document.getElementById('skyshot-park-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Parking…';
+    try {
+      await apiPost('/api/mount/park');
+      setStatus('skyshot-status', 'Mount parked.');
+      document.getElementById('skyshot-dot').className = 'dot dot-grey';
+      document.getElementById('skyshot-snap-btn').disabled = true;
+      await refreshMount();
+    } catch (err) {
+      setStatus('skyshot-status', 'Park failed: ' + err, true);
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'Park after Snap';
+    }
+  }
+
   /* ── init ──────────────────────────────────────────────────────────────── */
+  updateElevationLabel();
   refreshMount();
   refreshFocuser();
 </script>

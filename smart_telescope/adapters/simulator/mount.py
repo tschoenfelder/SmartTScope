@@ -78,6 +78,18 @@ class SimulatorMount(MountPort):
             self._cancel_timer()
             self._state = MountState.UNPARKED
 
+    def park(self) -> bool:
+        with self._lock:
+            self._cancel_timer()
+            self._state = MountState.PARKED
+        return True
+
+    def disable_tracking(self) -> bool:
+        with self._lock:
+            if self._state == MountState.TRACKING:
+                self._state = MountState.UNPARKED
+        return True
+
     def disconnect(self) -> None:
         with self._lock:
             self._cancel_timer()

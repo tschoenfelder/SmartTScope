@@ -119,3 +119,10 @@ class OnStepMount(MountPort):
         if self._serial is not None:
             with contextlib.suppress(Exception):
                 self._serial.write(b":Q#")
+
+    def park(self) -> bool:
+        self._raw_send(":hP#")
+        return True
+
+    def disable_tracking(self) -> bool:
+        return self._send(":Td#") == "1"

@@ -51,5 +51,13 @@ class MockMount(MountPort):
     def stop(self) -> None:
         self._state = MountState.UNPARKED
 
+    def park(self) -> bool:
+        self._state = MountState.PARKED
+        return True
+
+    def disable_tracking(self) -> bool:
+        self._state = MountState.UNPARKED
+        return True
+
     def disconnect(self) -> None:
         self._state = MountState.PARKED

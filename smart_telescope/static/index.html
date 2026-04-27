@@ -209,6 +209,33 @@
     }
     label { font-size: 0.8rem; color: var(--muted); }
 
+    /* ── catalog dropdown ── */
+    .catalog-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 100;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-width: 260px;
+      max-height: 220px;
+      overflow-y: auto;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+    .catalog-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      padding: 0.45rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .catalog-item:hover { background: rgba(56,139,253,0.12); }
+    .catalog-item .ci-name { font-weight: 600; min-width: 3.5ch; }
+    .catalog-item .ci-common { color: var(--muted); flex: 1; }
+    .catalog-item .ci-coords { color: var(--muted); font-size: 0.75rem; font-family: monospace; }
+
     /* ── nudge buttons ── */
     .nudge-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
     button.nudge { padding: 0.4rem 0.6rem; font-size: 0.78rem; min-width: 2.8rem; }
@@ -461,6 +488,12 @@
           <span class="controls-spacer"></span>
           <button class="secondary" onclick="mountAction('park')">Park</button>
           <button class="danger" onclick="mountAction('stop')">Stop</button>
+        </div>
+        <div class="input-row" style="margin-top:0.75rem">
+          <label>Target</label>
+          <input type="text" id="catalog-query" placeholder="M42, Orion…" style="width:12ch"
+                 oninput="catalogSearch()" autocomplete="off">
+          <span id="catalog-results" style="position:relative"></span>
         </div>
         <div class="input-row">
           <label>GoTo RA</label>
@@ -782,6 +815,47 @@
   }
 
   /* ── Connect All ──────────────────────────────────────────────────────── */
+
+  /* ── Catalog search ────────────────────────────────────────────────────── */
+
+  let _catalogTimer = null;
+
+  function catalogSearch() {
+    clearTimeout(_catalogTimer);
+    const q = document.getElementById('catalog-query').value.trim();
+    const container = document.getElementById('catalog-results');
+    if (q.length < 1) { container.innerHTML = ''; return; }
+    _catalogTimer = setTimeout(async () => {
+      try {
+        const items = await (await fetch(`/api/catalog/search?q=${encodeURIComponent(q)}&limit=8`)).json();
+        if (!items.length) { container.innerHTML = ''; return; }
+        container.innerHTML = `<div class="catalog-dropdown">${
+          items.map(it => `
+            <div class="catalog-item"
+                 onclick="catalogSelect(${it.ra_hours},${it.dec_deg},'${escHtml(it.name)}')">
+              <span class="ci-name">${escHtml(it.name)}</span>
+              <span class="ci-common">${escHtml(it.common_name)}</span>
+              <span class="ci-coords">${it.ra_hours.toFixed(3)}h ${it.dec_deg >= 0 ? '+' : ''}${it.dec_deg.toFixed(2)}°</span>
+            </div>`).join('')
+        }</div>`;
+      } catch { container.innerHTML = ''; }
+    }, 200);
+  }
+
+  function catalogSelect(ra, dec, name) {
+    document.getElementById('goto-ra').value  = ra.toFixed(4);
+    document.getElementById('goto-dec').value = dec.toFixed(4);
+    document.getElementById('catalog-query').value = name;
+    document.getElementById('catalog-results').innerHTML = '';
+  }
+
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('#catalog-results') &&
+        !ev.target.closest('#catalog-query')) {
+      const c = document.getElementById('catalog-results');
+      if (c) c.innerHTML = '';
+    }
+  });
 
   async function connectAll() {
     const btn = document.getElementById('connect-all-btn');

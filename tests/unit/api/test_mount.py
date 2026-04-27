@@ -411,3 +411,34 @@ class TestMountGotoSky:
             with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
                 r = client.post("/api/mount/goto_sky?elevation=80")
         assert r.status_code == 500
+
+    def test_auto_unparks_when_parked(self) -> None:
+        m = _mock_mount(state=MountState.PARKED)
+        _inject(m)
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                r = client.post("/api/mount/goto_sky?elevation=80")
+        m.unpark.assert_called_once()
+        assert r.status_code == 200
+
+    def test_no_unpark_when_already_tracking(self) -> None:
+        m = _mock_mount(state=MountState.TRACKING)
+        _inject(m)
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                client.post("/api/mount/goto_sky?elevation=80")
+        m.unpark.assert_not_called()
+
+    def test_auto_unpark_failure_returns_500(self) -> None:
+        m = _mock_mount(state=MountState.PARKED, park_ok=True, unpark_ok=False)
+        _inject(m)
+        time_patch, mock_now = _mock_time()
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                r = client.post("/api/mount/goto_sky?elevation=80")
+        assert r.status_code == 500

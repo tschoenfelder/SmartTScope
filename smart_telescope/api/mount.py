@@ -116,7 +116,12 @@ def mount_goto_sky(
 
     Uses the configured observer location (OBSERVER_LAT / OBSERVER_LON) and
     the current UTC time to compute RA = LST, Dec = lat − (90° − elevation).
+    Auto-unparks the mount if it is currently parked.
     """
+    if mount.get_state() == MountState.PARKED:
+        if not mount.unpark():
+            raise HTTPException(status_code=500, detail="Auto-unpark before sky slew failed")
+
     loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
     lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
     dec_deg: float = config.OBSERVER_LAT - (90.0 - elevation)

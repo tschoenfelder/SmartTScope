@@ -84,6 +84,23 @@ def mount_goto(
     return {"ok": True}
 
 
+class SyncRequest(BaseModel):
+    ra: float
+    dec: float
+
+
+@router.post("/sync")
+def mount_sync(
+    body: SyncRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Tell the mount it is currently pointing at the given RA/Dec."""
+    ok = mount.sync(body.ra, body.dec)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Mount sync failed")
+    return {"ok": True}
+
+
 @router.post("/park")
 def mount_park(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
     ok = mount.park()

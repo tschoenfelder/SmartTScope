@@ -442,3 +442,39 @@ class TestMountGotoSky:
             with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
                 r = client.post("/api/mount/goto_sky?elevation=80")
         assert r.status_code == 500
+
+
+# ── POST /api/mount/sync ──────────────────────────────────────────────────────
+
+
+class TestMountSync:
+    def test_returns_200(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = True
+        _inject(m)
+        assert client.post("/api/mount/sync", json={"ra": 5.5881, "dec": -5.391}).status_code == 200
+
+    def test_returns_ok_true(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = True
+        _inject(m)
+        assert client.post("/api/mount/sync", json={"ra": 5.5881, "dec": -5.391}).json() == {"ok": True}
+
+    def test_calls_sync_with_coordinates(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = True
+        _inject(m)
+        client.post("/api/mount/sync", json={"ra": 5.5881, "dec": -5.391})
+        m.sync.assert_called_once_with(5.5881, -5.391)
+
+    def test_returns_500_when_sync_fails(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = False
+        _inject(m)
+        assert client.post("/api/mount/sync", json={"ra": 5.5881, "dec": -5.391}).status_code == 500
+
+    def test_returns_422_when_body_missing(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = True
+        _inject(m)
+        assert client.post("/api/mount/sync", json={}).status_code == 422

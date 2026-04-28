@@ -1162,7 +1162,9 @@
         result.innerHTML =
           `RA: <b>${_formatRA(data.ra)}</b> &nbsp; Dec: <b>${_formatDec(data.dec)}</b>` +
           ` &nbsp; PA: ${data.pa.toFixed(1)}° &nbsp; ` +
-          `<span style="color:var(--muted)">${data.solve_time_s}s</span>`;
+          `<span style="color:var(--muted)">${data.solve_time_s}s</span>` +
+          ` &nbsp; <button onclick="syncMount(${data.ra},${data.dec})" id="sync-btn"` +
+          ` style="padding:0.1rem 0.4rem;font-size:0.75rem">Sync Mount</button>`;
       } else {
         setStatus('preview-status', `Solve failed: ${data.error || 'unknown'}`, true);
       }
@@ -1171,6 +1173,19 @@
     } finally {
       btn.disabled = false;
       btn.innerHTML = 'Solve';
+    }
+  }
+
+  async function syncMount(ra, dec) {
+    const btn = document.getElementById('sync-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Syncing…'; }
+    try {
+      await apiPost('/api/mount/sync', { ra, dec });
+      if (btn) { btn.innerHTML = '✓ Synced'; }
+      await refreshMount();
+    } catch (err) {
+      setStatus('preview-status', `Sync failed: ${err}`, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Sync Mount'; }
     }
   }
 

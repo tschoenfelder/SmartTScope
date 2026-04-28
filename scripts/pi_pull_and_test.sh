@@ -94,7 +94,8 @@ fi
 # ── 2. Install / sync dependencies ────────────────────────────────────────────
 echo -e "${CYAN}── 2. Dependencies ───────────────────────────────${NC}"
 info "Python : $PYTHON  ($(${PYTHON} --version))"
-info "Installing package in editable mode + dev extras..."
+info "Upgrading pip/setuptools and installing package in editable mode + dev extras..."
+"$PIP" install -q --upgrade pip setuptools wheel
 if "$PIP" install -q -e ".[dev]"; then
     ok "pip install complete"
 else

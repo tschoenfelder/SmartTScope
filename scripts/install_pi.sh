@@ -164,8 +164,9 @@ section_venv() {
         python3.13 -m venv "$VENV_DIR"
     fi
 
-    # Upgrade pip inside the venv
-    "$VENV_DIR/bin/pip" install --upgrade pip --quiet
+    # Upgrade pip + setuptools; setuptools.backends.legacy (required for
+    # editable installs) was added in setuptools 64 — older venvs lack it.
+    "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel --quiet
     log "Virtual environment ready."
 }
 

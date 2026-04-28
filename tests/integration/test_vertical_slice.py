@@ -1,12 +1,14 @@
 """
 Integration tests for the MVP vertical slice workflow.
 
-Capture counts per happy-path run:
-  align      : 1  (capture #1, 5s)
-  recenter   : 1  (capture #2, 10s — offset=0, passes immediately)
-  preview    : 3  (captures #3–5, 5s each)
-  stack      : 10 (captures #6–15, 30s each)
-  total      : 15
+Capture counts per happy-path run (RECENTER_EVERY_N_FRAMES=5, STACK_DEPTH=10):
+  align             : 1  (capture #1, 5s)
+  recenter          : 1  (capture #2, 10s — offset=0, passes immediately)
+  preview           : 3  (captures #3–5, 5s each)
+  stack frames 1–5  : 5  (captures #6–10, 30s each)
+  periodic recenter : 1  (capture #11, 10s — fires before stack frame 6)
+  stack frames 6–10 : 5  (captures #12–16, 30s each)
+  total             : 16
 """
 
 
@@ -30,6 +32,8 @@ EXPECTED_HAPPY_PATH_STATES = [
     SessionState.CENTERED,
     SessionState.PREVIEWING,
     SessionState.STACKING,
+    SessionState.CENTERED,       # periodic recenter before stack frame 6
+    SessionState.STACKING,       # resume stacking
     SessionState.STACK_COMPLETE,
     SessionState.SAVED,
 ]

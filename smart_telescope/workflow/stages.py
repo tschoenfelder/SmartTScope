@@ -157,7 +157,6 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
             )
 
         if i > 1 and (i - 1) % RECENTER_EVERY_N_FRAMES == 0:
-            log.warnings.append(f"Periodic recenter before frame {i}")
             stage_recenter(ctx, log)
             ctx.on_transition(log, SessionState.STACKING)
 

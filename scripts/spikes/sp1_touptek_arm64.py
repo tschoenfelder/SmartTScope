@@ -179,10 +179,14 @@ def check_capture(toupcam: object, cameras: list, fits_out: Path | None) -> bool
         TOUPCAM_OPTION_TRIGGER  = getattr(toupcam, "TOUPCAM_OPTION_TRIGGER",  0x0b)
         TOUPCAM_OPTION_BITDEPTH = getattr(toupcam, "TOUPCAM_OPTION_BITDEPTH", 0x06)
 
-        # Switch to RAW-16 software-trigger mode (same as ToupcamCamera adapter)
+        # Switch to RAW-16 software-trigger mode (same as ToupcamCamera adapter).
+        # Order matters: TRIGGER must be set before StartPullMode; AutoExpo must
+        # be off or the SDK keeps the stream active between triggers, causing
+        # ERROR_DEVICE_IN_USE (0x800700aa) on StartPullModeWithCallback.
+        hcam.put_Option(TOUPCAM_OPTION_TRIGGER,  1)
         hcam.put_Option(TOUPCAM_OPTION_RAW,      1)
         hcam.put_Option(TOUPCAM_OPTION_BITDEPTH, 1)
-        hcam.put_Option(TOUPCAM_OPTION_TRIGGER,  1)
+        hcam.put_AutoExpoEnable(False)
 
         width, height = hcam.get_Size()
         print(f"{INFO}  Frame size: {width} × {height}")
@@ -229,7 +233,14 @@ def check_capture(toupcam: object, cameras: list, fits_out: Path | None) -> bool
         return True
 
     except toupcam.HRESULTException as e:  # type: ignore[attr-defined]
-        print(f"{FAIL}  HRESULTException: hr=0x{e.hr & 0xffffffff:08x}")
+        hr = e.hr & 0xFFFFFFFF
+        print(f"{FAIL}  HRESULTException: hr=0x{hr:08x}")
+        if hr == 0x800700AA:
+            print(f"  → ERROR_DEVICE_IN_USE: camera stream already active.")
+            print(f"    Check for conflicting processes:  sudo lsof /dev/video* 2>/dev/null")
+            print(f"    Or kill any running SmartTScope server before re-running the spike.")
+        elif hr == 0x80004001:
+            print(f"  → E_NOTIMPL: this camera does not support the requested option.")
         return False
     except Exception as e:
         print(f"{FAIL}  Unexpected error: {e}")

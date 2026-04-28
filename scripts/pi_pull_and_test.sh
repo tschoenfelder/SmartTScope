@@ -51,6 +51,17 @@ if $DO_PULL; then
     info "Branch: $(git rev-parse --abbrev-ref HEAD)"
     info "Remote: $(git remote get-url origin)"
 
+    # Discard any local changes so the pull is never blocked.
+    # The Pi is a deployment target; authoritative code lives on the dev machine.
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        warn "Local changes detected — discarding to allow clean pull:"
+        git diff --name-only
+        git diff --cached --name-only
+        git checkout -- .
+        git clean -fd --quiet
+        warn "Local changes discarded."
+    fi
+
     git fetch origin master
     LOCAL=$(git rev-parse HEAD)
     REMOTE=$(git rev-parse origin/master)

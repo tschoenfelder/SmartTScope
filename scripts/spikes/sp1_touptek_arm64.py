@@ -118,6 +118,9 @@ def check_sdk_import(lib_path: Path) -> object | None:
         return None
 
 
+_FLAG_RAW16 = 0x00008000  # toupcam model flag: camera supports 16-bit RAW mode
+
+
 def check_enumerate(toupcam: object) -> list:
     section("4. Camera enumeration")
     try:
@@ -132,7 +135,10 @@ def check_enumerate(toupcam: object) -> list:
         return []
 
     for i, cam in enumerate(cameras):
-        print(f"{PASS}  [{i}] {cam.displayname!r}  flags=0x{cam.model.flag:016x}")
+        flag = int(cam.model.flag)
+        raw16 = bool(flag & _FLAG_RAW16)
+        tag = "RAW16" if raw16 else "no RAW16"
+        print(f"{PASS}  [{i}] {cam.displayname!r}  flags=0x{flag:016x}  ({tag})")
         for res in cam.model.res:
             print(f"{INFO}       resolution: {res.width} × {res.height}")
     return list(cameras)
@@ -144,20 +150,39 @@ def check_capture(toupcam: object, cameras: list, fits_out: Path | None) -> bool
         print(f"{SKIP}  No camera connected — skipping capture test")
         return True  # Not a failure of the SDK
 
-    cam_info = cameras[0]
+    # Select the first camera that supports RAW16; guide cameras typically do not.
+    cam_idx  = next(
+        (i for i, c in enumerate(cameras) if int(c.model.flag) & _FLAG_RAW16),
+        None,
+    )
+    if cam_idx is None:
+        print(f"{FAIL}  No camera with RAW16 support found — cannot run RAW capture test")
+        for i, c in enumerate(cameras):
+            print(f"{INFO}  [{i}] {c.displayname!r} — no RAW16 flag")
+        return False
+
+    if cam_idx != 0:
+        print(f"{INFO}  cameras[0] has no RAW16 support; using cameras[{cam_idx}] instead")
+
+    cam_info = cameras[cam_idx]
     hcam = None
     try:
         hcam = toupcam.Toupcam.Open(cam_info.id)  # type: ignore[attr-defined]
         if hcam is None:
             print(f"{FAIL}  Toupcam.Open() returned None")
             return False
-        print(f"{PASS}  Camera opened: {cam_info.displayname!r}")
+        print(f"{PASS}  Camera opened: {cam_info.displayname!r}  (index {cam_idx})")
+        print(f"{INFO}  Set TOUPTEK_INDEX={cam_idx} in production to use this camera")
+
+        # Use SDK constants; fall back to known good values if the binding is older.
+        TOUPCAM_OPTION_RAW      = getattr(toupcam, "TOUPCAM_OPTION_RAW",      0x04)
+        TOUPCAM_OPTION_TRIGGER  = getattr(toupcam, "TOUPCAM_OPTION_TRIGGER",  0x0b)
+        TOUPCAM_OPTION_BITDEPTH = getattr(toupcam, "TOUPCAM_OPTION_BITDEPTH", 0x06)
 
         # Switch to RAW-16 software-trigger mode (same as ToupcamCamera adapter)
-        TOUPCAM_OPTION_RAW     = 0x04
-        TOUPCAM_OPTION_TRIGGER = 0x08
-        hcam.put_Option(TOUPCAM_OPTION_RAW, 1)
-        hcam.put_Option(TOUPCAM_OPTION_TRIGGER, 1)
+        hcam.put_Option(TOUPCAM_OPTION_RAW,      1)
+        hcam.put_Option(TOUPCAM_OPTION_BITDEPTH, 1)
+        hcam.put_Option(TOUPCAM_OPTION_TRIGGER,  1)
 
         width, height = hcam.get_Size()
         print(f"{INFO}  Frame size: {width} × {height}")

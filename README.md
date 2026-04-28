@@ -8,9 +8,9 @@ A user powers on, connects via an app, selects a target, and the system autonomo
 
 ## Release state
 
-**v0.1.0 — Sprint 10 complete**
+**v0.1.0 — Sprint 11 complete**
 
-616 unit tests, 91%+ coverage, CI green. The core 8-stage session pipeline runs end-to-end with stop-event cancel, tracking-lost guard, and periodic mid-stack recentering. Real hardware adapters for the OnStep mount, focuser, and ToupTek camera are complete and unit-tested (hardware validation pending full field test). A FastAPI REST + WebSocket layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached.
+674 unit + integration tests, 95%+ coverage, CI green. The core 8-stage session pipeline runs end-to-end with stop-event cancel, tracking-lost guard, and periodic mid-stack recentering. Real hardware adapters for the OnStep mount, focuser, and ToupTek camera are complete and unit-tested. A FastAPI REST + WebSocket layer with a static HTML control panel is live. Simulator adapters let the full app run without any hardware attached.
 
 The Sky Shot MVP flow is end-to-end from a cold parked state: Connect All → GoTo Sky (auto-unparks, computes meridian RA/Dec from LST and observer latitude) → Snap → Park. The 110-object Messier catalog is bundled; type a designation or common name in the Target box to fill RA/Dec for GoTo. Observer location defaults to Usingen, Hesse (50.336°N 8.533°E) and is overridable via `OBSERVER_LAT` / `OBSERVER_LON` env vars.
 
@@ -68,7 +68,7 @@ The Sky Shot MVP flow is end-to-end from a cold parked state: Connect All → Go
 | Requirement | Notes |
 |---|---|
 | ASTAP | Current release — [hnsky.org/astap.htm](https://www.hnsky.org/astap.htm) |
-| ASTAP G17 star catalog | Download from the same page; recommended for C8 pixel scales |
+| ASTAP D80 star catalog | Download from the same page (~1.25 GB); recommended for C8 pixel scales |
 
 ### Operating system
 
@@ -78,23 +78,44 @@ The target deployment platform is **Raspberry Pi OS (64-bit)** running on a Rasp
 
 ## Installation
 
-### Raspberry Pi 5 (one-command setup)
+### Raspberry Pi 5 — first-time setup
 
-An automated installer handles Python 3.13, system libraries, the virtual environment, and package installation:
+#### 1. Clone and install
 
 ```bash
-git clone https://github.com/tschoenfelder/SmartTScope.git
-cd SmartTScope
-bash scripts/install_pi.sh
+git clone https://github.com/tschoenfelder/SmartTScope.git ~/astro_sw/SmartTScope
+cd ~/astro_sw/SmartTScope
+bash scripts/install_pi.sh --dev-only
 ```
+
+`--dev-only` skips the second clone and installs into the current directory. Omit it to let the installer clone a fresh copy to `~/SmartTScope` instead.
 
 To also install the ASTAP plate solver in the same step:
 
 ```bash
-bash scripts/install_pi.sh --with-astap
+bash scripts/install_pi.sh --dev-only --with-astap
 ```
 
-The script verifies the installation by running the full unit and integration suite before exiting. See [`scripts/install_pi.sh`](scripts/install_pi.sh) for details.
+The installer verifies the installation by running the full unit and integration suite before exiting.
+
+#### 2. Install the ToupTek SDK
+
+`toupcam.py` is bundled in `resources/touptek/`. The native library must be downloaded separately from the ToupTek website (the URL is shown in the "ToupTek SDK not available" error in the UI). Download the ARM64 Linux SDK, extract it, then run:
+
+```bash
+cp /path/to/extracted/libtoupcam.so .
+bash scripts/setup_touptek_pi.sh
+```
+
+The script copies both files into the venv site-packages and verifies the import. This step is needed only once (or after a clean re-install).
+
+#### 3. (Optional) Install ASTAP
+
+```bash
+bash scripts/install_pi.sh --dev-only --with-astap
+```
+
+Or separately: download ASTAP for ARM64 and the D80 star catalog (~1.25 GB) from [hnsky.org/astap.htm](https://www.hnsky.org/astap.htm). The D80 catalog is recommended — widest coverage, best for C8 pixel scales.
 
 ### Install from a pre-built wheel (fastest)
 
@@ -149,7 +170,7 @@ This installs the test runner, coverage tool, linter, type checker, mock library
 2. Install to the default location:
    - **Windows**: `C:\Program Files\astap\`
    - **Linux/Pi OS**: follow the installer; ensure `astap` is on `PATH`.
-3. Download the **G17 star catalog** from the same page.
+3. Download the **D80 star catalog** (~1.25 GB) from the same page.
 
 ---
 
@@ -168,7 +189,7 @@ Default configuration:
 | Variable | Default | Description |
 |---|---|---|
 | `ONSTEP_PORT` | `/dev/ttyACM0` | Serial port for the OnStep mount controller |
-| `TOUPTEK_INDEX` | `0` | Zero-based index into `Toupcam.EnumV2()` device list |
+| `TOUPTEK_INDEX` | `0` | Zero-based index into `Toupcam.EnumV2()` device list (use `1` if the guide camera is index 0) |
 | `STORAGE_DIR` | `~/smarttscope_data` | Directory for saved PNG images and JSON session logs |
 
 Any variable can be overridden by prefixing the command:
@@ -206,12 +227,18 @@ SIMULATOR_FITS_DIR=~/fits bash scripts/start.sh
 
 Activates `SimulatorCamera`, `SimulatorMount`, and `SimulatorFocuser`. Provide a directory of `.fits` files for the camera to replay.
 
-### Pi pull-and-test (update + verify before starting)
+### Day-to-day: pull, test, and start
+
+Pull the latest code, reinstall dependencies, run the unit suite, then start the server:
 
 ```bash
-bash scripts/pi_pull_and_test.sh   # pull latest, reinstall deps, run unit tests
-bash scripts/start.sh              # start once tests pass
+bash scripts/pi_pull_and_test.sh
+bash scripts/start.sh
 ```
+
+`pi_pull_and_test.sh` discards any local changes on the Pi (it is a deployment target), pulls from `origin/master`, rebuilds the wheel, and runs the unit suite. Pass `--no-pull` to skip the git step, or `--lint` to also run ruff and mypy.
+
+The ToupTek SDK files (`toupcam.py` + `libtoupcam.so`) live in the venv site-packages and survive a pull/reinstall — they are not overwritten unless you re-run `setup_touptek_pi.sh`.
 
 ---
 
@@ -435,10 +462,11 @@ tests/
     hardware.yml  Hardware tests — manual trigger only (workflow_dispatch)
 
 scripts/
-  build_dist.py  Build agent — generates requirements.txt and wheel
-  install_pi.sh  Automated installer for Raspberry Pi 5
-  start.sh       Hardware startup script — activates venv, exports config, starts server
-  pi_pull_and_test.sh  Pull latest code and run unit suite on the Pi
+  build_dist.py         Build agent — generates requirements.txt and wheel
+  install_pi.sh         Automated installer for Raspberry Pi 5
+  setup_touptek_pi.sh   Copy toupcam.py + libtoupcam.so into the venv (run once after install)
+  start.sh              Hardware startup script — activates venv, exports config, starts server
+  pi_pull_and_test.sh   Pull latest code, reinstall, and run unit suite on the Pi
 
 wiki/           Planning knowledge base (Markdown)
 docs/           Architecture reviews, milestone plan, agile plan, test strategy

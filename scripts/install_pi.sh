@@ -176,10 +176,16 @@ section_venv() {
 section_install() {
     log "Installing SmartTScope and all dependencies..."
 
-    # Non-editable + --no-build-isolation:
-    #   no -e  → skips editable_sanity_check (avoids BackendUnavailable in pip 26)
-    #   --no-build-isolation → reuses setuptools 82 already in the venv instead of
-    #   creating a temp build env where the backend import can fail
+    # pip 26 resolves sys.executable to the real Python path (/usr/bin/python3.13),
+    # so hook subprocesses start without venv activation and find Debian's old
+    # system setuptools (no backends.legacy) instead of the 82.x in the venv.
+    # Setting PYTHONPATH to the venv's site-packages ensures every subprocess
+    # finds our setuptools first regardless of how the executable path resolves.
+    local site_packages
+    site_packages="$("$VENV_DIR/bin/python" -c \
+        "import sysconfig; print(sysconfig.get_path('purelib'))")"
+    export PYTHONPATH="${site_packages}${PYTHONPATH:+:${PYTHONPATH}}"
+
     "$VENV_DIR/bin/pip" install --no-build-isolation "$INSTALL_DIR[dev]" --quiet
 
     log "SmartTScope installed."

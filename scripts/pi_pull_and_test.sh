@@ -97,7 +97,11 @@ info "Python : $PYTHON  ($(${PYTHON} --version))"
 info "Upgrading pip/setuptools..."
 "$PIP" install --upgrade pip setuptools wheel \
     || { fail "pip/setuptools upgrade failed"; exit 1; }
-info "Installing package in editable mode + dev extras..."
+# Ensure pip hook subprocesses find the venv's setuptools even when
+# sys.executable resolves to the system Python (pip 26 / Debian 13 issue).
+SITE_PACKAGES="$("$PYTHON" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
+export PYTHONPATH="${SITE_PACKAGES}${PYTHONPATH:+:${PYTHONPATH}}"
+info "Installing package and dev extras..."
 if "$PIP" install --no-build-isolation -q ".[dev]"; then
     ok "pip install complete"
 else

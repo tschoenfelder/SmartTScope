@@ -164,18 +164,22 @@ section_venv() {
         python3.13 -m venv "$VENV_DIR"
     fi
 
-    # Upgrade pip + setuptools; setuptools.backends.legacy (required for
-    # editable installs) was added in setuptools 64 — older venvs lack it.
-    "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel --quiet
-    log "Virtual environment ready."
+    # Upgrade pip + setuptools so setuptools.backends.legacy is available.
+    # Not quiet: a silent failure here is the root cause of the editable-install
+    # BackendUnavailable error that follows.
+    "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel \
+        || err "Failed to upgrade pip/setuptools/wheel"
+    log "Virtual environment ready. (setuptools $("$VENV_DIR/bin/python" -c 'import setuptools; print(setuptools.__version__)'))"
 }
 
 # ── install SmartTScope ───────────────────────────────────────────────────────
 section_install() {
     log "Installing SmartTScope and all dependencies..."
 
-    # Runtime + dev in one step so test suite is available on the Pi
-    "$VENV_DIR/bin/pip" install -e "$INSTALL_DIR[dev]" --quiet
+    # --no-build-isolation: reuse the upgraded setuptools already in the venv
+    # instead of letting pip bootstrap a fresh build env from PyPI.  This avoids
+    # BackendUnavailable when the PyPI fetch of setuptools>=68 fails or is slow.
+    "$VENV_DIR/bin/pip" install --no-build-isolation -e "$INSTALL_DIR[dev]" --quiet
 
     log "SmartTScope installed."
 }

@@ -638,6 +638,20 @@
           <input type="number" id="focuser-target" step="1" placeholder="steps" style="width:10ch">
           <button onclick="focuserMoveTo()">Move</button>
         </div>
+        <div class="input-row" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+          <label>Range ±</label>
+          <input type="number" id="af-range" value="1000" min="100" max="10000" step="100"
+                 style="width:7ch" title="Total sweep width in steps">
+          <label>Step</label>
+          <input type="number" id="af-step" value="100" min="10" max="1000" step="10"
+                 style="width:6ch">
+          <label>Exp</label>
+          <input type="number" id="af-exposure" value="2" min="0.1" max="30" step="0.5"
+                 style="width:6ch">
+          <label>s</label>
+          <button id="af-btn" onclick="runAutofocus()" style="margin-left:0.25rem">Autofocus</button>
+        </div>
+        <div id="af-result" style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;display:none"></div>
       </div>`;
   }
 
@@ -683,6 +697,31 @@
       await refreshFocuser();
     } catch (err) {
       setStatus('focuser-status', `Stop failed: ${err}`, true);
+    }
+  }
+
+  async function runAutofocus() {
+    const btn  = document.getElementById('af-btn');
+    const res  = document.getElementById('af-result');
+    const range_steps = parseInt(document.getElementById('af-range').value, 10);
+    const step_size   = parseInt(document.getElementById('af-step').value, 10);
+    const exposure    = parseFloat(document.getElementById('af-exposure').value);
+    setStatus('focuser-status', '');
+    res.style.display = 'none';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Focusing…';
+    try {
+      const data = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure });
+      const method = data.fitted ? 'parabola' : 'argmax';
+      const gain   = data.metric_gain >= 0 ? `+${data.metric_gain.toFixed(1)}` : data.metric_gain.toFixed(1);
+      res.style.display = 'block';
+      res.textContent = `Best: ${data.best_position} steps  |  gain: ${gain}  |  ${method}  |  ${data.positions.length} samples`;
+      await refreshFocuser();
+    } catch (err) {
+      setStatus('focuser-status', `Autofocus failed: ${err}`, true);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Autofocus';
     }
   }
 

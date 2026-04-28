@@ -2,11 +2,15 @@
 
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
+from astropy.io import fits
 from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps
 from smart_telescope.app import app
+from smart_telescope.domain.frame import FitsFrame
+from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 
 client = TestClient(app)
@@ -19,6 +23,16 @@ def _mock_focuser(position: int = 1000, moving: bool = False) -> MagicMock:
     return f
 
 
+def _mock_camera() -> MagicMock:
+    c = MagicMock(spec=CameraPort)
+    rng = np.random.default_rng(0)
+    pixels = rng.random((32, 32)).astype(np.float32)
+    hdr = fits.Header()
+    hdr["EXPTIME"] = 1.0
+    c.capture.return_value = FitsFrame(pixels=pixels, header=hdr, exposure_seconds=1.0)
+    return c
+
+
 @pytest.fixture(autouse=True)
 def _reset_deps() -> None:
     deps.reset()
@@ -27,8 +41,10 @@ def _reset_deps() -> None:
     deps.reset()
 
 
-def _inject(focuser: MagicMock) -> None:
+def _inject(focuser: MagicMock, camera: MagicMock | None = None) -> None:
     app.dependency_overrides[deps.get_focuser] = lambda: focuser
+    if camera is not None:
+        app.dependency_overrides[deps.get_camera] = lambda: camera
 
 
 # ── GET /api/focuser/status ────────────────────────────────────────────────────
@@ -135,3 +151,56 @@ class TestFocuserStop:
         _inject(f)
         client.post("/api/focuser/stop")
         f.stop.assert_called_once()
+
+
+# ── POST /api/focuser/autofocus ───────────────────────────────────────────────
+
+
+class TestFocuserAutofocus:
+    def test_returns_200_with_valid_params(self) -> None:
+        f = _mock_focuser(position=5000)
+        c = _mock_camera()
+        _inject(f, c)
+        resp = client.post(
+            "/api/focuser/autofocus",
+            json={"range_steps": 400, "step_size": 100, "exposure": 0.01},
+        )
+        assert resp.status_code == 200
+
+    def test_response_has_required_keys(self) -> None:
+        f = _mock_focuser(position=5000)
+        c = _mock_camera()
+        _inject(f, c)
+        data = client.post(
+            "/api/focuser/autofocus",
+            json={"range_steps": 400, "step_size": 100, "exposure": 0.01},
+        ).json()
+        for key in ("best_position", "start_position", "positions", "metrics", "fitted", "metric_gain"):
+            assert key in data
+
+    def test_uses_defaults_when_body_is_empty(self) -> None:
+        f = _mock_focuser(position=5000)
+        c = _mock_camera()
+        _inject(f, c)
+        resp = client.post("/api/focuser/autofocus", json={})
+        assert resp.status_code == 200
+
+    def test_returns_422_on_zero_step(self) -> None:
+        f = _mock_focuser(position=5000)
+        c = _mock_camera()
+        _inject(f, c)
+        resp = client.post(
+            "/api/focuser/autofocus",
+            json={"range_steps": 400, "step_size": 0, "exposure": 1.0},
+        )
+        assert resp.status_code == 422
+
+    def test_focuser_moved_at_least_once(self) -> None:
+        f = _mock_focuser(position=5000)
+        c = _mock_camera()
+        _inject(f, c)
+        client.post(
+            "/api/focuser/autofocus",
+            json={"range_steps": 300, "step_size": 100, "exposure": 0.01},
+        )
+        assert f.move.call_count >= 1

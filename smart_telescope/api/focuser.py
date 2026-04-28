@@ -1,11 +1,14 @@
-"""Focuser control API — GET status, POST move/nudge/stop."""
+"""Focuser control API — GET status, POST move/nudge/stop/autofocus."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..domain.autofocus import AutofocusParams
+from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
+from ..workflow.autofocus import run_autofocus
 from . import deps
 
 router = APIRouter(prefix="/api/focuser")
@@ -54,3 +57,32 @@ def focuser_nudge(
 def focuser_stop(focuser: FocuserPort = Depends(deps.get_focuser)) -> dict[str, bool]:
     focuser.stop()
     return {"ok": True}
+
+
+class AutofocusRequest(BaseModel):
+    range_steps: int   = 1000  # total sweep width in focuser steps
+    step_size:   int   = 100   # step between samples
+    exposure:    float = 2.0   # seconds per frame
+
+
+@router.post("/autofocus")
+def focuser_autofocus(
+    body:    AutofocusRequest,
+    focuser: FocuserPort = Depends(deps.get_focuser),
+    camera:  CameraPort  = Depends(deps.get_camera),
+) -> dict[str, object]:
+    try:
+        params = AutofocusParams(
+            range_steps = body.range_steps,
+            step_size   = body.step_size,
+            exposure    = body.exposure,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    try:
+        result = run_autofocus(focuser, camera, params)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return result.to_dict()

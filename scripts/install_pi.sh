@@ -176,10 +176,11 @@ section_venv() {
 section_install() {
     log "Installing SmartTScope and all dependencies..."
 
-    # --no-build-isolation: reuse the upgraded setuptools already in the venv
-    # instead of letting pip bootstrap a fresh build env from PyPI.  This avoids
-    # BackendUnavailable when the PyPI fetch of setuptools>=68 fails or is slow.
-    "$VENV_DIR/bin/pip" install --no-build-isolation -e "$INSTALL_DIR[dev]" --quiet
+    # Non-editable install: pip 26+ regressed editable_sanity_check so that it
+    # fires before the build env is wired up, causing BackendUnavailable even with
+    # --no-build-isolation.  On the Pi we git pull + reinstall on every update, so
+    # editable mode buys nothing and the regular install avoids the bug entirely.
+    "$VENV_DIR/bin/pip" install "$INSTALL_DIR[dev]" --quiet
 
     log "SmartTScope installed."
 }

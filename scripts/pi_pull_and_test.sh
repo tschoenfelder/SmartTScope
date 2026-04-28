@@ -98,7 +98,7 @@ info "Upgrading pip/setuptools..."
 "$PIP" install --upgrade pip setuptools wheel \
     || { fail "pip/setuptools upgrade failed"; exit 1; }
 info "Installing package in editable mode + dev extras..."
-if "$PIP" install --no-build-isolation -q -e ".[dev]"; then
+if "$PIP" install -q ".[dev]"; then
     ok "pip install complete"
 else
     fail "pip install failed"

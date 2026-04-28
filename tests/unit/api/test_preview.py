@@ -38,7 +38,7 @@ def _reset_deps() -> Any:
 
 @pytest.fixture()
 def preview_client() -> TestClient:
-    with patch("smart_telescope.api.preview.get_camera", return_value=_make_cam()):
+    with patch("smart_telescope.api.preview.get_preview_camera", return_value=_make_cam()):
         yield TestClient(app)
 
 
@@ -97,11 +97,18 @@ class TestWsPreviewFrames:
         cam = _make_cam()
         cam.capture.return_value = _small_frame(5.0)
         with (
-            patch("smart_telescope.api.preview.get_camera", return_value=cam),
+            patch("smart_telescope.api.preview.get_preview_camera", return_value=cam),
             TestClient(app).websocket_connect("/ws/preview?exposure=5.0") as ws,
         ):
             ws.receive_bytes()
         cam.capture.assert_called_with(5.0)
+
+    def test_camera_index_passed_to_get_preview_camera(self) -> None:
+        cam = _make_cam()
+        with patch("smart_telescope.api.preview.get_preview_camera", return_value=cam) as mock_get:
+            with TestClient(app).websocket_connect("/ws/preview?camera_index=1") as ws:
+                ws.receive_bytes()
+        mock_get.assert_called_once_with(1)
 
 
 # ── query param validation ────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..domain.frame import FitsFrame
 from ..domain.stretch import auto_stretch
-from .deps import get_camera
+from .deps import get_preview_camera
 
 router = APIRouter()
 
@@ -19,9 +19,10 @@ async def ws_preview(
     websocket: WebSocket,
     exposure: float = Query(default=2.0, gt=0.0, le=60.0),
     gain: int = Query(default=100, ge=100, le=3200),
+    camera_index: int = Query(default=0, ge=0, le=7),
 ) -> None:
     """Stream auto-stretched JPEG frames to the client until it disconnects."""
-    camera = get_camera()
+    camera = get_preview_camera(camera_index)
     if hasattr(camera, "set_gain"):
         camera.set_gain(gain)  # type: ignore[union-attr]
     await websocket.accept()

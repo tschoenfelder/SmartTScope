@@ -34,6 +34,7 @@ _focuser: FocuserPort | None = None
 _stacker: StackerPort | None = None
 _storage: StoragePort | None = None
 _adapters_built: bool = False
+_preview_cameras: dict[int, CameraPort] = {}
 
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
@@ -81,6 +82,27 @@ def get_camera() -> CameraPort:
     return _camera
 
 
+def get_preview_camera(index: int) -> CameraPort:
+    """Return a camera for live preview at the given SDK index.
+
+    Index 0 (or any index when TOUPTEK_INDEX is not set) shares the primary
+    camera singleton.  Additional indices open a separate ToupcamCamera and
+    cache it so the WS reconnect path doesn't create a new handle every time.
+    """
+    _ensure_adapters()
+    touptek_env = os.environ.get("TOUPTEK_INDEX", "")
+    main_index = int(touptek_env) if touptek_env else 0
+    if index == main_index or not touptek_env:
+        assert _camera is not None
+        return _camera
+    if index not in _preview_cameras:
+        from ..adapters.touptek.camera import ToupcamCamera
+        cam = ToupcamCamera(index=index)
+        cam.connect()
+        _preview_cameras[index] = cam
+    return _preview_cameras[index]
+
+
 def get_mount() -> MountPort:
     _ensure_adapters()
     assert _mount is not None
@@ -120,10 +142,11 @@ def get_storage() -> StoragePort:
 
 def reset() -> None:
     """Reset cached singletons (used in tests)."""
-    global _camera, _mount, _focuser, _stacker, _storage, _adapters_built
+    global _camera, _mount, _focuser, _stacker, _storage, _adapters_built, _preview_cameras
     _camera = None
     _mount = None
     _focuser = None
     _stacker = None
     _storage = None
     _adapters_built = False
+    _preview_cameras = {}

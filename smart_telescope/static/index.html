@@ -473,6 +473,9 @@
             <input type="checkbox" id="preview-hist-chk" style="width:auto"
                    onchange="previewHistToggle(this.checked)">Hist
           </label>
+          <button id="solve-btn" onclick="solveFrame()"
+                  style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.78rem"
+                  title="Plate-solve current frame to get RA/Dec">Solve</button>
           <span id="preview-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
         </div>
       </div>
@@ -499,6 +502,11 @@
         </div>
       </div>
     </div>
+
+    <!-- Plate-solve result -->
+    <div id="solve-result" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
+         border-radius:4px;background:var(--surface2);font-size:0.8rem;
+         font-family:ui-monospace,monospace;line-height:1.6"></div>
 
     <!-- Shared start / stop -->
     <div class="controls" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
@@ -1112,6 +1120,57 @@
       ctx.textAlign = 'left';
     } finally {
       _histDrawing = false;
+    }
+  }
+
+  /* ── Plate solving ───────────────────────────────────────────────────── */
+
+  function _formatRA(hours) {
+    const h = Math.floor(hours);
+    const m = Math.floor((hours - h) * 60);
+    const s = ((hours - h - m / 60) * 3600).toFixed(1);
+    return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(4, '0')}s`;
+  }
+
+  function _formatDec(deg) {
+    const sign = deg >= 0 ? '+' : '−';
+    const abs = Math.abs(deg);
+    const d = Math.floor(abs);
+    const m = Math.floor((abs - d) * 60);
+    const s = Math.round((abs - d - m / 60) * 3600);
+    return `${sign}${d}° ${String(m).padStart(2, '0')}′ ${String(s).padStart(2, '0')}″`;
+  }
+
+  async function solveFrame() {
+    const btn    = document.getElementById('solve-btn');
+    const result = document.getElementById('solve-result');
+    const exposure    = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
+    const gain        = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const camIdx      = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Solving…';
+    result.style.display = 'none';
+    setStatus('preview-status', '');
+
+    try {
+      const data = await apiPost('/api/solver/solve', {
+        exposure, gain, camera_index: camIdx,
+      });
+      if (data.success) {
+        result.style.display = '';
+        result.innerHTML =
+          `RA: <b>${_formatRA(data.ra)}</b> &nbsp; Dec: <b>${_formatDec(data.dec)}</b>` +
+          ` &nbsp; PA: ${data.pa.toFixed(1)}° &nbsp; ` +
+          `<span style="color:var(--muted)">${data.solve_time_s}s</span>`;
+      } else {
+        setStatus('preview-status', `Solve failed: ${data.error || 'unknown'}`, true);
+      }
+    } catch (err) {
+      setStatus('preview-status', `Solve error: ${err}`, true);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Solve';
     }
   }
 

@@ -20,11 +20,13 @@ import os
 from ..adapters.mock.camera import MockCamera
 from ..adapters.mock.focuser import MockFocuser
 from ..adapters.mock.mount import MockMount
+from ..adapters.mock.solver import MockSolver
 from ..adapters.mock.stacker import MockStacker
 from ..adapters.mock.storage import MockStorage
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
+from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 
@@ -33,6 +35,7 @@ _mount: MountPort | None = None
 _focuser: FocuserPort | None = None
 _stacker: StackerPort | None = None
 _storage: StoragePort | None = None
+_solver: SolverPort | None = None
 _adapters_built: bool = False
 _preview_cameras: dict[int, CameraPort] = {}
 
@@ -126,6 +129,19 @@ def get_stacker() -> StackerPort:
     return _stacker
 
 
+def get_solver() -> SolverPort:
+    global _solver
+    if _solver is None:
+        astap_path_env = os.environ.get("ASTAP_PATH", "")
+        try:
+            from ..adapters.astap.solver import AstapSolver, find_astap
+            path = astap_path_env or find_astap()
+            _solver = AstapSolver(astap_path=path) if path else MockSolver()
+        except Exception:
+            _solver = MockSolver()
+    return _solver
+
+
 def get_storage() -> StoragePort:
     global _storage
     if _storage is None:
@@ -142,11 +158,12 @@ def get_storage() -> StoragePort:
 
 def reset() -> None:
     """Reset cached singletons (used in tests)."""
-    global _camera, _mount, _focuser, _stacker, _storage, _adapters_built, _preview_cameras
+    global _camera, _mount, _focuser, _stacker, _storage, _solver, _adapters_built, _preview_cameras
     _camera = None
     _mount = None
     _focuser = None
     _stacker = None
     _storage = None
+    _solver = None
     _adapters_built = False
     _preview_cameras = {}

@@ -14,7 +14,6 @@ set -euo pipefail
 PYTHON_REQUIRED="3.13"
 REPO_URL="https://github.com/tschoenfelder/SmartTScope.git"
 INSTALL_DIR="$HOME/SmartTScope"
-VENV_DIR="$INSTALL_DIR/.venv"
 ASTAP_URL="https://www.hnsky.org/astap_arm64.deb"
 ASTAP_DEB="/tmp/astap_arm64.deb"
 
@@ -31,6 +30,9 @@ for arg in "$@"; do
         *) echo "Unknown option: $arg"; exit 1 ;;
     esac
 done
+
+# VENV_DIR must be derived after option parsing so --dev-only is reflected.
+VENV_DIR="$INSTALL_DIR/.venv"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'

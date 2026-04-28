@@ -176,17 +176,46 @@ section_venv() {
 section_install() {
     log "Installing SmartTScope and all dependencies..."
 
-    # pip 26 resolves sys.executable to the real Python path (/usr/bin/python3.13),
-    # so hook subprocesses start without venv activation and find Debian's old
-    # system setuptools (no backends.legacy) instead of the 82.x in the venv.
-    # Setting PYTHONPATH to the venv's site-packages ensures every subprocess
-    # finds our setuptools first regardless of how the executable path resolves.
-    local site_packages
-    site_packages="$("$VENV_DIR/bin/python" -c \
-        "import sysconfig; print(sysconfig.get_path('purelib'))")"
-    export PYTHONPATH="${site_packages}${PYTHONPATH:+:${PYTHONPATH}}"
+    # pip 26 on Debian 13 cannot run the PEP 517 build-backend hook subprocess
+    # (BackendUnavailable: Cannot import 'setuptools.backends.legacy') regardless
+    # of --no-build-isolation or PYTHONPATH workarounds.
+    #
+    # Workaround: call setuptools.build_meta.build_wheel() IN-PROCESS (no
+    # subprocess, always finds the venv's setuptools 82), then install the
+    # resulting wheel with plain 'pip install <wheel.whl>' — installing a
+    # pre-built wheel never invokes any build backend.
 
-    "$VENV_DIR/bin/pip" install --no-build-isolation "$INSTALL_DIR[dev]" --quiet
+    local wheel_dir="$INSTALL_DIR/dist"
+    mkdir -p "$wheel_dir"
+    rm -f "$wheel_dir"/smart_telescope-*.whl
+
+    log "Building wheel (in-process, no hook subprocess)..."
+    INSTALL_DIR="$INSTALL_DIR" WHEEL_DIR="$wheel_dir" \
+        "$VENV_DIR/bin/python" - <<'PYEOF' || err "Wheel build failed"
+import os, sys, shutil, tempfile, pathlib
+src = pathlib.Path(os.environ["INSTALL_DIR"])
+dst = pathlib.Path(os.environ["WHEEL_DIR"])
+os.chdir(src)
+sys.path.insert(0, str(src))
+from setuptools.build_meta import build_wheel
+with tempfile.TemporaryDirectory() as tmp:
+    name = build_wheel(tmp)
+    shutil.copy(f"{tmp}/{name}", dst / name)
+    print(f"  built: {name}")
+PYEOF
+
+    local wheel
+    wheel="$(ls "$wheel_dir/smart_telescope-"*.whl | head -1)"
+    [[ -n "$wheel" ]] || err "No wheel found in $wheel_dir after build"
+
+    log "Installing wheel and dependencies..."
+    "$VENV_DIR/bin/pip" install --quiet "$wheel"
+
+    # Dev extras are standard PyPI packages — no build backend needed for them.
+    "$VENV_DIR/bin/pip" install --quiet \
+        "pytest>=8.0" "pytest-asyncio>=0.23" "pytest-cov>=5.0" \
+        "pytest-mock>=3.15" "httpx>=0.27" "ruff>=0.4" "mypy>=1.10" \
+        "pyserial>=3.5" "build>=1.0"
 
     log "SmartTScope installed."
 }

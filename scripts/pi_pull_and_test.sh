@@ -97,15 +97,51 @@ info "Python : $PYTHON  ($(${PYTHON} --version))"
 info "Upgrading pip/setuptools..."
 "$PIP" install --upgrade pip setuptools wheel \
     || { fail "pip/setuptools upgrade failed"; exit 1; }
-# Ensure pip hook subprocesses find the venv's setuptools even when
-# sys.executable resolves to the system Python (pip 26 / Debian 13 issue).
-SITE_PACKAGES="$("$PYTHON" -c "import sysconfig; print(sysconfig.get_path('purelib'))")"
-export PYTHONPATH="${SITE_PACKAGES}${PYTHONPATH:+:${PYTHONPATH}}"
-info "Installing package and dev extras..."
-if "$PIP" install --no-build-isolation -q ".[dev]"; then
-    ok "pip install complete"
+info "setuptools $("$PYTHON" -c 'import setuptools; print(setuptools.__version__)')"
+
+# pip 26 on Debian 13 cannot run the PEP 517 build-backend hook subprocess
+# (BackendUnavailable: Cannot import 'setuptools.backends.legacy').
+# Workaround: build the wheel in-process (no subprocess), then install the .whl.
+WHEEL_DIR="$REPO_ROOT/dist"
+mkdir -p "$WHEEL_DIR"
+rm -f "$WHEEL_DIR"/smart_telescope-*.whl
+
+info "Building wheel (in-process, no hook subprocess)..."
+INSTALL_DIR="$REPO_ROOT" WHEEL_DIR="$WHEEL_DIR" \
+    "$PYTHON" - <<'PYEOF' || { fail "Wheel build failed"; exit 1; }
+import os, sys, shutil, tempfile, pathlib
+src = pathlib.Path(os.environ["INSTALL_DIR"])
+dst = pathlib.Path(os.environ["WHEEL_DIR"])
+os.chdir(src)
+sys.path.insert(0, str(src))
+from setuptools.build_meta import build_wheel
+with tempfile.TemporaryDirectory() as tmp:
+    name = build_wheel(tmp)
+    shutil.copy(f"{tmp}/{name}", dst / name)
+    print(f"  built: {name}")
+PYEOF
+
+WHEEL="$(ls "$WHEEL_DIR/smart_telescope-"*.whl 2>/dev/null | head -1)"
+if [[ -z "$WHEEL" ]]; then
+    fail "No wheel found in $WHEEL_DIR after build"
+    exit 1
+fi
+
+info "Installing wheel..."
+if "$PIP" install --quiet "$WHEEL"; then
+    ok "Package installed from wheel"
 else
-    fail "pip install failed"
+    fail "pip install wheel failed"
+fi
+
+info "Installing dev extras..."
+if "$PIP" install --quiet \
+        "pytest>=8.0" "pytest-asyncio>=0.23" "pytest-cov>=5.0" \
+        "pytest-mock>=3.15" "httpx>=0.27" "ruff>=0.4" "mypy>=1.10" \
+        "pyserial>=3.5" "build>=1.0"; then
+    ok "Dev extras installed"
+else
+    fail "Dev extras install failed"
 fi
 echo ""
 

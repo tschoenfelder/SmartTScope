@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..adapters.astap.solver import find_astap as _find_astap
-from ..adapters.astap.solver import find_g17_catalog as _find_catalog
+from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
@@ -66,8 +66,8 @@ def _check_solver() -> DeviceResult:
     if catalog is None:
         return DeviceResult(
             status="error",
-            error="G17 star catalog not found",
-            action=f"Download the G17 catalog from {_ASTAP_INSTALL_URL}",
+            error="ASTAP star catalog not found",
+            action=f"Download the D80 catalog from {_ASTAP_INSTALL_URL} and extract .290 files to ~/.astap/",
         )
     return DeviceResult(status="ok")
 

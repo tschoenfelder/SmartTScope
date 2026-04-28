@@ -67,7 +67,6 @@ section_system_packages() {
         git \
         curl \
         ca-certificates \
-        software-properties-common \
         build-essential \
         libssl-dev \
         libffi-dev \
@@ -110,15 +109,29 @@ section_python() {
         return
     fi
 
-    log "Python ${PYTHON_REQUIRED} not found — installing via deadsnakes PPA..."
+    # Detect distro family: Debian ships Python 3.13 natively from trixie onwards;
+    # Ubuntu does not and needs the deadsnakes PPA.
+    local distro_id=""
+    [[ -f /etc/os-release ]] && { source /etc/os-release; distro_id="${ID:-}"; }
 
-    # deadsnakes PPA provides Python 3.13 for Debian/Ubuntu ARM64
-    sudo add-apt-repository -y ppa:deadsnakes/ppa
-    sudo apt-get update -qq
-    sudo apt-get install -y --no-install-recommends \
-        python3.13 \
-        python3.13-venv \
-        python3.13-dev
+    if [[ "$distro_id" == "debian" ]]; then
+        log "Python ${PYTHON_REQUIRED} not found — installing from Debian repos..."
+        sudo apt-get install -y --no-install-recommends \
+            python3.13 \
+            python3.13-venv \
+            python3.13-dev \
+            || err "python3.13 not found in Debian repos. Is this Debian 13 (trixie) or later?"
+    else
+        log "Python ${PYTHON_REQUIRED} not found — installing via deadsnakes PPA..."
+        # deadsnakes PPA provides Python 3.13 for Ubuntu ARM64
+        sudo apt-get install -y --no-install-recommends software-properties-common
+        sudo add-apt-repository -y ppa:deadsnakes/ppa
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+            python3.13 \
+            python3.13-venv \
+            python3.13-dev
+    fi
 
     log "Python ${PYTHON_REQUIRED} installed."
 
@@ -187,9 +200,11 @@ section_astap() {
 
     log "ASTAP installed: $(command -v astap)"
 
-    warn "G17 star catalog is NOT installed."
-    warn "Download it from https://www.hnsky.org/astap.htm and place the"
-    warn ".zip files in the ASTAP data directory (shown in ASTAP --help)."
+    warn "ASTAP star catalog is NOT installed."
+    warn "Download a D-series catalog from https://www.hnsky.org/astap.htm"
+    warn "(D80 recommended — ~1.25 GB, widest coverage, no other drawbacks)."
+    warn "Extract the .zip and place the .290 files in the ASTAP data directory"
+    warn "(shown via: astap --help)."
     warn ""
     warn "For plate-solver integration tests, also place a C8 M42 FITS frame at:"
     warn "  $INSTALL_DIR/tests/fixtures/c8_native_m42.fits"
@@ -229,7 +244,7 @@ section_summary() {
     echo ""
     if [[ "$WITH_ASTAP" == true ]] && command -v astap &>/dev/null; then
         echo "  ASTAP    : $(command -v astap)"
-        echo "  Remember : install the G17 star catalog from hnsky.org"
+        echo "  Remember : install the D80 star catalog from hnsky.org"
         echo ""
     fi
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

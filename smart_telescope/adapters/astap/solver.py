@@ -26,8 +26,11 @@ def find_astap() -> str | None:
     return None
 
 
-def find_g17_catalog(astap_exe: str | None = None) -> Path | None:
-    """Return directory containing G17 catalog (.290 files), or None."""
+def find_catalog(astap_exe: str | None = None) -> Path | None:
+    """Return directory containing an ASTAP star catalog (.290 files), or None.
+
+    Works with all catalog families: D05, D20, D50, D80 (and legacy G17).
+    """
     search: list[Path] = []
     if astap_exe:
         search.append(Path(astap_exe).parent)
@@ -36,6 +39,10 @@ def find_g17_catalog(astap_exe: str | None = None) -> Path | None:
         if d.is_dir() and any(d.glob("*.290")):
             return d
     return None
+
+
+# Backward-compatible alias.
+find_g17_catalog = find_catalog
 
 
 class AstapSolver(SolverPort):

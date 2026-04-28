@@ -319,6 +319,16 @@
     .ws-stopped    { background: var(--muted); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
+    /* ── histogram canvas ── */
+    .preview-histogram {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      border-radius: 3px;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+
     /* ── spinner ── */
     .spin {
       display: inline-block;
@@ -444,6 +454,9 @@
           <div class="preview-placeholder" id="preview-placeholder">Press Start to begin live preview</div>
           <img id="preview-img" alt="" style="display:none">
           <div class="preview-overlay" id="preview-overlay"></div>
+          <canvas id="preview-histogram" class="preview-histogram"
+                  width="200" height="60" style="display:none"></canvas>
+          <canvas id="preview-hist-decode" width="1" height="1" style="display:none"></canvas>
         </div>
         <div class="controls" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.25rem">
           <label>Cam</label>
@@ -456,6 +469,10 @@
           <label style="margin-left:0.4rem">Gain</label>
           <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
                  style="width:6ch" title="Analog gain: 100 = 1×, 200 = 2×, …">
+          <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
+            <input type="checkbox" id="preview-hist-chk" style="width:auto"
+                   onchange="previewHistToggle(this.checked)">Hist
+          </label>
           <span id="preview-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
         </div>
       </div>
@@ -871,6 +888,9 @@
   let _reconnectTimer2 = null;
   let _splitActive    = false;
 
+  let _histEnabled  = false;
+  let _histDrawing  = false;
+
   function _setWsStatus(state) {
     // state: 'live' | 'connecting' | 'stopped'
     const labels = { live: 'Live', connecting: 'Connecting…', stopped: 'Stopped' };
@@ -963,6 +983,7 @@
         `${_frameCount} frame${_frameCount !== 1 ? 's' : ''}`;
       document.getElementById('preview-overlay').textContent =
         `#${_frameCount} · ${now}`;
+      if (_histEnabled) _drawHistogram(ev.data);
     };
 
     _ws.onerror = () => {
@@ -1024,6 +1045,74 @@
         _reconnectTimer2 = setTimeout(_connectWs2, 3000);
       }
     };
+  }
+
+  /* ── Histogram ───────────────────────────────────────────────────────── */
+
+  function previewHistToggle(enabled) {
+    _histEnabled = enabled;
+    const canvas = document.getElementById('preview-histogram');
+    if (!enabled) {
+      canvas.style.display = 'none';
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  async function _drawHistogram(blob) {
+    if (_histDrawing) return;
+    _histDrawing = true;
+    try {
+      const bitmap = await createImageBitmap(blob);
+      // Decode into a small offscreen canvas for performance
+      const dec = document.getElementById('preview-hist-decode');
+      const DW = 160, DH = Math.max(1, Math.round(160 * bitmap.height / bitmap.width));
+      dec.width = DW; dec.height = DH;
+      const dctx = dec.getContext('2d');
+      dctx.drawImage(bitmap, 0, 0, DW, DH);
+      bitmap.close();
+
+      const px = dctx.getImageData(0, 0, DW, DH).data;
+      const bins = new Uint32Array(256);
+      for (let i = 0; i < px.length; i += 4) {
+        // ITU-R BT.601 luminance
+        bins[Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2])]++;
+      }
+
+      const canvas = document.getElementById('preview-histogram');
+      const CW = canvas.width, CH = canvas.height;
+      canvas.style.display = '';
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, CW, CH);
+
+      // Background
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, CW, CH);
+
+      // Bars — log scale so dim stars don't vanish
+      const peak = Math.max(1, ...bins);
+      const logPeak = Math.log1p(peak);
+      ctx.fillStyle = 'rgba(210,210,210,0.9)';
+      const bw = CW / 256;
+      for (let i = 0; i < 256; i++) {
+        const h = Math.round(Math.log1p(bins[i]) / logPeak * (CH - 2));
+        ctx.fillRect(i * bw, CH - h, Math.max(1, bw), h);
+      }
+
+      // Clipping indicators
+      const total = DW * DH;
+      const clipLo = (bins[0] / total * 100).toFixed(1);
+      const clipHi = (bins[255] / total * 100).toFixed(1);
+      ctx.font = '9px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(120,180,255,0.9)';
+      ctx.fillText(`${clipLo}%`, 3, CH - 3);
+      ctx.fillStyle = 'rgba(255,140,100,0.9)';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${clipHi}%`, CW - 3, CH - 3);
+      ctx.textAlign = 'left';
+    } finally {
+      _histDrawing = false;
+    }
   }
 
   /* ── Custom Targets ───────────────────────────────────────────────────── */

@@ -1,6 +1,9 @@
-"""Catalog search API — GET /api/catalog/search, GET /api/catalog/objects."""
+"""Catalog search API — GET /api/catalog/search, GET /api/catalog/objects, GET /api/catalog/stars."""
 
 from __future__ import annotations
+
+import tomllib
+from pathlib import Path
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -8,6 +11,8 @@ from pydantic import BaseModel
 from .. import config
 from ..domain.catalog import CatalogObject, get_all, search
 from ..domain.visibility import compute_altaz
+
+_STARS_CFG = Path(config.STARS_CFG)
 
 router = APIRouter(prefix="/api/catalog")
 
@@ -68,3 +73,23 @@ def catalog_objects(
     if min_altitude is not None:
         entries = [e for e in entries if e.altitude_deg is not None and e.altitude_deg >= min_altitude]
     return entries
+
+
+class CustomTarget(BaseModel):
+    name: str
+    common_name: str = ""
+    ra: float
+    dec: float
+    type: str = "star"
+    tracking: str = "sidereal"
+    magnitude: float | None = None
+
+
+@router.get("/stars", response_model=list[CustomTarget])
+def catalog_stars() -> list[CustomTarget]:
+    """Return custom targets from stars.cfg (TOML format)."""
+    if not _STARS_CFG.exists():
+        return []
+    with _STARS_CFG.open("rb") as fh:
+        data = tomllib.load(fh)
+    return [CustomTarget(**t) for t in data.get("targets", [])]

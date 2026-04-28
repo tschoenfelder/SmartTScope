@@ -58,7 +58,7 @@ class OnStepFocuser(FocuserPort):
             return 0
 
     def move(self, steps: int) -> None:
-        self._send(f":FS{steps}#")
+        self._send_no_reply(f":FS{steps}#")
 
     def is_moving(self) -> bool:
         return self._send(":FT#") == "M"

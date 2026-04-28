@@ -33,6 +33,7 @@ _mount: MountPort | None = None
 _focuser: FocuserPort | None = None
 _stacker: StackerPort | None = None
 _storage: StoragePort | None = None
+_adapters_built: bool = False
 
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
@@ -67,24 +68,28 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     return camera, MockMount(), MockFocuser()
 
 
+def _ensure_adapters() -> None:
+    global _camera, _mount, _focuser, _adapters_built
+    if not _adapters_built:
+        _camera, _mount, _focuser = _build_adapters()
+        _adapters_built = True
+
+
 def get_camera() -> CameraPort:
-    global _camera
-    if _camera is None:
-        _camera, _, _ = _build_adapters()
+    _ensure_adapters()
+    assert _camera is not None
     return _camera
 
 
 def get_mount() -> MountPort:
-    global _mount
-    if _mount is None:
-        _, _mount, _ = _build_adapters()
+    _ensure_adapters()
+    assert _mount is not None
     return _mount
 
 
 def get_focuser() -> FocuserPort:
-    global _focuser
-    if _focuser is None:
-        _, _, _focuser = _build_adapters()
+    _ensure_adapters()
+    assert _focuser is not None
     return _focuser
 
 
@@ -115,9 +120,10 @@ def get_storage() -> StoragePort:
 
 def reset() -> None:
     """Reset cached singletons (used in tests)."""
-    global _camera, _mount, _focuser, _stacker, _storage
+    global _camera, _mount, _focuser, _stacker, _storage, _adapters_built
     _camera = None
     _mount = None
     _focuser = None
     _stacker = None
     _storage = None
+    _adapters_built = False

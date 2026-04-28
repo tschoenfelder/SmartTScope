@@ -18,9 +18,12 @@ router = APIRouter()
 async def ws_preview(
     websocket: WebSocket,
     exposure: float = Query(default=2.0, gt=0.0, le=60.0),
+    gain: int = Query(default=100, ge=100, le=3200),
 ) -> None:
     """Stream auto-stretched JPEG frames to the client until it disconnects."""
     camera = get_camera()
+    if hasattr(camera, "set_gain"):
+        camera.set_gain(gain)  # type: ignore[union-attr]
     await websocket.accept()
     try:
         while True:

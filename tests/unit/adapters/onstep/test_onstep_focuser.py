@@ -117,17 +117,27 @@ class TestMove:
     def test_move_sends_FS_command_with_position(self, mocker: pytest.MonkeyPatch) -> None:
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.focuser.serial.Serial")
         instance = mock_serial.return_value
-        instance.readline.side_effect = [b"1", b"1"]
+        instance.readline.return_value = b"1"  # only connect(:FA#) reads a reply
         foc = _make_focuser()
         foc.connect()
         foc.move(2000)
         sent = b"".join(c[0][0] for c in instance.write.call_args_list)
         assert b":FS2000#" in sent
 
+    def test_move_does_not_read_reply(self, mocker: pytest.MonkeyPatch) -> None:
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.focuser.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b"1"
+        foc = _make_focuser()
+        foc.connect()
+        read_calls_before = instance.readline.call_count
+        foc.move(500)
+        assert instance.readline.call_count == read_calls_before  # :FS# has no response
+
     def test_move_to_zero(self, mocker: pytest.MonkeyPatch) -> None:
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.focuser.serial.Serial")
         instance = mock_serial.return_value
-        instance.readline.side_effect = [b"1", b"1"]
+        instance.readline.return_value = b"1"
         foc = _make_focuser()
         foc.connect()
         foc.move(0)

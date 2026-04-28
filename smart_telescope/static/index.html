@@ -240,6 +240,39 @@
     .nudge-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
     button.nudge { padding: 0.4rem 0.6rem; font-size: 0.78rem; min-width: 2.8rem; }
 
+    /* ── custom target list ── */
+    .star-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 0.5rem;
+    }
+    .star-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .star-item:hover { background: rgba(56,139,253,0.12); }
+    .star-item .si-name  { font-weight: 600; min-width: 8ch; }
+    .star-item .si-common { color: var(--muted); flex: 1; font-size: 0.78rem; }
+    .star-item .si-coords { color: var(--muted); font-size: 0.72rem; font-family: monospace; }
+    .tracking-badge {
+      font-size: 0.65rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      background: rgba(139,148,158,0.15);
+      color: var(--muted);
+    }
+    .tracking-sidereal { background: rgba(63,185,80,0.1);  color: var(--success); }
+    .tracking-lunar    { background: rgba(210,153,34,0.1); color: var(--warning); }
+    .tracking-satellite{ background: rgba(56,139,253,0.1); color: var(--accent-hi); }
+
     /* ── camera grid ── */
     .camera-grid { display: grid; gap: 1rem; }
 
@@ -380,10 +413,21 @@
     <div id="focuser-card"></div>
   </section>
 
+  <!-- ── Custom Targets ──────────────────────────────────────────────── -->
+  <section class="section" id="stars-section">
+    <div class="toolbar">
+      <h2>Custom Targets</h2>
+      <button class="secondary" onclick="loadStars()" style="font-size:0.8rem">Reload</button>
+    </div>
+    <div id="stars-status" class="status-line"></div>
+    <div id="stars-list" class="star-list"></div>
+  </section>
+
   <!-- ── Live Preview ─────────────────────────────────────────────────── -->
   <section class="section" id="preview-section">
     <div class="toolbar">
       <h2>Live Preview</h2>
+      <span id="preview-camera-label" style="font-size:0.78rem;color:var(--muted);margin-right:0.5rem"></span>
       <span id="preview-ws-status" style="font-size:0.8rem;color:var(--muted)">
         <span class="ws-dot ws-stopped"></span>Stopped
       </span>
@@ -397,10 +441,13 @@
       <div class="preview-overlay" id="preview-overlay"></div>
     </div>
     <div class="controls" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
-      <label>Exposure</label>
+      <label>Exp</label>
       <input type="number" id="preview-exposure" value="2" min="0.1" max="60" step="0.5"
              style="width:7ch">
       <label>s</label>
+      <label style="margin-left:0.5rem">Gain</label>
+      <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
+             style="width:6ch" title="Analog gain: 100 = 1×, 200 = 2×, …">
       <button id="preview-start-btn" onclick="previewStart()">Start</button>
       <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
       <span class="controls-spacer"></span>
@@ -421,6 +468,10 @@
 </main>
 
 <script>
+  /* ── app state ────────────────────────────────────────────────────────── */
+  let _mountConnected = false;
+  let _activeCameraName = '';
+
   /* ── utilities ─────────────────────────────────────────────────────────── */
 
   function escHtml(s) {
@@ -463,6 +514,9 @@
     const dotCls = _MOUNT_DOT[state] || 'dot-grey';
     const ra  = data.ra  != null ? (+data.ra).toFixed(4)  + ' h'  : '—';
     const dec = data.dec != null ? (+data.dec).toFixed(4) + ' °' : '—';
+    const connBadge = _mountConnected
+      ? '<span style="font-size:0.68rem;color:var(--success);margin-left:0.4rem">● Connected</span>'
+      : '';
 
     return `
       <div class="card">
@@ -470,6 +524,7 @@
           <span class="dot ${dotCls}"></span>
           OnStep Mount
           <span class="state-badge state-${state}">${state}</span>
+          ${connBadge}
         </div>
         <div class="params">
           <div class="param">
@@ -762,8 +817,9 @@
     if (_ws) { _ws.close(); _ws = null; }
 
     const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
+    const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
     const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}`;
+    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}`;
 
     _setWsStatus('connecting');
     setStatus('preview-status', '');
@@ -818,6 +874,51 @@
         document.getElementById('preview-stop-btn').disabled  = true;
       }
     };
+  }
+
+  /* ── Custom Targets ───────────────────────────────────────────────────── */
+
+  const _TRACKING_LABEL = { sidereal: 'sidereal', lunar: 'lunar', satellite: 'sat' };
+
+  function starItem(t) {
+    const ra  = t.ra.toFixed(4) + ' h';
+    const dec = (t.dec >= 0 ? '+' : '') + t.dec.toFixed(2) + '°';
+    const mag = t.magnitude != null ? ` m${t.magnitude}` : '';
+    const trk = t.tracking || 'sidereal';
+    return `
+      <div class="star-item"
+           onclick="starSelect(${t.ra},${t.dec},'${escHtml(t.name)}','${escHtml(trk)}')">
+        <span class="si-name">${escHtml(t.name)}</span>
+        <span class="si-common">${escHtml(t.common_name || '')}${mag}</span>
+        <span class="si-coords">${ra} ${dec}</span>
+        <span class="tracking-badge tracking-${trk}">${_TRACKING_LABEL[trk] || trk}</span>
+      </div>`;
+  }
+
+  async function loadStars() {
+    const list = document.getElementById('stars-list');
+    setStatus('stars-status', '');
+    try {
+      const targets = await (await fetch('/api/catalog/stars')).json();
+      if (!targets.length) {
+        setStatus('stars-status', 'stars.cfg not found or empty — add targets to stars.cfg in the repo root.');
+        list.innerHTML = '';
+        return;
+      }
+      list.innerHTML = targets.map(starItem).join('');
+    } catch (err) {
+      setStatus('stars-status', 'Could not load stars.cfg: ' + err, true);
+    }
+  }
+
+  function starSelect(ra, dec, name, tracking) {
+    document.getElementById('goto-ra').value  = ra.toFixed(4);
+    document.getElementById('goto-dec').value = dec.toFixed(4);
+    const q = document.getElementById('catalog-query');
+    if (q) q.value = name;
+    if (tracking !== 'sidereal') {
+      setStatus('mount-status', `Note: ${name} uses ${tracking} tracking — set mount rate manually after slew.`);
+    }
   }
 
   /* ── Connect All ──────────────────────────────────────────────────────── */
@@ -895,6 +996,18 @@
             <span class="param-value" style="font-size:0.8rem">${escHtml(msg)}</span>
           </div>`;
       }).join('');
+
+      const mountOk = data['mount']?.status === 'ok';
+      const camOk   = data['camera']?.status === 'ok';
+      _mountConnected = mountOk;
+
+      if (mountOk) {
+        document.getElementById('skyshot-dot').className = 'dot dot-yellow';
+      }
+      if (camOk) {
+        _activeCameraName = 'ToupTek';
+        document.getElementById('preview-camera-label').textContent = 'Camera: ToupTek';
+      }
 
       await refreshMount();
       await refreshFocuser();
@@ -1007,6 +1120,7 @@
   updateElevationLabel();
   refreshMount();
   refreshFocuser();
+  loadStars();
 </script>
 
 </body>

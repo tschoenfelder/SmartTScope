@@ -42,6 +42,7 @@ class ToupcamCamera(CameraPort):
         self._buf: ctypes.Array[ctypes.c_char] | None = None
         self._width = 0
         self._height = 0
+        self._gain: int = 100  # AGain% — 100 = 1×; camera-specific max (typically 3200)
         self._frame_ready = threading.Event()
         self._capture_error: Exception | None = None
 
@@ -77,12 +78,26 @@ class ToupcamCamera(CameraPort):
             cam.Close()
             return False
 
+        try:
+            cam.put_ExpoAGain(self._gain)
+        except Exception:
+            pass  # not all cameras expose AGain control; ignore silently
+
         self._cam = cam
         self._tc = _tc
         self._buf = buf
         self._width = width
         self._height = height
         return True
+
+    def set_gain(self, gain: int) -> None:
+        """Set analog gain (100 = 1×, camera-specific max, typically 3200)."""
+        self._gain = max(100, gain)
+        if self._cam is not None:
+            try:
+                self._cam.put_ExpoAGain(self._gain)
+            except Exception:
+                pass
 
     def capture(self, exposure_seconds: float) -> FitsFrame:
         if self._cam is None or self._buf is None:

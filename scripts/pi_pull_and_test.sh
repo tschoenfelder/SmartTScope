@@ -26,6 +26,21 @@ FAILED=0
 DO_PULL=true
 DO_LINT=false
 
+# ── venv detection ─────────────────────────────────────────────────────────────
+# Prefer the venv that install_pi.sh creates; fall back to any activated venv.
+VENV_DIR="$REPO_ROOT/.venv"
+if [[ -x "$VENV_DIR/bin/python" ]]; then
+    PIP="$VENV_DIR/bin/pip"
+    PYTHON="$VENV_DIR/bin/python"
+elif [[ -n "${VIRTUAL_ENV:-}" && -x "$VIRTUAL_ENV/bin/python" ]]; then
+    PIP="$VIRTUAL_ENV/bin/pip"
+    PYTHON="$VIRTUAL_ENV/bin/python"
+else
+    echo -e "\033[0;31m[✗]\033[0m No virtual environment found at $VENV_DIR"
+    echo "    Run ./scripts/install_pi.sh first to create it."
+    exit 1
+fi
+
 for arg in "$@"; do
     case "$arg" in
         --no-pull) DO_PULL=false ;;
@@ -78,8 +93,9 @@ fi
 
 # ── 2. Install / sync dependencies ────────────────────────────────────────────
 echo -e "${CYAN}── 2. Dependencies ───────────────────────────────${NC}"
+info "Python : $PYTHON  ($(${PYTHON} --version))"
 info "Installing package in editable mode + dev extras..."
-if pip install -q -e ".[dev]"; then
+if "$PIP" install -q -e ".[dev]"; then
     ok "pip install complete"
 else
     fail "pip install failed"
@@ -90,7 +106,7 @@ echo ""
 echo -e "${CYAN}── 3. Unit tests ─────────────────────────────────${NC}"
 # Run without the coverage fail-under threshold so partial envs don't hard-fail.
 # The full threshold is enforced in CI; on the Pi we just want test pass/fail.
-if python3 -m pytest tests/unit/ --no-cov -q 2>&1; then
+if "$PYTHON" -m pytest tests/unit/ --no-cov -q 2>&1; then
     ok "All unit tests passed"
 else
     fail "One or more unit tests failed (see output above)"
@@ -100,7 +116,7 @@ echo ""
 # ── 4. Optional lint (ruff + mypy) ────────────────────────────────────────────
 if $DO_LINT; then
     echo -e "${CYAN}── 4. Lint (ruff) ────────────────────────────────${NC}"
-    if python3 -m ruff check smart_telescope/ 2>&1; then
+    if "$PYTHON" -m ruff check smart_telescope/ 2>&1; then
         ok "ruff clean"
     else
         fail "ruff reported issues"
@@ -108,7 +124,7 @@ if $DO_LINT; then
 
     echo ""
     echo -e "${CYAN}── 5. Type check (mypy) ──────────────────────────${NC}"
-    if python3 -m mypy smart_telescope/ 2>&1; then
+    if "$PYTHON" -m mypy smart_telescope/ 2>&1; then
         ok "mypy clean"
     else
         fail "mypy reported issues"

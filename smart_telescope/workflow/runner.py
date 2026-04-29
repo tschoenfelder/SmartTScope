@@ -42,6 +42,9 @@ from ._types import (
     SOLVE_MAX_ATTEMPTS as SOLVE_MAX_ATTEMPTS,
 )
 from ._types import (
+    WIDE_FIELD_SEARCH_RADIUS_DEG as WIDE_FIELD_SEARCH_RADIUS_DEG,
+)
+from ._types import (
     OpticalProfile as OpticalProfile,
 )
 from ._types import (

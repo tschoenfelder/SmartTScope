@@ -198,6 +198,23 @@ class TestStageAlign:
             stage_align(ctx, make_log())
         mount_mock.sync.assert_not_called()
 
+    def test_first_solve_passes_no_radius_override(self, solver_mock):
+        ctx = make_stage_ctx(solver=solver_mock)
+        stage_align(ctx, make_log())
+        first_call = solver_mock.solve.call_args_list[0]
+        assert first_call.kwargs.get("search_radius_deg") is None
+
+    def test_retry_solve_passes_wide_field_radius(self, mount_mock):
+        solver = Mock(spec=SolverPort)
+        solver.solve.side_effect = [
+            SolveResult(success=False, error="no stars"),
+            SolveResult(success=True, ra=M42_RA, dec=M42_DEC),
+        ]
+        ctx = make_stage_ctx(solver=solver, mount=mount_mock)
+        stage_align(ctx, make_log())
+        retry_call = solver.solve.call_args_list[1]
+        assert retry_call.kwargs.get("search_radius_deg") == pytest.approx(ctx.wide_field_search_radius_deg)
+
 
 # ── Stage: goto ────────────────────────────────────────────────────────────
 

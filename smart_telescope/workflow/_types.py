@@ -41,6 +41,7 @@ M42_DEC = -5.391   # degrees (−05° 23′ 28″)
 
 # ── Session tuning ───────────────────────────────────────────────────────────
 
+WIDE_FIELD_SEARCH_RADIUS_DEG = 180.0
 CENTERING_TOLERANCE_ARCMIN = 2.0
 MAX_RECENTER_ITERATIONS    = 3
 SOLVE_MAX_ATTEMPTS         = 2

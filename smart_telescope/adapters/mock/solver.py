@@ -18,7 +18,12 @@ class MockSolver(SolverPort):
             self._results = results if results is not None else [_M42_SOLVE]
         self._call_index = 0
 
-    def solve(self, frame: FitsFrame, pixel_scale_hint: float) -> SolveResult:
+    def solve(
+        self,
+        frame: FitsFrame,
+        pixel_scale_hint: float,
+        search_radius_deg: float | None = None,
+    ) -> SolveResult:
         result = self._results[min(self._call_index, len(self._results) - 1)]
         self._call_index += 1
         return result

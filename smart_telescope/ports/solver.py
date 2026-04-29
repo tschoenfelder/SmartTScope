@@ -15,4 +15,9 @@ class SolveResult:
 
 class SolverPort(ABC):
     @abstractmethod
-    def solve(self, frame: FitsFrame, pixel_scale_hint: float) -> SolveResult: ...
+    def solve(
+        self,
+        frame: FitsFrame,
+        pixel_scale_hint: float,
+        search_radius_deg: float | None = None,
+    ) -> SolveResult: ...

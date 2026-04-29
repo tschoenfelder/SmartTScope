@@ -34,6 +34,7 @@ from ._types import (
     SOLVE_MAX_ATTEMPTS,
     STACK_DEPTH,
     STACK_EXPOSURE_S,
+    WIDE_FIELD_SEARCH_RADIUS_DEG,
     OpticalProfile,
     TransitionCallback,
     WorkflowError,
@@ -57,6 +58,7 @@ class StageContext:
     stack_depth: int = STACK_DEPTH
     preview_exposure_s: float = PREVIEW_EXPOSURE_S
     preview_frames: int = PREVIEW_FRAMES
+    wide_field_search_radius_deg: float = WIDE_FIELD_SEARCH_RADIUS_DEG
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -87,10 +89,11 @@ def stage_initialize_mount(ctx: StageContext, log: SessionLog) -> None:
 
 
 def stage_align(ctx: StageContext, log: SessionLog) -> None:
-    for exposure in [5.0, 10.0][:SOLVE_MAX_ATTEMPTS]:
+    for i, exposure in enumerate([5.0, 10.0][:SOLVE_MAX_ATTEMPTS]):
         log.plate_solve_attempts += 1
         frame = ctx.camera.capture(exposure)
-        result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec)
+        radius = ctx.wide_field_search_radius_deg if i > 0 else None
+        result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec, search_radius_deg=radius)
         if result.success:
             if not ctx.mount.sync(result.ra, result.dec):
                 raise WorkflowError("align", "Mount sync after plate solve failed")

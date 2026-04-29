@@ -108,3 +108,17 @@ class TestAstapCommandConstruction:
         make_solver(timeout_seconds=45).solve(make_frame(), 0.38)
         kwargs = run_mock.call_args.kwargs
         assert kwargs.get("timeout") == 45
+
+    def test_per_call_radius_overrides_instance_default(self, mocker):
+        run_mock = mocker.patch("subprocess.run", return_value=completed_process())
+        make_solver(search_radius_deg=30.0).solve(make_frame(), 0.38, search_radius_deg=90.0)
+        cmd = run_mock.call_args.args[0]
+        r_index = cmd.index("-r")
+        assert float(cmd[r_index + 1]) == pytest.approx(90.0)
+
+    def test_instance_radius_used_when_no_per_call_override(self, mocker):
+        run_mock = mocker.patch("subprocess.run", return_value=completed_process())
+        make_solver(search_radius_deg=15.0).solve(make_frame(), 0.38)
+        cmd = run_mock.call_args.args[0]
+        r_index = cmd.index("-r")
+        assert float(cmd[r_index + 1]) == pytest.approx(15.0)

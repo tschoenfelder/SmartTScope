@@ -71,7 +71,13 @@ class AstapSolver(SolverPort):
         self._downsample = downsample
         self._timeout = timeout_seconds
 
-    def solve(self, frame: FitsFrame, pixel_scale_hint: float) -> SolveResult:
+    def solve(
+        self,
+        frame: FitsFrame,
+        pixel_scale_hint: float,
+        search_radius_deg: float | None = None,
+    ) -> SolveResult:
+        radius = search_radius_deg if search_radius_deg is not None else self._search_radius
         with tempfile.TemporaryDirectory() as tmpdir:
             fits_path = Path(tmpdir) / "frame.fits"
             fits_path.write_bytes(frame.to_fits_bytes())
@@ -79,7 +85,7 @@ class AstapSolver(SolverPort):
             cmd: list[str] = [
                 self._astap,
                 "-f", str(fits_path),
-                "-r", str(self._search_radius),
+                "-r", str(radius),
                 "-z", str(self._downsample),
                 "-scale", str(round(pixel_scale_hint, 4)),
                 "-o", str(fits_path.with_suffix("")),

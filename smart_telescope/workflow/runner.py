@@ -90,21 +90,27 @@ class VerticalSliceRunner:
         self._profile = optical_profile
         self._on_state_change = on_state_change
         self._stop_event = threading.Event()
+        self._current_log: SessionLog | None = None
+
+    @property
+    def current_log(self) -> SessionLog | None:
+        return self._current_log
 
     def stop(self) -> None:
         self._stop_event.set()
         self._mount.stop()
 
-    def run(self) -> SessionLog:
+    def run(self, session_id: str | None = None) -> SessionLog:
         self._stop_event.clear()
         log = SessionLog(
-            session_id=str(uuid.uuid4()),
+            session_id=session_id or str(uuid.uuid4()),
             target_name="M42",
             target_ra=M42_RA,
             target_dec=M42_DEC,
             optical_config=self._profile.name,
             started_at=_now(),
         )
+        self._current_log = log
         self._transition(log, SessionState.IDLE)
 
         ctx = StageContext(

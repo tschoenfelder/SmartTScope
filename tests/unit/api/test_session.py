@@ -1,15 +1,20 @@
-"""Unit tests for POST /api/session/connect."""
+"""Unit tests for POST /api/session/connect, /run, /status, /stop."""
+import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from smart_telescope.api import deps
+from smart_telescope.api import deps, session as session_module
 from smart_telescope.app import app
+from smart_telescope.domain.session import SessionLog
+from smart_telescope.domain.states import SessionState
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort
+from smart_telescope.workflow.runner import C8_NATIVE, M42_DEC, M42_RA
 
 
 def _patch_solver_ok(astap: str = "/usr/bin/astap", catalog: Path | None = None):
@@ -79,9 +84,11 @@ def _inject(
 @pytest.fixture(autouse=True)
 def _reset() -> None:
     deps.reset()
+    session_module._reset_session()
     yield
     app.dependency_overrides.clear()
     deps.reset()
+    session_module._reset_session()
 
 
 # ── happy path ────────────────────────────────────────────────────────────────
@@ -284,3 +291,176 @@ class TestSolverValidation:
         assert body["camera"]["status"] == "ok"
         assert body["mount"]["status"] == "ok"
         assert body["focuser"]["status"] == "ok"
+
+
+# ── POST /api/session/run ─────────────────────────────────────────────────────
+
+
+def _make_fast_log(session_id: str | None = None) -> SessionLog:
+    return SessionLog(
+        session_id=session_id or "test-sid",
+        target_name="M42", target_ra=M42_RA, target_dec=M42_DEC,
+        optical_config=C8_NATIVE.name, started_at=datetime.now(UTC),
+        state=SessionState.SAVED,
+    )
+
+
+def _patch_runner_fast(log: SessionLog | None = None) -> object:
+    """Patch VerticalSliceRunner so run() returns immediately.
+
+    Propagates the session_id kwarg into the log so status responses
+    return the same ID as the /run response.
+    """
+    mock_log = log or _make_fast_log()
+    mock_runner = MagicMock()
+
+    def _run(**kwargs: object) -> SessionLog:
+        sid = kwargs.get("session_id")
+        if sid:
+            mock_log.session_id = str(sid)
+        mock_runner.current_log = mock_log
+        return mock_log
+
+    mock_runner.run.side_effect = _run
+    mock_runner.current_log = mock_log
+    return patch("smart_telescope.api.session.VerticalSliceRunner", return_value=mock_runner)
+
+
+class TestSessionRun:
+    def test_returns_202(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast():
+            r = client.post("/api/session/run")
+        assert r.status_code == 202
+
+    def test_response_has_session_id(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast():
+            body = client.post("/api/session/run").json()
+        assert "session_id" in body
+        assert body["session_id"]
+
+    def test_response_state_is_idle(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast():
+            body = client.post("/api/session/run").json()
+        assert body["state"] == "IDLE"
+
+    def test_session_id_is_uuid_shaped(self) -> None:
+        import re
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast():
+            body = client.post("/api/session/run").json()
+        assert re.fullmatch(r"[0-9a-f-]{36}", body["session_id"])
+
+    def test_409_when_session_already_running(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        gate = threading.Event()
+        blocking_runner = MagicMock()
+        blocking_runner.current_log = None
+        blocking_runner.run.side_effect = lambda **kw: gate.wait()
+        with patch("smart_telescope.api.session.VerticalSliceRunner", return_value=blocking_runner):
+            client.post("/api/session/run")
+            r = client.post("/api/session/run")
+        gate.set()
+        assert r.status_code == 409
+
+    def test_runner_receives_generated_session_id(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        mock_runner = MagicMock()
+        mock_runner.current_log = _make_fast_log()
+        mock_runner.run.return_value = mock_runner.current_log
+        with patch("smart_telescope.api.session.VerticalSliceRunner", return_value=mock_runner):
+            body = client.post("/api/session/run").json()
+        mock_runner.run.assert_called_once_with(session_id=body["session_id"])
+
+
+# ── GET /api/session/status ───────────────────────────────────────────────────
+
+
+class TestSessionStatus:
+    def test_returns_200(self) -> None:
+        assert client.get("/api/session/status").status_code == 200
+
+    def test_running_false_when_no_session(self) -> None:
+        body = client.get("/api/session/status").json()
+        assert body["running"] is False
+
+    def test_state_none_when_no_session(self) -> None:
+        body = client.get("/api/session/status").json()
+        assert body["state"] is None
+
+    def test_returns_session_id_after_run(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast():
+            sid = client.post("/api/session/run").json()["session_id"]
+        body = client.get("/api/session/status").json()
+        assert body["session_id"] == sid
+
+    def test_state_reflects_completed_session(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast():
+            client.post("/api/session/run")
+        body = client.get("/api/session/status").json()
+        assert body["state"] == "SAVED"
+
+    def test_frames_integrated_in_status(self) -> None:
+        log = _make_fast_log()
+        log.frames_integrated = 7
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(log):
+            client.post("/api/session/run")
+        body = client.get("/api/session/status").json()
+        assert body["frames_integrated"] == 7
+
+    def test_warnings_in_status(self) -> None:
+        log = _make_fast_log()
+        log.warnings = ["centering degraded"]
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(log):
+            client.post("/api/session/run")
+        body = client.get("/api/session/status").json()
+        assert "centering degraded" in body["warnings"]
+
+    def test_failure_fields_in_status(self) -> None:
+        log = _make_fast_log()
+        log.failure_stage = "align"
+        log.failure_reason = "no stars"
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(log):
+            client.post("/api/session/run")
+        body = client.get("/api/session/status").json()
+        assert body["failure_stage"] == "align"
+        assert body["failure_reason"] == "no stars"
+
+
+# ── POST /api/session/stop ────────────────────────────────────────────────────
+
+
+class TestSessionStop:
+    def test_404_when_no_session(self) -> None:
+        assert client.post("/api/session/stop").status_code == 404
+
+    def test_204_when_session_active(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        gate = threading.Event()
+        mock_runner = MagicMock()
+        mock_runner.current_log = None
+        mock_runner.run.side_effect = lambda **kw: gate.wait()
+        with patch("smart_telescope.api.session.VerticalSliceRunner", return_value=mock_runner):
+            client.post("/api/session/run")
+            r = client.post("/api/session/stop")
+        gate.set()
+        assert r.status_code == 204
+
+    def test_stop_calls_runner_stop(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        gate = threading.Event()
+        mock_runner = MagicMock()
+        mock_runner.current_log = None
+        mock_runner.run.side_effect = lambda **kw: gate.wait()
+        with patch("smart_telescope.api.session.VerticalSliceRunner", return_value=mock_runner):
+            client.post("/api/session/run")
+            client.post("/api/session/stop")
+        gate.set()
+        mock_runner.stop.assert_called_once()

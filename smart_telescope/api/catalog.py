@@ -1,4 +1,4 @@
-"""Catalog search API — GET /api/catalog/search, GET /api/catalog/objects, GET /api/catalog/stars."""
+"""Catalog search API — GET /api/catalog/search, /objects, /tonight, /stars."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from .. import config
 from ..domain.catalog import CatalogObject, get_all, search
+from ..domain.solar import is_solar_target
 from ..domain.visibility import compute_altaz
 
 _STARS_CFG = Path(config.STARS_CFG)
@@ -73,6 +74,50 @@ def catalog_objects(
     if min_altitude is not None:
         entries = [e for e in entries if e.altitude_deg is not None and e.altitude_deg >= min_altitude]
     return entries
+
+
+class TonightEntry(CatalogEntry):
+    solar_safe: bool
+
+
+@router.get("/tonight", response_model=list[TonightEntry])
+def catalog_tonight(
+    min_altitude: float = Query(default=20.0, ge=-90.0, le=90.0),
+    object_type: str | None = Query(default=None, description="Comma-separated types, e.g. GC,SG"),
+    max_magnitude: float | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=110),
+) -> list[TonightEntry]:
+    """Observable Messier objects tonight, sorted highest-first."""
+    type_filter = (
+        {t.strip().upper() for t in object_type.split(",")} if object_type else None
+    )
+
+    results: list[TonightEntry] = []
+    for obj in get_all():
+        if type_filter and obj.object_type not in type_filter:
+            continue
+        if max_magnitude is not None and obj.magnitude > max_magnitude:
+            continue
+        alt, az = compute_altaz(
+            obj.ra_hours, obj.dec_deg, config.OBSERVER_LAT, config.OBSERVER_LON
+        )
+        if alt < min_altitude:
+            continue
+        blocked, _ = is_solar_target(obj.ra_hours, obj.dec_deg)
+        results.append(TonightEntry(
+            name=obj.name,
+            common_name=obj.common_name,
+            ra_hours=obj.ra_hours,
+            dec_deg=obj.dec_deg,
+            object_type=obj.object_type,
+            magnitude=obj.magnitude,
+            altitude_deg=round(alt, 1),
+            azimuth_deg=round(az, 1),
+            solar_safe=not blocked,
+        ))
+
+    results.sort(key=lambda e: e.altitude_deg or 0.0, reverse=True)
+    return results[:limit]
 
 
 class CustomTarget(BaseModel):

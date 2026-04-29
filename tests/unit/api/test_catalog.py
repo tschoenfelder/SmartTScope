@@ -120,3 +120,125 @@ class TestCatalogObjects:
         with patch("smart_telescope.api.catalog.compute_altaz", return_value=_BELOW):
             data = client.get("/api/catalog/objects?min_altitude=20").json()
         assert data == []
+
+
+# ── GET /api/catalog/tonight ──────────────────────────────────────────────────
+
+_SOLAR_SAFE   = (False, 120.0)   # not blocked, 120° from Sun
+_SOLAR_UNSAFE = (True,    1.5)   # blocked, 1.5° from Sun
+
+
+def _patch_tonight(alt: float = 45.0, az: float = 180.0, solar_blocked: bool = False):
+    """Patch both compute_altaz and is_solar_target for /tonight tests."""
+    return (
+        patch("smart_telescope.api.catalog.compute_altaz", return_value=(alt, az)),
+        patch("smart_telescope.api.catalog.is_solar_target",
+              return_value=(solar_blocked, 1.5 if solar_blocked else 120.0)),
+    )
+
+
+class TestCatalogTonight:
+    def test_returns_200(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            assert client.get("/api/catalog/tonight").status_code == 200
+
+    def test_response_is_list(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert isinstance(data, list)
+
+    def test_entries_have_solar_safe_field(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert len(data) > 0
+        assert "solar_safe" in data[0]
+
+    def test_solar_safe_true_when_not_blocked(self) -> None:
+        alt_patch, solar_patch = _patch_tonight(solar_blocked=False)
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert all(e["solar_safe"] is True for e in data)
+
+    def test_solar_safe_false_when_blocked(self) -> None:
+        alt_patch, solar_patch = _patch_tonight(solar_blocked=True)
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert all(e["solar_safe"] is False for e in data)
+
+    def test_empty_when_nothing_above_min_altitude(self) -> None:
+        alt_patch, solar_patch = _patch_tonight(alt=-5.0)
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight?min_altitude=20").json()
+        assert data == []
+
+    def test_all_results_have_altitude_deg(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert all(e["altitude_deg"] is not None for e in data)
+
+    def test_sorted_by_altitude_descending(self) -> None:
+        # Give each call a slightly different altitude by cycling values
+        altitudes = [70.0, 30.0, 50.0]
+        call_count = 0
+
+        def varying_altaz(ra, dec, lat, lon):
+            nonlocal call_count
+            alt = altitudes[call_count % len(altitudes)]
+            call_count += 1
+            return alt, 180.0
+
+        with (
+            patch("smart_telescope.api.catalog.compute_altaz", side_effect=varying_altaz),
+            patch("smart_telescope.api.catalog.is_solar_target", return_value=_SOLAR_SAFE),
+        ):
+            data = client.get("/api/catalog/tonight?min_altitude=0").json()
+
+        alts = [e["altitude_deg"] for e in data]
+        assert alts == sorted(alts, reverse=True)
+
+    def test_limit_parameter_respected(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight?limit=5").json()
+        assert len(data) <= 5
+
+    def test_object_type_filter_gc_only(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight?object_type=GC").json()
+        assert all(e["object_type"] == "GC" for e in data)
+
+    def test_object_type_filter_multiple_types(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight?object_type=GC,SG").json()
+        assert all(e["object_type"] in ("GC", "SG") for e in data)
+
+    def test_object_type_filter_unknown_type_returns_empty(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight?object_type=XYZTYPE").json()
+        assert data == []
+
+    def test_max_magnitude_excludes_faint_objects(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight?max_magnitude=5.0").json()
+        assert all(e["magnitude"] <= 5.0 for e in data)
+
+    def test_default_limit_is_twenty(self) -> None:
+        alt_patch, solar_patch = _patch_tonight()
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert len(data) <= 20
+
+    def test_min_altitude_default_excludes_horizon(self) -> None:
+        # Objects at exactly 19° should be excluded by default min_altitude=20
+        alt_patch, solar_patch = _patch_tonight(alt=19.0)
+        with alt_patch, solar_patch:
+            data = client.get("/api/catalog/tonight").json()
+        assert data == []

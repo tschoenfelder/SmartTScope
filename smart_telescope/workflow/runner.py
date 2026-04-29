@@ -56,6 +56,7 @@ from ._types import (
 from .stages import (
     StageContext,
     stage_align,
+    stage_autofocus,
     stage_connect,
     stage_goto,
     stage_initialize_mount,
@@ -90,6 +91,10 @@ class VerticalSliceRunner:
         stack_depth: int = 10,
         preview_exposure_s: float = 5.0,
         preview_frames: int = 3,
+        autofocus_range_steps: int = 200,
+        autofocus_step_size: int = 20,
+        autofocus_exposure_s: float = 3.0,
+        skip_autofocus: bool = False,
     ) -> None:
         self._camera = camera
         self._mount = mount
@@ -108,6 +113,10 @@ class VerticalSliceRunner:
         self._stack_depth = stack_depth
         self._preview_exposure_s = preview_exposure_s
         self._preview_frames = preview_frames
+        self._autofocus_range_steps = autofocus_range_steps
+        self._autofocus_step_size = autofocus_step_size
+        self._autofocus_exposure_s = autofocus_exposure_s
+        self._skip_autofocus = skip_autofocus
 
     @property
     def current_log(self) -> SessionLog | None:
@@ -146,6 +155,10 @@ class VerticalSliceRunner:
             stack_depth=self._stack_depth,
             preview_exposure_s=self._preview_exposure_s,
             preview_frames=self._preview_frames,
+            autofocus_range_steps=self._autofocus_range_steps,
+            autofocus_step_size=self._autofocus_step_size,
+            autofocus_exposure_s=self._autofocus_exposure_s,
+            skip_autofocus=self._skip_autofocus,
         )
 
         try:
@@ -182,6 +195,7 @@ class VerticalSliceRunner:
             ("align",            lambda log: stage_align(ctx, log)),
             ("goto",             lambda log: stage_goto(ctx, log)),
             ("recenter",         lambda log: stage_recenter(ctx, log)),
+            ("autofocus",        lambda log: stage_autofocus(ctx, log)),
             ("preview",          lambda log: stage_preview(ctx, log)),
             ("stack",            lambda log: stage_stack(ctx, log)),
             ("save",             lambda log: stage_save(ctx, log)),

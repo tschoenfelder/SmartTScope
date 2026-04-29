@@ -29,9 +29,11 @@ from smart_telescope.workflow.runner import (
     SOLVE_MAX_ATTEMPTS,
     WorkflowError,
 )
+from smart_telescope.domain.autofocus import AutofocusResult
 from smart_telescope.workflow.stages import (
     _wait_for_slew,
     stage_align,
+    stage_autofocus,
     stage_connect,
     stage_goto,
     stage_initialize_mount,
@@ -371,6 +373,69 @@ class TestStageRecenter:
             stage_recenter(ctx, make_log())
         assert exc.value.stage == "recenter"
         assert "slew" in exc.value.reason.lower() or "correction" in exc.value.reason.lower()
+
+
+# ── Stage: autofocus ──────────────────────────────────────────────────────
+
+
+def _af_result(best_pos: int = 1000, gain: float = 1.5) -> AutofocusResult:
+    return AutofocusResult(
+        best_position=best_pos,
+        start_position=900,
+        positions=[900, 950, 1000],
+        metrics=[0.5, 0.8, 1.2],
+        fitted=True,
+        metric_gain=gain,
+    )
+
+
+class TestStageAutofocus:
+    def test_transitions_to_focusing(self):
+        with patch("smart_telescope.workflow.stages.run_autofocus", return_value=_af_result()):
+            ctx = make_stage_ctx()
+            log = make_log()
+            stage_autofocus(ctx, log)
+        assert log.state == SessionState.FOCUSING
+
+    def test_records_best_position_in_log(self):
+        with patch("smart_telescope.workflow.stages.run_autofocus", return_value=_af_result(best_pos=1050)):
+            ctx = make_stage_ctx()
+            log = make_log()
+            stage_autofocus(ctx, log)
+        assert log.autofocus_best_position == 1050
+
+    def test_records_metric_gain_in_log(self):
+        with patch("smart_telescope.workflow.stages.run_autofocus", return_value=_af_result(gain=2.3)):
+            ctx = make_stage_ctx()
+            log = make_log()
+            stage_autofocus(ctx, log)
+        assert log.autofocus_metric_gain == pytest.approx(2.3)
+
+    def test_skip_flag_short_circuits(self):
+        with patch("smart_telescope.workflow.stages.run_autofocus") as mock_af:
+            ctx = make_stage_ctx(skip_autofocus=True)
+            stage_autofocus(ctx, make_log())
+        mock_af.assert_not_called()
+
+    def test_runtime_error_raises_workflow_error(self):
+        with patch(
+            "smart_telescope.workflow.stages.run_autofocus",
+            side_effect=RuntimeError("too few samples"),
+        ):
+            ctx = make_stage_ctx()
+            with pytest.raises(WorkflowError) as exc:
+                stage_autofocus(ctx, make_log())
+        assert exc.value.stage == "autofocus"
+        assert "too few" in exc.value.reason
+
+    def test_params_forwarded_from_ctx(self):
+        with patch("smart_telescope.workflow.stages.run_autofocus", return_value=_af_result()) as mock_af:
+            ctx = make_stage_ctx(autofocus_range_steps=400, autofocus_step_size=40, autofocus_exposure_s=5.0)
+            stage_autofocus(ctx, make_log())
+        _, _, params = mock_af.call_args.args
+        assert params.range_steps == 400
+        assert params.step_size == 40
+        assert params.exposure == pytest.approx(5.0)
 
 
 # ── Stage: stack ───────────────────────────────────────────────────────────

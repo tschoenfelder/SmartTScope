@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from ..domain.autofocus import AutofocusParams
 from ..domain.session import SessionLog
 from ..domain.states import SessionState
 from ..ports.camera import CameraPort
@@ -21,7 +22,11 @@ from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
+from .autofocus import run_autofocus
 from ._types import (
+    AUTOFOCUS_EXPOSURE_S,
+    AUTOFOCUS_RANGE_STEPS,
+    AUTOFOCUS_STEP_SIZE,
     CENTERING_TOLERANCE_ARCMIN,
     M42_DEC,
     M42_RA,
@@ -59,6 +64,10 @@ class StageContext:
     preview_exposure_s: float = PREVIEW_EXPOSURE_S
     preview_frames: int = PREVIEW_FRAMES
     wide_field_search_radius_deg: float = WIDE_FIELD_SEARCH_RADIUS_DEG
+    autofocus_range_steps: int = AUTOFOCUS_RANGE_STEPS
+    autofocus_step_size: int = AUTOFOCUS_STEP_SIZE
+    autofocus_exposure_s: float = AUTOFOCUS_EXPOSURE_S
+    skip_autofocus: bool = False
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -143,6 +152,23 @@ def stage_recenter(ctx: StageContext, log: SessionLog) -> None:
         f"final offset {log.centering_offset_arcmin:.1f} arcmin — continuing in degraded mode"
     )
     ctx.on_transition(log, SessionState.CENTERING_DEGRADED)
+
+
+def stage_autofocus(ctx: StageContext, log: SessionLog) -> None:
+    if ctx.skip_autofocus:
+        return
+    ctx.on_transition(log, SessionState.FOCUSING)
+    params = AutofocusParams(
+        range_steps=ctx.autofocus_range_steps,
+        step_size=ctx.autofocus_step_size,
+        exposure=ctx.autofocus_exposure_s,
+    )
+    try:
+        result = run_autofocus(ctx.focuser, ctx.camera, params)
+    except RuntimeError as exc:
+        raise WorkflowError("autofocus", str(exc)) from exc
+    log.autofocus_best_position = result.best_position
+    log.autofocus_metric_gain = round(result.metric_gain, 2)
 
 
 def stage_preview(ctx: StageContext, log: SessionLog) -> None:

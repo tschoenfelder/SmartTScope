@@ -9,6 +9,7 @@ class SessionState(Enum):
     SLEWED = auto()
     CENTERED = auto()            # centered within tolerance
     CENTERING_DEGRADED = auto()  # max iterations exceeded; session continues with warning
+    FOCUSING = auto()
     PREVIEWING = auto()
     STACKING = auto()
     STACK_COMPLETE = auto()

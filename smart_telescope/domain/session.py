@@ -27,6 +27,8 @@ class SessionLog:
     centering_offset_arcmin: float = 0.0
     centering_iterations: int = 0
     centering_state: str | None = None  # "CENTERED" or "CENTERING_DEGRADED"
+    autofocus_best_position: int | None = None
+    autofocus_metric_gain: float | None = None
     warnings: list[str] = field(default_factory=list)
     failure_stage: str | None = None
     failure_reason: str | None = None
@@ -60,6 +62,10 @@ class SessionLog:
             "centering_offset_arcmin": self.centering_offset_arcmin,
             "centering_iterations": self.centering_iterations,
             "centering_state": self.centering_state,
+            "autofocus": {
+                "best_position": self.autofocus_best_position,
+                "metric_gain": self.autofocus_metric_gain,
+            },
             "warnings": self.warnings,
             "failure_stage": self.failure_stage,
             "failure_reason": self.failure_reason,

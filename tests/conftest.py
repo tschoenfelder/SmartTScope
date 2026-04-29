@@ -108,6 +108,7 @@ def focuser_mock() -> Mock:
     foc = Mock(spec=FocuserPort)
     foc.connect.return_value = True
     foc.get_position.return_value = 0
+    foc.is_moving.return_value = False
     return foc
 
 
@@ -151,6 +152,7 @@ def _default_mocks(
     foc = focuser if focuser is not None else Mock(spec=FocuserPort, **{
         "connect.return_value": True,
         "get_position.return_value": 0,
+        "is_moving.return_value": False,
     })
     return cam, mnt, slv, stk, sto, foc
 
@@ -192,6 +194,10 @@ def make_stage_ctx(
     stack_depth: int = 10,
     preview_exposure_s: float = 5.0,
     preview_frames: int = 3,
+    autofocus_range_steps: int = 200,
+    autofocus_step_size: int = 20,
+    autofocus_exposure_s: float = 3.0,
+    skip_autofocus: bool = False,
 ) -> StageContext:
     cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
 
@@ -214,4 +220,8 @@ def make_stage_ctx(
         stack_depth=stack_depth,
         preview_exposure_s=preview_exposure_s,
         preview_frames=preview_frames,
+        autofocus_range_steps=autofocus_range_steps,
+        autofocus_step_size=autofocus_step_size,
+        autofocus_exposure_s=autofocus_exposure_s,
+        skip_autofocus=skip_autofocus,
     )

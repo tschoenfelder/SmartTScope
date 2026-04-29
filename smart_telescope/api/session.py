@@ -136,6 +136,8 @@ class SessionStatusResponse(BaseModel):
     frames_integrated: int = 0
     frames_rejected: int = 0
     centering_offset_arcmin: float = 0.0
+    autofocus_best_position: int | None = None
+    autofocus_metric_gain: float | None = None
     warnings: list[str] = []
     failure_stage: str | None = None
     failure_reason: str | None = None
@@ -150,6 +152,10 @@ def session_run(
     exposure: float = Query(default=30.0, gt=0.0, le=300.0),
     stack_depth: int = Query(default=10, ge=1, le=100),
     preview_exposure: float = Query(default=5.0, gt=0.0, le=60.0),
+    autofocus_range: int = Query(default=200, ge=10, le=2000),
+    autofocus_step: int = Query(default=20, ge=1, le=500),
+    autofocus_exposure: float = Query(default=3.0, gt=0.0, le=30.0),
+    skip_autofocus: bool = Query(default=False),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
@@ -189,6 +195,10 @@ def session_run(
             stack_exposure_s=exposure,
             stack_depth=stack_depth,
             preview_exposure_s=preview_exposure,
+            autofocus_range_steps=autofocus_range,
+            autofocus_step_size=autofocus_step,
+            autofocus_exposure_s=autofocus_exposure,
+            skip_autofocus=skip_autofocus,
         )
         _active_runner = runner
         _runner_thread = threading.Thread(
@@ -215,6 +225,8 @@ def session_status() -> SessionStatusResponse:
         frames_integrated=log.frames_integrated,
         frames_rejected=log.frames_rejected,
         centering_offset_arcmin=log.centering_offset_arcmin,
+        autofocus_best_position=log.autofocus_best_position,
+        autofocus_metric_gain=log.autofocus_metric_gain,
         warnings=list(log.warnings),
         failure_stage=log.failure_stage,
         failure_reason=log.failure_reason,

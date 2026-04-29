@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
 import astropy.units as u
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import config
 from ..domain.solar import is_solar_target
+from ..ports.camera import CameraPort
 from ..ports.mount import MountPort, MountState
+from ..ports.solver import SolverPort
+from ..workflow.goto_center import goto_and_center
 from . import deps
 
 router = APIRouter(prefix="/api/mount")
@@ -122,6 +126,52 @@ class SkyPosition(BaseModel):
     dec: float
     elevation_deg: float
     lst_hours: float
+
+
+class GotoAndCenterRequest(BaseModel):
+    ra:               float
+    dec:              float
+    exposure:         float      = Field(default=5.0, gt=0.0, le=60.0)
+    pixel_scale:      float | None = Field(default=None, gt=0.0)
+    tolerance_arcmin: float      = Field(default=2.0, gt=0.0)
+    max_iterations:   int        = Field(default=3, ge=1, le=5)
+
+
+class GotoAndCenterResponse(BaseModel):
+    success:       bool
+    final_ra:      float
+    final_dec:     float
+    iterations:    int
+    offset_arcmin: float
+    error:         str | None = None
+
+
+@router.post("/goto_and_center", response_model=GotoAndCenterResponse)
+async def mount_goto_and_center(
+    body:   GotoAndCenterRequest,
+    mount:  MountPort  = Depends(deps.get_mount),
+    camera: CameraPort = Depends(deps.get_camera),
+    solver: SolverPort = Depends(deps.get_solver),
+    confirm_solar: bool = Query(default=False),
+) -> GotoAndCenterResponse:
+    """Goto target, plate-solve, sync, and refine until centered."""
+    if not confirm_solar:
+        blocked, sep = is_solar_target(body.ra, body.dec)
+        if blocked:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
+            )
+    scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
+    result = await goto_and_center(
+        mount, camera, solver,
+        body.ra, body.dec,
+        pixel_scale=scale,
+        exposure=body.exposure,
+        tolerance_arcmin=body.tolerance_arcmin,
+        max_iterations=body.max_iterations,
+    )
+    return GotoAndCenterResponse(**dataclasses.asdict(result))
 
 
 @router.post("/goto_sky", response_model=SkyPosition)

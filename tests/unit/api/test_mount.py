@@ -478,3 +478,59 @@ class TestMountSync:
         m.sync.return_value = True
         _inject(m)
         assert client.post("/api/mount/sync", json={}).status_code == 422
+
+
+# ── POST /api/mount/goto_and_center ──────────────────────────────────────────
+
+
+def _inject_all(mount, camera=None, solver=None) -> None:
+    from smart_telescope.adapters.mock.camera import MockCamera
+    from smart_telescope.adapters.mock.solver import MockSolver
+    app.dependency_overrides[deps.get_mount]  = lambda: mount
+    app.dependency_overrides[deps.get_camera] = lambda: (camera or MockCamera())
+    app.dependency_overrides[deps.get_solver] = lambda: (solver or MockSolver())
+
+
+class TestMountGotoAndCenter:
+    def test_returns_200_when_centered(self) -> None:
+        from smart_telescope.adapters.mock.solver import MockSolver
+        m = _mock_mount()
+        m.is_slewing.return_value = False
+        _inject_all(m, solver=MockSolver())
+        with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+            r = client.post("/api/mount/goto_and_center",
+                            json={"ra": 5.5881, "dec": -5.391})
+        assert r.status_code == 200
+
+    def test_response_has_required_fields(self) -> None:
+        from smart_telescope.adapters.mock.solver import MockSolver
+        m = _mock_mount()
+        m.is_slewing.return_value = False
+        _inject_all(m, solver=MockSolver())
+        with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+            data = client.post("/api/mount/goto_and_center",
+                               json={"ra": 5.5881, "dec": -5.391}).json()
+        for key in ("success", "final_ra", "final_dec", "iterations", "offset_arcmin"):
+            assert key in data
+
+    def test_solar_exclusion_returns_403(self) -> None:
+        m = _mock_mount()
+        _inject_all(m)
+        with patch("smart_telescope.api.mount.is_solar_target", return_value=(True, 2.0)):
+            r = client.post("/api/mount/goto_and_center",
+                            json={"ra": 5.5881, "dec": -5.391})
+        assert r.status_code == 403
+
+    def test_zero_exposure_returns_422(self) -> None:
+        m = _mock_mount()
+        _inject_all(m)
+        r = client.post("/api/mount/goto_and_center",
+                        json={"ra": 5.5881, "dec": -5.391, "exposure": 0})
+        assert r.status_code == 422
+
+    def test_iterations_above_5_returns_422(self) -> None:
+        m = _mock_mount()
+        _inject_all(m)
+        r = client.post("/api/mount/goto_and_center",
+                        json={"ra": 5.5881, "dec": -5.391, "max_iterations": 6})
+        assert r.status_code == 422

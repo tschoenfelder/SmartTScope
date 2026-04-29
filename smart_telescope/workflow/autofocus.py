@@ -13,7 +13,7 @@ from collections.abc import Callable
 import numpy as np
 
 from ..domain.autofocus import AutofocusParams, AutofocusResult
-from ..domain.focus_metric import laplacian_variance
+from ..domain.focus_metric import half_flux_diameter
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 
@@ -55,7 +55,7 @@ def run_autofocus(
         _wait_stopped(focuser)
 
         frame = camera.capture(params.exposure)
-        metric = laplacian_variance(frame.pixels)
+        metric = half_flux_diameter(frame.pixels)
 
         sampled_pos.append(pos)
         sampled_metrics.append(metric)
@@ -68,11 +68,12 @@ def run_autofocus(
             f"Autofocus needs at least 3 samples; only {len(sampled_pos)} succeeded"
         )
 
-    best_idx, best_pos, fitted = _find_peak(sampled_pos, sampled_metrics)
+    best_idx, best_pos, fitted = _find_valley(sampled_pos, sampled_metrics)
 
     start_metric = sampled_metrics[0] if sampled_metrics else 1.0
     best_metric  = sampled_metrics[best_idx]
-    gain = best_metric / start_metric if start_metric > 0 else 1.0
+    # HFD is minimised at focus; gain = start / best (> 1 means improvement)
+    gain = start_metric / best_metric if best_metric > 0 else 1.0
 
     focuser.move(best_pos)
     _wait_stopped(focuser)
@@ -99,28 +100,29 @@ def _wait_stopped(focuser: FocuserPort) -> None:
             break  # proceed anyway; metric may be blurred but we don't abort
 
 
-def _find_peak(
+def _find_valley(
     positions: list[int],
     metrics:   list[float],
 ) -> tuple[int, int, bool]:
-    """Return (best_idx, best_focuser_position, parabola_fit_succeeded)."""
+    """Return (best_idx, best_focuser_position, parabola_fit_succeeded).
+
+    HFD is minimised at focus, so we fit an upward-opening parabola and
+    return its vertex.  Falls back to argmin when the fit is invalid.
+    """
     x = np.array(positions, dtype=float)
     y = np.array(metrics,   dtype=float)
 
-    # Try parabola fit (polyfit degree 2).  Vertex at -b / (2a).
     try:
         coeffs = np.polyfit(x, y, 2)
         a, b = coeffs[0], coeffs[1]
-        if a < 0:  # downward-opening parabola — valid focus curve shape
+        if a > 0:  # upward-opening parabola — valid HFD curve shape
             vertex_x = -b / (2 * a)
-            # Clamp to sampled range
             vertex_x = float(np.clip(vertex_x, x[0], x[-1]))
-            # Find the sampled position closest to the vertex
             best_idx = int(np.argmin(np.abs(x - vertex_x)))
             return best_idx, int(round(vertex_x)), True
     except (np.linalg.LinAlgError, ValueError):
         pass
 
-    # Fall back to argmax
-    best_idx = int(np.argmax(y))
+    # Fall back to argmin
+    best_idx = int(np.argmin(y))
     return best_idx, positions[best_idx], False

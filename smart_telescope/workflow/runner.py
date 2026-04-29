@@ -83,6 +83,10 @@ class VerticalSliceRunner:
         target_name: str = "M42",
         target_ra: float = M42_RA,
         target_dec: float = M42_DEC,
+        stack_exposure_s: float = 30.0,
+        stack_depth: int = 10,
+        preview_exposure_s: float = 5.0,
+        preview_frames: int = 3,
     ) -> None:
         self._camera = camera
         self._mount = mount
@@ -97,6 +101,10 @@ class VerticalSliceRunner:
         self._target_name = target_name
         self._target_ra = target_ra
         self._target_dec = target_dec
+        self._stack_exposure_s = stack_exposure_s
+        self._stack_depth = stack_depth
+        self._preview_exposure_s = preview_exposure_s
+        self._preview_frames = preview_frames
 
     @property
     def current_log(self) -> SessionLog | None:
@@ -131,6 +139,10 @@ class VerticalSliceRunner:
             on_transition=self._transition,
             target_ra=self._target_ra,
             target_dec=self._target_dec,
+            stack_exposure_s=self._stack_exposure_s,
+            stack_depth=self._stack_depth,
+            preview_exposure_s=self._preview_exposure_s,
+            preview_frames=self._preview_frames,
         )
 
         try:

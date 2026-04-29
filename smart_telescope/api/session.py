@@ -147,6 +147,9 @@ def session_run(
     target: str = Query(default="M42", min_length=1, max_length=16),
     profile: str = Query(default="c8_native"),
     confirm_solar: bool = Query(default=False),
+    exposure: float = Query(default=30.0, gt=0.0, le=300.0),
+    stack_depth: int = Query(default=10, ge=1, le=100),
+    preview_exposure: float = Query(default=5.0, gt=0.0, le=60.0),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
@@ -183,6 +186,9 @@ def session_run(
             target_name=target_obj.name,
             target_ra=target_obj.ra_hours,
             target_dec=target_obj.dec_deg,
+            stack_exposure_s=exposure,
+            stack_depth=stack_depth,
+            preview_exposure_s=preview_exposure,
         )
         _active_runner = runner
         _runner_thread = threading.Thread(

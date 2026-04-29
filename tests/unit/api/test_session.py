@@ -584,3 +584,76 @@ class TestProfileSelection:
         ):
             client.post("/api/session/run?profile=c8_reducer")
         assert constructed[0]["optical_profile"].name == "C8-reducer"
+
+
+# ── Exposure + stack depth ────────────────────────────────────────────────────
+
+
+class TestExposureAndDepth:
+    def _capture_runner(self) -> tuple[list, object]:
+        """Returns (constructed_kwargs_list, patch_ctx)."""
+        constructed: list = []
+
+        def factory(*a: object, **kw: object) -> MagicMock:
+            constructed.append(kw)
+            m = MagicMock()
+            m.current_log = _make_fast_log()
+            m.run.return_value = m.current_log
+            return m
+
+        return constructed, patch("smart_telescope.api.session.VerticalSliceRunner", side_effect=factory)
+
+    def test_default_exposure_30s(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        kw, runner_patch = self._capture_runner()
+        with runner_patch, _solar_patch():
+            client.post("/api/session/run")
+        assert kw[0]["stack_exposure_s"] == pytest.approx(30.0)
+
+    def test_custom_exposure_passed_to_runner(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        kw, runner_patch = self._capture_runner()
+        with runner_patch, _solar_patch():
+            client.post("/api/session/run?exposure=60")
+        assert kw[0]["stack_exposure_s"] == pytest.approx(60.0)
+
+    def test_default_stack_depth_10(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        kw, runner_patch = self._capture_runner()
+        with runner_patch, _solar_patch():
+            client.post("/api/session/run")
+        assert kw[0]["stack_depth"] == 10
+
+    def test_custom_stack_depth_passed_to_runner(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        kw, runner_patch = self._capture_runner()
+        with runner_patch, _solar_patch():
+            client.post("/api/session/run?stack_depth=25")
+        assert kw[0]["stack_depth"] == 25
+
+    def test_custom_preview_exposure_passed_to_runner(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        kw, runner_patch = self._capture_runner()
+        with runner_patch, _solar_patch():
+            client.post("/api/session/run?preview_exposure=10")
+        assert kw[0]["preview_exposure_s"] == pytest.approx(10.0)
+
+    def test_zero_exposure_returns_422(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        r = client.post("/api/session/run?exposure=0")
+        assert r.status_code == 422
+
+    def test_exposure_over_300_returns_422(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        r = client.post("/api/session/run?exposure=301")
+        assert r.status_code == 422
+
+    def test_stack_depth_zero_returns_422(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        r = client.post("/api/session/run?stack_depth=0")
+        assert r.status_code == 422
+
+    def test_stack_depth_over_100_returns_422(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        r = client.post("/api/session/run?stack_depth=101")
+        assert r.status_code == 422

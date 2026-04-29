@@ -364,14 +364,27 @@ class TestStageStack:
         ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
         with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
             stage_stack(ctx, make_log())
-        assert camera_mock.capture.call_count == stages_module.STACK_DEPTH
+        assert camera_mock.capture.call_count == ctx.stack_depth
 
     def test_each_frame_uses_stack_exposure(self, camera_mock, stacker_mock):
         ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock)
         with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
             stage_stack(ctx, make_log())
         for c in camera_mock.capture.call_args_list:
-            assert c.args[0] == pytest.approx(stages_module.STACK_EXPOSURE_S)
+            assert c.args[0] == pytest.approx(ctx.stack_exposure_s)
+
+    def test_custom_stack_depth_used(self, camera_mock, stacker_mock):
+        ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock, stack_depth=3)
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
+            stage_stack(ctx, make_log())
+        assert camera_mock.capture.call_count == 3
+
+    def test_custom_exposure_used(self, camera_mock, stacker_mock):
+        ctx = make_stage_ctx(camera=camera_mock, stacker=stacker_mock, stack_exposure_s=60.0)
+        with patch.object(stages_module, "RECENTER_EVERY_N_FRAMES", 999):
+            stage_stack(ctx, make_log())
+        for c in camera_mock.capture.call_args_list:
+            assert c.args[0] == pytest.approx(60.0)
 
     def test_stacker_reset_called_before_frames(self, stacker_mock):
         ctx = make_stage_ctx(stacker=stacker_mock)

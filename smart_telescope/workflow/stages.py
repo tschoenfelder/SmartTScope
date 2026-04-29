@@ -53,6 +53,10 @@ class StageContext:
     on_transition: TransitionCallback
     target_ra: float = M42_RA
     target_dec: float = M42_DEC
+    stack_exposure_s: float = STACK_EXPOSURE_S
+    stack_depth: int = STACK_DEPTH
+    preview_exposure_s: float = PREVIEW_EXPOSURE_S
+    preview_frames: int = PREVIEW_FRAMES
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -140,14 +144,14 @@ def stage_recenter(ctx: StageContext, log: SessionLog) -> None:
 
 def stage_preview(ctx: StageContext, log: SessionLog) -> None:
     ctx.on_transition(log, SessionState.PREVIEWING)
-    for _ in range(PREVIEW_FRAMES):
-        ctx.camera.capture(PREVIEW_EXPOSURE_S)
+    for _ in range(ctx.preview_frames):
+        ctx.camera.capture(ctx.preview_exposure_s)
 
 
 def stage_stack(ctx: StageContext, log: SessionLog) -> None:
     ctx.on_transition(log, SessionState.STACKING)
     ctx.stacker.reset()
-    for i in range(1, STACK_DEPTH + 1):
+    for i in range(1, ctx.stack_depth + 1):
         if ctx.stop_event.is_set():
             raise WorkflowError("stack", "Stack cancelled by stop request")
 
@@ -162,7 +166,7 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
             stage_recenter(ctx, log)
             ctx.on_transition(log, SessionState.STACKING)
 
-        frame = ctx.camera.capture(STACK_EXPOSURE_S)
+        frame = ctx.camera.capture(ctx.stack_exposure_s)
         stacked = ctx.stacker.add_frame(frame, i)
         log.frames_integrated = stacked.frames_integrated
         log.frames_rejected = stacked.frames_rejected

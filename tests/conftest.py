@@ -188,6 +188,10 @@ def make_stage_ctx(
     on_transition=None,
     target_ra: float = M42_RA,
     target_dec: float = M42_DEC,
+    stack_exposure_s: float = 30.0,
+    stack_depth: int = 10,
+    preview_exposure_s: float = 5.0,
+    preview_frames: int = 3,
 ) -> StageContext:
     cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
 
@@ -206,4 +210,8 @@ def make_stage_ctx(
         on_transition=on_transition if on_transition is not None else _noop_transition,
         target_ra=target_ra,
         target_dec=target_dec,
+        stack_exposure_s=stack_exposure_s,
+        stack_depth=stack_depth,
+        preview_exposure_s=preview_exposure_s,
+        preview_frames=preview_frames,
     )

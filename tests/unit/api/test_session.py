@@ -464,3 +464,123 @@ class TestSessionStop:
             client.post("/api/session/stop")
         gate.set()
         mock_runner.stop.assert_called_once()
+
+
+# ── Target + profile selection ─────────────────────────────────────────────────
+
+
+def _solar_patch(blocked: bool = False, sep: float = 120.0) -> object:
+    return patch("smart_telescope.api.session.is_solar_target", return_value=(blocked, sep))
+
+
+class TestTargetSelection:
+    def test_default_target_m42_succeeds(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(), _solar_patch():
+            r = client.post("/api/session/run")
+        assert r.status_code == 202
+
+    def test_valid_catalog_target_succeeds(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(), _solar_patch():
+            r = client.post("/api/session/run?target=M31")
+        assert r.status_code == 202
+
+    def test_unknown_target_returns_422(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        r = client.post("/api/session/run?target=M999")
+        assert r.status_code == 422
+        assert "M999" in r.json()["detail"]
+
+    def test_target_case_insensitive(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(), _solar_patch():
+            r = client.post("/api/session/run?target=m51")
+        assert r.status_code == 202
+
+    def test_solar_target_returns_403(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _solar_patch(blocked=True, sep=1.5):
+            r = client.post("/api/session/run?target=M42")
+        assert r.status_code == 403
+
+    def test_solar_confirm_bypasses_403(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(), _solar_patch(blocked=True, sep=1.5):
+            r = client.post("/api/session/run?target=M42&confirm_solar=true")
+        assert r.status_code == 202
+
+    def test_runner_constructed_with_target_coords(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        constructed: list = []
+
+        def capture_runner(*a: object, **kw: object) -> MagicMock:
+            constructed.append(kw)
+            m = MagicMock()
+            m.current_log = _make_fast_log()
+            m.run.return_value = m.current_log
+            return m
+
+        with (
+            patch("smart_telescope.api.session.VerticalSliceRunner", side_effect=capture_runner),
+            _solar_patch(),
+        ):
+            client.post("/api/session/run?target=M31")
+        assert constructed[0]["target_name"] == "M31"
+        assert constructed[0]["target_ra"] != M42_RA
+
+
+class TestProfileSelection:
+    def test_default_profile_c8_native(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        constructed: list = []
+
+        def capture_runner(*a: object, **kw: object) -> MagicMock:
+            constructed.append(kw)
+            m = MagicMock()
+            m.current_log = _make_fast_log()
+            m.run.return_value = m.current_log
+            return m
+
+        with (
+            patch("smart_telescope.api.session.VerticalSliceRunner", side_effect=capture_runner),
+            _solar_patch(),
+        ):
+            client.post("/api/session/run")
+        assert constructed[0]["optical_profile"].name == "C8-native"
+
+    def test_reducer_profile_accepted(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(), _solar_patch():
+            r = client.post("/api/session/run?profile=c8_reducer")
+        assert r.status_code == 202
+
+    def test_barlow_profile_accepted(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        with _patch_runner_fast(), _solar_patch():
+            r = client.post("/api/session/run?profile=c8_barlow2x")
+        assert r.status_code == 202
+
+    def test_unknown_profile_returns_422(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        r = client.post("/api/session/run?profile=c8_schmitt")
+        assert r.status_code == 422
+        assert "c8_schmitt" in r.json()["detail"]
+
+    def test_runner_constructed_with_correct_profile(self) -> None:
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser())
+        constructed: list = []
+
+        def capture_runner(*a: object, **kw: object) -> MagicMock:
+            constructed.append(kw)
+            m = MagicMock()
+            m.current_log = _make_fast_log()
+            m.run.return_value = m.current_log
+            return m
+
+        with (
+            patch("smart_telescope.api.session.VerticalSliceRunner", side_effect=capture_runner),
+            _solar_patch(),
+        ):
+            client.post("/api/session/run?profile=c8_reducer")
+        assert constructed[0]["optical_profile"].name == "C8-reducer"

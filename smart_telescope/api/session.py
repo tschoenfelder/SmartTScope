@@ -5,17 +5,25 @@ from __future__ import annotations
 import threading
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
+from ..domain.catalog import get_by_name as _catalog_get
+from ..domain.solar import is_solar_target
 from ..domain.states import SessionState
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
-from ..workflow.runner import VerticalSliceRunner
+from ..workflow.runner import C8_BARLOW2X, C8_NATIVE, C8_REDUCER, OpticalProfile, VerticalSliceRunner
 from . import deps
+
+_PROFILES: dict[str, OpticalProfile] = {
+    "c8_native":   C8_NATIVE,
+    "c8_reducer":  C8_REDUCER,
+    "c8_barlow2x": C8_BARLOW2X,
+}
 
 router = APIRouter(prefix="/api/session")
 
@@ -127,10 +135,29 @@ class SessionStatusResponse(BaseModel):
 
 @router.post("/run", response_model=RunResponse, status_code=202)
 def session_run(
+    target: str = Query(default="M42", min_length=1, max_length=16),
+    profile: str = Query(default="c8_native"),
+    confirm_solar: bool = Query(default=False),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
 ) -> RunResponse:
+    target_obj = _catalog_get(target)
+    if target_obj is None:
+        raise HTTPException(status_code=422, detail=f"Target '{target}' not found in catalog")
+    optical_profile = _PROFILES.get(profile)
+    if optical_profile is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown profile '{profile}'. Valid: {', '.join(_PROFILES)}",
+        )
+    if not confirm_solar:
+        blocked, sep = is_solar_target(target_obj.ra_hours, target_obj.dec_deg)
+        if blocked:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
+            )
     global _active_runner, _runner_thread
     with _session_lock:
         if _runner_thread is not None and _runner_thread.is_alive():
@@ -143,6 +170,10 @@ def session_run(
             stacker=deps.get_stacker(),
             storage=deps.get_storage(),
             focuser=focuser,
+            optical_profile=optical_profile,
+            target_name=target_obj.name,
+            target_ra=target_obj.ra_hours,
+            target_dec=target_obj.dec_deg,
         )
         _active_runner = runner
         _runner_thread = threading.Thread(

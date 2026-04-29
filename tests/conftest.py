@@ -186,6 +186,8 @@ def make_stage_ctx(
     optical_profile=C8_NATIVE,
     stop_event: threading.Event | None = None,
     on_transition=None,
+    target_ra: float = M42_RA,
+    target_dec: float = M42_DEC,
 ) -> StageContext:
     cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
 
@@ -202,4 +204,6 @@ def make_stage_ctx(
         profile=optical_profile,
         stop_event=stop_event if stop_event is not None else threading.Event(),
         on_transition=on_transition if on_transition is not None else _noop_transition,
+        target_ra=target_ra,
+        target_dec=target_dec,
     )

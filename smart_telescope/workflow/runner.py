@@ -80,6 +80,9 @@ class VerticalSliceRunner:
         focuser: FocuserPort,
         optical_profile: OpticalProfile = C8_NATIVE,
         on_state_change: StateCallback | None = None,
+        target_name: str = "M42",
+        target_ra: float = M42_RA,
+        target_dec: float = M42_DEC,
     ) -> None:
         self._camera = camera
         self._mount = mount
@@ -91,6 +94,9 @@ class VerticalSliceRunner:
         self._on_state_change = on_state_change
         self._stop_event = threading.Event()
         self._current_log: SessionLog | None = None
+        self._target_name = target_name
+        self._target_ra = target_ra
+        self._target_dec = target_dec
 
     @property
     def current_log(self) -> SessionLog | None:
@@ -104,9 +110,9 @@ class VerticalSliceRunner:
         self._stop_event.clear()
         log = SessionLog(
             session_id=session_id or str(uuid.uuid4()),
-            target_name="M42",
-            target_ra=M42_RA,
-            target_dec=M42_DEC,
+            target_name=self._target_name,
+            target_ra=self._target_ra,
+            target_dec=self._target_dec,
             optical_config=self._profile.name,
             started_at=_now(),
         )
@@ -123,6 +129,8 @@ class VerticalSliceRunner:
             profile=self._profile,
             stop_event=self._stop_event,
             on_transition=self._transition,
+            target_ra=self._target_ra,
+            target_dec=self._target_dec,
         )
 
         try:

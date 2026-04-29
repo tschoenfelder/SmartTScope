@@ -51,6 +51,8 @@ class StageContext:
     profile: OpticalProfile
     stop_event: threading.Event
     on_transition: TransitionCallback
+    target_ra: float = M42_RA
+    target_dec: float = M42_DEC
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ def stage_align(ctx: StageContext, log: SessionLog) -> None:
 
 
 def stage_goto(ctx: StageContext, log: SessionLog) -> None:
-    if not ctx.mount.goto(M42_RA, M42_DEC):
+    if not ctx.mount.goto(ctx.target_ra, ctx.target_dec):
         raise WorkflowError("goto", "GoTo command rejected by mount")
     _wait_for_slew(ctx, "goto")
     ctx.on_transition(log, SessionState.SLEWED)
@@ -114,14 +116,14 @@ def stage_recenter(ctx: StageContext, log: SessionLog) -> None:
                 "recenter",
                 f"Plate solve failed during recentering (iteration {i})",
             )
-        offset = _angular_offset_arcmin(result.ra, result.dec, M42_RA, M42_DEC)
+        offset = _angular_offset_arcmin(result.ra, result.dec, ctx.target_ra, ctx.target_dec)
         log.centering_offset_arcmin = round(offset, 2)
         if offset <= CENTERING_TOLERANCE_ARCMIN:
             log.centering_state = SessionState.CENTERED.name
             ctx.on_transition(log, SessionState.CENTERED)
             return
         if i < MAX_RECENTER_ITERATIONS:
-            if not ctx.mount.goto(M42_RA, M42_DEC):
+            if not ctx.mount.goto(ctx.target_ra, ctx.target_dec):
                 raise WorkflowError(
                     "recenter",
                     f"Correction slew rejected by mount (iteration {i})",

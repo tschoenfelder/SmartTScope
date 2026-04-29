@@ -208,6 +208,11 @@ class TestStageGoto:
         stage_goto(ctx, make_log())
         mount_mock.goto.assert_called_once_with(M42_RA, M42_DEC)
 
+    def test_goto_uses_ctx_target_not_hardcoded(self, mount_mock):
+        ctx = make_stage_ctx(mount=mount_mock, target_ra=1.0, target_dec=+45.0)
+        stage_goto(ctx, make_log())
+        mount_mock.goto.assert_called_once_with(1.0, +45.0)
+
     def test_goto_rejection_raises_workflow_error(self, mount_mock):
         mount_mock.goto.return_value = False
         ctx = make_stage_ctx(mount=mount_mock)

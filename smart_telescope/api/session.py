@@ -44,6 +44,11 @@ def _reset_session() -> None:
 def get_active_runner() -> VerticalSliceRunner | None:
     return _active_runner
 
+
+def get_session_running() -> bool:
+    thread = _runner_thread
+    return thread is not None and thread.is_alive()
+
 _ACTIONS: dict[str, str] = {
     "camera": "Check USB connection and power; ensure ToupTek driver is installed",
     "mount": "Check serial connection and OnStep power; verify ONSTEP_PORT env var",

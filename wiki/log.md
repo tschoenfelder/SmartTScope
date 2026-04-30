@@ -35,6 +35,37 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-30 — Sprint 28: Refocus triggers (elapsed / altitude / temperature)
+
+**What changed**:
+
+- `smart_telescope/domain/refocus.py` (NEW) — `RefocusConfig`, `RefocusTriggerResult`, `RefocusTracker`:
+  - `RefocusConfig(temp_delta_c=1.0, altitude_delta_deg=5.0, elapsed_min=30.0)` — configurable thresholds
+  - `RefocusTracker.record_focus(altitude, temperature?)` — snapshot taken immediately after every autofocus
+  - `RefocusTracker.check(altitude, temperature?) → RefocusTriggerResult` — returns `{should_refocus, reason}` where reason is `"elapsed"`, `"altitude"`, or `"temperature"`; returns False if no baseline recorded
+  - Priority: elapsed checked first (dominant), then altitude, then temperature
+  - Temperature trigger skipped silently when either current or baseline temperature is None
+- `smart_telescope/domain/session.py` — `SessionLog` gains `refocus_count: int = 0`; included in `to_dict()` under the "autofocus" key
+- `smart_telescope/workflow/_types.py` — 3 new constants: `REFOCUS_TEMP_DELTA_C = 1.0`, `REFOCUS_ALT_DELTA_DEG = 5.0`, `REFOCUS_ELAPSED_MIN = 30.0`
+- `smart_telescope/workflow/stages.py`:
+  - `StageContext` gains `refocus_tracker: RefocusTracker | None = None` (None = triggers disabled)
+  - `stage_autofocus()` calls `ctx.refocus_tracker.record_focus(altitude=alt)` after successful autofocus
+  - `stage_stack()` checks triggers before each frame (i > 1); if fired: transitions to FOCUSING, runs `run_autofocus()`, records new baseline, increments `log.refocus_count`; autofocus failure is non-fatal (appended to warnings)
+  - `_frame_temp(frame: FitsFrame) → float | None` — extracts CCD temperature from FITS header keys "CCD-TEMP", "CCDTEMP", "TEMP"
+- `smart_telescope/workflow/runner.py` — gains `enable_refocus_triggers`, `refocus_temp_delta_c`, `refocus_alt_delta_deg`, `refocus_elapsed_min` init params; creates `RefocusTracker` in `run()` (disabled when `skip_autofocus=True` or `enable_refocus_triggers=False`)
+- `smart_telescope/api/session.py` — `POST /api/session/run` gains `refocus_temp_delta`, `refocus_alt_delta`, `refocus_elapsed_min`, `enable_refocus` query params; `GET /api/session/status` response gains `refocus_count`
+- `tests/unit/domain/test_refocus.py` (NEW) — 25 tests across 6 classes:
+  - `TestRefocusConfig` — defaults and custom values
+  - `TestNoBaseline` — check before record returns no-refocus
+  - `TestElapsedTrigger` — no trigger within interval, triggers at/past threshold
+  - `TestAltitudeTrigger` — no trigger within threshold, triggers at threshold, triggers on descent
+  - `TestTemperatureTrigger` — no trigger within threshold, triggers at threshold, None-temp handling (both current and baseline)
+  - `TestTriggerPriority` — elapsed wins over altitude; record_focus resets all triggers
+
+**Result**: 860 tests passing, 15 skipped, 95% coverage.
+
+---
+
 ## 2026-04-30 — Sprint 27: Autofocus backlash compensation
 
 **What changed**:

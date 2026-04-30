@@ -138,6 +138,7 @@ class SessionStatusResponse(BaseModel):
     centering_offset_arcmin: float = 0.0
     autofocus_best_position: int | None = None
     autofocus_metric_gain: float | None = None
+    refocus_count: int = 0
     warnings: list[str] = []
     failure_stage: str | None = None
     failure_reason: str | None = None
@@ -157,6 +158,10 @@ def session_run(
     autofocus_exposure: float = Query(default=3.0, gt=0.0, le=30.0),
     autofocus_backlash: int = Query(default=0, ge=0, le=500),
     skip_autofocus: bool = Query(default=False),
+    refocus_temp_delta: float = Query(default=1.0, gt=0.0, le=20.0),
+    refocus_alt_delta: float = Query(default=5.0, gt=0.0, le=90.0),
+    refocus_elapsed_min: float = Query(default=30.0, gt=0.0, le=480.0),
+    enable_refocus: bool = Query(default=True),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
@@ -201,6 +206,10 @@ def session_run(
             autofocus_exposure_s=autofocus_exposure,
             autofocus_backlash_steps=autofocus_backlash,
             skip_autofocus=skip_autofocus,
+            enable_refocus_triggers=enable_refocus,
+            refocus_temp_delta_c=refocus_temp_delta,
+            refocus_alt_delta_deg=refocus_alt_delta,
+            refocus_elapsed_min=refocus_elapsed_min,
         )
         _active_runner = runner
         _runner_thread = threading.Thread(
@@ -229,6 +238,7 @@ def session_status() -> SessionStatusResponse:
         centering_offset_arcmin=log.centering_offset_arcmin,
         autofocus_best_position=log.autofocus_best_position,
         autofocus_metric_gain=log.autofocus_metric_gain,
+        refocus_count=log.refocus_count,
         warnings=list(log.warnings),
         failure_stage=log.failure_stage,
         failure_reason=log.failure_reason,

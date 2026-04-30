@@ -13,9 +13,13 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .. import config as _cfg
 from ..domain.autofocus import AutofocusParams
+from ..domain.frame import FitsFrame
+from ..domain.refocus import RefocusConfig, RefocusTracker
 from ..domain.session import SessionLog
 from ..domain.states import SessionState
+from ..domain.visibility import compute_altaz
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort, MountState
@@ -70,6 +74,7 @@ class StageContext:
     autofocus_exposure_s: float = AUTOFOCUS_EXPOSURE_S
     autofocus_backlash_steps: int = AUTOFOCUS_BACKLASH_STEPS
     skip_autofocus: bool = False
+    refocus_tracker: RefocusTracker | None = None  # None = triggers disabled
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -172,6 +177,9 @@ def stage_autofocus(ctx: StageContext, log: SessionLog) -> None:
         raise WorkflowError("autofocus", str(exc)) from exc
     log.autofocus_best_position = result.best_position
     log.autofocus_metric_gain = round(result.metric_gain, 2)
+    if ctx.refocus_tracker is not None:
+        alt, _ = compute_altaz(ctx.target_ra, ctx.target_dec, _cfg.OBSERVER_LAT, _cfg.OBSERVER_LON)
+        ctx.refocus_tracker.record_focus(altitude=alt)
 
 
 def stage_preview(ctx: StageContext, log: SessionLog) -> None:
@@ -183,6 +191,7 @@ def stage_preview(ctx: StageContext, log: SessionLog) -> None:
 def stage_stack(ctx: StageContext, log: SessionLog) -> None:
     ctx.on_transition(log, SessionState.STACKING)
     ctx.stacker.reset()
+    last_frame_temp: float | None = None
     for i in range(1, ctx.stack_depth + 1):
         if ctx.stop_event.is_set():
             raise WorkflowError("stack", "Stack cancelled by stop request")
@@ -198,7 +207,29 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
             stage_recenter(ctx, log)
             ctx.on_transition(log, SessionState.STACKING)
 
+        if i > 1 and ctx.refocus_tracker is not None:
+            alt, _ = compute_altaz(ctx.target_ra, ctx.target_dec, _cfg.OBSERVER_LAT, _cfg.OBSERVER_LON)
+            trigger = ctx.refocus_tracker.check(altitude=alt, temperature=last_frame_temp)
+            if trigger.should_refocus:
+                ctx.on_transition(log, SessionState.FOCUSING)
+                params = AutofocusParams(
+                    range_steps=ctx.autofocus_range_steps,
+                    step_size=ctx.autofocus_step_size,
+                    exposure=ctx.autofocus_exposure_s,
+                    backlash_steps=ctx.autofocus_backlash_steps,
+                )
+                try:
+                    run_autofocus(ctx.focuser, ctx.camera, params)
+                    ctx.refocus_tracker.record_focus(altitude=alt, temperature=last_frame_temp)
+                    log.refocus_count += 1
+                except RuntimeError as exc:
+                    log.warnings.append(
+                        f"Mid-stack refocus failed before frame {i} ({trigger.reason}): {exc}"
+                    )
+                ctx.on_transition(log, SessionState.STACKING)
+
         frame = ctx.camera.capture(ctx.stack_exposure_s)
+        last_frame_temp = _frame_temp(frame)
         stacked = ctx.stacker.add_frame(frame, i)
         log.frames_integrated = stacked.frames_integrated
         log.frames_rejected = stacked.frames_rejected
@@ -237,3 +268,15 @@ def _angular_offset_arcmin(ra1: float, dec1: float, ra2: float, dec2: float) -> 
     dra_deg = (ra1 - ra2) * 15 * math.cos(dec_rad)
     ddec_deg = dec1 - dec2
     return math.sqrt(dra_deg ** 2 + ddec_deg ** 2) * 60
+
+
+def _frame_temp(frame: FitsFrame) -> float | None:
+    """Extract CCD temperature from a FITS frame header, or None if absent."""
+    for key in ("CCD-TEMP", "CCDTEMP", "TEMP"):
+        val = frame.header.get(key)
+        if val is not None:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                pass
+    return None

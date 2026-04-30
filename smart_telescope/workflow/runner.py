@@ -23,6 +23,8 @@ from ..ports.mount import MountPort
 from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
+from .. import config as _cfg
+from ..domain.refocus import RefocusConfig, RefocusTracker
 from ._types import (
     C8_BARLOW2X as C8_BARLOW2X,
 )
@@ -96,6 +98,10 @@ class VerticalSliceRunner:
         autofocus_exposure_s: float = 3.0,
         autofocus_backlash_steps: int = 0,
         skip_autofocus: bool = False,
+        enable_refocus_triggers: bool = True,
+        refocus_temp_delta_c: float = 1.0,
+        refocus_alt_delta_deg: float = 5.0,
+        refocus_elapsed_min: float = 30.0,
     ) -> None:
         self._camera = camera
         self._mount = mount
@@ -119,6 +125,12 @@ class VerticalSliceRunner:
         self._autofocus_exposure_s = autofocus_exposure_s
         self._autofocus_backlash_steps = autofocus_backlash_steps
         self._skip_autofocus = skip_autofocus
+        self._enable_refocus_triggers = enable_refocus_triggers
+        self._refocus_config = RefocusConfig(
+            temp_delta_c=refocus_temp_delta_c,
+            altitude_delta_deg=refocus_alt_delta_deg,
+            elapsed_min=refocus_elapsed_min,
+        )
 
     @property
     def current_log(self) -> SessionLog | None:
@@ -162,6 +174,11 @@ class VerticalSliceRunner:
             autofocus_exposure_s=self._autofocus_exposure_s,
             autofocus_backlash_steps=self._autofocus_backlash_steps,
             skip_autofocus=self._skip_autofocus,
+            refocus_tracker=(
+                RefocusTracker(self._refocus_config)
+                if self._enable_refocus_triggers and not self._skip_autofocus
+                else None
+            ),
         )
 
         try:

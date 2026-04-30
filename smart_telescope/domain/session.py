@@ -29,6 +29,7 @@ class SessionLog:
     centering_state: str | None = None  # "CENTERED" or "CENTERING_DEGRADED"
     autofocus_best_position: int | None = None
     autofocus_metric_gain: float | None = None
+    refocus_count: int = 0  # number of mid-stack refocuses performed
     warnings: list[str] = field(default_factory=list)
     failure_stage: str | None = None
     failure_reason: str | None = None
@@ -65,6 +66,7 @@ class SessionLog:
             "autofocus": {
                 "best_position": self.autofocus_best_position,
                 "metric_gain": self.autofocus_metric_gain,
+                "refocus_count": self.refocus_count,
             },
             "warnings": self.warnings,
             "failure_stage": self.failure_stage,

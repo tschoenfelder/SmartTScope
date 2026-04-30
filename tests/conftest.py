@@ -197,6 +197,7 @@ def make_stage_ctx(
     autofocus_range_steps: int = 200,
     autofocus_step_size: int = 20,
     autofocus_exposure_s: float = 3.0,
+    autofocus_backlash_steps: int = 0,
     skip_autofocus: bool = False,
 ) -> StageContext:
     cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
@@ -223,5 +224,6 @@ def make_stage_ctx(
         autofocus_range_steps=autofocus_range_steps,
         autofocus_step_size=autofocus_step_size,
         autofocus_exposure_s=autofocus_exposure_s,
+        autofocus_backlash_steps=autofocus_backlash_steps,
         skip_autofocus=skip_autofocus,
     )

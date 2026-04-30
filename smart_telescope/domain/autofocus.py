@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 @dataclass
 class AutofocusParams:
     """Parameters for a single autofocus run."""
-    range_steps: int   # total sweep width; positions span [current - range/2, current + range/2]
-    step_size:   int   # focuser steps between samples (must be > 0)
-    exposure:    float # exposure per sample frame in seconds
+    range_steps:    int   # total sweep width; positions span [current - range/2, current + range/2]
+    step_size:      int   # focuser steps between samples (must be > 0)
+    exposure:       float # exposure per sample frame in seconds
+    backlash_steps: int = 0  # pre-load overshoot to remove mechanical backlash (0 = disabled)
 
     def __post_init__(self) -> None:
         if self.range_steps <= 0:
@@ -19,6 +20,8 @@ class AutofocusParams:
             raise ValueError("step_size must be positive")
         if self.exposure <= 0:
             raise ValueError("exposure must be positive")
+        if self.backlash_steps < 0:
+            raise ValueError("backlash_steps must be >= 0")
 
 
 @dataclass

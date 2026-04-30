@@ -155,6 +155,7 @@ def session_run(
     autofocus_range: int = Query(default=200, ge=10, le=2000),
     autofocus_step: int = Query(default=20, ge=1, le=500),
     autofocus_exposure: float = Query(default=3.0, gt=0.0, le=30.0),
+    autofocus_backlash: int = Query(default=0, ge=0, le=500),
     skip_autofocus: bool = Query(default=False),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
@@ -198,6 +199,7 @@ def session_run(
             autofocus_range_steps=autofocus_range,
             autofocus_step_size=autofocus_step,
             autofocus_exposure_s=autofocus_exposure,
+            autofocus_backlash_steps=autofocus_backlash,
             skip_autofocus=skip_autofocus,
         )
         _active_runner = runner

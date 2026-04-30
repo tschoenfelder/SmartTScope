@@ -47,6 +47,11 @@ def run_autofocus(
         range(sweep_start, sweep_end + params.step_size, params.step_size)
     )
 
+    # Backlash pre-load: approach sweep_start from below so every sweep move is upward.
+    if params.backlash_steps > 0:
+        focuser.move(sweep_start - params.backlash_steps)
+        _wait_stopped(focuser)
+
     sampled_pos:     list[int]   = []
     sampled_metrics: list[float] = []
 
@@ -75,6 +80,10 @@ def run_autofocus(
     # HFD is minimised at focus; gain = start / best (> 1 means improvement)
     gain = start_metric / best_metric if best_metric > 0 else 1.0
 
+    # Move to best position, approaching from below to remove backlash.
+    if params.backlash_steps > 0:
+        focuser.move(best_pos - params.backlash_steps)
+        _wait_stopped(focuser)
     focuser.move(best_pos)
     _wait_stopped(focuser)
 

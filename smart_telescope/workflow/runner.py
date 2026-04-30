@@ -94,6 +94,7 @@ class VerticalSliceRunner:
         autofocus_range_steps: int = 200,
         autofocus_step_size: int = 20,
         autofocus_exposure_s: float = 3.0,
+        autofocus_backlash_steps: int = 0,
         skip_autofocus: bool = False,
     ) -> None:
         self._camera = camera
@@ -116,6 +117,7 @@ class VerticalSliceRunner:
         self._autofocus_range_steps = autofocus_range_steps
         self._autofocus_step_size = autofocus_step_size
         self._autofocus_exposure_s = autofocus_exposure_s
+        self._autofocus_backlash_steps = autofocus_backlash_steps
         self._skip_autofocus = skip_autofocus
 
     @property
@@ -158,6 +160,7 @@ class VerticalSliceRunner:
             autofocus_range_steps=self._autofocus_range_steps,
             autofocus_step_size=self._autofocus_step_size,
             autofocus_exposure_s=self._autofocus_exposure_s,
+            autofocus_backlash_steps=self._autofocus_backlash_steps,
             skip_autofocus=self._skip_autofocus,
         )
 

@@ -1,14 +1,16 @@
 """
 Integration tests for the MVP vertical slice workflow.
 
-Capture counts per happy-path run (RECENTER_EVERY_N_FRAMES=5, STACK_DEPTH=10):
-  align             : 1  (capture #1, 5s)
-  recenter          : 1  (capture #2, 10s — offset=0, passes immediately)
-  preview           : 3  (captures #3–5, 5s each)
-  stack frames 1–5  : 5  (captures #6–10, 30s each)
-  periodic recenter : 1  (capture #11, 10s — fires before stack frame 6)
-  stack frames 6–10 : 5  (captures #12–16, 30s each)
-  total             : 16
+Capture counts per happy-path run (RECENTER_EVERY_N_FRAMES=5, STACK_DEPTH=10,
+autofocus range_steps=200, step_size=20 → 11 sweep positions):
+  align             : 1   (capture #1, 5s)
+  recenter          : 1   (capture #2, 10s — offset=0, passes immediately)
+  autofocus sweep   : 11  (captures #3–13, one per focuser position)
+  preview           : 3   (captures #14–16, 5s each)
+  stack frames 1–5  : 5   (captures #17–21, 30s each)
+  periodic recenter : 1   (capture #22, 10s — fires before stack frame 6)
+  stack frames 6–10 : 5   (captures #23–27, 30s each)
+  total             : 27
 """
 
 
@@ -30,10 +32,11 @@ EXPECTED_HAPPY_PATH_STATES = [
     SessionState.ALIGNED,
     SessionState.SLEWED,
     SessionState.CENTERED,
+    SessionState.FOCUSING,        # autofocus sweep after initial centering
     SessionState.PREVIEWING,
     SessionState.STACKING,
-    SessionState.CENTERED,       # periodic recenter before stack frame 6
-    SessionState.STACKING,       # resume stacking
+    SessionState.CENTERED,        # periodic recenter before stack frame 6
+    SessionState.STACKING,        # resume stacking
     SessionState.STACK_COMPLETE,
     SessionState.SAVED,
 ]
@@ -228,16 +231,17 @@ class TestRecenterExceedsIterations:
 # ---------------------------------------------------------------------------
 
 class TestStackCaptureFails:
-    # Capture call order: align(#1) recenter(#2) preview(#3,#4,#5) stack-frame-1(#6)
+    # Capture call order:
+    #   align(#1) recenter(#2) autofocus-sweep(#3–#13, 11 captures) preview(#14,#15,#16) stack-frame-1(#17)
     def test_fails_at_stack_stage(self):
-        camera = MockCamera(fail_on_capture=6)
+        camera = MockCamera(fail_on_capture=17)
         runner, _ = make_runner(camera=camera)
         log = runner.run()
         assert log.state == SessionState.FAILED
         assert log.failure_stage == "stack"
 
     def test_failure_reason_recorded(self):
-        camera = MockCamera(fail_on_capture=6)
+        camera = MockCamera(fail_on_capture=17)
         runner, _ = make_runner(camera=camera)
         log = runner.run()
         assert log.failure_reason is not None

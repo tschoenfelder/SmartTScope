@@ -24,6 +24,7 @@ from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 from .autofocus import run_autofocus
 from ._types import (
+    AUTOFOCUS_BACKLASH_STEPS,
     AUTOFOCUS_EXPOSURE_S,
     AUTOFOCUS_RANGE_STEPS,
     AUTOFOCUS_STEP_SIZE,
@@ -67,6 +68,7 @@ class StageContext:
     autofocus_range_steps: int = AUTOFOCUS_RANGE_STEPS
     autofocus_step_size: int = AUTOFOCUS_STEP_SIZE
     autofocus_exposure_s: float = AUTOFOCUS_EXPOSURE_S
+    autofocus_backlash_steps: int = AUTOFOCUS_BACKLASH_STEPS
     skip_autofocus: bool = False
 
 
@@ -162,6 +164,7 @@ def stage_autofocus(ctx: StageContext, log: SessionLog) -> None:
         range_steps=ctx.autofocus_range_steps,
         step_size=ctx.autofocus_step_size,
         exposure=ctx.autofocus_exposure_s,
+        backlash_steps=ctx.autofocus_backlash_steps,
     )
     try:
         result = run_autofocus(ctx.focuser, ctx.camera, params)

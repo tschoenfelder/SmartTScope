@@ -4,6 +4,37 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-30 — Sprint 27: Autofocus backlash compensation
+
+**What changed**:
+
+- `smart_telescope/domain/autofocus.py` — `AutofocusParams` gains `backlash_steps: int = 0`:
+  - Default 0 = disabled; any positive value enables backlash compensation
+  - Validated ≥ 0 in `__post_init__`; negative value raises `ValueError`
+- `smart_telescope/workflow/autofocus.py` — `run_autofocus()` gains backlash logic:
+  - **Pre-load**: when `backlash_steps > 0`, moves focuser to `sweep_start − backlash_steps` before the sweep so the first real sweep move is upward (from below)
+  - **Final approach**: moves to `best_pos − backlash_steps` then `best_pos`, ensuring the chosen position is always approached from below
+  - Zero backlash: no pre-load move; final positioning remains a single `focuser.move(best_pos)` — identical to pre-Sprint-27 behaviour
+- `smart_telescope/workflow/_types.py` — `AUTOFOCUS_BACKLASH_STEPS = 0` constant added
+- `smart_telescope/workflow/stages.py` — `StageContext.autofocus_backlash_steps: int = 0` added; passed to `AutofocusParams`
+- `smart_telescope/workflow/runner.py` — `VerticalSliceRunner.__init__` gains `autofocus_backlash_steps: int = 0`; passed to `StageContext`
+- `smart_telescope/api/session.py` — `POST /api/session/run` gains `autofocus_backlash: int` query param (default 0, max 500)
+- `tests/unit/workflow/test_autofocus.py` — 7 new tests in `TestBacklashCompensation`:
+  - Pre-load move occurs before sweep when `backlash_steps > 0`
+  - All sweep moves are ≥ pre-load position (always upward)
+  - Final approach sequence is `[best_pos − backlash, best_pos]`
+  - Zero backlash: first move equals `sweep_start` (no pre-load below it)
+  - Zero backlash: last move is directly `best_pos` (no pre-load step)
+  - Sample count is identical with and without backlash
+  - Negative `backlash_steps` raises `ValueError`
+- `tests/integration/test_vertical_slice.py` — fixed pre-existing state-sequence and capture-count gaps from Sprint 25:
+  - `EXPECTED_HAPPY_PATH_STATES` now includes `FOCUSING` between `CENTERED` and `PREVIEWING`
+  - `TestStackCaptureFails` updated from `fail_on_capture=6` to `fail_on_capture=17` (align #1 + recenter #2 + 11 autofocus samples + 3 preview = 16 captures before first stack frame)
+
+**Result**: 844 tests passing, 95% coverage. Ruff clean (project sources). Mypy clean (project sources).
+
+---
+
 ## 2026-04-26 — Sprint 6: NumpyStacker with astroalign registration
 
 **What changed**:

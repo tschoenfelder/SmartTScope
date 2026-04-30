@@ -171,3 +171,80 @@ class TestRunAutofocus:
         params = AutofocusParams(range_steps=1000, step_size=100, exposure=0.01)
         result = run_autofocus(focuser, camera, params)
         assert result.metrics[result.positions.index(result.best_position)] <= result.metrics[0]
+
+
+# ── Backlash compensation ─────────────────────────────────────────────────────
+
+
+class TestBacklashCompensation:
+    def test_preload_move_made_before_sweep(self) -> None:
+        """With backlash > 0, the first move must be to sweep_start − backlash_steps."""
+        focuser = _MockFocuser(start=5000)
+        camera = _MockCamera(peak_pos=5000, focuser=focuser)
+        backlash = 50
+        params = AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=backlash)
+        half = params.range_steps // 2
+        sweep_start = 5000 - half  # 4800
+        run_autofocus(focuser, camera, params)
+        assert focuser.moves[0] == sweep_start - backlash  # 4750
+
+    def test_sweep_positions_follow_preload_upward(self) -> None:
+        """After the pre-load, all sweep moves must be >= the pre-load position."""
+        focuser = _MockFocuser(start=5000)
+        camera = _MockCamera(peak_pos=5000, focuser=focuser)
+        params = AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=50)
+        run_autofocus(focuser, camera, params)
+        # moves[0] is the pre-load; moves[1:] are the sweep positions + final approach(es)
+        preload = focuser.moves[0]
+        sweep_moves = focuser.moves[1:]
+        assert all(m >= preload for m in sweep_moves)
+
+    def test_final_position_approached_from_below(self) -> None:
+        """The move sequence must include (best_pos − backlash_steps) then best_pos at the end."""
+        focuser = _MockFocuser(start=5000)
+        camera = _MockCamera(peak_pos=5000, focuser=focuser)
+        backlash = 50
+        params = AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=backlash)
+        result = run_autofocus(focuser, camera, params)
+        last_two = focuser.moves[-2:]
+        assert last_two == [result.best_position - backlash, result.best_position]
+
+    def test_zero_backlash_no_preload(self) -> None:
+        """With backlash_steps=0, the first focuser move is the first sweep position."""
+        focuser = _MockFocuser(start=5000)
+        camera = _MockCamera(peak_pos=5000, focuser=focuser)
+        params = AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=0)
+        half = params.range_steps // 2
+        sweep_start = 5000 - half  # 4800
+        run_autofocus(focuser, camera, params)
+        assert focuser.moves[0] == sweep_start  # no pre-load below sweep_start
+
+    def test_zero_backlash_final_move_is_single(self) -> None:
+        """With backlash_steps=0, the last move is directly to best_position (no pre-load step)."""
+        focuser = _MockFocuser(start=5000)
+        camera = _MockCamera(peak_pos=5000, focuser=focuser)
+        params = AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=0)
+        result = run_autofocus(focuser, camera, params)
+        assert focuser.moves[-1] == result.best_position
+
+    def test_sample_count_unaffected_by_backlash(self) -> None:
+        """backlash_steps must not change the number of captured samples."""
+        focuser_no_bl = _MockFocuser(start=5000)
+        camera_no_bl  = _MockCamera(peak_pos=5000, focuser=focuser_no_bl)
+        result_no = run_autofocus(
+            focuser_no_bl, camera_no_bl,
+            AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=0),
+        )
+
+        focuser_bl = _MockFocuser(start=5000)
+        camera_bl  = _MockCamera(peak_pos=5000, focuser=focuser_bl)
+        result_bl = run_autofocus(
+            focuser_bl, camera_bl,
+            AutofocusParams(range_steps=400, step_size=100, exposure=0.01, backlash_steps=50),
+        )
+
+        assert len(result_no.positions) == len(result_bl.positions)
+
+    def test_backlash_negative_rejected(self) -> None:
+        with pytest.raises(ValueError, match="backlash_steps"):
+            AutofocusParams(range_steps=500, step_size=50, exposure=1.0, backlash_steps=-1)

@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .frame_quality import FrameQualityEntry
 from .states import SessionState
 
 
@@ -30,6 +31,7 @@ class SessionLog:
     autofocus_best_position: int | None = None
     autofocus_metric_gain: float | None = None
     refocus_count: int = 0  # number of mid-stack refocuses performed
+    frame_quality_log: list[FrameQualityEntry] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     failure_stage: str | None = None
     failure_reason: str | None = None
@@ -68,6 +70,16 @@ class SessionLog:
                 "metric_gain": self.autofocus_metric_gain,
                 "refocus_count": self.refocus_count,
             },
+            "frame_quality_log": [
+                {
+                    "frame": e.frame_number,
+                    "snr": round(e.snr, 2),
+                    "baseline_snr": round(e.baseline_snr, 2) if e.baseline_snr is not None else None,
+                    "accepted": e.accepted,
+                    "reason": e.reason,
+                }
+                for e in self.frame_quality_log
+            ],
             "warnings": self.warnings,
             "failure_stage": self.failure_stage,
             "failure_reason": self.failure_reason,

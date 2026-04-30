@@ -271,6 +271,69 @@ class TestSaveFails:
 
 
 # ---------------------------------------------------------------------------
+# Frame quality filtering
+# ---------------------------------------------------------------------------
+
+class TestQualityFiltering:
+    # Capture call order (from docstring):
+    #   align(#1) recenter(#2) autofocus(#3–#13) preview(#14–#16)
+    #   stack frames 1–5 (#17–#21) recenter(#22) stack frames 6–10 (#23–#27)
+    # Stack frames map to captures: frame 1→#17, 2→#18, 3→#19, 4→#20, 5→#21,
+    #   6→#23, 7→#24, 8→#25, 9→#26, 10→#27
+    # With baseline_frames=3, frames 1–3 always pass; rejection starts at frame 4.
+    # Dim captures #20 and #21 correspond to stack frames 4 and 5.
+
+    def _make_quality_runner(self, dim_on_captures: frozenset[int]) -> VerticalSliceRunner:
+        camera = MockCamera(return_bright=True, dim_on_captures=dim_on_captures)
+        runner, _ = make_runner(camera=camera)
+        return runner
+
+    def test_all_bright_frames_accepted(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset())
+        log = runner.run()
+        assert log.frames_integrated == 10
+        assert log.frames_rejected == 0
+        assert log.state == SessionState.SAVED
+
+    def test_dim_frames_are_rejected(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset({20, 21}))
+        log = runner.run()
+        assert log.frames_rejected == 2
+
+    def test_integrated_count_excludes_rejected(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset({20, 21}))
+        log = runner.run()
+        assert log.frames_integrated == 8
+
+    def test_rejection_warning_logged(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset({20}))
+        log = runner.run()
+        assert any("quality filter" in w for w in log.warnings)
+
+    def test_session_completes_despite_rejections(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset({20, 21}))
+        log = runner.run()
+        assert log.state == SessionState.SAVED
+
+    def test_frame_quality_log_populated(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset({20, 21}))
+        log = runner.run()
+        assert len(log.frame_quality_log) == 10  # one entry per stack frame
+        rejected = [e for e in log.frame_quality_log if not e.accepted]
+        assert len(rejected) == 2
+
+    def test_frame_quality_log_in_serialized_dict(self) -> None:
+        runner = self._make_quality_runner(dim_on_captures=frozenset({20}))
+        log = runner.run()
+        d = log.to_dict()
+        assert "frame_quality_log" in d
+        assert len(d["frame_quality_log"]) == 10
+        rejected_entries = [e for e in d["frame_quality_log"] if not e["accepted"]]
+        assert len(rejected_entries) == 1
+        assert rejected_entries[0]["reason"] is not None
+
+
+# ---------------------------------------------------------------------------
 # Mount failures
 # ---------------------------------------------------------------------------
 

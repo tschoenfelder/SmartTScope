@@ -34,6 +34,16 @@ class FrameQualityResult:
     reason: str | None = None  # set only when rejected
 
 
+@dataclass
+class FrameQualityEntry:
+    """One record per stack frame — stored in SessionLog for post-session review."""
+    frame_number: int       # 1-indexed position in the stack loop
+    snr: float
+    baseline_snr: float | None
+    accepted: bool
+    reason: str | None = None
+
+
 class FrameQualityFilter:
     """Stateful frame quality gate.
 

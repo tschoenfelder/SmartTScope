@@ -35,6 +35,38 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-30 — Sprint 30: Frame quality log + integration tests (M7 close)
+
+**What changed**:
+
+- `smart_telescope/domain/frame_quality.py` — added `FrameQualityEntry` dataclass:
+  - `{frame_number, snr, baseline_snr, accepted, reason}` — one record per stack frame for post-session review
+- `smart_telescope/domain/session.py`:
+  - `SessionLog` gains `frame_quality_log: list[FrameQualityEntry]` field
+  - `to_dict()` serialises the log as `"frame_quality_log": [{frame, snr, baseline_snr, accepted, reason}, ...]`
+- `smart_telescope/workflow/stages.py` — `stage_stack()` appends a `FrameQualityEntry` to `log.frame_quality_log` for every frame evaluated (accepted and rejected alike); entries added only when `frame_quality_filter` is active
+- `smart_telescope/adapters/mock/camera.py` — `MockCamera` gains `return_bright: bool` and `dim_on_captures: frozenset[int]` parameters:
+  - `return_bright=True` → returns 64×64 noisy star-field frames with measurable SNR (instead of zero frames) for quality-filter integration tests
+  - `dim_on_captures={…}` → returns low-SNR (cloud-simulated) frames on the specified capture indices
+  - Default behaviour (zeros) unchanged — all existing integration tests unaffected
+- `tests/integration/test_vertical_slice.py` — `TestQualityFiltering` class (7 tests):
+  - All-bright run: 10 integrated, 0 rejected
+  - Dim frames on captures #20 and #21 → 2 rejected, 8 integrated
+  - Session completes to SAVED despite rejections (non-fatal)
+  - Rejection warning logged per rejected frame
+  - `frame_quality_log` populated (10 entries, 2 rejected)
+  - Serialised dict contains `frame_quality_log` with correct accepted/rejected flags
+
+**M7 milestone gate status**: 
+- Cloud-simulation test (dim captures): `frames_rejected` increments correctly, `frames_integrated` stays correct ✓
+- Stack completes to SAVED despite rejections (non-fatal) ✓
+- Per-frame SNR + accept/reject written to session JSON for post-session analysis ✓
+- Configurable threshold and baseline depth via API query params ✓
+
+**Result**: 887 tests passing, 15 skipped, 95% coverage.
+
+---
+
 ## 2026-04-30 — Sprint 29: Frame quality filtering (M7 — It rejects bad frames)
 
 **What changed**:

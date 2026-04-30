@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from .. import config as _cfg
 from ..domain.autofocus import AutofocusParams
 from ..domain.frame import FitsFrame
-from ..domain.frame_quality import FrameQualityFilter
+from ..domain.frame_quality import FrameQualityEntry, FrameQualityFilter
 from ..domain.refocus import RefocusConfig, RefocusTracker
 from ..domain.session import SessionLog
 from ..domain.states import SessionState
@@ -238,6 +238,13 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
 
         if ctx.frame_quality_filter is not None:
             quality = ctx.frame_quality_filter.evaluate(frame)
+            log.frame_quality_log.append(FrameQualityEntry(
+                frame_number=i,
+                snr=quality.snr,
+                baseline_snr=quality.baseline_snr,
+                accepted=quality.accepted,
+                reason=quality.reason,
+            ))
             if not quality.accepted:
                 quality_rejected += 1
                 log.frames_rejected = quality_rejected + stacker_rejected

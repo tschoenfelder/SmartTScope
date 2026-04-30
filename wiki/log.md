@@ -4,6 +4,37 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-30 — Requirements addon: catalog expansion + process requirements + quickstart
+
+**Source**: requirements_addon_20260430.txt
+
+**stars.cfg — 21 new entries added**:
+
+- *Solar system*: Jupiter (planet, approx. Apr 2026 coords — update monthly), C/2025 R3 (comet placeholder — update from JPL Horizons)
+- *Nebulae*: NGC 2359 (Thor's Helmet), NGC 2237 (Rosette Nebula proper; cluster NGC 2244 was already present), IC 5068 (Forsaken Nebula), NGC 2024 (Flame Nebula), IC 434 (Horsehead Nebula), NGC 7380 (Wizard Nebula), NGC 6992 (Eastern Veil), IC 405 (Flaming Star / Caldwell 31), NGC 281 (Pacman), NGC 2174 (Monkey Head), NGC 6960 (Western Veil / Cirrus, filter note), NGC 6543 (Cat's Eye)
+- *Galaxies*: M 51 (Whirlpool), M 63 (Sunflower), NGC 3268 (Antlia), NGC 3184
+- *Filter variants*: M 42 Filters (OIII + Ha), M 45 Filters (nebulosity)
+- *Multiple stars*: 12 Lyncis (triple, A/B 1.8″, C 8.6″), Iota Cassiopeiae (triple, +67° dec), Beta Monocerotis (triple, low ~33° from Frankfurt)
+
+*Note*: M51, M63, M42, M45 are already in the internal Messier catalog (`domain/catalog.py`) and GoTo-able by name. The stars.cfg entries make them visible in `GET /api/catalog/stars` and add filter-use variants.
+
+**wiki/requirements.md — §14 Process requirements added (MVP)**:
+
+- Documentation gate: a change is not done until documentation is updated
+- Release traceability: each requirement tracks "Planned for" and "Implemented in" release
+
+**wiki/quickstart.md — new page**:
+
+- Correct platform: Raspberry Pi OS Trixie (Debian 13), not Bullseye
+- Python 3.13 from main apt (no deadsnakes PPA needed on Trixie)
+- Explicit note: libcamera is NOT used — ToupTek SDK over USB only
+- Environment variables, custom targets (stars.cfg), systemd setup
+- Bookworm → Trixie delta table
+
+**wiki/index.md** — quickstart entry added; requirements entry updated.
+
+---
+
 ## 2026-04-30 — Sprint 27: Autofocus backlash compensation
 
 **What changed**:

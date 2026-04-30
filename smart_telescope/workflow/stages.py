@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from .. import config as _cfg
 from ..domain.autofocus import AutofocusParams
 from ..domain.frame import FitsFrame
+from ..domain.frame_quality import FrameQualityFilter
 from ..domain.refocus import RefocusConfig, RefocusTracker
 from ..domain.session import SessionLog
 from ..domain.states import SessionState
@@ -74,7 +75,8 @@ class StageContext:
     autofocus_exposure_s: float = AUTOFOCUS_EXPOSURE_S
     autofocus_backlash_steps: int = AUTOFOCUS_BACKLASH_STEPS
     skip_autofocus: bool = False
-    refocus_tracker: RefocusTracker | None = None  # None = triggers disabled
+    refocus_tracker: RefocusTracker | None = None        # None = triggers disabled
+    frame_quality_filter: FrameQualityFilter | None = None  # None = accept all frames
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -192,6 +194,9 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
     ctx.on_transition(log, SessionState.STACKING)
     ctx.stacker.reset()
     last_frame_temp: float | None = None
+    quality_rejected: int = 0
+    stacker_rejected: int = 0
+    accepted_count: int = 0
     for i in range(1, ctx.stack_depth + 1):
         if ctx.stop_event.is_set():
             raise WorkflowError("stack", "Stack cancelled by stop request")
@@ -230,9 +235,21 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
 
         frame = ctx.camera.capture(ctx.stack_exposure_s)
         last_frame_temp = _frame_temp(frame)
-        stacked = ctx.stacker.add_frame(frame, i)
+
+        if ctx.frame_quality_filter is not None:
+            quality = ctx.frame_quality_filter.evaluate(frame)
+            if not quality.accepted:
+                quality_rejected += 1
+                log.frames_rejected = quality_rejected + stacker_rejected
+                log.warnings.append(f"Frame {i} rejected by quality filter: {quality.reason}")
+                continue
+
+        accepted_count += 1
+        stacked = ctx.stacker.add_frame(frame, accepted_count)
+        stacker_rejected = stacked.frames_rejected
         log.frames_integrated = stacked.frames_integrated
-        log.frames_rejected = stacked.frames_rejected
+        log.frames_rejected = quality_rejected + stacker_rejected
+
     ctx.on_transition(log, SessionState.STACK_COMPLETE)
 
 

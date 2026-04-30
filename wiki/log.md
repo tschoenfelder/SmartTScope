@@ -35,6 +35,34 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-30 — Sprint 29: Frame quality filtering (M7 — It rejects bad frames)
+
+**What changed**:
+
+- `smart_telescope/domain/frame_quality.py` (NEW) — `FrameQualityConfig`, `FrameQualityResult`, `FrameQualityFilter`:
+  - `FrameQualityConfig(min_snr_factor=0.3, baseline_frames=3)` — configurable rejection threshold and warmup depth
+  - `min_snr_factor=0.0` disables rejection (all frames accepted); range [0.0, 1.0]
+  - `FrameQualityFilter.evaluate(frame) → FrameQualityResult` — computes per-frame SNR and compares to rolling baseline
+  - **SNR metric**: `(99.5th-percentile signal − sky_median) / sky_MAD` — robust sky-background model; resistant to outliers and hot pixels via MAD noise estimator
+  - First `baseline_frames` frames always accepted (building the SNR baseline); baseline is a rolling median of the last N accepted SNRs
+  - Rejected frames do NOT update the baseline; the baseline reflects only good frames
+- `smart_telescope/workflow/_types.py` — 2 new constants: `FRAME_QUALITY_MIN_SNR_FACTOR = 0.3`, `FRAME_QUALITY_BASELINE_FRAMES = 3`
+- `smart_telescope/workflow/stages.py`:
+  - `StageContext` gains `frame_quality_filter: FrameQualityFilter | None = None` (None = accept all)
+  - `stage_stack()` evaluates quality after each capture; rejected frames skip `stacker.add_frame()` and log a warning; `log.frames_rejected` accumulates both quality rejects and stacker registration rejects (astroalign failures)
+  - Frame numbering to stacker uses `accepted_count` (1-indexed over accepted frames only), so the NumpyStacker's reference frame is always the first accepted frame
+- `smart_telescope/workflow/runner.py` — gains `enable_frame_quality: bool = True`, `frame_quality_min_snr: float = 0.3`, `frame_quality_baseline_frames: int = 3`; creates `FrameQualityFilter` in `run()` when enabled
+- `smart_telescope/api/session.py` — `POST /api/session/run` gains `enable_quality_filter`, `quality_min_snr` (0.0–1.0), `quality_baseline_frames` (1–20) query params
+- `tests/unit/domain/test_frame_quality.py` (NEW) — 20 tests across 4 classes:
+  - `TestFrameQualityConfig` — defaults, custom values, boundary/invalid validation
+  - `TestFrameSnr` — zero/uniform frames return 0.0, noisy star-field returns positive SNR, brighter > dimmer
+  - `TestBaselineBuilding` — warmup acceptance, baseline_snr None during warmup, set after warmup
+  - `TestAcceptance` — bright accepted, dim rejected, disabled filter passes all, rejected frame skips baseline update, next bright frame still accepted after a reject
+
+**Result**: 880 tests passing, 15 skipped, 95% coverage.
+
+---
+
 ## 2026-04-30 — Sprint 28: Refocus triggers (elapsed / altitude / temperature)
 
 **What changed**:

@@ -24,6 +24,7 @@ from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 from .. import config as _cfg
+from ..domain.frame_quality import FrameQualityConfig, FrameQualityFilter
 from ..domain.refocus import RefocusConfig, RefocusTracker
 from ._types import (
     C8_BARLOW2X as C8_BARLOW2X,
@@ -102,6 +103,9 @@ class VerticalSliceRunner:
         refocus_temp_delta_c: float = 1.0,
         refocus_alt_delta_deg: float = 5.0,
         refocus_elapsed_min: float = 30.0,
+        enable_frame_quality: bool = True,
+        frame_quality_min_snr: float = 0.3,
+        frame_quality_baseline_frames: int = 3,
     ) -> None:
         self._camera = camera
         self._mount = mount
@@ -130,6 +134,11 @@ class VerticalSliceRunner:
             temp_delta_c=refocus_temp_delta_c,
             altitude_delta_deg=refocus_alt_delta_deg,
             elapsed_min=refocus_elapsed_min,
+        )
+        self._enable_frame_quality = enable_frame_quality
+        self._frame_quality_config = FrameQualityConfig(
+            min_snr_factor=frame_quality_min_snr,
+            baseline_frames=frame_quality_baseline_frames,
         )
 
     @property
@@ -177,6 +186,11 @@ class VerticalSliceRunner:
             refocus_tracker=(
                 RefocusTracker(self._refocus_config)
                 if self._enable_refocus_triggers and not self._skip_autofocus
+                else None
+            ),
+            frame_quality_filter=(
+                FrameQualityFilter(self._frame_quality_config)
+                if self._enable_frame_quality
                 else None
             ),
         )

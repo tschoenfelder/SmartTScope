@@ -162,6 +162,9 @@ def session_run(
     refocus_alt_delta: float = Query(default=5.0, gt=0.0, le=90.0),
     refocus_elapsed_min: float = Query(default=30.0, gt=0.0, le=480.0),
     enable_refocus: bool = Query(default=True),
+    enable_quality_filter: bool = Query(default=True),
+    quality_min_snr: float = Query(default=0.3, ge=0.0, le=1.0),
+    quality_baseline_frames: int = Query(default=3, ge=1, le=20),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
@@ -210,6 +213,9 @@ def session_run(
             refocus_temp_delta_c=refocus_temp_delta,
             refocus_alt_delta_deg=refocus_alt_delta,
             refocus_elapsed_min=refocus_elapsed_min,
+            enable_frame_quality=enable_quality_filter,
+            frame_quality_min_snr=quality_min_snr,
+            frame_quality_baseline_frames=quality_baseline_frames,
         )
         _active_runner = runner
         _runner_thread = threading.Thread(

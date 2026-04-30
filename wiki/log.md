@@ -35,6 +35,35 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-04-30 — Sprint 31: Queue domain model + visibility window (M8 start)
+
+**What changed**:
+
+- `smart_telescope/domain/queue.py` (NEW) — Observation queue domain objects:
+  - `QueueEntryStatus` enum: PENDING / RUNNING / DONE / FAILED / SKIPPED
+  - `QueueEntry` — one observation job: target name/RA/dec, profile, exposure, stack_depth, min_altitude_deg, auto-generated entry_id, status, timestamps (added_at, started_at, completed_at), session_id, failure_reason; `to_dict()` for serialisation
+  - `ObservationQueue` — thread-safe ordered list of entries:
+    - `add(entry)`, `remove(entry_id) → bool` (PENDING-only), `clear_completed()`
+    - `get(entry_id)`, `next_pending()`, `all()`, `pending()`, `to_list()`
+    - Protected by `threading.Lock`; RUNNING entries are immune to `remove()`
+- `smart_telescope/domain/visibility.py` — added `VisibilityWindow` and `compute_visibility_window()`:
+  - `VisibilityWindow(rises_at, sets_at, peak_altitude, peak_time, is_observable)` — frozen dataclass
+  - `compute_visibility_window(ra_hours, dec_deg, lat, lon, night_start, night_end, min_altitude_deg=20.0, sample_minutes=5)` — samples altitude at regular intervals, returns the first/last sample above threshold plus peak; accurate to ±sample_minutes minutes; wraps `compute_altaz` so it's fully mockable
+- `tests/unit/domain/test_queue.py` (NEW) — 21 tests across 2 classes:
+  - `TestQueueEntry` — defaults, unique IDs, `to_dict()` keys/types/timestamps
+  - `TestObservationQueue` — empty, add, pending/next_pending, get, remove (PENDING only, not RUNNING), clear_completed, to_list, insertion order, thread-safety (4 concurrent writers × 50 adds = 200 entries, no errors)
+- `tests/unit/domain/test_visibility_window.py` (NEW) — 15 tests across 5 classes:
+  - `TestVisibilityWindowDataclass` — frozen (attribute mutation raises)
+  - `TestNeverObservable` — peak below threshold, None rises/sets, correct peak altitude/time
+  - `TestAlwaysObservable` — rises_at = night_start, sets_at = night_end
+  - `TestRisesDuringNight` — rises_at is first sample ≥ threshold
+  - `TestSetsDuringNight` — sets_at is last sample ≥ threshold
+  - `TestSamplingBehaviour` — 6-hour / 60-min → exactly 7 `compute_altaz` calls
+
+**Result**: 923 tests passing, 15 skipped, 95% coverage.
+
+---
+
 ## 2026-04-30 — Sprint 30: Frame quality log + integration tests (M7 close)
 
 **What changed**:

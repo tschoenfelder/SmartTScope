@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Sprint 37: GoTo-Selected button + live mount-strip poll
+
+**What changed**:
+
+- `smart_telescope/static/index.html` — Custom Targets card (Stage 3):
+  - Added GoTo and ⌖ buttons in the card header, initially disabled; enabled when a target row is clicked.
+  - `starSelect()` now saves `_selectedStar`, highlights the clicked row (`.star-item.selected` CSS), and enables the header buttons.
+  - `loadStars()` resets `_selectedStar` and disables the header buttons on reload.
+  - `starGotoSelected()` / `starCenterSelected()` delegate to the existing per-row functions.
+  - `data-star-name` attribute added to each star-item `<div>` so the selected row can be found by CSS.escape lookup.
+- Mount strip (stages 2–5): 5 s `setInterval` poll (`_startMountStripPoll`) activates when navigating away from Stage 1; stops on return. Keeps RA/DEC and state badge live while the mount is tracking.
+
+**Result**: UI-only — no backend changes, no tests affected.
+
+---
+
 ## 2026-05-02 — Bug fixes: serial lock + camera connect guard
 
 **What changed**:

@@ -321,7 +321,8 @@
       cursor: pointer;
       font-size: 0.82rem;
     }
-    .star-item:hover { background: rgba(56,139,253,0.12); }
+    .star-item:hover    { background: rgba(56,139,253,0.12); }
+    .star-item.selected { background: rgba(56,139,253,0.20); outline: 1px solid rgba(56,139,253,0.4); border-radius: 4px; }
     .star-item .si-name   { font-weight: 600; min-width: 8ch; }
     .star-item .si-common { color: var(--muted); flex: 1; font-size: 0.78rem; }
     .star-item .si-coords { color: var(--muted); font-size: 0.72rem; font-family: monospace; }
@@ -673,6 +674,12 @@
           <div class="card-title">
             <span class="dot dot-grey"></span>
             Custom Targets
+            <button id="s3-star-goto-btn" class="secondary" disabled
+                    style="padding:0.15rem 0.45rem;font-size:0.73rem"
+                    onclick="starGotoSelected()" title="GoTo selected target">GoTo</button>
+            <button id="s3-star-center-btn" class="secondary" disabled
+                    style="padding:0.15rem 0.45rem;font-size:0.73rem"
+                    onclick="starCenterSelected()" title="GoTo + plate-solve until centred">&#x2316;</button>
             <button class="secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:auto"
                     onclick="loadStars()">Reload</button>
           </div>
@@ -1079,14 +1086,31 @@
   /* ══════════════════════════════════════════════════════════════════════
      Stage navigation
   ══════════════════════════════════════════════════════════════════════ */
+  let _mountStripTimer = null;
+
+  function _startMountStripPoll() {
+    if (_mountStripTimer) return;
+    _mountStripTimer = setInterval(async () => {
+      try {
+        const data = await (await fetch('/api/mount/status')).json();
+        _updateMountStrip(data);
+      } catch {}
+    }, 5000);
+  }
+
+  function _stopMountStripPoll() {
+    clearInterval(_mountStripTimer);
+    _mountStripTimer = null;
+  }
+
   function goToStage(n) {
     if (!_stage.unlocked.has(n)) return;
     document.getElementById(`s${_stage.current}`).classList.remove('active');
     document.getElementById(`s${n}`).classList.add('active');
     _stage.current = n;
     const strip = document.getElementById('mount-strip');
-    if (n === 1) strip.classList.remove('visible');
-    else         strip.classList.add('visible');
+    if (n === 1) { strip.classList.remove('visible'); _stopMountStripPoll(); }
+    else         { strip.classList.add('visible');    _startMountStripPoll(); }
     _renderStageBar();
     if (n === 4) { refreshFocuser(); loadCollimStars(); }
   }
@@ -1570,7 +1594,7 @@
     const mag = t.magnitude != null ? ` m${t.magnitude}` : '';
     const trk = t.tracking || 'sidereal';
     return `
-      <div class="star-item"
+      <div class="star-item" data-star-name="${escHtml(t.name)}"
            onclick="starSelect(${t.ra},${t.dec},'${escHtml(t.name)}','${escHtml(trk)}')">
         <span class="si-name">${escHtml(t.name)}</span>
         <span class="si-common">${escHtml(t.common_name || '')}${mag}</span>
@@ -1590,6 +1614,9 @@
   async function loadStars() {
     const list = document.getElementById('s3-star-list');
     setStatus('s3-stars-status', '');
+    _selectedStar = null;
+    document.getElementById('s3-star-goto-btn').disabled   = true;
+    document.getElementById('s3-star-center-btn').disabled = true;
     try {
       const targets = await (await fetch('/api/catalog/stars')).json();
       if (!targets.length) {
@@ -1603,6 +1630,8 @@
     }
   }
 
+  let _selectedStar = null;
+
   function starSelect(ra, dec, name, tracking) {
     document.getElementById('goto-ra').value  = ra.toFixed(4);
     document.getElementById('goto-dec').value = dec.toFixed(4);
@@ -1612,6 +1641,22 @@
       setStatus('s3-status',
         `Note: ${name} uses ${tracking} tracking — set mount rate manually after slew.`);
     }
+    _selectedStar = { ra, dec, name, tracking };
+    document.querySelectorAll('#s3-star-list .star-item').forEach(el => el.classList.remove('selected'));
+    const row = document.querySelector(`#s3-star-list [data-star-name="${CSS.escape(name)}"]`);
+    if (row) row.classList.add('selected');
+    document.getElementById('s3-star-goto-btn').disabled   = false;
+    document.getElementById('s3-star-center-btn').disabled = false;
+  }
+
+  function starGotoSelected() {
+    if (!_selectedStar) return;
+    starGoto(_selectedStar.ra, _selectedStar.dec, _selectedStar.name);
+  }
+
+  function starCenterSelected() {
+    if (!_selectedStar) return;
+    starGotoAndCenter(_selectedStar.ra, _selectedStar.dec, _selectedStar.name);
   }
 
   async function starGoto(ra, dec, name) {

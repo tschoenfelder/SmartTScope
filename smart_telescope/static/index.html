@@ -45,18 +45,91 @@
       padding: 0.15rem 0.55rem;
     }
 
+    /* ── stage navigation bar ── */
+    #stage-bar {
+      display: flex;
+      align-items: stretch;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1rem;
+      overflow-x: auto;
+      gap: 0;
+    }
+    .stage-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.1rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .stage-btn:hover:not(:disabled) { color: var(--text); }
+    .stage-btn.active {
+      color: var(--accent-hi);
+      border-bottom-color: var(--accent-hi);
+    }
+    .stage-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .stage-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--border);
+      font-size: 0.72rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .stage-btn.active .stage-num { background: var(--accent); color: #fff; }
+    .stage-btn.done .stage-num   { background: var(--success); color: #fff; }
+
+    /* ── compact mount strip (stages 2–5) ── */
+    #mount-strip {
+      display: none;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.35rem 2rem;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.78rem;
+    }
+    #mount-strip.visible { display: flex; }
+    #ms-radec { font-family: ui-monospace, monospace; color: var(--muted); }
+
+    /* ── stage panels ── */
+    .stage-panel { display: none; }
+    .stage-panel.active { display: block; }
+
     /* ── main layout ── */
     main {
-      max-width: 960px;
+      max-width: 1080px;
       margin: 0 auto;
       padding: 2rem;
       display: flex;
       flex-direction: column;
-      gap: 2.5rem;
+      gap: 2rem;
+    }
+
+    /* ── two-column grid (stages 3 & 4) ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .two-col { grid-template-columns: 1fr; }
     }
 
     /* ── section ── */
-    .section {}
     .toolbar {
       display: flex;
       align-items: center;
@@ -107,6 +180,7 @@
       border-radius: 8px;
       padding: 1.25rem 1.5rem;
     }
+    .card + .card { margin-top: 1rem; }
 
     .card-title {
       display: flex;
@@ -142,7 +216,7 @@
     /* ── params grid ── */
     .params {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 0.75rem 1.5rem;
     }
     .param { display: flex; flex-direction: column; gap: 0.2rem; }
@@ -154,25 +228,6 @@
     }
     .param-value { font-size: 0.875rem; }
     .mono { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.8rem; }
-
-    /* ── features ── */
-    .features {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-      margin-top: 1rem;
-      padding-top: 0.875rem;
-      border-top: 1px solid var(--border);
-    }
-    .badge {
-      font-size: 0.7rem;
-      font-weight: 500;
-      padding: 0.2rem 0.55rem;
-      border-radius: 4px;
-      background: rgba(56,139,253,0.12);
-      color: var(--accent-hi);
-      border: 1px solid rgba(56,139,253,0.25);
-    }
 
     /* ── controls row ── */
     .controls {
@@ -186,7 +241,7 @@
     }
     .controls-spacer { flex: 1; }
 
-    /* ── goto / move row ── */
+    /* ── input row ── */
     .input-row {
       display: flex;
       gap: 0.5rem;
@@ -204,10 +259,18 @@
       width: 9ch;
       outline: none;
     }
-    input[type="number"]:focus, input[type="text"]:focus {
-      border-color: var(--accent);
-    }
+    input[type="number"]:focus, input[type="text"]:focus { border-color: var(--accent); }
     label { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── stage nav row ── */
+    .stage-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
 
     /* ── catalog dropdown ── */
     .catalog-dropdown {
@@ -232,7 +295,7 @@
       font-size: 0.82rem;
     }
     .catalog-item:hover { background: rgba(56,139,253,0.12); }
-    .catalog-item .ci-name { font-weight: 600; min-width: 3.5ch; }
+    .catalog-item .ci-name   { font-weight: 600; min-width: 3.5ch; }
     .catalog-item .ci-common { color: var(--muted); flex: 1; }
     .catalog-item .ci-coords { color: var(--muted); font-size: 0.75rem; font-family: monospace; }
 
@@ -240,18 +303,18 @@
     .nudge-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
     button.nudge { padding: 0.4rem 0.6rem; font-size: 0.78rem; min-width: 2.8rem; }
 
-    /* ── custom target list ── */
+    /* ── star list ── */
     .star-list {
       display: flex;
       flex-direction: column;
       gap: 0.25rem;
-      max-height: 200px;
+      max-height: 240px;
       overflow-y: auto;
       margin-top: 0.5rem;
     }
     .star-item {
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 0.5rem;
       padding: 0.3rem 0.5rem;
       border-radius: 5px;
@@ -259,7 +322,7 @@
       font-size: 0.82rem;
     }
     .star-item:hover { background: rgba(56,139,253,0.12); }
-    .star-item .si-name  { font-weight: 600; min-width: 8ch; }
+    .star-item .si-name   { font-weight: 600; min-width: 8ch; }
     .star-item .si-common { color: var(--muted); flex: 1; font-size: 0.78rem; }
     .star-item .si-coords { color: var(--muted); font-size: 0.72rem; font-family: monospace; }
     .tracking-badge {
@@ -269,9 +332,28 @@
       background: rgba(139,148,158,0.15);
       color: var(--muted);
     }
-    .tracking-sidereal { background: rgba(63,185,80,0.1);  color: var(--success); }
-    .tracking-lunar    { background: rgba(210,153,34,0.1); color: var(--warning); }
-    .tracking-satellite{ background: rgba(56,139,253,0.1); color: var(--accent-hi); }
+    .tracking-sidereal  { background: rgba(63,185,80,0.1);  color: var(--success); }
+    .tracking-lunar     { background: rgba(210,153,34,0.1); color: var(--warning); }
+    .tracking-satellite { background: rgba(56,139,253,0.1); color: var(--accent-hi); }
+
+    /* ── features ── */
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 1rem;
+      padding-top: 0.875rem;
+      border-top: 1px solid var(--border);
+    }
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      background: rgba(56,139,253,0.12);
+      color: var(--accent-hi);
+      border: 1px solid rgba(56,139,253,0.25);
+    }
 
     /* ── camera grid ── */
     .camera-grid { display: grid; gap: 1rem; }
@@ -288,10 +370,8 @@
       align-items: center;
       justify-content: center;
     }
-    .preview-frame img {
-      max-width: 100%;
-      display: block;
-    }
+    .preview-frame.large { min-height: 400px; }
+    .preview-frame img { max-width: 100%; display: block; }
     .preview-placeholder {
       color: var(--muted);
       font-size: 0.8rem;
@@ -301,8 +381,7 @@
     }
     .preview-overlay {
       position: absolute;
-      top: 0.5rem;
-      right: 0.5rem;
+      top: 0.5rem; right: 0.5rem;
       font-size: 0.7rem;
       color: rgba(255,255,255,0.5);
       font-family: ui-monospace, monospace;
@@ -319,11 +398,10 @@
     .ws-stopped    { background: var(--muted); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-    /* ── histogram canvas ── */
+    /* ── histogram ── */
     .preview-histogram {
       position: absolute;
-      bottom: 4px;
-      right: 4px;
+      bottom: 4px; right: 4px;
       border-radius: 3px;
       pointer-events: none;
       opacity: 0.85;
@@ -339,6 +417,16 @@
       animation: spin 0.55s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── placeholder card (coming soon) ── */
+    .placeholder-card {
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
   </style>
 </head>
 <body>
@@ -346,30 +434,327 @@
 <header>
   <h1>SmartTelescope</h1>
   <span class="pill">v0.1</span>
-  <span class="controls-spacer" style="flex:1"></span>
-  <button id="connect-all-btn" onclick="connectAll()" style="font-size:0.8rem">
-    Connect All
-  </button>
 </header>
+
+<!-- ── Stage navigation bar ──────────────────────────────────────────────── -->
+<nav id="stage-bar">
+  <button class="stage-btn active" id="stage-btn-1" onclick="goToStage(1)">
+    <span class="stage-num" id="stage-num-1">1</span>
+    Startup
+  </button>
+  <button class="stage-btn" id="stage-btn-2" onclick="goToStage(2)" disabled>
+    <span class="stage-num" id="stage-num-2">2</span>
+    Alignment
+  </button>
+  <button class="stage-btn" id="stage-btn-3" onclick="goToStage(3)" disabled>
+    <span class="stage-num" id="stage-num-3">3</span>
+    GoTo &amp; Solve
+  </button>
+  <button class="stage-btn" id="stage-btn-4" onclick="goToStage(4)" disabled>
+    <span class="stage-num" id="stage-num-4">4</span>
+    Collimation
+  </button>
+  <button class="stage-btn" id="stage-btn-5" onclick="goToStage(5)" disabled>
+    <span class="stage-num" id="stage-num-5">5</span>
+    Session
+  </button>
+</nav>
+
+<!-- ── Compact mount strip (stages 2–5) ─────────────────────────────────── -->
+<div id="mount-strip">
+  <span class="dot dot-grey" id="ms-dot"></span>
+  <span id="ms-state" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">—</span>
+  <span id="ms-radec">—</span>
+  <span style="flex:1"></span>
+  <button class="danger" style="padding:0.3rem 0.75rem;font-size:0.78rem"
+          onclick="mountEmergencyStop()">■ Stop</button>
+</div>
 
 <main>
 
-  <!-- ── Mount ──────────────────────────────────────────────────────────── -->
-  <section class="section" id="mount-section">
-    <div class="toolbar">
-      <h2>Mount</h2>
-      <button onclick="refreshMount()">Refresh</button>
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 1 — Startup                                                   -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel active" id="s1">
+
+    <!-- Observer & Time -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-green"></span>
+        Observer &amp; Time
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">UTC</span>
+          <span class="param-value mono" id="clock-utc">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Local Sidereal Time</span>
+          <span class="param-value mono" id="clock-lst">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Observer Lat</span>
+          <span class="param-value mono" id="site-lat">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Observer Lon</span>
+          <span class="param-value mono" id="site-lon">—</span>
+        </div>
+      </div>
     </div>
-    <div id="mount-status" class="status-line"></div>
-    <div id="mount-card"></div>
+
+    <!-- Hardware Connection -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="connect-dot"></span>
+        Hardware Connection
+      </div>
+      <div id="connect-status-grid" class="params" style="min-height:1.5rem;margin-bottom:0.75rem"></div>
+      <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
+    </div>
+
+    <!-- Mount -->
+    <div id="s1-mount-status" class="status-line" style="margin-top:1rem"></div>
+    <div id="s1-mount-card"></div>
+
+    <div class="stage-nav">
+      <span></span>
+      <button id="s1-proceed-btn" onclick="s1Proceed()">Proceed to Alignment →</button>
+    </div>
   </section>
 
-  <!-- ── Sky Shot ──────────────────────────────────────────────────────── -->
-  <section class="section" id="skyshot-section">
-    <div class="toolbar">
-      <h2>Sky Shot</h2>
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 2 — Polar Alignment                                           -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s2">
+
+    <div class="toolbar"><h2>Polar Alignment</h2></div>
+    <div id="s2-status" class="status-line"></div>
+
+    <!-- Step 1: Home -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Step 1 — Move to Home Position
+      </div>
+      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:1rem">
+        Slew the mount to its home position (pointing near the celestial pole, Dec&nbsp;89°, HA&nbsp;0).
+        This positions the scope for polar alignment.
+      </p>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <button id="s2-home-btn" onclick="s2Home()">Slew to Home (Dec 89°)</button>
+        <span id="s2-home-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
     </div>
-    <div id="skyshot-status" class="status-line"></div>
+
+    <!-- Step 2: Alignment tool (placeholder) -->
+    <div class="card" style="margin-top:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Step 2 — Polar Alignment Tool
+        <span class="state-badge state-unknown" style="margin-left:auto">Coming soon</span>
+      </div>
+      <div class="placeholder-card">
+        Drift alignment guide and polar scope overlay will be implemented here.<br>
+        <span style="font-size:0.78rem;margin-top:0.4rem;display:block">
+          Use "Done / Skip" to proceed without polar alignment.
+        </span>
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(1)">← Back</button>
+      <button onclick="s2Done()">Done / Skip →</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 3 — GoTo & Plate Solve                                        -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s3">
+
+    <div class="toolbar"><h2>GoTo &amp; Plate Solve</h2></div>
+    <div id="s3-status" class="status-line"></div>
+
+    <div class="two-col">
+
+      <!-- ── Left: Targets ── -->
+      <div>
+        <!-- Custom Targets -->
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Custom Targets
+            <button class="secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:auto"
+                    onclick="loadStars()">Reload</button>
+          </div>
+          <div id="s3-stars-status" class="status-line" style="margin-bottom:0.5rem;min-height:auto"></div>
+          <div id="s3-star-list" class="star-list"></div>
+        </div>
+
+        <!-- Catalog Search + GoTo -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            GoTo
+          </div>
+          <div class="input-row" style="margin-top:0">
+            <input type="text" id="catalog-query" placeholder="M42, Orion…" style="width:12ch"
+                   oninput="catalogSearch()" autocomplete="off">
+            <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+              <input type="checkbox" id="catalog-observable" onchange="catalogSearch()">
+              <span>Observable</span>
+            </label>
+            <span id="catalog-results" style="position:relative"></span>
+          </div>
+          <div class="input-row">
+            <label>RA</label>
+            <input type="number" id="goto-ra" step="0.001" placeholder="h" style="width:9ch">
+            <label>Dec</label>
+            <input type="number" id="goto-dec" step="0.001" placeholder="°" style="width:9ch">
+            <button onclick="mountGoto()">GoTo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Right: Live Preview + Solve ── -->
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Live Preview
+            <span id="s3-ws-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">
+              <span class="ws-dot ws-stopped"></span>Stopped
+            </span>
+          </div>
+
+          <div class="preview-frame" id="s3-preview-frame">
+            <div class="preview-placeholder" id="s3-preview-ph">Press Start to begin</div>
+            <img id="s3-preview-img" alt="" style="display:none">
+            <div class="preview-overlay" id="s3-preview-overlay"></div>
+            <canvas id="s3-histogram" class="preview-histogram"
+                    width="200" height="60" style="display:none"></canvas>
+            <canvas id="s3-hist-decode" width="1" height="1" style="display:none"></canvas>
+          </div>
+
+          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
+            <label>Cam</label>
+            <input type="number" id="preview-cam-idx-a" value="0" min="0" max="7" step="1"
+                   style="width:5ch" title="SDK camera index">
+            <label style="margin-left:0.4rem">Exp</label>
+            <input type="number" id="preview-exposure" value="2" min="0.1" max="60" step="0.5"
+                   style="width:7ch">
+            <label>s</label>
+            <label style="margin-left:0.4rem">Gain</label>
+            <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
+                   style="width:6ch">
+            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
+              <input type="checkbox" id="preview-hist-chk" style="width:auto"
+                     onchange="previewHistToggle(this.checked)">Hist
+            </label>
+            <button id="solve-btn" onclick="solveFrame()"
+                    style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="Plate-solve current frame">Solve</button>
+            <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+            <button id="preview-start-btn" onclick="previewStart()">Start</button>
+            <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+          </div>
+
+          <div id="solve-result" style="display:none;margin-top:0.75rem;padding:0.4rem 0.6rem;
+               border-radius:4px;background:var(--bg);font-size:0.8rem;
+               font-family:ui-monospace,monospace;line-height:1.6"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(2)">← Back</button>
+      <button id="s3-proceed-btn" onclick="goToStage(4)" disabled
+              title="Complete a GoTo first">→ Proceed to Collimation</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 4 — Collimation (Bahtinov mask)                              -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s4">
+
+    <div class="toolbar"><h2>Collimation</h2></div>
+    <div id="s4-status" class="status-line"></div>
+
+    <div class="two-col">
+
+      <!-- ── Left: Bright stars + Focuser ── -->
+      <div>
+        <!-- Bright star selector -->
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Bright Stars
+            <span style="font-size:0.7rem;color:var(--muted);margin-left:0.5rem">mag ≤ 3</span>
+          </div>
+          <div id="s4-stars-status" class="status-line" style="margin-bottom:0.5rem;min-height:auto"></div>
+          <div id="s4-star-list" class="star-list"></div>
+        </div>
+
+        <!-- Focuser -->
+        <div id="s4-focuser-status" class="status-line" style="margin-top:1rem;margin-bottom:0.25rem"></div>
+        <div id="s4-focuser-card"></div>
+      </div>
+
+      <!-- ── Right: Large preview ── -->
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Bahtinov Preview
+            <span id="s4-ws-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">
+              <span class="ws-dot ws-stopped"></span>Stopped
+            </span>
+          </div>
+
+          <div class="preview-frame large" id="s4-preview-frame">
+            <div class="preview-placeholder" id="s4-preview-ph">
+              Press Start — the live feed from Stage 3 carries over
+            </div>
+            <img id="s4-preview-img" alt="" style="display:none;max-width:100%;max-height:600px">
+            <div class="preview-overlay" id="s4-preview-overlay"></div>
+          </div>
+
+          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
+            <label>Exp</label>
+            <input type="number" id="s4-exposure" value="0.5" min="0.1" max="30" step="0.1"
+                   style="width:7ch">
+            <label>s</label>
+            <label style="margin-left:0.4rem">Gain</label>
+            <input type="number" id="s4-gain" value="100" min="100" max="3200" step="100"
+                   style="width:6ch">
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+            <button id="s4-start-btn" onclick="s4PreviewStart()">Start</button>
+            <button id="s4-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(3)">← Back</button>
+      <button onclick="s4Done()">→ Proceed to Session</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 5 — Observation Session                                       -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s5">
+
+    <div class="toolbar"><h2>Observation Session</h2></div>
+
+    <!-- Sky Shot -->
+    <div id="s5-skyshot-status" class="status-line"></div>
     <div class="card">
       <div class="card-title">
         <span class="dot dot-grey" id="skyshot-dot"></span>
@@ -393,7 +778,7 @@
           <span class="param-value mono" id="skyshot-dec">—</span>
         </div>
       </div>
-      <div class="controls" style="margin-top:1rem;padding-top:0.875rem;border-top:1px solid var(--border)">
+      <div class="controls">
         <button id="skyshot-goto-btn" onclick="skyGoto()">GoTo Sky</button>
         <button id="skyshot-snap-btn" onclick="skySnap()" class="secondary" disabled>Snap</button>
         <button id="skyshot-park-btn" onclick="skyPark()" class="secondary">Park after Snap</button>
@@ -405,146 +790,54 @@
         <img id="skyshot-img" alt="" style="display:none">
       </div>
     </div>
-  </section>
 
-  <!-- ── Connect All status ─────────────────────────────────────────────── -->
-  <section class="section" id="connect-status-section" style="display:none">
-    <div class="toolbar"><h2>Connection Status</h2></div>
-    <div id="connect-status-grid" class="params"></div>
-  </section>
-
-  <!-- ── Focuser ────────────────────────────────────────────────────────── -->
-  <section class="section" id="focuser-section">
-    <div class="toolbar">
-      <h2>Focuser</h2>
-      <button onclick="refreshFocuser()">Refresh</button>
-    </div>
-    <div id="focuser-status" class="status-line"></div>
-    <div id="focuser-card"></div>
-  </section>
-
-  <!-- ── Custom Targets ──────────────────────────────────────────────── -->
-  <section class="section" id="stars-section">
-    <div class="toolbar">
-      <h2>Custom Targets</h2>
-      <button class="secondary" onclick="loadStars()" style="font-size:0.8rem">Reload</button>
-    </div>
-    <div id="stars-status" class="status-line"></div>
-    <div id="stars-list" class="star-list"></div>
-  </section>
-
-  <!-- ── Live Preview ─────────────────────────────────────────────────── -->
-  <section class="section" id="preview-section">
-    <div class="toolbar">
-      <h2>Live Preview</h2>
-      <span id="preview-camera-label" style="font-size:0.78rem;color:var(--muted);margin-right:0.5rem"></span>
-      <button id="preview-split-btn" onclick="previewSplit()"
-              style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-right:0.5rem"
-              title="Toggle side-by-side dual camera view">Split</button>
-      <span id="preview-ws-status" style="font-size:0.8rem;color:var(--muted)">
-        <span class="ws-dot ws-stopped"></span>Stopped
-      </span>
-    </div>
-    <div id="preview-status" class="status-line"></div>
-
-    <div id="preview-panels" style="display:flex;gap:0.75rem;align-items:flex-start">
-      <!-- Panel A (always visible) -->
-      <div id="preview-panel-a" style="flex:1;min-width:0">
-        <div class="preview-frame" id="preview-frame">
-          <div class="preview-placeholder" id="preview-placeholder">Press Start to begin live preview</div>
-          <img id="preview-img" alt="" style="display:none">
-          <div class="preview-overlay" id="preview-overlay"></div>
-          <canvas id="preview-histogram" class="preview-histogram"
-                  width="200" height="60" style="display:none"></canvas>
-          <canvas id="preview-hist-decode" width="1" height="1" style="display:none"></canvas>
-        </div>
-        <div class="controls" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.25rem">
-          <label>Cam</label>
-          <input type="number" id="preview-cam-idx-a" value="0" min="0" max="7" step="1"
-                 style="width:5ch" title="SDK camera index">
-          <label style="margin-left:0.4rem">Exp</label>
-          <input type="number" id="preview-exposure" value="2" min="0.1" max="60" step="0.5"
-                 style="width:7ch">
-          <label>s</label>
-          <label style="margin-left:0.4rem">Gain</label>
-          <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
-                 style="width:6ch" title="Analog gain: 100 = 1×, 200 = 2×, …">
-          <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
-            <input type="checkbox" id="preview-hist-chk" style="width:auto"
-                   onchange="previewHistToggle(this.checked)">Hist
-          </label>
-          <button id="solve-btn" onclick="solveFrame()"
-                  style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.78rem"
-                  title="Plate-solve current frame to get RA/Dec">Solve</button>
-          <span id="preview-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
-        </div>
+    <!-- Cameras -->
+    <div class="card" style="margin-top:1.5rem">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Connected Cameras
+        <button id="scan-btn" onclick="scan()"
+                style="padding:0.3rem 0.75rem;font-size:0.8rem;margin-left:auto">Scan</button>
       </div>
-
-      <!-- Panel B (split mode only, hidden until Split is toggled) -->
-      <div id="preview-panel-b" style="flex:1;min-width:0;display:none">
-        <div class="preview-frame" id="preview-frame-b">
-          <div class="preview-placeholder" id="preview-placeholder-b">Second camera — press Start</div>
-          <img id="preview-img-b" alt="" style="display:none">
-          <div class="preview-overlay" id="preview-overlay-b"></div>
-        </div>
-        <div class="controls" style="margin-top:0.5rem;flex-wrap:wrap;gap:0.25rem">
-          <label>Cam</label>
-          <input type="number" id="preview-cam-idx-b" value="1" min="0" max="7" step="1"
-                 style="width:5ch" title="SDK camera index">
-          <label style="margin-left:0.4rem">Exp</label>
-          <input type="number" id="preview-exposure-b" value="2" min="0.1" max="60" step="0.5"
-                 style="width:7ch">
-          <label>s</label>
-          <label style="margin-left:0.4rem">Gain</label>
-          <input type="number" id="preview-gain-b" value="100" min="100" max="3200" step="100"
-                 style="width:6ch">
-          <span id="preview-count-b" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
-        </div>
-      </div>
+      <div id="s5-camera-status" class="status-line" style="margin-bottom:0.5rem;min-height:auto"></div>
+      <div id="s5-camera-grid" class="camera-grid"></div>
     </div>
 
-    <!-- Plate-solve result -->
-    <div id="solve-result" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
-         border-radius:4px;background:var(--surface2);font-size:0.8rem;
-         font-family:ui-monospace,monospace;line-height:1.6"></div>
-
-    <!-- Shared start / stop -->
-    <div class="controls" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
-      <button id="preview-start-btn" onclick="previewStart()">Start</button>
-      <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
-      <span class="controls-spacer"></span>
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(4)">← Back</button>
+      <span></span>
     </div>
-  </section>
-
-  <!-- ── Cameras ────────────────────────────────────────────────────────── -->
-  <section class="section">
-    <div class="toolbar">
-      <h2>Connected Cameras</h2>
-      <button id="scan-btn" onclick="scan()">Scan</button>
-    </div>
-    <div id="camera-status" class="status-line"></div>
-    <div id="camera-grid" class="camera-grid"></div>
   </section>
 
 </main>
 
 <script>
-  /* ── app state ────────────────────────────────────────────────────────── */
-  let _mountConnected = false;
-  let _activeCameraName = '';
+  /* ══════════════════════════════════════════════════════════════════════
+     App-wide state
+  ══════════════════════════════════════════════════════════════════════ */
+  let _mountConnected  = false;
+  let _observerLat     = 50.336;
+  let _observerLon     = 8.533;
+  let _clockInterval   = null;
 
-  /* ── utilities ─────────────────────────────────────────────────────────── */
+  const _stage = {
+    current:   1,
+    unlocked:  new Set([1]),
+    completed: new Set(),
+  };
 
+  /* ══════════════════════════════════════════════════════════════════════
+     Utilities
+  ══════════════════════════════════════════════════════════════════════ */
   function escHtml(s) {
     return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   function setStatus(id, msg, isError = false) {
     const el = document.getElementById(id);
+    if (!el) return;
     el.textContent = msg;
     el.className = 'status-line' + (isError ? ' error' : '');
   }
@@ -562,8 +855,114 @@
     return resp.json();
   }
 
-  /* ── Mount ─────────────────────────────────────────────────────────────── */
+  /* ══════════════════════════════════════════════════════════════════════
+     Stage navigation
+  ══════════════════════════════════════════════════════════════════════ */
+  function goToStage(n) {
+    if (!_stage.unlocked.has(n)) return;
+    document.getElementById(`s${_stage.current}`).classList.remove('active');
+    document.getElementById(`s${n}`).classList.add('active');
+    _stage.current = n;
+    const strip = document.getElementById('mount-strip');
+    if (n === 1) strip.classList.remove('visible');
+    else         strip.classList.add('visible');
+    _renderStageBar();
+    if (n === 4) { refreshFocuser(); loadCollimStars(); }
+  }
 
+  function unlockStage(n) {
+    _stage.unlocked.add(n);
+    _renderStageBar();
+  }
+
+  function completeStage(n) {
+    _stage.completed.add(n);
+    _renderStageBar();
+  }
+
+  function _renderStageBar() {
+    for (let n = 1; n <= 5; n++) {
+      const btn = document.getElementById(`stage-btn-${n}`);
+      const num = document.getElementById(`stage-num-${n}`);
+      if (!btn) continue;
+      btn.disabled = !_stage.unlocked.has(n);
+      btn.classList.toggle('active', n === _stage.current);
+      btn.classList.toggle('done',   _stage.completed.has(n));
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Clock & observer location (Stage 1)
+  ══════════════════════════════════════════════════════════════════════ */
+  function _computeLST(lon_deg) {
+    const now = new Date();
+    const jd  = now.getTime() / 86400000.0 + 2440587.5;
+    const T   = (jd - 2451545.0) / 36525.0;
+    let gmst  = 6.697374558 + 2400.0513369 * T + 0.0000258622 * T * T;
+    gmst = ((gmst % 24) + 24) % 24;
+    let lst = gmst + lon_deg / 15.0;
+    return ((lst % 24) + 24) % 24;
+  }
+
+  function _fmtHMS(h) {
+    const hh = Math.floor(h);
+    const mm = Math.floor((h - hh) * 60);
+    const ss = Math.floor(((h - hh) * 60 - mm) * 60);
+    return `${String(hh).padStart(2,'0')}h ${String(mm).padStart(2,'0')}m ${String(ss).padStart(2,'0')}s`;
+  }
+
+  function _tickClock() {
+    const now = new Date();
+    const utcStr = now.toUTCString().replace(' GMT','');
+    const lst    = _computeLST(_observerLon);
+    const utcEl  = document.getElementById('clock-utc');
+    const lstEl  = document.getElementById('clock-lst');
+    if (utcEl) utcEl.textContent = utcStr;
+    if (lstEl) lstEl.textContent = _fmtHMS(lst);
+  }
+
+  async function initSiteConfig() {
+    try {
+      const d = await (await fetch('/api/mount/config')).json();
+      _observerLat = d.observer_lat;
+      _observerLon = d.observer_lon;
+      const latEl = document.getElementById('site-lat');
+      const lonEl = document.getElementById('site-lon');
+      if (latEl) latEl.textContent = `${_observerLat.toFixed(4)}° N`;
+      if (lonEl) lonEl.textContent = `${_observerLon.toFixed(4)}° E`;
+    } catch {}
+    _tickClock();
+    _clockInterval = setInterval(_tickClock, 1000);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Mount strip (compact status, stages 2–5)
+  ══════════════════════════════════════════════════════════════════════ */
+  const _STRIP_DOT = {
+    parked: 'dot-grey', unparked: 'dot-yellow',
+    tracking: 'dot-green', slewing: 'dot-green',
+    at_limit: 'dot-red', unknown: 'dot-grey',
+  };
+
+  function _updateMountStrip(data) {
+    const state  = data.state || 'unknown';
+    const dotEl  = document.getElementById('ms-dot');
+    const stEl   = document.getElementById('ms-state');
+    const rdEl   = document.getElementById('ms-radec');
+    if (dotEl) dotEl.className = 'dot ' + (_STRIP_DOT[state] || 'dot-grey');
+    if (stEl)  stEl.textContent = state;
+    if (rdEl)  rdEl.textContent = data.ra != null
+      ? `${_formatRA(+data.ra)}  ${_formatDec(+data.dec)}`
+      : '—';
+  }
+
+  function mountEmergencyStop() {
+    apiPost('/api/mount/stop').then(() => refreshMount()).catch(() => {});
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Mount — Stage 1 card
+  ══════════════════════════════════════════════════════════════════════ */
   const _MOUNT_DOT = {
     parked: 'dot-grey', unparked: 'dot-yellow',
     tracking: 'dot-green', slewing: 'dot-green',
@@ -573,28 +972,27 @@
   function mountCard(data) {
     const state  = data.state || 'unknown';
     const dotCls = _MOUNT_DOT[state] || 'dot-grey';
-    const ra  = data.ra  != null ? _formatRA(+data.ra)   : '—';
-    const dec = data.dec != null ? _formatDec(+data.dec) : '—';
-    const connBadge = _mountConnected
-      ? '<span style="font-size:0.68rem;color:var(--success);margin-left:0.4rem">● Connected</span>'
+    const ra     = data.ra  != null ? _formatRA(+data.ra)   : '—';
+    const dec    = data.dec != null ? _formatDec(+data.dec) : '—';
+    const badge  = _mountConnected
+      ? '<span style="font-size:0.68rem;color:var(--success);margin-left:0.25rem">● Connected</span>'
       : '';
-
     return `
       <div class="card">
         <div class="card-title">
           <span class="dot ${dotCls}"></span>
           OnStep Mount
           <span class="state-badge state-${state}">${state}</span>
-          ${connBadge}
+          ${badge}
         </div>
         <div class="params">
           <div class="param">
             <span class="param-label">RA</span>
-            <span class="param-value mono" id="mount-ra">${escHtml(ra)}</span>
+            <span class="param-value mono">${escHtml(ra)}</span>
           </div>
           <div class="param">
             <span class="param-label">Dec</span>
-            <span class="param-value mono" id="mount-dec">${escHtml(dec)}</span>
+            <span class="param-value mono">${escHtml(dec)}</span>
           </div>
         </div>
         <div class="controls">
@@ -602,47 +1000,34 @@
           <button class="secondary" onclick="mountAction('track')">Enable Tracking</button>
           <button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>
           <span class="controls-spacer"></span>
-          <button class="secondary" onclick="mountHome()" title="Slew to celestial pole (Dec 89°, HA 0)">Home</button>
+          <button class="secondary" onclick="mountHome()"
+                  title="Slew to celestial pole (Dec 89°, HA 0)">Home</button>
           <button class="secondary" onclick="mountAction('park')">Park</button>
           <button class="danger" onclick="mountAction('stop')">Stop</button>
-        </div>
-        <div class="input-row" style="margin-top:0.75rem">
-          <label>Target</label>
-          <input type="text" id="catalog-query" placeholder="M42, Orion…" style="width:12ch"
-                 oninput="catalogSearch()" autocomplete="off">
-          <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
-            <input type="checkbox" id="catalog-observable" onchange="catalogSearch()">
-            <span>Observable</span>
-          </label>
-          <span id="catalog-results" style="position:relative"></span>
-        </div>
-        <div class="input-row">
-          <label>GoTo RA</label>
-          <input type="number" id="goto-ra" step="0.001" placeholder="h" style="width:9ch">
-          <label>Dec</label>
-          <input type="number" id="goto-dec" step="0.001" placeholder="°" style="width:9ch">
-          <button onclick="mountGoto()">GoTo</button>
         </div>
       </div>`;
   }
 
   async function refreshMount() {
-    setStatus('mount-status', '');
     try {
       const data = await (await fetch('/api/mount/status')).json();
-      document.getElementById('mount-card').innerHTML = mountCard(data);
+      document.getElementById('s1-mount-card').innerHTML = mountCard(data);
+      _updateMountStrip(data);
     } catch (err) {
-      setStatus('mount-status', String(err), true);
+      setStatus('s1-mount-status', String(err), true);
     }
   }
 
   async function mountAction(action) {
-    setStatus('mount-status', '');
+    setStatus('s1-mount-status', '');
     try {
       await apiPost(`/api/mount/${action}`);
       await refreshMount();
+      if (action === 'unpark' || action === 'track') {
+        unlockStage(2);
+      }
     } catch (err) {
-      setStatus('mount-status', `${action} failed: ${err}`, true);
+      setStatus('s1-mount-status', `${action} failed: ${err}`, true);
     }
   }
 
@@ -650,52 +1035,298 @@
     const ra  = parseFloat(document.getElementById('goto-ra').value);
     const dec = parseFloat(document.getElementById('goto-dec').value);
     if (isNaN(ra) || isNaN(dec)) {
-      setStatus('mount-status', 'Enter valid RA and Dec values first.', true);
+      setStatus('s3-status', 'Enter valid RA and Dec values first.', true);
       return;
     }
-    setStatus('mount-status', '');
+    setStatus('s3-status', '');
     try {
       await apiPost('/api/mount/goto', { ra, dec });
       await refreshMount();
+      // Unlock collimation stage after a successful GoTo
+      document.getElementById('s3-proceed-btn').disabled = false;
+      document.getElementById('s3-proceed-btn').title = '';
+      unlockStage(4);
+      setStatus('s3-status', `Slewing to RA ${ra.toFixed(3)} h  Dec ${dec.toFixed(2)}°…`);
     } catch (err) {
-      setStatus('mount-status', `GoTo failed: ${err}`, true);
+      let msg = `GoTo failed: ${err}`;
+      try {
+        const d = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        if (d?.error === 'solar_exclusion')
+          msg = `Solar exclusion — target is only ${d.sun_separation_deg}° from the Sun.`;
+        else if (d?.error === 'mount_limit')
+          msg = `Mount limit (${d.reason}): alt ${d.altitude_deg?.toFixed(1) ?? '—'}° or HA ${d.ha_hours?.toFixed(2) ?? '—'} h.`;
+      } catch {}
+      setStatus('s3-status', msg, true);
     }
   }
 
   async function mountHome() {
-    setStatus('mount-status', '');
+    setStatus('s1-mount-status', '');
     const btn = document.querySelector('button[onclick="mountHome()"]');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Homing…'; }
     try {
       const data = await apiPost('/api/mount/home');
-      setStatus('mount-status', `Slewing to pole — RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(1)}°`);
+      setStatus('s1-mount-status',
+        `Slewing to pole — RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(1)}°`);
       await refreshMount();
     } catch (err) {
-      setStatus('mount-status', `Home failed: ${err}`, true);
+      setStatus('s1-mount-status', `Home failed: ${err}`, true);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = 'Home'; }
     }
   }
 
-  /* ── Focuser ───────────────────────────────────────────────────────────── */
+  function s1Proceed() {
+    unlockStage(2);
+    goToStage(2);
+  }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     Stage 2 — Alignment
+  ══════════════════════════════════════════════════════════════════════ */
+  async function s2Home() {
+    const btn = document.getElementById('s2-home-btn');
+    const st  = document.getElementById('s2-home-status');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Slewing…';
+    st.textContent = '';
+    try {
+      const d = await apiPost('/api/mount/home');
+      st.textContent = `→ RA ${d.ra.toFixed(3)} h  Dec ${d.dec.toFixed(1)}°`;
+      st.style.color = 'var(--success)';
+      await refreshMount();
+    } catch (err) {
+      st.textContent = String(err);
+      st.style.color = 'var(--danger)';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Slew to Home (Dec 89°)';
+    }
+  }
+
+  function s2Done() {
+    completeStage(2);
+    unlockStage(3);
+    unlockStage(5);   // session always accessible once aligned
+    goToStage(3);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Stage 4 — Collimation helpers
+  ══════════════════════════════════════════════════════════════════════ */
+  async function loadCollimStars() {
+    const list = document.getElementById('s4-star-list');
+    setStatus('s4-stars-status', '');
+    try {
+      const targets = await (await fetch('/api/catalog/stars')).json();
+      const bright  = targets.filter(t => t.type === 'star' && t.magnitude != null && t.magnitude <= 3.0);
+      if (!bright.length) {
+        setStatus('s4-stars-status', 'No stars with magnitude ≤ 3 found in stars.cfg.');
+        list.innerHTML = '';
+        return;
+      }
+      bright.sort((a, b) => a.magnitude - b.magnitude);
+      list.innerHTML = bright.map(t => {
+        const ra  = t.ra.toFixed(3) + ' h';
+        const dec = (t.dec >= 0 ? '+' : '') + t.dec.toFixed(1) + '°';
+        return `
+          <div class="star-item"
+               onclick="collimSelect(${t.ra},${t.dec},'${escHtml(t.name)}')">
+            <span class="si-name">${escHtml(t.name)}</span>
+            <span class="si-common">${escHtml(t.common_name || '')}
+              <span style="color:var(--warning);font-size:0.72rem"> m${t.magnitude}</span>
+            </span>
+            <span class="si-coords">${ra} ${dec}</span>
+            <button class="secondary"
+                    style="padding:0.15rem 0.45rem;font-size:0.72rem;flex-shrink:0"
+                    onclick="collimGoto(${t.ra},${t.dec},'${escHtml(t.name)}');event.stopPropagation()"
+                    title="Slew to ${escHtml(t.name)}">GoTo</button>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      setStatus('s4-stars-status', 'Could not load targets: ' + err, true);
+    }
+  }
+
+  function collimSelect(ra, dec, name) {
+    /* just populate goto inputs in stage 3 if user wants to cross-reference */
+    document.getElementById('goto-ra').value  = ra.toFixed(4);
+    document.getElementById('goto-dec').value = dec.toFixed(4);
+  }
+
+  async function collimGoto(ra, dec, name) {
+    setStatus('s4-status', '');
+    try {
+      await apiPost('/api/mount/goto', { ra, dec });
+      setStatus('s4-status', `Slewing to ${name}…`);
+      await refreshMount();
+    } catch (err) {
+      setStatus('s4-status', `GoTo ${name} failed: ${err}`, true);
+    }
+  }
+
+  function s4PreviewStart() {
+    // Mirror the Stage 3 exposure/gain into the WS, then start
+    const exp  = parseFloat(document.getElementById('s4-exposure').value) || 0.5;
+    const gain = parseInt(document.getElementById('s4-gain').value, 10)   || 100;
+    document.getElementById('preview-exposure').value = exp;
+    document.getElementById('preview-gain').value     = gain;
+    previewStart();
+  }
+
+  function s4Done() {
+    completeStage(4);
+    unlockStage(5);
+    goToStage(5);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Custom Targets — Stage 3
+  ══════════════════════════════════════════════════════════════════════ */
+  const _TRACKING_LABEL = { sidereal: 'sidereal', lunar: 'lunar', satellite: 'sat' };
+
+  function starItem(t) {
+    const ra  = t.ra.toFixed(4)  + ' h';
+    const dec = (t.dec >= 0 ? '+' : '') + t.dec.toFixed(2) + '°';
+    const mag = t.magnitude != null ? ` m${t.magnitude}` : '';
+    const trk = t.tracking || 'sidereal';
+    return `
+      <div class="star-item"
+           onclick="starSelect(${t.ra},${t.dec},'${escHtml(t.name)}','${escHtml(trk)}')">
+        <span class="si-name">${escHtml(t.name)}</span>
+        <span class="si-common">${escHtml(t.common_name || '')}${mag}</span>
+        <span class="si-coords">${ra} ${dec}</span>
+        <span class="tracking-badge tracking-${trk}">${_TRACKING_LABEL[trk] || trk}</span>
+        <button class="secondary"
+                style="padding:0.15rem 0.45rem;font-size:0.72rem;flex-shrink:0"
+                onclick="starGoto(${t.ra},${t.dec},'${escHtml(t.name)}');event.stopPropagation()"
+                title="Slew mount to ${escHtml(t.name)}">GoTo</button>
+      </div>`;
+  }
+
+  async function loadStars() {
+    const list = document.getElementById('s3-star-list');
+    setStatus('s3-stars-status', '');
+    try {
+      const targets = await (await fetch('/api/catalog/stars')).json();
+      if (!targets.length) {
+        setStatus('s3-stars-status', 'stars.cfg is empty — add targets to stars.cfg.');
+        list.innerHTML = '';
+        return;
+      }
+      list.innerHTML = targets.map(starItem).join('');
+    } catch (err) {
+      setStatus('s3-stars-status', 'Could not load stars.cfg: ' + err, true);
+    }
+  }
+
+  function starSelect(ra, dec, name, tracking) {
+    document.getElementById('goto-ra').value  = ra.toFixed(4);
+    document.getElementById('goto-dec').value = dec.toFixed(4);
+    const q = document.getElementById('catalog-query');
+    if (q) q.value = name;
+    if (tracking !== 'sidereal') {
+      setStatus('s3-status',
+        `Note: ${name} uses ${tracking} tracking — set mount rate manually after slew.`);
+    }
+  }
+
+  async function starGoto(ra, dec, name) {
+    setStatus('s3-stars-status', '');
+    setStatus('s3-status', '');
+    try {
+      await apiPost('/api/mount/goto', { ra, dec });
+      document.getElementById('s3-proceed-btn').disabled = false;
+      document.getElementById('s3-proceed-btn').title = '';
+      unlockStage(4);
+      setStatus('s3-stars-status', `Slewing to ${name}…`);
+      await refreshMount();
+    } catch (err) {
+      let msg = `GoTo ${name} failed: ${err}`;
+      try {
+        const d = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        if (d?.error === 'solar_exclusion')
+          msg = `${name} is too close to the Sun (${d.sun_separation_deg}° sep).`;
+        else if (d?.error === 'mount_limit')
+          msg = `${name} outside mount limits (${d.reason}).`;
+      } catch {}
+      setStatus('s3-stars-status', msg, true);
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Catalog search
+  ══════════════════════════════════════════════════════════════════════ */
+  let _catalogTimer = null;
+
+  function catalogSearch() {
+    clearTimeout(_catalogTimer);
+    const q          = document.getElementById('catalog-query')?.value.trim();
+    const observable = document.getElementById('catalog-observable')?.checked;
+    const container  = document.getElementById('catalog-results');
+    if (!q || q.length < 1) { if (container) container.innerHTML = ''; return; }
+    _catalogTimer = setTimeout(async () => {
+      try {
+        let url = `/api/catalog/search?q=${encodeURIComponent(q)}&limit=8`;
+        if (observable) url += '&min_altitude=20';
+        const items = await (await fetch(url)).json();
+        if (!items.length) {
+          container.innerHTML = '<div class="catalog-dropdown"><div class="catalog-item" style="color:var(--muted)">No results</div></div>';
+          return;
+        }
+        container.innerHTML = `<div class="catalog-dropdown">${
+          items.map(it => {
+            const altStr = it.altitude_deg !== null
+              ? `<span style="font-size:0.72rem;color:${it.altitude_deg >= 20 ? 'var(--success)' : 'var(--warning)'}">↑${it.altitude_deg.toFixed(0)}°</span>`
+              : '';
+            return `
+              <div class="catalog-item"
+                   onclick="catalogSelect(${it.ra_hours},${it.dec_deg},'${escHtml(it.name)}')">
+                <span class="ci-name">${escHtml(it.name)}</span>
+                <span class="ci-common">${escHtml(it.common_name)}</span>
+                <span class="ci-coords">${it.ra_hours.toFixed(3)}h ${it.dec_deg >= 0 ? '+' : ''}${it.dec_deg.toFixed(2)}°</span>
+                ${altStr}
+              </div>`;
+          }).join('')
+        }</div>`;
+      } catch { if (container) container.innerHTML = ''; }
+    }, 200);
+  }
+
+  function catalogSelect(ra, dec, name) {
+    document.getElementById('goto-ra').value  = ra.toFixed(4);
+    document.getElementById('goto-dec').value = dec.toFixed(4);
+    const q = document.getElementById('catalog-query');
+    if (q) q.value = name;
+    document.getElementById('catalog-results').innerHTML = '';
+  }
+
+  document.addEventListener('click', (ev) => {
+    if (!ev.target.closest('#catalog-results') && !ev.target.closest('#catalog-query')) {
+      const c = document.getElementById('catalog-results');
+      if (c) c.innerHTML = '';
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Focuser — Stage 4
+  ══════════════════════════════════════════════════════════════════════ */
   function focuserCard(data) {
     const pos    = data.position ?? '—';
     const moving = data.moving ?? false;
     const dotCls = moving ? 'dot-yellow' : 'dot-green';
-    const motionLabel = moving ? 'Moving…' : 'Stopped';
-
+    const label  = moving ? 'Moving…' : 'Stopped';
     return `
       <div class="card">
         <div class="card-title">
           <span class="dot ${dotCls}"></span>
           OnStep Focuser
-          <span class="state-badge ${moving ? 'state-slewing' : 'state-tracking'}">${motionLabel}</span>
+          <span class="state-badge ${moving ? 'state-slewing' : 'state-tracking'}">${label}</span>
         </div>
         <div class="params">
           <div class="param">
             <span class="param-label">Position (steps)</span>
-            <span class="param-value mono" id="focuser-pos">${pos}</span>
+            <span class="param-value mono">${pos}</span>
           </div>
         </div>
         <div class="controls">
@@ -715,10 +1346,11 @@
           <input type="number" id="focuser-target" step="1" placeholder="steps" style="width:10ch">
           <button onclick="focuserMoveTo()">Move</button>
         </div>
-        <div class="input-row" style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+        <div class="input-row"
+             style="margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
           <label>Range ±</label>
           <input type="number" id="af-range" value="1000" min="100" max="10000" step="100"
-                 style="width:7ch" title="Total sweep width in steps">
+                 style="width:7ch">
           <label>Step</label>
           <input type="number" id="af-step" value="100" min="10" max="1000" step="10"
                  style="width:6ch">
@@ -728,115 +1360,465 @@
           <label>s</label>
           <button id="af-btn" onclick="runAutofocus()" style="margin-left:0.25rem">Autofocus</button>
         </div>
-        <div id="af-result" style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;display:none"></div>
+        <div id="af-result"
+             style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem;display:none"></div>
       </div>`;
   }
 
   async function refreshFocuser() {
-    setStatus('focuser-status', '');
     try {
       const data = await (await fetch('/api/focuser/status')).json();
-      document.getElementById('focuser-card').innerHTML = focuserCard(data);
+      document.getElementById('s4-focuser-card').innerHTML = focuserCard(data);
     } catch (err) {
-      setStatus('focuser-status', String(err), true);
+      setStatus('s4-focuser-status', String(err), true);
     }
   }
 
   async function nudge(delta) {
-    setStatus('focuser-status', '');
     try {
       await apiPost('/api/focuser/nudge', { delta });
       await refreshFocuser();
     } catch (err) {
-      setStatus('focuser-status', `Nudge failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Nudge failed: ${err}`, true);
     }
   }
 
   async function focuserMoveTo() {
     const pos = parseInt(document.getElementById('focuser-target').value, 10);
     if (isNaN(pos)) {
-      setStatus('focuser-status', 'Enter a valid step position first.', true);
+      setStatus('s4-focuser-status', 'Enter a valid step position first.', true);
       return;
     }
-    setStatus('focuser-status', '');
     try {
       await apiPost('/api/focuser/move', { position: pos });
       await refreshFocuser();
     } catch (err) {
-      setStatus('focuser-status', `Move failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Move failed: ${err}`, true);
     }
   }
 
   async function focuserStop() {
-    setStatus('focuser-status', '');
     try {
       await apiPost('/api/focuser/stop');
       await refreshFocuser();
     } catch (err) {
-      setStatus('focuser-status', `Stop failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Stop failed: ${err}`, true);
     }
   }
 
   async function runAutofocus() {
-    const btn  = document.getElementById('af-btn');
-    const res  = document.getElementById('af-result');
-    const range_steps = parseInt(document.getElementById('af-range').value, 10);
-    const step_size   = parseInt(document.getElementById('af-step').value, 10);
-    const exposure    = parseFloat(document.getElementById('af-exposure').value);
-    setStatus('focuser-status', '');
+    const btn          = document.getElementById('af-btn');
+    const res          = document.getElementById('af-result');
+    const range_steps  = parseInt(document.getElementById('af-range').value, 10);
+    const step_size    = parseInt(document.getElementById('af-step').value, 10);
+    const exposure     = parseFloat(document.getElementById('af-exposure').value);
     res.style.display = 'none';
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Focusing…';
     try {
-      const data = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure });
-      const method = data.fitted ? 'parabola' : 'argmax';
-      const gain   = data.metric_gain >= 0 ? `+${data.metric_gain.toFixed(1)}` : data.metric_gain.toFixed(1);
+      const d = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure });
+      const method = d.fitted ? 'parabola' : 'argmax';
+      const gain   = d.metric_gain >= 0 ? `+${d.metric_gain.toFixed(1)}` : d.metric_gain.toFixed(1);
       res.style.display = 'block';
-      res.textContent = `Best: ${data.best_position} steps  |  gain: ${gain}  |  ${method}  |  ${data.positions.length} samples`;
+      res.textContent =
+        `Best: ${d.best_position} steps  |  gain: ${gain}  |  ${method}  |  ${d.positions.length} samples`;
       await refreshFocuser();
     } catch (err) {
-      setStatus('focuser-status', `Autofocus failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Autofocus failed: ${err}`, true);
     } finally {
       btn.disabled = false;
       btn.innerHTML = 'Autofocus';
     }
   }
 
-  /* ── Cameras ───────────────────────────────────────────────────────────── */
+  /* ══════════════════════════════════════════════════════════════════════
+     Connect All (Stage 1)
+  ══════════════════════════════════════════════════════════════════════ */
+  async function connectAll() {
+    const btn  = document.getElementById('connect-all-btn');
+    const dot  = document.getElementById('connect-dot');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Connecting…';
+    try {
+      const data = await apiPost('/api/session/connect');
+      const grid = document.getElementById('connect-status-grid');
+      grid.innerHTML = Object.entries(data).map(([device, info]) => {
+        const ok  = info.status === 'ok';
+        const msg = ok ? 'Connected' : (info.error || 'Failed');
+        return `
+          <div class="param">
+            <span class="param-label" style="display:flex;align-items:center;gap:0.4rem">
+              <span class="dot ${ok ? 'dot-green' : 'dot-red'}"
+                    style="width:7px;height:7px"></span>${escHtml(device)}
+            </span>
+            <span class="param-value" style="font-size:0.8rem">${escHtml(msg)}</span>
+          </div>`;
+      }).join('');
 
+      const mountOk = data['mount']?.status  === 'ok';
+      const camOk   = data['camera']?.status === 'ok';
+      _mountConnected = mountOk;
+
+      if (dot) dot.className = (mountOk && camOk) ? 'dot dot-green' : 'dot dot-yellow';
+      if (mountOk) unlockStage(2);
+      if (camOk)   unlockStage(5);
+
+      await refreshMount();
+    } catch (err) {
+      if (dot) dot.className = 'dot dot-red';
+      setStatus('s1-mount-status', 'Connect All failed: ' + err, true);
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'Connect All';
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     RA / Dec formatters (shared)
+  ══════════════════════════════════════════════════════════════════════ */
+  function _formatRA(hours) {
+    const h = Math.floor(hours);
+    const m = Math.floor((hours - h) * 60);
+    const s = ((hours - h - m / 60) * 3600).toFixed(1);
+    return `${h}h ${String(m).padStart(2,'0')}m ${String(s).padStart(4,'0')}s`;
+  }
+
+  function _formatDec(deg) {
+    const sign = deg >= 0 ? '+' : '−';
+    const abs  = Math.abs(deg);
+    const d    = Math.floor(abs);
+    const m    = Math.floor((abs - d) * 60);
+    const s    = Math.round((abs - d - m / 60) * 3600);
+    return `${sign}${d}° ${String(m).padStart(2,'0')}′ ${String(s).padStart(2,'0')}″`;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Live Preview WebSocket (shared — feeds Stage 3 and Stage 4)
+  ══════════════════════════════════════════════════════════════════════ */
+  let _ws             = null;
+  let _frameCount     = 0;
+  let _reconnect      = true;
+  let _reconnectTimer = null;
+  let _histEnabled    = false;
+  let _histDrawing    = false;
+
+  function _setWsStatus(state) {
+    const labels = { live: 'Live', connecting: 'Connecting…', stopped: 'Stopped' };
+    const html   = `<span class="ws-dot ws-${state}"></span>${labels[state] || state}`;
+    ['s3-ws-status','s4-ws-status'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    });
+  }
+
+  function _updatePreviewBtns(running) {
+    ['preview-start-btn','s4-start-btn'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = running;
+    });
+    ['preview-stop-btn','s4-stop-btn'].forEach(id => {
+      const b = document.getElementById(id);
+      if (b) b.disabled = !running;
+    });
+  }
+
+  function previewStart() {
+    _reconnect = true;
+    _connectWs();
+  }
+
+  function previewStop() {
+    _reconnect = false;
+    clearTimeout(_reconnectTimer);
+    if (_ws) { _ws.close(1000, 'user stop'); _ws = null; }
+    _updatePreviewBtns(false);
+    _setWsStatus('stopped');
+    setStatus('s3-status', '');
+  }
+
+  function _connectWs() {
+    if (_ws) { _ws.close(); _ws = null; }
+    const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
+    const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const camIdx   = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
+    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}`;
+
+    _setWsStatus('connecting');
+    _updatePreviewBtns(true);
+    _ws = new WebSocket(url);
+    _ws.binaryType = 'blob';
+
+    _ws.onopen = () => {
+      _frameCount = 0;
+      _setWsStatus('live');
+    };
+
+    _ws.onmessage = (ev) => {
+      // Stage 3 image
+      const img3 = document.getElementById('s3-preview-img');
+      const ph3  = document.getElementById('s3-preview-ph');
+      if (img3.src?.startsWith('blob:')) URL.revokeObjectURL(img3.src);
+      img3.src = URL.createObjectURL(ev.data);
+      img3.style.display = 'block';
+      if (ph3) ph3.style.display = 'none';
+
+      // Stage 4 image (same frame, new blob URL)
+      const img4 = document.getElementById('s4-preview-img');
+      const ph4  = document.getElementById('s4-preview-ph');
+      if (img4) {
+        if (img4.src?.startsWith('blob:')) URL.revokeObjectURL(img4.src);
+        img4.src = URL.createObjectURL(ev.data);
+        img4.style.display = 'block';
+        if (ph4) ph4.style.display = 'none';
+        document.getElementById('s4-preview-overlay').textContent =
+          `#${_frameCount + 1} · ${new Date().toLocaleTimeString()}`;
+      }
+
+      _frameCount++;
+      document.getElementById('s3-frame-count').textContent =
+        `${_frameCount} frame${_frameCount !== 1 ? 's' : ''}`;
+      document.getElementById('s3-preview-overlay').textContent =
+        `#${_frameCount} · ${new Date().toLocaleTimeString()}`;
+
+      if (_histEnabled) _drawHistogram(ev.data);
+    };
+
+    _ws.onerror = () => setStatus('s3-status', 'WebSocket error — check server', true);
+
+    _ws.onclose = (ev) => {
+      _ws = null;
+      if (_reconnect && ev.code !== 1000) {
+        _setWsStatus('connecting');
+        setStatus('s3-status', `Disconnected (code ${ev.code}) — reconnecting in 3 s…`);
+        _reconnectTimer = setTimeout(_connectWs, 3000);
+      } else {
+        _updatePreviewBtns(false);
+        _setWsStatus('stopped');
+      }
+    };
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Histogram (Stage 3)
+  ══════════════════════════════════════════════════════════════════════ */
+  function previewHistToggle(enabled) {
+    _histEnabled = enabled;
+    const canvas = document.getElementById('s3-histogram');
+    if (!enabled) {
+      canvas.style.display = 'none';
+      canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  async function _drawHistogram(blob) {
+    if (_histDrawing) return;
+    _histDrawing = true;
+    try {
+      const bitmap = await createImageBitmap(blob);
+      const dec    = document.getElementById('s3-hist-decode');
+      const DW = 160, DH = Math.max(1, Math.round(160 * bitmap.height / bitmap.width));
+      dec.width = DW; dec.height = DH;
+      const dctx = dec.getContext('2d');
+      dctx.drawImage(bitmap, 0, 0, DW, DH);
+      bitmap.close();
+      const px   = dctx.getImageData(0, 0, DW, DH).data;
+      const bins = new Uint32Array(256);
+      for (let i = 0; i < px.length; i += 4)
+        bins[Math.round(0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2])]++;
+      const canvas = document.getElementById('s3-histogram');
+      const CW = canvas.width, CH = canvas.height;
+      canvas.style.display = '';
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, CW, CH);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, CW, CH);
+      const peak    = Math.max(1, ...bins);
+      const logPeak = Math.log1p(peak);
+      ctx.fillStyle = 'rgba(210,210,210,0.9)';
+      const bw = CW / 256;
+      for (let i = 0; i < 256; i++) {
+        const h = Math.round(Math.log1p(bins[i]) / logPeak * (CH - 2));
+        ctx.fillRect(i * bw, CH - h, Math.max(1, bw), h);
+      }
+      const total = DW * DH;
+      ctx.font = '9px ui-monospace, monospace';
+      ctx.fillStyle = 'rgba(120,180,255,0.9)';
+      ctx.fillText(`${(bins[0]/total*100).toFixed(1)}%`, 3, CH-3);
+      ctx.fillStyle = 'rgba(255,140,100,0.9)';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${(bins[255]/total*100).toFixed(1)}%`, CW-3, CH-3);
+      ctx.textAlign = 'left';
+    } finally { _histDrawing = false; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Plate solving (Stage 3)
+  ══════════════════════════════════════════════════════════════════════ */
+  async function solveFrame() {
+    const btn      = document.getElementById('solve-btn');
+    const result   = document.getElementById('solve-result');
+    const exposure = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
+    const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const camIdx   = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Solving…';
+    result.style.display = 'none';
+    setStatus('s3-status', '');
+    try {
+      const data = await apiPost('/api/solver/solve', { exposure, gain, camera_index: camIdx });
+      if (data.success) {
+        result.style.display = '';
+        result.innerHTML =
+          `RA: <b>${_formatRA(data.ra)}</b> &nbsp; Dec: <b>${_formatDec(data.dec)}</b>` +
+          ` &nbsp; PA: ${data.pa.toFixed(1)}° &nbsp; ` +
+          `<span style="color:var(--muted)">${data.solve_time_s}s</span>` +
+          ` &nbsp; <button onclick="syncMount(${data.ra},${data.dec})" id="sync-btn"` +
+          ` style="padding:0.1rem 0.4rem;font-size:0.75rem">Sync Mount</button>`;
+      } else {
+        setStatus('s3-status', `Solve failed: ${data.error || 'unknown'}`, true);
+      }
+    } catch (err) {
+      setStatus('s3-status', `Solve error: ${err}`, true);
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'Solve';
+    }
+  }
+
+  async function syncMount(ra, dec) {
+    const btn = document.getElementById('sync-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Syncing…'; }
+    try {
+      await apiPost('/api/mount/sync', { ra, dec });
+      if (btn) btn.innerHTML = '✓ Synced';
+      await refreshMount();
+    } catch (err) {
+      setStatus('s3-status', `Sync failed: ${err}`, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Sync Mount'; }
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Sky Shot (Stage 5)
+  ══════════════════════════════════════════════════════════════════════ */
+  let _skyshotWs = null;
+
+  function updateElevationLabel() {
+    document.getElementById('elevation-label').textContent =
+      ` °  →  Dec ≈ ${skyDec().toFixed(1)}°`;
+  }
+  function skyDec() {
+    const el = parseFloat(document.getElementById('skyshot-elevation').value) || 80;
+    return el - 90 + _observerLat;
+  }
+
+  async function skyGoto() {
+    const el  = parseFloat(document.getElementById('skyshot-elevation').value) || 80;
+    const btn = document.getElementById('skyshot-goto-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Slewing…';
+    setStatus('s5-skyshot-status', '');
+    try {
+      const data = await (await fetch(`/api/mount/goto_sky?elevation=${el}`, { method: 'POST' })).json();
+      if (data.error) throw new Error(JSON.stringify(data));
+      document.getElementById('skyshot-ra').textContent  = data.ra.toFixed(4)  + ' h';
+      document.getElementById('skyshot-dec').textContent = data.dec.toFixed(4) + ' °';
+      document.getElementById('skyshot-dot').className = 'dot dot-green';
+      document.getElementById('skyshot-frame').style.display = '';
+      document.getElementById('skyshot-snap-btn').disabled = false;
+      setStatus('s5-skyshot-status',
+        `Slewing to RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(2)}° — wait for mount to settle`);
+      await refreshMount();
+    } catch (err) {
+      setStatus('s5-skyshot-status', 'GoTo sky failed: ' + err, true);
+      document.getElementById('skyshot-dot').className = 'dot dot-red';
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'GoTo Sky';
+    }
+  }
+
+  function skySnap() {
+    if (_skyshotWs) { _skyshotWs.close(); _skyshotWs = null; }
+    const btn = document.getElementById('skyshot-snap-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Snapping…';
+    setStatus('s5-skyshot-status', '');
+    const exposure = 2.0;
+    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
+    _skyshotWs = new WebSocket(`${proto}://${location.host}/ws/preview?exposure=${exposure}`);
+    _skyshotWs.binaryType = 'blob';
+    _skyshotWs.onmessage = (ev) => {
+      const img = document.getElementById('skyshot-img');
+      const ph  = document.getElementById('skyshot-placeholder');
+      if (img.src?.startsWith('blob:')) URL.revokeObjectURL(img.src);
+      img.src = URL.createObjectURL(ev.data);
+      img.style.display = 'block';
+      ph.style.display  = 'none';
+      document.getElementById('skyshot-snap-count').textContent = 'Frame captured';
+      setStatus('s5-skyshot-status', 'Frame captured successfully.');
+      _skyshotWs.close();
+      _skyshotWs = null;
+    };
+    _skyshotWs.onerror = () => {
+      setStatus('s5-skyshot-status', 'Snap failed — WebSocket error', true);
+      btn.disabled  = false;
+      btn.innerHTML = 'Snap';
+    };
+    _skyshotWs.onclose = () => {
+      btn.disabled  = false;
+      btn.innerHTML = 'Snap';
+    };
+  }
+
+  async function skyPark() {
+    const btn = document.getElementById('skyshot-park-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Parking…';
+    try {
+      await apiPost('/api/mount/park');
+      setStatus('s5-skyshot-status', 'Mount parked.');
+      document.getElementById('skyshot-dot').className = 'dot dot-grey';
+      document.getElementById('skyshot-snap-btn').disabled = true;
+      await refreshMount();
+    } catch (err) {
+      setStatus('s5-skyshot-status', 'Park failed: ' + err, true);
+    } finally {
+      btn.disabled  = false;
+      btn.innerHTML = 'Park after Snap';
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Cameras (Stage 5)
+  ══════════════════════════════════════════════════════════════════════ */
   async function scan() {
-    const btn    = document.getElementById('scan-btn');
-    const grid   = document.getElementById('camera-grid');
-    setStatus('camera-status', '');
+    const btn  = document.getElementById('scan-btn');
+    const grid = document.getElementById('s5-camera-grid');
+    setStatus('s5-camera-status', '');
     grid.innerHTML = '';
-    btn.disabled   = true;
-    btn.innerHTML  = '<span class="spin"></span>Scanning…';
-
+    btn.disabled  = true;
+    btn.innerHTML = '<span class="spin"></span>Scanning…';
     try {
       const resp = await fetch('/api/cameras');
       if (!resp.ok) throw new Error(`Server error ${resp.status}`);
       const data = await resp.json();
-
       if (!data.sdk_available) {
-        setStatus('camera-status',
-          'ToupTek SDK not available. Download toupcam.py and the native library from ' +
-          'https://www.touptek.com/download/showdownload.php?lang=en&id=88 ' +
-          'and place both files on the Python path (e.g. inside the venv site-packages).',
+        setStatus('s5-camera-status',
+          'ToupTek SDK not available. Download toupcam.py and the native library from touptek.com and place on the Python path.',
           true);
         return;
       }
-
       const n = data.cameras.length;
       if (n === 0) {
-        setStatus('camera-status', 'No cameras found. Check USB connections and try again.');
+        setStatus('s5-camera-status', 'No cameras found. Check USB connections and try again.');
         return;
       }
-
-      setStatus('camera-status', `${n} camera${n !== 1 ? 's' : ''} found.`);
+      setStatus('s5-camera-status', `${n} camera${n !== 1 ? 's' : ''} found.`);
       grid.innerHTML = data.cameras.map(cameraCard).join('');
-
     } catch (err) {
-      setStatus('camera-status', String(err), true);
+      setStatus('s5-camera-status', String(err), true);
     } finally {
       btn.disabled  = false;
       btn.innerHTML = 'Scan';
@@ -844,17 +1826,10 @@
   }
 
   function cameraCard(cam) {
-    const resStr = cam.resolutions
-      .map(r => `${r[0]} × ${r[1]}`)
-      .join(', ');
-
+    const resStr  = cam.resolutions.map(r => `${r[0]}×${r[1]}`).join(', ');
     const [px, py] = cam.pixel_size_um;
-    const pxStr = px === py
-      ? `${px.toFixed(2)} µm`
-      : `${px.toFixed(2)} × ${py.toFixed(2)} µm`;
-
-    const idDisplay = cam.id.length > 24 ? cam.id.slice(0, 24) + '…' : cam.id;
-
+    const pxStr   = px === py ? `${px.toFixed(2)} µm` : `${px.toFixed(2)}×${py.toFixed(2)} µm`;
+    const idDisp  = cam.id.length > 24 ? cam.id.slice(0,24) + '…' : cam.id;
     const features = [
       cam.has_mono  ? 'Monochrome' : 'Colour',
       cam.usb3      ? 'USB 3.0'   : 'USB 2.0',
@@ -862,7 +1837,6 @@
       cam.has_tec     && 'TEC Cooler',
       cam.has_fan     && 'Cooling Fan',
     ].filter(Boolean).map(f => `<span class="badge">${f}</span>`).join('');
-
     return `
       <div class="card">
         <div class="card-title">
@@ -883,596 +1857,21 @@
             <span class="param-value">${resStr || '—'}</span>
           </div>
           <div class="param">
-            <span class="param-label">Still presets</span>
-            <span class="param-value">${cam.still_count}</span>
-          </div>
-          <div class="param">
-            <span class="param-label">Speed levels</span>
-            <span class="param-value">${cam.max_speed + 1}</span>
-          </div>
-          <div class="param">
             <span class="param-label">Camera ID</span>
-            <span class="param-value mono">${escHtml(idDisplay)}</span>
+            <span class="param-value mono">${escHtml(idDisp)}</span>
           </div>
         </div>
         <div class="features">${features}</div>
       </div>`;
   }
 
-  /* ── Live Preview ──────────────────────────────────────────────────────── */
-
-  let _ws         = null;
-  let _frameCount = 0;
-  let _reconnect  = true;  // false when user explicitly stopped
-  let _reconnectTimer = null;
-
-  let _ws2            = null;
-  let _frameCount2    = 0;
-  let _reconnect2     = true;
-  let _reconnectTimer2 = null;
-  let _splitActive    = false;
-
-  let _histEnabled  = false;
-  let _histDrawing  = false;
-
-  function _setWsStatus(state) {
-    // state: 'live' | 'connecting' | 'stopped'
-    const labels = { live: 'Live', connecting: 'Connecting…', stopped: 'Stopped' };
-    const el = document.getElementById('preview-ws-status');
-    el.innerHTML =
-      `<span class="ws-dot ws-${state}"></span>${labels[state] || state}`;
-  }
-
-  function previewStart() {
-    _reconnect = true;
-    _connectWs();
-    if (_splitActive) {
-      _reconnect2 = true;
-      _connectWs2();
-    }
-  }
-
-  function previewStop() {
-    _reconnect = false;
-    clearTimeout(_reconnectTimer);
-    if (_ws) { _ws.close(1000, 'user stop'); _ws = null; }
-    _reconnect2 = false;
-    clearTimeout(_reconnectTimer2);
-    if (_ws2) { _ws2.close(1000, 'user stop'); _ws2 = null; }
-    document.getElementById('preview-start-btn').disabled = false;
-    document.getElementById('preview-stop-btn').disabled  = true;
-    _setWsStatus('stopped');
-    setStatus('preview-status', '');
-  }
-
-  function previewSplit() {
-    _splitActive = !_splitActive;
-    const panelB = document.getElementById('preview-panel-b');
-    const btn    = document.getElementById('preview-split-btn');
-    panelB.style.display = _splitActive ? '' : 'none';
-    btn.style.fontWeight = _splitActive ? 'bold' : '';
-    if (_splitActive && _ws) {
-      // Primary WS is running — also start secondary
-      _reconnect2 = true;
-      _connectWs2();
-    } else if (!_splitActive) {
-      // Hide secondary panel and stop its WS
-      _reconnect2 = false;
-      clearTimeout(_reconnectTimer2);
-      if (_ws2) { _ws2.close(1000, 'split off'); _ws2 = null; }
-      const img2 = document.getElementById('preview-img-b');
-      if (img2.src && img2.src.startsWith('blob:')) URL.revokeObjectURL(img2.src);
-      img2.src = '';
-      img2.style.display = 'none';
-      document.getElementById('preview-placeholder-b').style.display = '';
-    }
-  }
-
-  function _connectWs() {
-    if (_ws) { _ws.close(); _ws = null; }
-
-    const exposure    = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
-    const gain        = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx      = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
-    const proto       = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url         = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}`;
-
-    _setWsStatus('connecting');
-    setStatus('preview-status', '');
-    document.getElementById('preview-start-btn').disabled = true;
-    document.getElementById('preview-stop-btn').disabled  = false;
-
-    _ws = new WebSocket(url);
-    _ws.binaryType = 'blob';
-
-    _ws.onopen = () => {
-      _frameCount = 0;
-      _setWsStatus('live');
-    };
-
-    _ws.onmessage = (ev) => {
-      const img = document.getElementById('preview-img');
-      const ph  = document.getElementById('preview-placeholder');
-
-      // Revoke the previous object URL to avoid memory leaks
-      if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-
-      img.src     = URL.createObjectURL(ev.data);
-      img.style.display = 'block';
-      ph.style.display  = 'none';
-
-      _frameCount++;
-      const now = new Date().toLocaleTimeString();
-      document.getElementById('preview-count').textContent =
-        `${_frameCount} frame${_frameCount !== 1 ? 's' : ''}`;
-      document.getElementById('preview-overlay').textContent =
-        `#${_frameCount} · ${now}`;
-      if (_histEnabled) _drawHistogram(ev.data);
-    };
-
-    _ws.onerror = () => {
-      setStatus('preview-status', 'WebSocket error — check server', true);
-    };
-
-    _ws.onclose = (ev) => {
-      _ws = null;
-      if (_reconnect && ev.code !== 1000) {
-        // Abnormal close: schedule reconnect
-        _setWsStatus('connecting');
-        setStatus('preview-status', `Disconnected (code ${ev.code}) — reconnecting in 3 s…`);
-        _reconnectTimer = setTimeout(_connectWs, 3000);
-      } else if (!_reconnect) {
-        // User stopped
-        _setWsStatus('stopped');
-      } else {
-        // Normal close from server side — just reset UI
-        _setWsStatus('stopped');
-        document.getElementById('preview-start-btn').disabled = false;
-        document.getElementById('preview-stop-btn').disabled  = true;
-      }
-    };
-  }
-
-  function _connectWs2() {
-    if (_ws2) { _ws2.close(); _ws2 = null; }
-
-    const exposure = parseFloat(document.getElementById('preview-exposure-b').value) || 2.0;
-    const gain     = parseInt(document.getElementById('preview-gain-b').value, 10) || 100;
-    const camIdx   = parseInt(document.getElementById('preview-cam-idx-b').value, 10) || 1;
-    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}`;
-
-    _ws2 = new WebSocket(url);
-    _ws2.binaryType = 'blob';
-
-    _ws2.onopen = () => { _frameCount2 = 0; };
-
-    _ws2.onmessage = (ev) => {
-      const img = document.getElementById('preview-img-b');
-      const ph  = document.getElementById('preview-placeholder-b');
-      if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-      img.src = URL.createObjectURL(ev.data);
-      img.style.display = 'block';
-      ph.style.display  = 'none';
-      _frameCount2++;
-      document.getElementById('preview-count-b').textContent =
-        `${_frameCount2} frame${_frameCount2 !== 1 ? 's' : ''}`;
-      document.getElementById('preview-overlay-b').textContent =
-        `#${_frameCount2} · ${new Date().toLocaleTimeString()}`;
-    };
-
-    _ws2.onerror = () => {};  // silent — secondary panel
-
-    _ws2.onclose = (ev) => {
-      _ws2 = null;
-      if (_reconnect2 && ev.code !== 1000 && _splitActive) {
-        _reconnectTimer2 = setTimeout(_connectWs2, 3000);
-      }
-    };
-  }
-
-  /* ── Histogram ───────────────────────────────────────────────────────── */
-
-  function previewHistToggle(enabled) {
-    _histEnabled = enabled;
-    const canvas = document.getElementById('preview-histogram');
-    if (!enabled) {
-      canvas.style.display = 'none';
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-  }
-
-  async function _drawHistogram(blob) {
-    if (_histDrawing) return;
-    _histDrawing = true;
-    try {
-      const bitmap = await createImageBitmap(blob);
-      // Decode into a small offscreen canvas for performance
-      const dec = document.getElementById('preview-hist-decode');
-      const DW = 160, DH = Math.max(1, Math.round(160 * bitmap.height / bitmap.width));
-      dec.width = DW; dec.height = DH;
-      const dctx = dec.getContext('2d');
-      dctx.drawImage(bitmap, 0, 0, DW, DH);
-      bitmap.close();
-
-      const px = dctx.getImageData(0, 0, DW, DH).data;
-      const bins = new Uint32Array(256);
-      for (let i = 0; i < px.length; i += 4) {
-        // ITU-R BT.601 luminance
-        bins[Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2])]++;
-      }
-
-      const canvas = document.getElementById('preview-histogram');
-      const CW = canvas.width, CH = canvas.height;
-      canvas.style.display = '';
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, CW, CH);
-
-      // Background
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, CW, CH);
-
-      // Bars — log scale so dim stars don't vanish
-      const peak = Math.max(1, ...bins);
-      const logPeak = Math.log1p(peak);
-      ctx.fillStyle = 'rgba(210,210,210,0.9)';
-      const bw = CW / 256;
-      for (let i = 0; i < 256; i++) {
-        const h = Math.round(Math.log1p(bins[i]) / logPeak * (CH - 2));
-        ctx.fillRect(i * bw, CH - h, Math.max(1, bw), h);
-      }
-
-      // Clipping indicators
-      const total = DW * DH;
-      const clipLo = (bins[0] / total * 100).toFixed(1);
-      const clipHi = (bins[255] / total * 100).toFixed(1);
-      ctx.font = '9px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(120,180,255,0.9)';
-      ctx.fillText(`${clipLo}%`, 3, CH - 3);
-      ctx.fillStyle = 'rgba(255,140,100,0.9)';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${clipHi}%`, CW - 3, CH - 3);
-      ctx.textAlign = 'left';
-    } finally {
-      _histDrawing = false;
-    }
-  }
-
-  /* ── Plate solving ───────────────────────────────────────────────────── */
-
-  function _formatRA(hours) {
-    const h = Math.floor(hours);
-    const m = Math.floor((hours - h) * 60);
-    const s = ((hours - h - m / 60) * 3600).toFixed(1);
-    return `${h}h ${String(m).padStart(2, '0')}m ${String(s).padStart(4, '0')}s`;
-  }
-
-  function _formatDec(deg) {
-    const sign = deg >= 0 ? '+' : '−';
-    const abs = Math.abs(deg);
-    const d = Math.floor(abs);
-    const m = Math.floor((abs - d) * 60);
-    const s = Math.round((abs - d - m / 60) * 3600);
-    return `${sign}${d}° ${String(m).padStart(2, '0')}′ ${String(s).padStart(2, '0')}″`;
-  }
-
-  async function solveFrame() {
-    const btn    = document.getElementById('solve-btn');
-    const result = document.getElementById('solve-result');
-    const exposure    = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
-    const gain        = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx      = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
-
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Solving…';
-    result.style.display = 'none';
-    setStatus('preview-status', '');
-
-    try {
-      const data = await apiPost('/api/solver/solve', {
-        exposure, gain, camera_index: camIdx,
-      });
-      if (data.success) {
-        result.style.display = '';
-        result.innerHTML =
-          `RA: <b>${_formatRA(data.ra)}</b> &nbsp; Dec: <b>${_formatDec(data.dec)}</b>` +
-          ` &nbsp; PA: ${data.pa.toFixed(1)}° &nbsp; ` +
-          `<span style="color:var(--muted)">${data.solve_time_s}s</span>` +
-          ` &nbsp; <button onclick="syncMount(${data.ra},${data.dec})" id="sync-btn"` +
-          ` style="padding:0.1rem 0.4rem;font-size:0.75rem">Sync Mount</button>`;
-      } else {
-        setStatus('preview-status', `Solve failed: ${data.error || 'unknown'}`, true);
-      }
-    } catch (err) {
-      setStatus('preview-status', `Solve error: ${err}`, true);
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = 'Solve';
-    }
-  }
-
-  async function syncMount(ra, dec) {
-    const btn = document.getElementById('sync-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Syncing…'; }
-    try {
-      await apiPost('/api/mount/sync', { ra, dec });
-      if (btn) { btn.innerHTML = '✓ Synced'; }
-      await refreshMount();
-    } catch (err) {
-      setStatus('preview-status', `Sync failed: ${err}`, true);
-      if (btn) { btn.disabled = false; btn.innerHTML = 'Sync Mount'; }
-    }
-  }
-
-  /* ── Custom Targets ───────────────────────────────────────────────────── */
-
-  const _TRACKING_LABEL = { sidereal: 'sidereal', lunar: 'lunar', satellite: 'sat' };
-
-  function starItem(t) {
-    const ra  = t.ra.toFixed(4) + ' h';
-    const dec = (t.dec >= 0 ? '+' : '') + t.dec.toFixed(2) + '°';
-    const mag = t.magnitude != null ? ` m${t.magnitude}` : '';
-    const trk = t.tracking || 'sidereal';
-    return `
-      <div class="star-item"
-           onclick="starSelect(${t.ra},${t.dec},'${escHtml(t.name)}','${escHtml(trk)}')">
-        <span class="si-name">${escHtml(t.name)}</span>
-        <span class="si-common">${escHtml(t.common_name || '')}${mag}</span>
-        <span class="si-coords">${ra} ${dec}</span>
-        <span class="tracking-badge tracking-${trk}">${_TRACKING_LABEL[trk] || trk}</span>
-        <button class="secondary" style="padding:0.15rem 0.45rem;font-size:0.72rem;flex-shrink:0"
-                onclick="starGoto(${t.ra},${t.dec},'${escHtml(t.name)}');event.stopPropagation()"
-                title="Slew mount to ${escHtml(t.name)}">GoTo</button>
-      </div>`;
-  }
-
-  async function loadStars() {
-    const list = document.getElementById('stars-list');
-    setStatus('stars-status', '');
-    try {
-      const targets = await (await fetch('/api/catalog/stars')).json();
-      if (!targets.length) {
-        setStatus('stars-status', 'stars.cfg not found or empty — add targets to stars.cfg in the repo root.');
-        list.innerHTML = '';
-        return;
-      }
-      list.innerHTML = targets.map(starItem).join('');
-    } catch (err) {
-      setStatus('stars-status', 'Could not load stars.cfg: ' + err, true);
-    }
-  }
-
-  function starSelect(ra, dec, name, tracking) {
-    document.getElementById('goto-ra').value  = ra.toFixed(4);
-    document.getElementById('goto-dec').value = dec.toFixed(4);
-    const q = document.getElementById('catalog-query');
-    if (q) q.value = name;
-    if (tracking !== 'sidereal') {
-      setStatus('mount-status', `Note: ${name} uses ${tracking} tracking — set mount rate manually after slew.`);
-    }
-  }
-
-  async function starGoto(ra, dec, name) {
-    setStatus('stars-status', '');
-    setStatus('mount-status', '');
-    try {
-      await apiPost('/api/mount/goto', { ra, dec });
-      setStatus('stars-status', `Slewing to ${name}…`);
-      await refreshMount();
-    } catch (err) {
-      let msg = `GoTo ${name} failed: ${err}`;
-      try {
-        const detail = JSON.parse(err.message).detail ?? JSON.parse(err.message);
-        if (detail?.error === 'solar_exclusion')
-          msg = `${name} is too close to the Sun (${detail.sun_separation_deg}° separation) — slew blocked.`;
-        else if (detail?.error === 'mount_limit')
-          msg = `${name} is outside mount limits (${detail.reason}): ${JSON.stringify(detail)}`;
-      } catch {}
-      setStatus('stars-status', msg, true);
-    }
-  }
-
-  /* ── Connect All ──────────────────────────────────────────────────────── */
-
-  /* ── Catalog search ────────────────────────────────────────────────────── */
-
-  let _catalogTimer = null;
-
-  function catalogSearch() {
-    clearTimeout(_catalogTimer);
-    const q          = document.getElementById('catalog-query').value.trim();
-    const observable = document.getElementById('catalog-observable')?.checked;
-    const container  = document.getElementById('catalog-results');
-    if (q.length < 1) { container.innerHTML = ''; return; }
-    _catalogTimer = setTimeout(async () => {
-      try {
-        let url = `/api/catalog/search?q=${encodeURIComponent(q)}&limit=8`;
-        if (observable) url += '&min_altitude=20';
-        const items = await (await fetch(url)).json();
-        if (!items.length) { container.innerHTML = '<div class="catalog-dropdown"><div class="catalog-item" style="color:var(--muted)">No results</div></div>'; return; }
-        container.innerHTML = `<div class="catalog-dropdown">${
-          items.map(it => {
-            const altStr = it.altitude_deg !== null
-              ? `<span class="ci-alt" style="font-size:0.72rem;color:${it.altitude_deg >= 20 ? 'var(--success)' : 'var(--warning)'}">↑${it.altitude_deg.toFixed(0)}°</span>`
-              : '';
-            return `
-            <div class="catalog-item"
-                 onclick="catalogSelect(${it.ra_hours},${it.dec_deg},'${escHtml(it.name)}')">
-              <span class="ci-name">${escHtml(it.name)}</span>
-              <span class="ci-common">${escHtml(it.common_name)}</span>
-              <span class="ci-coords">${it.ra_hours.toFixed(3)}h ${it.dec_deg >= 0 ? '+' : ''}${it.dec_deg.toFixed(2)}°</span>
-              ${altStr}
-            </div>`;
-          }).join('')
-        }</div>`;
-      } catch { container.innerHTML = ''; }
-    }, 200);
-  }
-
-  function catalogSelect(ra, dec, name) {
-    document.getElementById('goto-ra').value  = ra.toFixed(4);
-    document.getElementById('goto-dec').value = dec.toFixed(4);
-    document.getElementById('catalog-query').value = name;
-    document.getElementById('catalog-results').innerHTML = '';
-  }
-
-  document.addEventListener('click', (ev) => {
-    if (!ev.target.closest('#catalog-results') &&
-        !ev.target.closest('#catalog-query')) {
-      const c = document.getElementById('catalog-results');
-      if (c) c.innerHTML = '';
-    }
-  });
-
-  async function connectAll() {
-    const btn = document.getElementById('connect-all-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Connecting…';
-
-    try {
-      const data = await apiPost('/api/session/connect');
-      const section = document.getElementById('connect-status-section');
-      const grid    = document.getElementById('connect-status-grid');
-      section.style.display = '';
-
-      grid.innerHTML = Object.entries(data).map(([device, info]) => {
-        const ok   = info.status === 'ok';
-        const dot  = ok ? 'dot-green' : 'dot-red';
-        const msg  = ok ? 'Connected' : (info.error || 'Failed');
-        return `
-          <div class="param">
-            <span class="param-label" style="display:flex;align-items:center;gap:0.4rem">
-              <span class="dot ${dot}" style="width:7px;height:7px"></span>${escHtml(device)}
-            </span>
-            <span class="param-value" style="font-size:0.8rem">${escHtml(msg)}</span>
-          </div>`;
-      }).join('');
-
-      const mountOk = data['mount']?.status === 'ok';
-      const camOk   = data['camera']?.status === 'ok';
-      _mountConnected = mountOk;
-
-      if (mountOk) {
-        document.getElementById('skyshot-dot').className = 'dot dot-yellow';
-      }
-      if (camOk) {
-        _activeCameraName = 'ToupTek';
-        document.getElementById('preview-camera-label').textContent = 'Camera: ToupTek';
-      }
-
-      await refreshMount();
-      await refreshFocuser();
-    } catch (err) {
-      alert('Connect All failed: ' + err);
-    } finally {
-      btn.disabled  = false;
-      btn.innerHTML = 'Connect All';
-    }
-  }
-
-  /* ── Sky Shot ──────────────────────────────────────────────────────────── */
-
-  let _skyshotWs = null;
-
-  function updateElevationLabel() {
-    document.getElementById('elevation-label').textContent =
-      ' °  →  Dec ≈ ' + skyDec().toFixed(1) + '°';
-  }
-
-  function skyDec() {
-    // Approximate: Dec = lat - (90 - elevation).
-    // We don't know lat client-side, so just show the calculation hint.
-    const el = parseFloat(document.getElementById('skyshot-elevation').value) || 80;
-    return el - 90 + 50.3; // rough Usingen latitude placeholder
-  }
-
-  async function skyGoto() {
-    const el  = parseFloat(document.getElementById('skyshot-elevation').value) || 80;
-    const btn = document.getElementById('skyshot-goto-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Slewing…';
-    setStatus('skyshot-status', '');
-    try {
-      const data = await (await fetch(`/api/mount/goto_sky?elevation=${el}`, { method: 'POST' })).json();
-      if (data.error) throw new Error(JSON.stringify(data));
-      document.getElementById('skyshot-ra').textContent  = data.ra.toFixed(4)  + ' h';
-      document.getElementById('skyshot-dec').textContent = data.dec.toFixed(4) + ' °';
-      document.getElementById('skyshot-dot').className = 'dot dot-green';
-      document.getElementById('skyshot-frame').style.display = '';
-      document.getElementById('skyshot-snap-btn').disabled = false;
-      setStatus('skyshot-status', `Slewing to RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(2)}° — wait for mount to settle`);
-      await refreshMount();
-    } catch (err) {
-      setStatus('skyshot-status', 'GoTo sky failed: ' + err, true);
-      document.getElementById('skyshot-dot').className = 'dot dot-red';
-    } finally {
-      btn.disabled  = false;
-      btn.innerHTML = 'GoTo Sky';
-    }
-  }
-
-  function skySnap() {
-    if (_skyshotWs) { _skyshotWs.close(); _skyshotWs = null; }
-
-    const btn = document.getElementById('skyshot-snap-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Snapping…';
-    setStatus('skyshot-status', '');
-
-    const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
-    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
-    _skyshotWs = new WebSocket(`${proto}://${location.host}/ws/preview?exposure=${exposure}`);
-    _skyshotWs.binaryType = 'blob';
-
-    _skyshotWs.onmessage = (ev) => {
-      const img = document.getElementById('skyshot-img');
-      const ph  = document.getElementById('skyshot-placeholder');
-      if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
-      img.src = URL.createObjectURL(ev.data);
-      img.style.display = 'block';
-      ph.style.display  = 'none';
-      document.getElementById('skyshot-snap-count').textContent = 'Frame captured';
-      setStatus('skyshot-status', 'Frame captured successfully.');
-      _skyshotWs.close();
-      _skyshotWs = null;
-    };
-
-    _skyshotWs.onerror = () => {
-      setStatus('skyshot-status', 'Snap failed — WebSocket error', true);
-      btn.disabled  = false;
-      btn.innerHTML = 'Snap';
-    };
-
-    _skyshotWs.onclose = () => {
-      btn.disabled  = false;
-      btn.innerHTML = 'Snap';
-    };
-  }
-
-  async function skyPark() {
-    const btn = document.getElementById('skyshot-park-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Parking…';
-    try {
-      await apiPost('/api/mount/park');
-      setStatus('skyshot-status', 'Mount parked.');
-      document.getElementById('skyshot-dot').className = 'dot dot-grey';
-      document.getElementById('skyshot-snap-btn').disabled = true;
-      await refreshMount();
-    } catch (err) {
-      setStatus('skyshot-status', 'Park failed: ' + err, true);
-    } finally {
-      btn.disabled  = false;
-      btn.innerHTML = 'Park after Snap';
-    }
-  }
-
-  /* ── init ──────────────────────────────────────────────────────────────── */
-  updateElevationLabel();
+  /* ══════════════════════════════════════════════════════════════════════
+     Init
+  ══════════════════════════════════════════════════════════════════════ */
+  initSiteConfig();
   refreshMount();
-  refreshFocuser();
   loadStars();
+  updateElevationLabel();
 </script>
 
 </body>

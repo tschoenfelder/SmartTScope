@@ -23,6 +23,19 @@ from . import deps
 router = APIRouter(prefix="/api/mount")
 
 
+@router.get("/config")
+def mount_config_view() -> dict:
+    """Return observer location and mount limit settings."""
+    return {
+        "observer_lat": config.OBSERVER_LAT,
+        "observer_lon": config.OBSERVER_LON,
+        "mount_min_alt_deg": config.MOUNT_MIN_ALT_DEG,
+        "mount_max_alt_deg": config.MOUNT_MAX_ALT_DEG,
+        "mount_ha_east_limit_h": config.MOUNT_HA_EAST_LIMIT_H,
+        "mount_ha_west_limit_h": config.MOUNT_HA_WEST_LIMIT_H,
+    }
+
+
 def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
     """Raise HTTPException(400) if the target violates mount position limits."""
     loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)

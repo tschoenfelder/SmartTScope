@@ -59,5 +59,8 @@ class MockMount(MountPort):
         self._state = MountState.UNPARKED
         return True
 
+    def guide(self, direction: str, duration_ms: int) -> bool:
+        return direction.lower() in ("n", "s", "e", "w")
+
     def disconnect(self) -> None:
         self._state = MountState.PARKED

@@ -125,4 +125,13 @@ class OnStepMount(MountPort):
         return True
 
     def disable_tracking(self) -> bool:
-        return self._send(":Td#") == "1"
+        self._raw_send(":Td#")
+        return True
+
+    def guide(self, direction: str, duration_ms: int) -> bool:
+        d = direction.lower()
+        if d not in ("n", "s", "e", "w"):
+            return False
+        ms = max(1, min(9999, duration_ms))
+        self._raw_send(f":Mg{d}{ms:04d}#")
+        return True

@@ -53,4 +53,13 @@ class MountPort(ABC):
     def disable_tracking(self) -> bool: ...
 
     @abstractmethod
+    def guide(self, direction: str, duration_ms: int) -> bool:
+        """Send a fixed-duration guide pulse.
+
+        direction: 'n' | 's' | 'e' | 'w'
+        duration_ms: pulse length in milliseconds (1–9999)
+        """
+        ...
+
+    @abstractmethod
     def disconnect(self) -> None: ...

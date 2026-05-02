@@ -159,6 +159,10 @@ class TestMountStop:
 
 
 class TestMountGoto:
+    @pytest.fixture(autouse=True)
+    def _bypass_limits(self, monkeypatch):
+        monkeypatch.setattr("smart_telescope.api.mount._check_mount_limits", lambda ra, dec: None)
+
     def test_returns_200_on_success(self) -> None:
         _inject(_mock_mount(goto_ok=True))
         assert client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39}).status_code == 200
@@ -207,6 +211,10 @@ def _patched_is_solar(sun: SolarPosition):
 
 
 class TestMountGotoSolarGate:
+    @pytest.fixture(autouse=True)
+    def _bypass_limits(self, monkeypatch):
+        monkeypatch.setattr("smart_telescope.api.mount._check_mount_limits", lambda ra, dec: None)
+
     def test_solar_target_returns_403(self) -> None:
         _inject(_mock_mount())
         with patch(
@@ -492,6 +500,10 @@ def _inject_all(mount, camera=None, solver=None) -> None:
 
 
 class TestMountGotoAndCenter:
+    @pytest.fixture(autouse=True)
+    def _bypass_limits(self, monkeypatch):
+        monkeypatch.setattr("smart_telescope.api.mount._check_mount_limits", lambda ra, dec: None)
+
     def test_returns_200_when_centered(self) -> None:
         from smart_telescope.adapters.mock.solver import MockSolver
         m = _mock_mount()
@@ -534,3 +546,53 @@ class TestMountGotoAndCenter:
         r = client.post("/api/mount/goto_and_center",
                         json={"ra": 5.5881, "dec": -5.391, "max_iterations": 6})
         assert r.status_code == 422
+
+
+# ── Mount position limits ──────────────────────────────────────────────────────
+# Observer: lat=50.336°N. Tests use _mock_time() to fix LST for deterministic HA.
+# sin(alt) = sin(lat)*sin(dec) + cos(lat)*cos(dec)*cos(HA*15°)
+
+_LIMIT_LST = 6.0  # fixed sidereal time for limit tests
+
+
+class TestMountLimits:
+    def _post_goto(self, ra: float, dec: float):
+        _inject(_mock_mount())
+        time_patch, mock_now = _mock_time(_LIMIT_LST)
+        with time_patch as mock_time_cls:
+            mock_time_cls.now.return_value = mock_now
+            with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):
+                return client.post("/api/mount/goto", json={"ra": ra, "dec": dec})
+
+    def test_ha_east_limit_returns_400(self) -> None:
+        # LST=6, RA=12 → HA = 6-12 = -6h < east limit of -5.5h
+        r = self._post_goto(ra=12.0, dec=20.0)
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"] == "mount_limit"
+        assert r.json()["detail"]["reason"] == "hour_angle_east"
+
+    def test_counterweight_up_returns_400(self) -> None:
+        # LST=6, RA=5 → HA = 6-5 = 1h > west limit of 0.333h
+        r = self._post_goto(ra=5.0, dec=20.0)
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"] == "mount_limit"
+        assert r.json()["detail"]["reason"] == "counterweight_up"
+
+    def test_below_horizon_returns_400(self) -> None:
+        # LST=6, RA=6 → HA=0; dec=-50° → alt ≈ -10.2° < MOUNT_MIN_ALT_DEG=10°
+        r = self._post_goto(ra=6.0, dec=-50.0)
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"] == "mount_limit"
+        assert r.json()["detail"]["reason"] == "below_horizon"
+
+    def test_zenith_exclusion_returns_400(self) -> None:
+        # LST=6, RA=6 → HA=0; dec=50° → alt ≈ 89.7° > MOUNT_MAX_ALT_DEG=88°
+        r = self._post_goto(ra=6.0, dec=50.0)
+        assert r.status_code == 400
+        assert r.json()["detail"]["error"] == "mount_limit"
+        assert r.json()["detail"]["reason"] == "zenith_exclusion"
+
+    def test_valid_target_passes(self) -> None:
+        # LST=6, RA=6 → HA=0; dec=20° → alt ≈ 59.7° — well within all limits
+        r = self._post_goto(ra=6.0, dec=20.0)
+        assert r.status_code == 200

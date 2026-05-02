@@ -499,10 +499,51 @@ class TestDisableTracking:
         mount.connect()
         assert mount.disable_tracking() is True
 
-    def test_disable_tracking_returns_false_when_rejected(self, mocker):
+    def test_disable_tracking_returns_true_regardless_of_response(self, mocker):
+        # :Td# is fire-and-forget — returns True even when mount sends no ack
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        instance.readline.return_value = b"0"
+        instance.readline.return_value = b""
         mount = _make_mount()
         mount.connect()
-        assert mount.disable_tracking() is False
+        assert mount.disable_tracking() is True
+
+
+# ── guide ──────────────────────────────────────────────────────────────────────
+
+
+class TestGuide:
+    def test_guide_sends_Mg_command(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b""
+        mount = _make_mount()
+        mount.connect()
+        mount.guide("n", 500)
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":Mgn0500#" in sent
+
+    def test_guide_returns_true_for_valid_direction(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial.return_value.readline.return_value = b""
+        mount = _make_mount()
+        mount.connect()
+        for d in ("n", "s", "e", "w", "N", "S", "E", "W"):
+            assert mount.guide(d, 200) is True
+
+    def test_guide_returns_false_for_invalid_direction(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial.return_value.readline.return_value = b""
+        mount = _make_mount()
+        mount.connect()
+        assert mount.guide("x", 200) is False
+
+    def test_guide_clamps_duration_to_valid_range(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b""
+        mount = _make_mount()
+        mount.connect()
+        mount.guide("e", 99999)
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":Mge9999#" in sent

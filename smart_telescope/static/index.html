@@ -573,8 +573,8 @@
   function mountCard(data) {
     const state  = data.state || 'unknown';
     const dotCls = _MOUNT_DOT[state] || 'dot-grey';
-    const ra  = data.ra  != null ? (+data.ra).toFixed(4)  + ' h'  : '—';
-    const dec = data.dec != null ? (+data.dec).toFixed(4) + ' °' : '—';
+    const ra  = data.ra  != null ? _formatRA(+data.ra)   : '—';
+    const dec = data.dec != null ? _formatDec(+data.dec) : '—';
     const connBadge = _mountConnected
       ? '<span style="font-size:0.68rem;color:var(--success);margin-left:0.4rem">● Connected</span>'
       : '';
@@ -602,6 +602,7 @@
           <button class="secondary" onclick="mountAction('track')">Enable Tracking</button>
           <button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>
           <span class="controls-spacer"></span>
+          <button class="secondary" onclick="mountHome()" title="Slew to celestial pole (Dec 89°, HA 0)">Home</button>
           <button class="secondary" onclick="mountAction('park')">Park</button>
           <button class="danger" onclick="mountAction('stop')">Stop</button>
         </div>
@@ -658,6 +659,21 @@
       await refreshMount();
     } catch (err) {
       setStatus('mount-status', `GoTo failed: ${err}`, true);
+    }
+  }
+
+  async function mountHome() {
+    setStatus('mount-status', '');
+    const btn = document.querySelector('button[onclick="mountHome()"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Homing…'; }
+    try {
+      const data = await apiPost('/api/mount/home');
+      setStatus('mount-status', `Slewing to pole — RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(1)}°`);
+      await refreshMount();
+    } catch (err) {
+      setStatus('mount-status', `Home failed: ${err}`, true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Home'; }
     }
   }
 
@@ -1205,6 +1221,9 @@
         <span class="si-common">${escHtml(t.common_name || '')}${mag}</span>
         <span class="si-coords">${ra} ${dec}</span>
         <span class="tracking-badge tracking-${trk}">${_TRACKING_LABEL[trk] || trk}</span>
+        <button class="secondary" style="padding:0.15rem 0.45rem;font-size:0.72rem;flex-shrink:0"
+                onclick="starGoto(${t.ra},${t.dec},'${escHtml(t.name)}');event.stopPropagation()"
+                title="Slew mount to ${escHtml(t.name)}">GoTo</button>
       </div>`;
   }
 
@@ -1231,6 +1250,26 @@
     if (q) q.value = name;
     if (tracking !== 'sidereal') {
       setStatus('mount-status', `Note: ${name} uses ${tracking} tracking — set mount rate manually after slew.`);
+    }
+  }
+
+  async function starGoto(ra, dec, name) {
+    setStatus('stars-status', '');
+    setStatus('mount-status', '');
+    try {
+      await apiPost('/api/mount/goto', { ra, dec });
+      setStatus('stars-status', `Slewing to ${name}…`);
+      await refreshMount();
+    } catch (err) {
+      let msg = `GoTo ${name} failed: ${err}`;
+      try {
+        const detail = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        if (detail?.error === 'solar_exclusion')
+          msg = `${name} is too close to the Sun (${detail.sun_separation_deg}° separation) — slew blocked.`;
+        else if (detail?.error === 'mount_limit')
+          msg = `${name} is outside mount limits (${detail.reason}): ${JSON.stringify(detail)}`;
+      } catch {}
+      setStatus('stars-status', msg, true);
     }
   }
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import math
 
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
@@ -20,6 +21,43 @@ from ..workflow.goto_center import goto_and_center
 from . import deps
 
 router = APIRouter(prefix="/api/mount")
+
+
+def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
+    """Raise HTTPException(400) if the target violates mount position limits."""
+    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
+    ha = lst_hours - ra_hours
+    ha = ((ha + 12.0) % 24.0) - 12.0  # normalise to [-12, +12]
+
+    if ha < config.MOUNT_HA_EAST_LIMIT_H:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "hour_angle_east",
+            "ha_hours": round(ha, 3), "limit_hours": config.MOUNT_HA_EAST_LIMIT_H,
+        })
+    if ha > config.MOUNT_HA_WEST_LIMIT_H:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "counterweight_up",
+            "ha_hours": round(ha, 3), "limit_hours": config.MOUNT_HA_WEST_LIMIT_H,
+        })
+
+    lat_r = math.radians(config.OBSERVER_LAT)
+    dec_r = math.radians(dec_deg)
+    ha_r  = math.radians(ha * 15.0)
+    sin_alt = (math.sin(lat_r) * math.sin(dec_r)
+               + math.cos(lat_r) * math.cos(dec_r) * math.cos(ha_r))
+    alt_deg = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+
+    if alt_deg < config.MOUNT_MIN_ALT_DEG:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "below_horizon",
+            "altitude_deg": round(alt_deg, 2), "limit_deg": config.MOUNT_MIN_ALT_DEG,
+        })
+    if alt_deg > config.MOUNT_MAX_ALT_DEG:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "zenith_exclusion",
+            "altitude_deg": round(alt_deg, 2), "limit_deg": config.MOUNT_MAX_ALT_DEG,
+        })
 
 
 class MountStatus(BaseModel):
@@ -82,6 +120,7 @@ def mount_goto(
                 status_code=403,
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
+    _check_mount_limits(body.ra, body.dec)
     ok = mount.goto(body.ra, body.dec)
     if not ok:
         raise HTTPException(status_code=500, detail="GoTo failed")
@@ -105,11 +144,49 @@ def mount_sync(
     return {"ok": True}
 
 
+@router.post("/home")
+def mount_home(mount: MountPort = Depends(deps.get_mount)) -> dict:
+    """Slew to the celestial pole (RA = current LST, Dec = 89°, HA = 0).
+
+    Sets the mount to its starting position pointing at the polar region.
+    Auto-unparks if necessary.  Bypasses position limits — the pole is
+    always at altitude ≈ observer latitude, well within any sane limit set.
+    """
+    if mount.get_state() == MountState.PARKED:
+        if not mount.unpark():
+            raise HTTPException(status_code=500, detail="Auto-unpark before home failed")
+    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
+    ra_hours: float = lst_hours      # HA = 0 → on meridian
+    dec_deg: float  = 89.0           # near celestial pole
+    ok = mount.goto(ra_hours, dec_deg)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Home slew failed")
+    return {"ok": True, "ra": ra_hours, "dec": dec_deg}
+
+
 @router.post("/park")
 def mount_park(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
     ok = mount.park()
     if not ok:
         raise HTTPException(status_code=500, detail="Park failed")
+    return {"ok": True}
+
+
+class GuideRequest(BaseModel):
+    direction: str = Field(pattern=r"^[nsewNSEW]$")
+    duration_ms: int = Field(default=500, ge=1, le=9999)
+
+
+@router.post("/guide")
+def mount_guide(
+    body: GuideRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Send a fixed-duration guide pulse — no stop command required."""
+    ok = mount.guide(body.direction.lower(), body.duration_ms)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Guide pulse failed")
     return {"ok": True}
 
 
@@ -162,6 +239,7 @@ async def mount_goto_and_center(
                 status_code=403,
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
+    _check_mount_limits(body.ra, body.dec)
     scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
     result = await goto_and_center(
         mount, camera, solver,

@@ -50,6 +50,7 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     if touptek_index:
         from ..adapters.touptek.camera import ToupcamCamera
         camera = ToupcamCamera(index=int(touptek_index))
+        camera.connect()
     elif sim_dir:
         from pathlib import Path
 
@@ -127,6 +128,15 @@ def get_stacker() -> StackerPort:
         except ImportError:
             _stacker = MockStacker()
     return _stacker
+
+
+def make_stacker() -> StackerPort:
+    """Create a fresh stacker instance — used by the queue runner (one per session)."""
+    try:
+        from ..adapters.numpy_stacker.stacker import NumpyStacker
+        return NumpyStacker()
+    except ImportError:
+        return MockStacker()
 
 
 def get_solver() -> SolverPort:

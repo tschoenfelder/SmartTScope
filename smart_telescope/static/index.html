@@ -787,6 +787,38 @@
           <div id="s4-star-list" class="star-list"></div>
         </div>
 
+        <!-- Guide pad for centering -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Centre Star
+          </div>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+            After GoTo, nudge the star to the frame centre before checking the Bahtinov pattern.
+          </p>
+          <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
+            <div class="guide-pad">
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('n','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('n','s4-guide-ms')" ontouchend="guideStop()">▲</button>
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('w','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('w','s4-guide-ms')" ontouchend="guideStop()">◀</button>
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('e','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('e','s4-guide-ms')" ontouchend="guideStop()">▶</button>
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('s','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('s','s4-guide-ms')" ontouchend="guideStop()">▼</button>
+              <div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.82rem">
+              <label>Pulse&nbsp;ms</label>
+              <input type="number" id="s4-guide-ms" value="200" min="50" max="9999" style="width:5.5rem">
+            </div>
+          </div>
+        </div>
+
         <!-- Focuser -->
         <div id="s4-focuser-status" class="status-line" style="margin-top:1rem;margin-bottom:0.25rem"></div>
         <div id="s4-focuser-card"></div>
@@ -1173,7 +1205,23 @@
      Stage 2 — Star Alignment
   ══════════════════════════════════════════════════════════════════════ */
   const _align = { numStars: 1, currentStar: 0 };
-  let _s2GuideTimer = null;
+  /* shared guide-pad state — only one active at a time across all stages */
+  let _guideTimer = null;
+
+  function guideStart(dir, msInputId) {
+    if (_guideTimer) return;
+    const ms = parseInt(document.getElementById(msInputId).value) || 500;
+    const body = JSON.stringify({ direction: dir, duration_ms: ms });
+    const send = () => fetch('/api/mount/guide', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    send();
+    _guideTimer = setInterval(send, ms + 100);
+  }
+
+  function guideStop() {
+    if (_guideTimer) { clearInterval(_guideTimer); _guideTimer = null; }
+  }
 
   async function s2Home() {
     const btn = document.getElementById('s2-home-btn');
@@ -1268,20 +1316,8 @@
     }
   }
 
-  function s2GuideStart(dir) {
-    if (_s2GuideTimer) return;
-    const ms = parseInt(document.getElementById('s2-guide-ms').value) || 500;
-    const body = JSON.stringify({ direction: dir, duration_ms: ms });
-    const send = () => fetch('/api/mount/guide', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
-    });
-    send();
-    _s2GuideTimer = setInterval(send, ms + 100);
-  }
-
-  function s2GuideStop() {
-    if (_s2GuideTimer) { clearInterval(_s2GuideTimer); _s2GuideTimer = null; }
-  }
+  function s2GuideStart(dir) { guideStart(dir, 's2-guide-ms'); }
+  function s2GuideStop()      { guideStop(); }
 
   async function s2AcceptStar() {
     const btn = document.getElementById('s2-accept-btn');
@@ -1383,7 +1419,7 @@
     setStatus('s4-status', '');
     try {
       await apiPost('/api/mount/goto', { ra, dec });
-      setStatus('s4-status', `Slewing to ${name}…`);
+      setStatus('s4-status', `Slewing to ${name} — use guide pad to centre, then focus`);
       await refreshMount();
     } catch (err) {
       setStatus('s4-status', `GoTo ${name} failed: ${err}`, true);

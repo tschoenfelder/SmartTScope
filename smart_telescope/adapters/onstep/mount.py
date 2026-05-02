@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import threading
 
 import serial
 
@@ -55,6 +56,7 @@ class OnStepMount(MountPort):
         self._baud_rate = baud_rate
         self._timeout = timeout
         self._serial: serial.Serial | None = None
+        self._lock = threading.Lock()
 
     def connect(self) -> bool:
         try:
@@ -71,8 +73,9 @@ class OnStepMount(MountPort):
     def _raw_send(self, cmd: str) -> bytes:
         if self._serial is None:
             return b""
-        self._serial.write(cmd.encode())
-        return bytes(self._serial.readline())
+        with self._lock:
+            self._serial.write(cmd.encode())
+            return bytes(self._serial.readline())
 
     def _send(self, cmd: str) -> str:
         return self._raw_send(cmd).decode(errors="replace").rstrip("#\r\n")

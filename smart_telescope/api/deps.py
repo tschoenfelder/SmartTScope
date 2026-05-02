@@ -102,7 +102,8 @@ def get_preview_camera(index: int) -> CameraPort:
     if index not in _preview_cameras:
         from ..adapters.touptek.camera import ToupcamCamera
         cam = ToupcamCamera(index=index)
-        cam.connect()
+        if not cam.connect():
+            raise RuntimeError(f"Camera {index} failed to connect")
         _preview_cameras[index] = cam
     return _preview_cameras[index]
 

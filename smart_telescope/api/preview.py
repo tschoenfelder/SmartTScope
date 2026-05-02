@@ -22,10 +22,14 @@ async def ws_preview(
     camera_index: int = Query(default=0, ge=0, le=7),
 ) -> None:
     """Stream auto-stretched JPEG frames to the client until it disconnects."""
-    camera = get_preview_camera(camera_index)
+    await websocket.accept()
+    try:
+        camera = get_preview_camera(camera_index)
+    except RuntimeError as exc:
+        await websocket.close(code=1011, reason=str(exc))
+        return
     if hasattr(camera, "set_gain"):
         camera.set_gain(gain)  # type: ignore[union-attr]
-    await websocket.accept()
     try:
         while True:
             frame: FitsFrame = await asyncio.to_thread(camera.capture, exposure)

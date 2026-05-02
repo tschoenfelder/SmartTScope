@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Sprint 36: Stage 5 live stack viewer
+
+**What changed**:
+
+- `smart_telescope/static/index.html` — Stage 5 "Run Observation" card gains a live stack preview panel:
+  - `_s5ConnectStackWs()` opens `WS /ws/stack` immediately on session start
+  - Text (JSON) frames: updates progress bar and frame/rejected counts directly, ahead of the 2 s REST poll
+  - Binary (JPEG) frames: shown in a `<img id="s5-stack-img">` inside a `.preview-frame.large` container; panel fades in on first integrated frame
+  - `_s5DisconnectStackWs()` called on terminal states (SAVED / STACK_COMPLETE / FAILED) and in `_s5ResetRunUI()` before next session; blob URLs revoked on each frame to prevent memory leaks
+
+**Result**: 957 tests passing, 15 skipped, 94% coverage (unchanged — UI-only changes).
+
+---
+
 ## 2026-05-02 — Sprint 35: Stage 5 observation session workflow UI
 
 **What changed**:
@@ -17,6 +31,17 @@ Append-only record of all wiki operations.
   - State polling every 2 s via `setInterval`; stops automatically on SAVED / STACK_COMPLETE / FAILED
 
 **Result**: 956 tests passing, 15 skipped, 94% coverage.
+
+---
+
+## 2026-05-02 — OnStepMount: send :Td# (stop tracking) on connect
+
+**What changed**:
+
+- `smart_telescope/adapters/onstep/mount.py` — `connect()` now calls `disable_tracking()` immediately after opening the serial port, before returning `True`. Ensures the mount is never left tracking unexpectedly on first connection.
+- `tests/unit/adapters/onstep/test_onstep_mount.py` — new `test_connect_sends_stop_tracking` verifies `:Td#` appears in serial write calls during connect. Four `TestGetPosition` tests updated: each side_effect list gains a leading `b""` to absorb the extra `readline()` call.
+
+**Result**: 957 tests passing, 15 skipped, 94% coverage.
 
 ---
 

@@ -38,10 +38,7 @@ def mount_config_view() -> dict:
 
 def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
     """Raise HTTPException(400) if the target violates mount position limits."""
-    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
-    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
-    ha = lst_hours - ra_hours
-    ha = ((ha + 12.0) % 24.0) - 12.0  # normalise to [-12, +12]
+    ha, alt_deg = _compute_ha_alt(ra_hours, dec_deg)
 
     if ha < config.MOUNT_HA_EAST_LIMIT_H:
         raise HTTPException(status_code=400, detail={
@@ -53,14 +50,6 @@ def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
             "error": "mount_limit", "reason": "counterweight_up",
             "ha_hours": round(ha, 3), "limit_hours": config.MOUNT_HA_WEST_LIMIT_H,
         })
-
-    lat_r = math.radians(config.OBSERVER_LAT)
-    dec_r = math.radians(dec_deg)
-    ha_r  = math.radians(ha * 15.0)
-    sin_alt = (math.sin(lat_r) * math.sin(dec_r)
-               + math.cos(lat_r) * math.cos(dec_r) * math.cos(ha_r))
-    alt_deg = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
-
     if alt_deg < config.MOUNT_MIN_ALT_DEG:
         raise HTTPException(status_code=400, detail={
             "error": "mount_limit", "reason": "below_horizon",
@@ -77,6 +66,23 @@ class MountStatus(BaseModel):
     state: str
     ra: float | None
     dec: float | None
+    ha: float | None   # hour angle in hours, normalised [-12, +12]
+    alt: float | None  # altitude in degrees
+
+
+def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
+    """Return (ha_hours, alt_deg) for the given RA/Dec at the configured site."""
+    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
+    ha = lst_hours - ra_hours
+    ha = ((ha + 12.0) % 24.0) - 12.0
+    lat_r = math.radians(config.OBSERVER_LAT)
+    dec_r = math.radians(dec_deg)
+    ha_r  = math.radians(ha * 15.0)
+    sin_alt = (math.sin(lat_r) * math.sin(dec_r)
+               + math.cos(lat_r) * math.cos(dec_r) * math.cos(ha_r))
+    alt_deg = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+    return round(ha, 4), round(alt_deg, 2)
 
 
 class GotoRequest(BaseModel):
@@ -91,10 +97,17 @@ def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
     if state not in (MountState.PARKED, MountState.UNKNOWN):
         with contextlib.suppress(Exception):
             pos = mount.get_position()
+    ha: float | None = None
+    alt: float | None = None
+    if pos is not None:
+        with contextlib.suppress(Exception):
+            ha, alt = _compute_ha_alt(pos.ra, pos.dec)
     return MountStatus(
         state=state.name.lower(),
         ra=pos.ra if pos else None,
         dec=pos.dec if pos else None,
+        ha=ha,
+        alt=alt,
     )
 
 

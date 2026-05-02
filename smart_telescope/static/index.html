@@ -485,6 +485,7 @@
   <span class="dot dot-grey" id="ms-dot"></span>
   <span id="ms-state" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">—</span>
   <span id="ms-radec">—</span>
+  <span id="ms-haalt" style="font-family:ui-monospace,monospace;color:var(--muted);font-size:0.78rem"></span>
   <span style="flex:1"></span>
   <button class="danger" style="padding:0.3rem 0.75rem;font-size:0.78rem"
           onclick="mountEmergencyStop()">■ Stop</button>
@@ -545,6 +546,14 @@
       </div>
       <div class="params">
         <div class="param">
+          <span class="param-label">Current HA</span>
+          <span class="param-value mono" id="current-ha">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Current Alt</span>
+          <span class="param-value mono" id="current-alt">—</span>
+        </div>
+        <div class="param" style="border-top:1px solid var(--border);margin-top:0.25rem;padding-top:0.25rem">
           <span class="param-label">Alt min (horizon)</span>
           <span class="param-value mono" id="limit-alt-min">—</span>
         </div>
@@ -1258,16 +1267,35 @@
     at_limit: 'dot-red', unknown: 'dot-grey',
   };
 
+  function _fmtHA(h) {
+    const sign = h < 0 ? '−' : '+';
+    const abs  = Math.abs(h);
+    const hh   = Math.floor(abs);
+    const mm   = Math.floor((abs - hh) * 60);
+    const ss   = Math.floor(((abs - hh) * 60 - mm) * 60);
+    return `HA ${sign}${String(hh).padStart(2,'0')}h${String(mm).padStart(2,'0')}m`;
+  }
+
   function _updateMountStrip(data) {
     const state  = data.state || 'unknown';
     const dotEl  = document.getElementById('ms-dot');
     const stEl   = document.getElementById('ms-state');
     const rdEl   = document.getElementById('ms-radec');
+    const haEl   = document.getElementById('ms-haalt');
     if (dotEl) dotEl.className = 'dot ' + (_STRIP_DOT[state] || 'dot-grey');
     if (stEl)  stEl.textContent = state;
     if (rdEl)  rdEl.textContent = data.ra != null
       ? `${_formatRA(+data.ra)}  ${_formatDec(+data.dec)}`
       : '—';
+    if (haEl)  haEl.textContent = data.ha != null
+      ? `${_fmtHA(+data.ha)}  Alt ${(+data.alt).toFixed(1)}°`
+      : '';
+
+    // Keep Stage 1 limits card current values in sync
+    const haLive  = document.getElementById('current-ha');
+    const altLive = document.getElementById('current-alt');
+    if (haLive)  haLive.textContent  = data.ha  != null ? _fmtHA(+data.ha)              : '—';
+    if (altLive) altLive.textContent = data.alt != null ? (+data.alt).toFixed(1) + '°'  : '—';
   }
 
   function mountEmergencyStop() {

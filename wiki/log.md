@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-03 — Sprint 41: Bahtinov domain unit tests + `_intersect` bugfix
+
+**Bug fixed**:
+- `smart_telescope/domain/bahtinov.py` — `_intersect()` had wrong Cramer's rule signs: `x` used `/ (-d)` instead of `/ d`, and `y` numerator was `(a1·c2 − a2·c1)` instead of `(a2·c1 − a1·c2)`. Effect: intersections reflected through origin → `focus_error_px` wildly wrong (e.g. −656 px instead of ≈ 0). Fixed to standard Cramer's rule.
+
+**Tests added**:
+- `tests/unit/domain/test_bahtinov.py` — NEW: 43 tests covering `SpikeLine`, `CrossingAnalysisResult`, `_gaussian_blur`, `_intersect` (including regression for the Cramer's rule bug), `_classify_bahtinov`, `BahtinovAnalyzer.analyze()`, constructor params, `_find_brightest_object`
+
+**Suite result**: 980 passed, 0 failures
+
+---
+
 ## 2026-05-02 — Sprint 40: Bahtinov API + Stage 4 UI overlay
 
 **Code changes**:

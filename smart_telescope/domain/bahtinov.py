@@ -306,12 +306,19 @@ def _gaussian_blur(arr: np.ndarray, sigma: float) -> np.ndarray:
 
 
 def _intersect(l1: SpikeLine, l2: SpikeLine) -> tuple[float, float]:
-    """Intersection of two normal-form lines. Returns (0, 0) for near-parallel."""
+    """Intersection of two normal-form lines. Returns (0, 0) for near-parallel.
+
+    For lines  a1·x + b1·y + c1 = 0  and  a2·x + b2·y + c2 = 0
+    Cramer's rule gives:
+        D = a1·b2 − a2·b1
+        x = (b1·c2 − b2·c1) / D
+        y = (a2·c1 − a1·c2) / D
+    """
     d = l1.a * l2.b - l2.a * l1.b
     if abs(d) < 1e-10:
         return (0.0, 0.0)
-    x = (l1.b * l2.c - l2.b * l1.c) / (-d)
-    y = (l1.a * l2.c - l2.a * l1.c) / d
+    x = (l1.b * l2.c - l2.b * l1.c) / d
+    y = (l2.a * l1.c - l1.a * l2.c) / d
     return (x, y)
 
 

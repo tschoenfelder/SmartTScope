@@ -23,5 +23,7 @@ Table of contents for the SmartTelescope knowledge base.
 
 - [requirements](requirements.md) — Full MVP / MVP+ / Full requirement set for the C8 + Pi 5 + OnStep build (revised; §14 process requirements added 2026-04-30)
 - [requirements-review](requirements-review.md) — External review: verdict, retagging rationale, and missing requirement areas
+- [requirements-addon-20260430](requirements-addon-20260430.md) — Star catalog expansion, quickstart corrections, and process requirements (2026-04-30)
+- [requirements-addon-20260501](requirements-addon-20260501.md) — First hardware test session bugs and mount safety requirements (2026-05-01)
 - [vertical-slice-mvp](vertical-slice-mvp.md) — End-to-end MVP slice: power-on → align → GoTo M42 → recenter → stack 10 frames → save
 - [quickstart](quickstart.md) — First-time setup guide: Raspberry Pi OS Trixie (Debian 13), ToupTek camera, ASTAP, no libcamera

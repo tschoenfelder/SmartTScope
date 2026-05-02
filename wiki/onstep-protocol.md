@@ -4,7 +4,7 @@
 
 **Sources**: https://onstep.groups.io/g/main/wiki/23755 (retrieved 2026-04-24)
 
-**Last updated**: 2026-04-24
+**Last updated**: 2026-05-02
 
 ---
 
@@ -253,19 +253,41 @@ Positive coefficient → focuser moves out as temperature falls.
 
 ## Adapter implementation notes
 
+### Threading safety (added 2026-05-02)
+
+`OnStepMount` uses a single `pyserial` port shared across all mount methods. Concurrent HTTP requests can race on the port. As of Sprint 37 bugfix, every `_raw_send()` call acquires a `threading.Lock` before the `serial.write()` / `serial.readline()` pair. This prevents byte-interleaving that caused HTTP 500 errors during hardware testing. See [[requirements-addon-20260501]] for the bug report.
+
+**Rule**: never call `serial.write()` outside `_raw_send()` in the mount adapter. All new commands must go through `_raw_send()` or `_send()` to inherit the lock.
+
+### readline() and the `#` terminator
+
+OnStep terminates replies with `#`, not `\n`. `pyserial`'s `readline()` reads until `\n` or timeout. A missing or unexpected reply consumes the full `timeout` (default 2 s). Commands marked `[none]` (no reply) must use `_raw_send()` without reading back — or use a very short per-command timeout if polling frequency matters.
+
 ### Commands currently used by `OnStepMount`
 
 | Port method | LX200 command | Notes |
 |---|---|---|
-| `connect()` | opens serial | 9600 baud, `/dev/ttyUSB_ONSTEP0` |
+| `connect()` | opens serial, then `:Td#` | 9600 baud; sends disable-tracking immediately on connect |
 | `get_state()` | `:GU#` | parses P/T/S/E/W flags from wire format |
 | `unpark()` | `:hU#` | ⚠ spec says `:hR#` — firmware-version dependent |
 | `enable_tracking()` | `:Te#` | returns `1` on success |
+| `disable_tracking()` | `:Td#` | called on connect and via API endpoint |
 | `get_position()` | `:GR#` + `:GD#` | parses RA hours + Dec degrees |
 | `goto()` | `:Sr#` + `:Sd#` + `:MS#` | `MS#` returns `0` for success |
 | `sync()` | `:Sr#` + `:Sd#` + `:CM#` | |
 | `is_slewing()` | `:D#` | checks for `\|` char in response |
 | `stop()` | `:Q#` | no reply |
+| `park()` | `:hP#` | no reply — always returns True |
+| `guide(d, ms)` | `:Mgdnnnn#` | d=n/s/e/w, nnnn=ms (1–9999); no reply |
+| `start_alignment(n)` | `:An#` | n=1–9 stars; returns `1` on success |
+| `accept_alignment_star()` | `:A+#` | returns `1` on success |
+| `save_alignment()` | `:AW#` | returns `1` on success |
+
+### Safe movement rule (hardware test finding 2026-05-01)
+
+Use **only** `:Mgdnnnn#` (pulse guide) for manual nudge movements — not the continuous move commands (`:Me#`, `:Mw#`, `:Mn#`, `:Ms#`). If a stop command is lost (network drop, UI crash), a continuous move becomes a "mad mount." Pulse-guide commands are self-terminating after `nnnn` milliseconds. See [[requirements-addon-20260501]] for the original requirement.
+
+The guide pads in Stages 3 and 4 of the UI already use pulse guide. Do not introduce continuous-move controls in new UI features.
 
 ### Commands needed for `OnStepFocuser` (not yet implemented)
 

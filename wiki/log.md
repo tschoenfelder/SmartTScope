@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Ingest: requirements_addon_20260430 + requirements_addon_20260501
+
+**Sources ingested**:
+- `resources/hlrequirements/requirements_addon_20260430.txt`
+- `resources/hlrequirements/requirements_addon_20260501.txt`
+
+**New pages**:
+- `wiki/requirements-addon-20260430.md` — star catalog expansion, quickstart corrections (Trixie, no libcamera), §14 process requirements
+- `wiki/requirements-addon-20260501.md` — first hardware test session (2026-05-01): three bugs (serial race → 500, camera caching, WS silent close); new requirements for mount display, Home/Park, step-based movement, mount limits config
+
+**Updated pages**:
+- `wiki/onstep-protocol.md` — adapter implementation notes expanded: threading lock rationale, readline/`#` terminator behaviour, all commands now used by `OnStepMount` (including `disable_tracking`, `park`, `guide`, alignment), safe-movement rule (pulse guide only)
+- `wiki/index.md` — two new planning entries added
+
+---
+
 ## 2026-05-02 — Sprint 37: GoTo-Selected button + live mount-strip poll
 
 **What changed**:

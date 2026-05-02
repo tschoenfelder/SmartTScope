@@ -63,7 +63,9 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     if onstep_port:
         from ..adapters.onstep.focuser import OnStepFocuser
         from ..adapters.onstep.mount import OnStepMount
-        return camera, OnStepMount(onstep_port), OnStepFocuser(onstep_port)
+        mount = OnStepMount(onstep_port)
+        focuser = OnStepFocuser(mount)
+        return camera, mount, focuser
     if sim_dir:
         from pathlib import Path
 

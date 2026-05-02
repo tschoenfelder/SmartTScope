@@ -30,6 +30,10 @@ class SimulatorFocuser(FocuserPort):
 
     # ── FocuserPort ───────────────────────────────────────────────────────────
 
+    @property
+    def is_available(self) -> bool:
+        return True
+
     def connect(self) -> bool:
         return True
 
@@ -52,6 +56,9 @@ class SimulatorFocuser(FocuserPort):
     def get_position(self) -> int:
         with self._lock:
             return self._position
+
+    def get_max_position(self) -> int:
+        return 5000
 
     def is_moving(self) -> bool:
         with self._lock:

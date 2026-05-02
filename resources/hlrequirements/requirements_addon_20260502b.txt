@@ -1,0 +1,9 @@
+# Add a section to README, how to update the git to the newest version in the branch master
+# Always expect an focuser for the C8 to be connected via Onstep. Show error when not found. The focuser has Limits and provides no Feedback on Position. Ask on Questions!
+
+
+
+ 
+
+
+

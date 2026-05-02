@@ -242,6 +242,42 @@ The ToupTek SDK files (`toupcam.py` + `libtoupcam.so`) live in the venv site-pac
 
 ---
 
+## Keeping up to date
+
+### On the Raspberry Pi (production)
+
+Pull the latest code from `master`, reinstall the package, and restart the service:
+
+```bash
+cd ~/astro_sw/SmartTScope
+git pull origin master
+pip install -e .
+sudo systemctl restart smarttscope
+```
+
+If dependencies have changed (new packages added to `pyproject.toml`):
+
+```bash
+pip install -e ".[dev]"
+```
+
+The `pi_pull_and_test.sh` script does this automatically and runs the unit suite before restarting:
+
+```bash
+bash scripts/pi_pull_and_test.sh
+bash scripts/start.sh
+```
+
+### On a development machine
+
+```bash
+git pull origin master
+pip install -e ".[dev]"
+pytest tests/unit/ tests/integration/
+```
+
+---
+
 ## Running the dev pipeline
 
 Run all three checks before committing. CI enforces the same sequence on every push.

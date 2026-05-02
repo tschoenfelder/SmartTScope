@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
+from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
 from . import deps
 from .session import get_active_runner, get_session_running
@@ -59,6 +60,7 @@ class SystemHealth(BaseModel):
 @router.get("/api/status", response_model=SystemHealth)
 def system_status(
     mount: MountPort = Depends(deps.get_mount),
+    focuser: FocuserPort = Depends(deps.get_focuser),
 ) -> SystemHealth:
     """Return the health of every subsystem. Always 200."""
     # ── Mount ────────────────────────────────────────────────────────────────
@@ -68,9 +70,12 @@ def system_status(
     except Exception as exc:
         mount_health = MountHealth(ok=False, message=str(exc))
 
-    # ── Camera / Focuser — no lightweight probe in the port; report available ─
-    camera_health  = DeviceHealth(ok=True, message="adapter available")
-    focuser_health = DeviceHealth(ok=True, message="adapter available")
+    # ── Camera / Focuser ─────────────────────────────────────────────────────
+    camera_health = DeviceHealth(ok=True, message="adapter available")
+    if focuser.is_available:
+        focuser_health = DeviceHealth(ok=True, message="focuser active")
+    else:
+        focuser_health = DeviceHealth(ok=False, message="focuser not found — autofocus disabled")
 
     # ── Solver ───────────────────────────────────────────────────────────────
     astap_path = _find_astap()

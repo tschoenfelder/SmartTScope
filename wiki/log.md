@@ -4,6 +4,35 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Sprint 39: Focuser availability + shared serial delegation
+
+**Source ingested**: `resources/hlrequirements/requirements_addon_20260502b.txt`
+
+**New wiki pages**:
+- `wiki/requirements-addon-20260502b.md` — README update instructions + focuser always-expected policy
+
+**Updated wiki pages**:
+- `wiki/index.md` — new Planning entry
+
+**Code changes**:
+- `smart_telescope/ports/focuser.py` — added `get_max_position()` abstract method and `is_available` abstract property
+- `smart_telescope/adapters/onstep/focuser.py` — refactored to delegate serial I/O to `OnStepMount`; no own serial handle; `connect()` sets `_available` from `:FA#`; fetches max position via `:FM#`
+- `smart_telescope/adapters/mock/focuser.py` — added `is_available` and `get_max_position()` (returns 5000)
+- `smart_telescope/adapters/simulator/focuser.py` — added `is_available` (True) and `get_max_position()` (5000)
+- `smart_telescope/api/deps.py` — `OnStepFocuser(mount=mount)` shared serial; no separate focuser port open
+- `smart_telescope/api/focuser.py` — status adds `available` + `max_position`; `POST /api/focuser/connect` (new); move/nudge/autofocus return 503 when not available; position clamped to `[0, max_position]`
+- `smart_telescope/api/health.py` — focuser health uses `focuser.is_available`
+- `smart_telescope/static/index.html` — Stage 1 focuser status card; `connectAll()` probes focuser; `focuserCard()` shows disabled banner when `available === false`
+- `README.md` — new "Keeping up to date" section (git pull + pip install + systemctl restart)
+
+**Tests**:
+- `tests/unit/adapters/onstep/test_onstep_focuser.py` — rewritten for new delegating constructor (30 tests)
+- `tests/unit/api/test_focuser.py` — updated for `available`/`max_position`; new connect endpoint tests; 503 tests (38 tests)
+
+**Suite result**: 968 passed, 88.63% coverage
+
+---
+
 ## 2026-05-02 — Ingest: requirements_addon_20260502 (Bahtinov analyzer)
 
 **Source ingested**: `resources/hlrequirements/requirements_addon_20260502.txt`

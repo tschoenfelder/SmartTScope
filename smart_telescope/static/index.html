@@ -568,6 +568,20 @@
       </p>
     </div>
 
+    <!-- Focuser status -->
+    <div class="card" style="margin-top:0.75rem" id="s1-focuser-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-focuser-dot"></span>
+        Focuser
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Status</span>
+          <span class="param-value" id="s1-focuser-status-text">—</span>
+        </div>
+      </div>
+    </div>
+
     <div class="stage-nav">
       <span></span>
       <button id="s1-proceed-btn" onclick="s1Proceed()">Proceed to Alignment →</button>
@@ -1808,7 +1822,22 @@
      Focuser — Stage 4
   ══════════════════════════════════════════════════════════════════════ */
   function focuserCard(data) {
+    if (!data.available) {
+      return `
+      <div class="card">
+        <div class="card-title">
+          <span class="dot dot-yellow"></span>
+          OnStep Focuser
+          <span class="state-badge state-parked">Not found</span>
+        </div>
+        <p style="font-size:0.82rem;color:var(--muted);margin:0.5rem 0 0">
+          No focuser detected on the OnStep controller (:FA# = 0).<br>
+          Autofocus is disabled â all other operations continue normally.
+        </p>
+      </div>`;
+    }
     const pos    = data.position ?? '—';
+    const maxPos = data.max_position != null ? ` / ${data.max_position}` : '';
     const moving = data.moving ?? false;
     const dotCls = moving ? 'dot-yellow' : 'dot-green';
     const label  = moving ? 'Moving…' : 'Stopped';
@@ -1822,7 +1851,7 @@
         <div class="params">
           <div class="param">
             <span class="param-label">Position (steps)</span>
-            <span class="param-value mono">${pos}</span>
+            <span class="param-value mono">${pos}${maxPos}</span>
           </div>
         </div>
         <div class="controls">
@@ -1958,6 +1987,25 @@
       if (dot) dot.className = (mountOk && camOk) ? 'dot dot-green' : 'dot dot-yellow';
       if (mountOk) unlockStage(2);
       if (camOk)   unlockStage(5);
+
+      // Probe focuser (always — failure is non-fatal)
+      try {
+        const fd = await apiPost('/api/focuser/connect');
+        const focuserDot  = document.getElementById('s1-focuser-dot');
+        const focuserText = document.getElementById('s1-focuser-status-text');
+        if (fd.available) {
+          if (focuserDot)  focuserDot.className  = 'dot dot-green';
+          if (focuserText) focuserText.textContent = 'Focuser active';
+        } else {
+          if (focuserDot)  focuserDot.className  = 'dot dot-yellow';
+          if (focuserText) focuserText.textContent = 'Not found — autofocus disabled';
+        }
+      } catch (_) {
+        const focuserDot  = document.getElementById('s1-focuser-dot');
+        const focuserText = document.getElementById('s1-focuser-status-text');
+        if (focuserDot)  focuserDot.className  = 'dot dot-red';
+        if (focuserText) focuserText.textContent = 'Focuser probe failed';
+      }
 
       await refreshMount();
     } catch (err) {

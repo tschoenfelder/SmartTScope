@@ -701,7 +701,11 @@
             <label>Dec</label>
             <input type="number" id="goto-dec" step="0.001" placeholder="°" style="width:9ch">
             <button onclick="mountGoto()">GoTo</button>
+            <button id="s3-center-btn" class="secondary" onclick="mountGotoAndCenter()"
+                    title="GoTo then plate-solve + sync until centred">&#x2316;&nbsp;Center</button>
           </div>
+          <div id="s3-center-status" class="status-line"
+               style="margin-top:0.2rem;min-height:1rem;font-size:0.8rem"></div>
         </div>
       </div>
 
@@ -1128,6 +1132,24 @@
       </div>`;
   }
 
+  /* Poll until mount leaves SLEWING state; updates the mount strip live.
+     Resolves with final status data or undefined on timeout. */
+  async function watchSlew(statusId, label, timeout_s = 120) {
+    const deadline = Date.now() + timeout_s * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const data = await (await fetch('/api/mount/status')).json();
+        _updateMountStrip(data);
+        if (data.state !== 'slewing') {
+          if (statusId) setStatus(statusId, (label ? label + ' — ' : '') + data.state);
+          return data;
+        }
+      } catch { /* ignore transient network errors */ }
+    }
+    if (statusId) setStatus(statusId, (label ? label + ': ' : '') + 'slew timeout', true);
+  }
+
   async function refreshMount() {
     try {
       const data = await (await fetch('/api/mount/status')).json();
@@ -1161,12 +1183,11 @@
     setStatus('s3-status', '');
     try {
       await apiPost('/api/mount/goto', { ra, dec });
-      await refreshMount();
-      // Unlock collimation stage after a successful GoTo
       document.getElementById('s3-proceed-btn').disabled = false;
       document.getElementById('s3-proceed-btn').title = '';
       unlockStage(4);
       setStatus('s3-status', `Slewing to RA ${ra.toFixed(3)} h  Dec ${dec.toFixed(2)}°…`);
+      await watchSlew('s3-status', `RA ${ra.toFixed(3)} Dec ${dec.toFixed(2)}`);
     } catch (err) {
       let msg = `GoTo failed: ${err}`;
       try {
@@ -1462,6 +1483,10 @@
                 style="padding:0.15rem 0.45rem;font-size:0.72rem;flex-shrink:0"
                 onclick="starGoto(${t.ra},${t.dec},'${escHtml(t.name)}');event.stopPropagation()"
                 title="Slew mount to ${escHtml(t.name)}">GoTo</button>
+        <button class="secondary"
+                style="padding:0.15rem 0.45rem;font-size:0.72rem;flex-shrink:0"
+                onclick="starGotoAndCenter(${t.ra},${t.dec},'${escHtml(t.name)}');event.stopPropagation()"
+                title="GoTo + plate-solve until centred">&#x2316;</button>
       </div>`;
   }
 
@@ -1501,7 +1526,7 @@
       document.getElementById('s3-proceed-btn').title = '';
       unlockStage(4);
       setStatus('s3-stars-status', `Slewing to ${name}…`);
-      await refreshMount();
+      await watchSlew('s3-stars-status', name);
     } catch (err) {
       let msg = `GoTo ${name} failed: ${err}`;
       try {
@@ -1510,6 +1535,35 @@
           msg = `${name} is too close to the Sun (${d.sun_separation_deg}° sep).`;
         else if (d?.error === 'mount_limit')
           msg = `${name} outside mount limits (${d.reason}).`;
+      } catch {}
+      setStatus('s3-stars-status', msg, true);
+    }
+  }
+
+  async function starGotoAndCenter(ra, dec, name) {
+    setStatus('s3-stars-status', `Centring ${name}…`);
+    setStatus('s3-status', '');
+    setStatus('s3-center-status', '');
+    try {
+      const result = await apiPost('/api/mount/goto_and_center',
+        { ra, dec, tolerance_arcmin: 2.0, max_iterations: 3 });
+      if (result.success) {
+        setStatus('s3-stars-status',
+          `${name} centred ✓ — ${result.iterations} iter, offset ${result.offset_arcmin.toFixed(2)} arcmin`);
+        document.getElementById('s3-proceed-btn').disabled = false;
+        document.getElementById('s3-proceed-btn').title = '';
+        unlockStage(4);
+        await refreshMount();
+      } else {
+        setStatus('s3-stars-status',
+          `${name} centring failed — offset ${result.offset_arcmin.toFixed(2)} arcmin${result.error ? ': ' + result.error : ''}`, true);
+      }
+    } catch (err) {
+      let msg = `Center ${name} failed: ${err}`;
+      try {
+        const d = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        if (d?.error === 'solar_exclusion') msg = `${name} too close to the Sun.`;
+        else if (d?.error === 'mount_limit') msg = `${name} outside mount limits (${d.reason}).`;
       } catch {}
       setStatus('s3-stars-status', msg, true);
     }

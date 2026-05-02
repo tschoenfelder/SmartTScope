@@ -1,0 +1,28 @@
+# Add Moon to stars.cfg
+# Diasable tracking throows error:
+  - INFO:     192.168.178.113:50311 - "POST /api/mount/disable_tracking HTTP/1.1" 500 Internal Server Error
+    INFO:     192.168.178.113:49958 - "WebSocket /ws/preview?exposure=2&gain=100&camera_index=0" [accepted]
+    INFO:     connection open
+    INFO:     connection closed
+# Only one camera connects:
+  - INFO:     192.168.178.113:65240 - "WebSocket /ws/preview?exposure=2&gain=100&camera_index=0" [accepted]
+    INFO:     connection open
+    INFO:     connection closed
+    INFO:     192.168.178.113:50623 - "POST /api/mount/stop HTTP/1.1" 200 OK
+    INFO:     192.168.178.113:50623 - "GET /api/mount/status HTTP/1.1" 200 OK
+    INFO:     192.168.178.113:53968 - "WebSocket /ws/preview?exposure=2&gain=100&camera_index=0" [accepted]
+    INFO:     connection open
+    INFO:     connection closed
+# Add button to section custom targets to move mount to current selected object
+# In mount field
+  - add current RA/DEC position
+  - add mount config for maximum mount positions
+    - not directly up
+    - not below horizont
+    - not moving hour angle 360 degrees around
+    - don't get couter weight more than 5 degrees above telescope
+    - respect limits when moving mount
+  - move mount via Onstep by specifying steps only, not by 'move and I will say stop', as on an SmartTScope issue mount may never get a stop command and become a mad mount.  
+  - add button 'Home' (pointing to celestrial pole) to allow moving mount to 'satarting position'
+  - add button 'Park' to move mount to configured parking position. Start by using same coords like Home
+

@@ -59,6 +59,7 @@ class OnStepMount(MountPort):
     def connect(self) -> bool:
         try:
             self._serial = serial.Serial(self._port, self._baud_rate, timeout=self._timeout)
+            self.disable_tracking()
             return True
         except (serial.SerialException, OSError):
             return False

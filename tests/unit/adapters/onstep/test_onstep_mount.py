@@ -119,6 +119,15 @@ class TestConnect:
         result = mount.connect()
         assert result is False
 
+    def test_connect_sends_stop_tracking(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = b""
+        mount = _make_mount()
+        mount.connect()
+        written = [call.args[0] for call in instance.write.call_args_list]
+        assert b":Td#" in written
+
     def test_disconnect_closes_serial_port(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
@@ -248,8 +257,8 @@ class TestGetPosition:
     def test_get_position_returns_mount_position(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        # First call returns RA, second returns Dec
-        instance.readline.side_effect = [b"05:35:17#", b"-05*23:28#"]
+        # b"" absorbs the :Td# readline from connect(); then RA and Dec
+        instance.readline.side_effect = [b"", b"05:35:17#", b"-05*23:28#"]
         mount = _make_mount()
         mount.connect()
         pos = mount.get_position()
@@ -258,7 +267,7 @@ class TestGetPosition:
     def test_get_position_ra_converted_to_decimal_hours(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        instance.readline.side_effect = [b"06:00:00#", b"+00*00:00#"]
+        instance.readline.side_effect = [b"", b"06:00:00#", b"+00*00:00#"]
         mount = _make_mount()
         mount.connect()
         pos = mount.get_position()
@@ -267,7 +276,7 @@ class TestGetPosition:
     def test_get_position_dec_converted_to_decimal_degrees(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        instance.readline.side_effect = [b"05:35:17#", b"+45*30:00#"]
+        instance.readline.side_effect = [b"", b"05:35:17#", b"+45*30:00#"]
         mount = _make_mount()
         mount.connect()
         pos = mount.get_position()
@@ -276,7 +285,7 @@ class TestGetPosition:
     def test_negative_dec_is_negative(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        instance.readline.side_effect = [b"05:35:17#", b"-05*23:28#"]
+        instance.readline.side_effect = [b"", b"05:35:17#", b"-05*23:28#"]
         mount = _make_mount()
         mount.connect()
         pos = mount.get_position()

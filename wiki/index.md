@@ -10,6 +10,7 @@ Table of contents for the SmartTelescope knowledge base.
 - [plate-solving](plate-solving.md) — Autonomous sky alignment by matching star patterns to a catalog
 - [live-stacking](live-stacking.md) — Real-time frame integration for progressive deep-sky image improvement
 - [autofocus](autofocus.md) — Automated focus optimization using star-size metrics and a motor focuser
+- [bahtinov-analyzer](bahtinov-analyzer.md) — Diffraction spike detection algorithm: crossing-error metric, two-layer BahtinovAnalyzer/FocusController design
 
 ## Hardware and products
 

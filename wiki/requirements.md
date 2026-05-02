@@ -4,7 +4,7 @@
 
 **Sources**: SmartTelescope.md, requirements-review (2026-04-19)
 
-**Last updated**: 2026-04-30
+**Last updated**: 2026-05-02
 
 ---
 
@@ -66,6 +66,7 @@ Requirements are derived from the [[smart-telescope]] category definition and be
 |---|---|---|
 | Focus aid — live FWHM/HFR or Bahtinov feedback | MVP | |
 | Electronic [[autofocus]] — star-size metric, backlash handling | **MVP** | Promoted from MVP+: Vaonis ships live autofocus as standard; C8 focal length is unforgiving |
+| **Bahtinov mask collimation tool** — automated spike detection, crossing-error metric, live overlay, user-guided focuser loop | **MVP+** | New (2026-05-02). Two-layer design: `BahtinovAnalyzer` (image only) + `FocusController` (hardware). See [[bahtinov-analyzer]] |
 | Optical train awareness — pixel scale, FOV, solve profiles per config | **MVP** | Promoted from MVP+: foundational for correct solving, framing, and warnings |
 | Refocus triggers — temp drift, filter change, altitude, elapsed time | **MVP+** | Promoted from Full |
 

@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Ingest: requirements_addon_20260502 (Bahtinov analyzer)
+
+**Source ingested**: `resources/hlrequirements/requirements_addon_20260502.txt`
+
+**New pages**:
+- `wiki/bahtinov-analyzer.md` — complete algorithm reference: brightest-object detection (flux score), ROI crop, core masking, Hough/RANSAC line detection, normal-form line fitting, pairwise intersection geometry, `focus_error_px` (primary Bahtinov metric), `crossing_error_rms_px` (quality guard), `SpikeLine` / `CrossingAnalysisResult` data structures, UI requirements
+
+**Updated pages**:
+- `wiki/autofocus.md` — added Bahtinov as the specified SmartTScope focus method, link to [[bahtinov-analyzer]]
+- `wiki/requirements.md` — added Bahtinov collimation tool as MVP+ requirement in §4, linked to [[bahtinov-analyzer]]
+- `wiki/index.md` — new Concepts entry
+
+---
+
 ## 2026-05-02 — Sprint 38: Mount Limits display card in Stage 1
 
 **What changed**:

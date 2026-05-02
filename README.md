@@ -246,32 +246,43 @@ The ToupTek SDK files (`toupcam.py` + `libtoupcam.so`) live in the venv site-pac
 
 ### On the Raspberry Pi (production)
 
-Pull the latest code from `master`, reinstall the package, and restart the service:
+The recommended path — pulls from `master`, rebuilds the wheel (required on Pi OS Debian 13), and runs the unit suite:
 
 ```bash
 cd ~/astro_sw/SmartTScope
-git pull origin master
-pip install -e .
-sudo systemctl restart smarttscope
-```
-
-If dependencies have changed (new packages added to `pyproject.toml`):
-
-```bash
-pip install -e ".[dev]"
-```
-
-The `pi_pull_and_test.sh` script does this automatically and runs the unit suite before restarting:
-
-```bash
 bash scripts/pi_pull_and_test.sh
 bash scripts/start.sh
+```
+
+> **Note**: `pip install -e .` does not work on Raspberry Pi OS Debian 13 (pip 26 cannot run PEP 517 hook subprocesses). `pi_pull_and_test.sh` works around this by building and installing a wheel directly. Do not use `pip install -e .` on the Pi.
+
+If you need to update manually without the script:
+
+```bash
+cd ~/astro_sw/SmartTScope
+git fetch origin master
+git checkout master
+git pull --ff-only origin master
+python -c "
+import os, sys, shutil, tempfile, pathlib
+src = pathlib.Path('.')
+dst = src / 'dist'
+dst.mkdir(exist_ok=True)
+from setuptools.build_meta import build_wheel
+with tempfile.TemporaryDirectory() as tmp:
+    name = build_wheel(tmp)
+    shutil.copy(f'{tmp}/{name}', dst / name)
+"
+pip install dist/smart_telescope-*.whl
+sudo systemctl restart smarttscope
 ```
 
 ### On a development machine
 
 ```bash
-git pull origin master
+git fetch origin master
+git checkout master
+git pull --ff-only origin master
 pip install -e ".[dev]"
 pytest tests/unit/ tests/integration/
 ```

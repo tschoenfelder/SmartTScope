@@ -596,3 +596,89 @@ class TestMountLimits:
         # LST=6, RA=6 → HA=0; dec=20° → alt ≈ 59.7° — well within all limits
         r = self._post_goto(ra=6.0, dec=20.0)
         assert r.status_code == 200
+
+
+# ── GET /api/mount/config ──────────────────────────────────────────────────────
+
+
+class TestMountConfig:
+    def test_returns_200(self) -> None:
+        assert client.get("/api/mount/config").status_code == 200
+
+    def test_contains_observer_coords(self) -> None:
+        data = client.get("/api/mount/config").json()
+        assert "observer_lat" in data
+        assert "observer_lon" in data
+
+    def test_contains_all_limit_fields(self) -> None:
+        data = client.get("/api/mount/config").json()
+        for key in ("mount_min_alt_deg", "mount_max_alt_deg",
+                    "mount_ha_east_limit_h", "mount_ha_west_limit_h"):
+            assert key in data, f"missing field: {key}"
+
+    def test_values_are_floats(self) -> None:
+        data = client.get("/api/mount/config").json()
+        for key, val in data.items():
+            assert isinstance(val, float), f"{key} should be float, got {type(val)}"
+
+
+# ── POST /api/mount/align/* ────────────────────────────────────────────────────
+
+
+class TestMountAlign:
+    def _inject_align_mount(
+        self,
+        start_ok: bool = True,
+        accept_ok: bool = True,
+        save_ok: bool = True,
+    ) -> MagicMock:
+        m = _mock_mount()
+        m.start_alignment.return_value = start_ok
+        m.accept_alignment_star.return_value = accept_ok
+        m.save_alignment.return_value = save_ok
+        _inject(m)
+        return m
+
+    def test_align_start_200(self) -> None:
+        self._inject_align_mount()
+        assert client.post("/api/mount/align/start", json={"num_stars": 2}).status_code == 200
+
+    def test_align_start_passes_num_stars(self) -> None:
+        m = self._inject_align_mount()
+        client.post("/api/mount/align/start", json={"num_stars": 3})
+        m.start_alignment.assert_called_once_with(3)
+
+    def test_align_start_default_one_star(self) -> None:
+        m = self._inject_align_mount()
+        client.post("/api/mount/align/start", json={})
+        m.start_alignment.assert_called_once_with(1)
+
+    def test_align_start_500_on_failure(self) -> None:
+        self._inject_align_mount(start_ok=False)
+        assert client.post("/api/mount/align/start", json={"num_stars": 1}).status_code == 500
+
+    def test_align_accept_200(self) -> None:
+        self._inject_align_mount()
+        assert client.post("/api/mount/align/accept").status_code == 200
+
+    def test_align_accept_500_on_failure(self) -> None:
+        self._inject_align_mount(accept_ok=False)
+        assert client.post("/api/mount/align/accept").status_code == 500
+
+    def test_align_accept_calls_mount(self) -> None:
+        m = self._inject_align_mount()
+        client.post("/api/mount/align/accept")
+        m.accept_alignment_star.assert_called_once()
+
+    def test_align_save_200(self) -> None:
+        self._inject_align_mount()
+        assert client.post("/api/mount/align/save").status_code == 200
+
+    def test_align_save_500_on_failure(self) -> None:
+        self._inject_align_mount(save_ok=False)
+        assert client.post("/api/mount/align/save").status_code == 500
+
+    def test_align_save_calls_mount(self) -> None:
+        m = self._inject_align_mount()
+        client.post("/api/mount/align/save")
+        m.save_alignment.assert_called_once()

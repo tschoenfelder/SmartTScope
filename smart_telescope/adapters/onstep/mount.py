@@ -135,3 +135,13 @@ class OnStepMount(MountPort):
         ms = max(1, min(9999, duration_ms))
         self._raw_send(f":Mg{d}{ms:04d}#")
         return True
+
+    def start_alignment(self, num_stars: int) -> bool:
+        n = max(1, min(9, num_stars))
+        return self._send(f":A{n}#") == "1"
+
+    def accept_alignment_star(self) -> bool:
+        return self._send(":A+#") == "1"
+
+    def save_alignment(self) -> bool:
+        return self._send(":AW#") == "1"

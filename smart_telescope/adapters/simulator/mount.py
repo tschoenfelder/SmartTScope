@@ -93,6 +93,15 @@ class SimulatorMount(MountPort):
     def guide(self, direction: str, duration_ms: int) -> bool:
         return direction.lower() in ("n", "s", "e", "w")
 
+    def start_alignment(self, num_stars: int) -> bool:
+        return True
+
+    def accept_alignment_star(self) -> bool:
+        return True
+
+    def save_alignment(self) -> bool:
+        return True
+
     def disconnect(self) -> None:
         with self._lock:
             self._cancel_timer()

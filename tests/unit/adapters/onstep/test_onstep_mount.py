@@ -547,3 +547,61 @@ class TestGuide:
         mount.guide("e", 99999)
         sent = b"".join(c[0][0] for c in instance.write.call_args_list)
         assert b":Mge9999#" in sent
+
+
+class TestAlignment:
+    def _mount_with_response(self, mocker, response: bytes):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.readline.return_value = response
+        mount = _make_mount()
+        mount.connect()
+        return mount, instance
+
+    def test_start_alignment_sends_A1_command(self, mocker):
+        mount, instance = self._mount_with_response(mocker, b"1#")
+        mount.start_alignment(1)
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":A1#" in sent
+
+    def test_start_alignment_sends_A3_for_three_stars(self, mocker):
+        mount, instance = self._mount_with_response(mocker, b"1#")
+        mount.start_alignment(3)
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":A3#" in sent
+
+    def test_start_alignment_returns_true_on_success(self, mocker):
+        mount, _ = self._mount_with_response(mocker, b"1#")
+        assert mount.start_alignment(2) is True
+
+    def test_start_alignment_returns_false_on_failure(self, mocker):
+        mount, _ = self._mount_with_response(mocker, b"0#")
+        assert mount.start_alignment(2) is False
+
+    def test_accept_alignment_star_sends_Aplus_command(self, mocker):
+        mount, instance = self._mount_with_response(mocker, b"1#")
+        mount.accept_alignment_star()
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":A+#" in sent
+
+    def test_accept_alignment_star_returns_true_on_success(self, mocker):
+        mount, _ = self._mount_with_response(mocker, b"1#")
+        assert mount.accept_alignment_star() is True
+
+    def test_accept_alignment_star_returns_false_on_failure(self, mocker):
+        mount, _ = self._mount_with_response(mocker, b"0#")
+        assert mount.accept_alignment_star() is False
+
+    def test_save_alignment_sends_AW_command(self, mocker):
+        mount, instance = self._mount_with_response(mocker, b"1#")
+        mount.save_alignment()
+        sent = b"".join(c[0][0] for c in instance.write.call_args_list)
+        assert b":AW#" in sent
+
+    def test_save_alignment_returns_true_on_success(self, mocker):
+        mount, _ = self._mount_with_response(mocker, b"1#")
+        assert mount.save_alignment() is True
+
+    def test_save_alignment_returns_false_on_failure(self, mocker):
+        mount, _ = self._mount_with_response(mocker, b"0#")
+        assert mount.save_alignment() is False

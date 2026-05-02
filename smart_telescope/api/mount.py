@@ -203,6 +203,40 @@ def mount_guide(
     return {"ok": True}
 
 
+class AlignStartRequest(BaseModel):
+    num_stars: int = Field(default=1, ge=1, le=9)
+
+
+@router.post("/align/start")
+def mount_align_start(
+    body: AlignStartRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Begin n-star alignment sequence."""
+    ok = mount.start_alignment(body.num_stars)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Alignment start failed")
+    return {"ok": True}
+
+
+@router.post("/align/accept")
+def mount_align_accept(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+    """Accept current pointing as the next alignment star."""
+    ok = mount.accept_alignment_star()
+    if not ok:
+        raise HTTPException(status_code=500, detail="Accept alignment star failed")
+    return {"ok": True}
+
+
+@router.post("/align/save")
+def mount_align_save(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+    """Write the computed pointing model to EEPROM."""
+    ok = mount.save_alignment()
+    if not ok:
+        raise HTTPException(status_code=500, detail="Save alignment failed")
+    return {"ok": True}
+
+
 @router.post("/disable_tracking")
 def mount_disable_tracking(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
     ok = mount.disable_tracking()

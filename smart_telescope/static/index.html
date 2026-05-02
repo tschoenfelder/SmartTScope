@@ -427,6 +427,25 @@
       color: var(--muted);
       font-size: 0.85rem;
     }
+
+    /* ── guide pad (3×3 grid N/S/E/W) ── */
+    .guide-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 2.8rem);
+      grid-template-rows: repeat(3, 2.8rem);
+      gap: 0.2rem;
+      width: fit-content;
+    }
+    .guide-btn {
+      width: 2.8rem; height: 2.8rem;
+      padding: 0;
+      font-size: 1.1rem;
+      line-height: 1;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
   </style>
 </head>
 <body>
@@ -539,7 +558,7 @@
       </div>
       <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:1rem">
         Slew the mount to its home position (pointing near the celestial pole, Dec&nbsp;89°, HA&nbsp;0).
-        This positions the scope for polar alignment.
+        This positions the scope for the star alignment.
       </p>
       <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
         <button id="s2-home-btn" onclick="s2Home()">Slew to Home (Dec 89°)</button>
@@ -547,18 +566,87 @@
       </div>
     </div>
 
-    <!-- Step 2: Alignment tool (placeholder) -->
-    <div class="card" style="margin-top:1rem">
+    <!-- Step 2: Choose alignment star count and start -->
+    <div class="card" id="s2-setup-card" style="margin-top:1rem">
       <div class="card-title">
-        <span class="dot dot-grey"></span>
-        Step 2 — Polar Alignment Tool
-        <span class="state-badge state-unknown" style="margin-left:auto">Coming soon</span>
+        <span class="dot dot-grey" id="s2-setup-dot"></span>
+        Step 2 — Configure Star Alignment
       </div>
-      <div class="placeholder-card">
-        Drift alignment guide and polar scope overlay will be implemented here.<br>
-        <span style="font-size:0.78rem;margin-top:0.4rem;display:block">
-          Use "Done / Skip" to proceed without polar alignment.
-        </span>
+      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem">
+        OnStep builds a pointing model from 1–3 stars. More stars correct polar-axis
+        misalignment and cone error across the whole sky.
+      </p>
+      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem">
+        <span style="font-size:0.85rem">Stars:</span>
+        <label style="font-size:0.85rem"><input type="radio" name="s2-nstars" value="1" checked> 1-star</label>
+        <label style="font-size:0.85rem"><input type="radio" name="s2-nstars" value="2"> 2-star</label>
+        <label style="font-size:0.85rem"><input type="radio" name="s2-nstars" value="3"> 3-star</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <button id="s2-start-btn" onclick="s2StartAlign()">Start Alignment</button>
+        <span id="s2-setup-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- Step 3: Per-star alignment loop (hidden until started) -->
+    <div class="card" id="s2-star-card" style="margin-top:1rem;display:none">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Step 3 — Center Alignment Star
+        <span id="s2-star-counter" style="margin-left:auto;font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div>
+          <label style="font-size:0.82rem;display:block;margin-bottom:0.25rem">Select star</label>
+          <select id="s2-star-select" style="min-width:16rem"></select>
+        </div>
+        <button id="s2-goto-btn" onclick="s2GotoStar()">GoTo</button>
+        <span id="s2-goto-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+      <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+        Use guide pulses to centre the star precisely, then accept:
+      </p>
+      <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div class="guide-pad">
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('n')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('n')" ontouchend="s2GuideStop()">▲</button>
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('w')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('w')" ontouchend="s2GuideStop()">◀</button>
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('e')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('e')" ontouchend="s2GuideStop()">▶</button>
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('s')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('s')" ontouchend="s2GuideStop()">▼</button>
+          <div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.82rem">
+          <label>Pulse&nbsp;ms</label>
+          <input type="number" id="s2-guide-ms" value="500" min="50" max="9999" style="width:5.5rem">
+        </div>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <button id="s2-accept-btn" onclick="s2AcceptStar()"
+                style="background:var(--success);border-color:var(--success)">Accept Star</button>
+        <span id="s2-accept-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- Step 4: Save model (hidden until all stars accepted) -->
+    <div class="card" id="s2-save-card" style="margin-top:1rem;display:none">
+      <div class="card-title">
+        <span class="dot dot-green"></span>
+        Step 4 — Save Alignment Model
+      </div>
+      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem">
+        All alignment stars accepted. Save the pointing model to EEPROM so it
+        survives a power cycle.
+      </p>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <button id="s2-save-btn" onclick="s2SaveAlign()">Save to EEPROM</button>
+        <span id="s2-save-status" style="font-size:0.82rem;color:var(--muted)"></span>
       </div>
     </div>
 
@@ -1082,8 +1170,11 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════════
-     Stage 2 — Alignment
+     Stage 2 — Star Alignment
   ══════════════════════════════════════════════════════════════════════ */
+  const _align = { numStars: 1, currentStar: 0 };
+  let _s2GuideTimer = null;
+
   async function s2Home() {
     const btn = document.getElementById('s2-home-btn');
     const st  = document.getElementById('s2-home-status');
@@ -1104,10 +1195,144 @@
     }
   }
 
+  async function s2StartAlign() {
+    const n = parseInt(document.querySelector('input[name="s2-nstars"]:checked').value);
+    _align.numStars = n;
+    _align.currentStar = 1;
+    const btn = document.getElementById('s2-start-btn');
+    const st  = document.getElementById('s2-setup-status');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Starting…';
+    st.textContent = '';
+    try {
+      await apiPost('/api/mount/align/start', { num_stars: n });
+      st.textContent = `${n}-star alignment started`;
+      st.style.color = 'var(--success)';
+      document.getElementById('s2-setup-dot').className = 'dot dot-green';
+      await _s2ShowStarCard();
+    } catch (err) {
+      st.textContent = String(err);
+      st.style.color = 'var(--danger)';
+      btn.disabled = false;
+      btn.innerHTML = 'Start Alignment';
+    }
+  }
+
+  async function _s2ShowStarCard() {
+    document.getElementById('s2-star-card').style.display = '';
+    document.getElementById('s2-star-counter').textContent =
+      `Star ${_align.currentStar} of ${_align.numStars}`;
+    document.getElementById('s2-accept-status').textContent = '';
+    document.getElementById('s2-goto-status').textContent = '';
+    const sel = document.getElementById('s2-star-select');
+    if (sel.options.length === 0) {
+      try {
+        const targets = await (await fetch('/api/catalog/stars')).json();
+        sel.innerHTML = '';
+        targets
+          .filter(t => t.magnitude != null && t.magnitude <= 3.0 && t.type === 'star')
+          .sort((a, b) => (a.magnitude ?? 99) - (b.magnitude ?? 99))
+          .forEach(t => {
+            const o = document.createElement('option');
+            o.value = JSON.stringify({ ra: t.ra, dec: t.dec });
+            const mag = t.magnitude != null ? (t.magnitude >= 0 ? '+' : '') + t.magnitude.toFixed(1) : '?';
+            o.textContent = `${t.name}  (mag ${mag})`;
+            sel.appendChild(o);
+          });
+        if (!sel.options.length) sel.innerHTML = '<option>No bright stars in stars.cfg (mag ≤ 3)</option>';
+      } catch (e) {
+        sel.innerHTML = '<option>Error loading targets</option>';
+      }
+    }
+  }
+
+  async function s2GotoStar() {
+    if (!document.getElementById('s2-star-select').value) return;
+    const pos = JSON.parse(document.getElementById('s2-star-select').value);
+    const btn = document.getElementById('s2-goto-btn');
+    const st  = document.getElementById('s2-goto-status');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Slewing…';
+    st.textContent = '';
+    try {
+      await apiPost('/api/mount/goto', pos);
+      st.textContent = 'Slewing — centre star with guide controls';
+      st.style.color = 'var(--success)';
+      await refreshMount();
+    } catch (err) {
+      st.textContent = String(err);
+      st.style.color = 'var(--danger)';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'GoTo';
+    }
+  }
+
+  function s2GuideStart(dir) {
+    if (_s2GuideTimer) return;
+    const ms = parseInt(document.getElementById('s2-guide-ms').value) || 500;
+    const body = JSON.stringify({ direction: dir, duration_ms: ms });
+    const send = () => fetch('/api/mount/guide', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+    });
+    send();
+    _s2GuideTimer = setInterval(send, ms + 100);
+  }
+
+  function s2GuideStop() {
+    if (_s2GuideTimer) { clearInterval(_s2GuideTimer); _s2GuideTimer = null; }
+  }
+
+  async function s2AcceptStar() {
+    const btn = document.getElementById('s2-accept-btn');
+    const st  = document.getElementById('s2-accept-status');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Accepting…';
+    try {
+      await apiPost('/api/mount/align/accept');
+      st.textContent = `Star ${_align.currentStar} accepted ✓`;
+      st.style.color = 'var(--success)';
+      _align.currentStar++;
+      if (_align.currentStar > _align.numStars) {
+        document.getElementById('s2-star-card').style.display = 'none';
+        document.getElementById('s2-save-card').style.display = '';
+      } else {
+        document.getElementById('s2-star-counter').textContent =
+          `Star ${_align.currentStar} of ${_align.numStars}`;
+        document.getElementById('s2-goto-status').textContent = '';
+        document.getElementById('s2-accept-status').textContent = '';
+      }
+    } catch (err) {
+      st.textContent = String(err);
+      st.style.color = 'var(--danger)';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Accept Star';
+    }
+  }
+
+  async function s2SaveAlign() {
+    const btn = document.getElementById('s2-save-btn');
+    const st  = document.getElementById('s2-save-status');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Saving…';
+    try {
+      await apiPost('/api/mount/align/save');
+      st.textContent = 'Model saved ✓';
+      st.style.color = 'var(--success)';
+    } catch (err) {
+      st.textContent = String(err);
+      st.style.color = 'var(--danger)';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Save to EEPROM';
+    }
+  }
+
   function s2Done() {
     completeStage(2);
     unlockStage(3);
-    unlockStage(5);   // session always accessible once aligned
+    unlockStage(5);
     goToStage(3);
   }
 

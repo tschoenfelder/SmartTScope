@@ -62,4 +62,19 @@ class MountPort(ABC):
         ...
 
     @abstractmethod
+    def start_alignment(self, num_stars: int) -> bool:
+        """Initialise n-star alignment sequence (num_stars: 1–9)."""
+        ...
+
+    @abstractmethod
+    def accept_alignment_star(self) -> bool:
+        """Record the current pointing direction as an alignment star."""
+        ...
+
+    @abstractmethod
+    def save_alignment(self) -> bool:
+        """Write the computed pointing model to EEPROM."""
+        ...
+
+    @abstractmethod
     def disconnect(self) -> None: ...

@@ -958,6 +958,17 @@
         </div>
         <ul id="s5-warnings-list"
             style="margin-top:0.5rem;list-style:none;padding:0;font-size:0.78rem;color:var(--warning);display:none"></ul>
+        <!-- Live stack viewer — shown once the first frame is integrated -->
+        <div id="s5-stack-preview" style="display:none;margin-top:1rem">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+            <span style="font-size:0.78rem;color:var(--muted)">Live Stack</span>
+            <span id="s5-stack-ws-status" style="font-size:0.72rem"></span>
+          </div>
+          <div class="preview-frame large">
+            <div class="preview-placeholder" id="s5-stack-ph">Waiting for first integrated frame…</div>
+            <img id="s5-stack-img" alt="" style="display:none;max-width:100%;max-height:600px">
+          </div>
+        </div>
         <div id="s5-saved-path"
              style="margin-top:0.75rem;font-size:0.82rem;color:var(--success);display:none"></div>
       </div>
@@ -2104,6 +2115,7 @@
      Observation Session (Stage 5)
   ══════════════════════════════════════════════════════════════════════ */
   let _s5PollTimer  = null;
+  let _s5StackWs    = null;
   let _s5StackDepth = 10;
 
   const _S5_STATE_CSS = {
@@ -2121,6 +2133,63 @@
     SAVED:              'state-tracking',
     FAILED:             'state-at_limit',
   };
+
+  function _s5ConnectStackWs() {
+    if (_s5StackWs) { _s5StackWs.close(); _s5StackWs = null; }
+    const proto  = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws     = new WebSocket(`${proto}://${location.host}/ws/stack`);
+    ws.binaryType = 'blob';
+    _s5StackWs    = ws;
+    const statusEl = document.getElementById('s5-stack-ws-status');
+
+    ws.onopen = () => {
+      if (statusEl) statusEl.innerHTML =
+        '<span class="ws-dot ws-live"></span><span style="color:var(--muted)">connected</span>';
+    };
+
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        try {
+          const d = JSON.parse(ev.data);
+          const n = d.frames_integrated || 0;
+          if (n > 0) {
+            document.getElementById('s5-stack-preview').style.display = '';
+            document.getElementById('s5-frames-text').textContent =
+              `${n} / ${_s5StackDepth} frames`;
+            document.getElementById('s5-progress-bar-wrap').style.display = '';
+            document.getElementById('s5-progress-bar').style.width =
+              Math.min(100, Math.round((n / _s5StackDepth) * 100)) + '%';
+            const rej = d.frames_rejected || 0;
+            if (rej > 0) {
+              document.getElementById('s5-rejected-row').style.display = '';
+              document.getElementById('s5-rejected-val').textContent = String(rej);
+            }
+          }
+        } catch {}
+      } else {
+        const img = document.getElementById('s5-stack-img');
+        const ph  = document.getElementById('s5-stack-ph');
+        if (img.src?.startsWith('blob:')) URL.revokeObjectURL(img.src);
+        img.src = URL.createObjectURL(ev.data);
+        img.style.display = 'block';
+        if (ph) ph.style.display = 'none';
+      }
+    };
+
+    ws.onclose = () => {
+      if (_s5StackWs === ws) _s5StackWs = null;
+      if (statusEl) statusEl.innerHTML = '';
+    };
+
+    ws.onerror = () => {
+      if (statusEl) statusEl.innerHTML =
+        '<span class="ws-dot ws-stopped"></span><span style="color:var(--danger)">error</span>';
+    };
+  }
+
+  function _s5DisconnectStackWs() {
+    if (_s5StackWs) { _s5StackWs.close(1000, 'session ended'); _s5StackWs = null; }
+  }
 
   async function s5StartSession() {
     const target   = (document.getElementById('s5-target').value || 'M42').trim();
@@ -2161,6 +2230,7 @@
       _s5ResetRunUI();
       setStatus('s5-session-status', `Session started — ${target}`);
       _s5StartPolling();
+      _s5ConnectStackWs();
     } catch (err) {
       setStatus('s5-session-status', 'Start failed: ' + err, true);
       startBtn.disabled  = false;
@@ -2184,6 +2254,7 @@
   }
 
   function _s5ResetRunUI() {
+    _s5DisconnectStackWs();
     document.getElementById('s5-progress-bar-wrap').style.display = 'none';
     document.getElementById('s5-progress-bar').style.width = '0%';
     document.getElementById('s5-frames-text').textContent = '';
@@ -2197,6 +2268,13 @@
     const badge = document.getElementById('s5-state-badge');
     badge.textContent = '—';
     badge.className = 'state-badge state-unknown';
+    const img = document.getElementById('s5-stack-img');
+    if (img.src?.startsWith('blob:')) URL.revokeObjectURL(img.src);
+    img.src = '';
+    img.style.display = 'none';
+    document.getElementById('s5-stack-ph').style.display = '';
+    document.getElementById('s5-stack-preview').style.display = 'none';
+    document.getElementById('s5-stack-ws-status').innerHTML = '';
   }
 
   function _s5StartPolling() {
@@ -2213,6 +2291,7 @@
       if (done) {
         clearInterval(_s5PollTimer);
         _s5PollTimer = null;
+        _s5DisconnectStackWs();
         document.getElementById('s5-stop-btn').disabled  = true;
         document.getElementById('s5-start-btn').disabled  = false;
         document.getElementById('s5-start-btn').innerHTML = '&#x25B6;&nbsp;Start Session';

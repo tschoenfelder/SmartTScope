@@ -1988,23 +1988,26 @@
       if (mountOk) unlockStage(2);
       if (camOk)   unlockStage(5);
 
-      // Probe focuser (always — failure is non-fatal)
-      try {
-        const fd = await apiPost('/api/focuser/connect');
-        const focuserDot  = document.getElementById('s1-focuser-dot');
-        const focuserText = document.getElementById('s1-focuser-status-text');
-        if (fd.available) {
-          if (focuserDot)  focuserDot.className  = 'dot dot-green';
-          if (focuserText) focuserText.textContent = 'Focuser active';
-        } else {
-          if (focuserDot)  focuserDot.className  = 'dot dot-yellow';
-          if (focuserText) focuserText.textContent = 'Not found — autofocus disabled';
+      // Probe focuser only when mount connected (focuser shares mount serial port)
+      const focuserDot  = document.getElementById('s1-focuser-dot');
+      const focuserText = document.getElementById('s1-focuser-status-text');
+      if (!mountOk) {
+        if (focuserDot)  focuserDot.className  = 'dot dot-grey';
+        if (focuserText) focuserText.textContent = 'Mount not connected';
+      } else {
+        try {
+          const fd = await apiPost('/api/focuser/connect');
+          if (fd.available) {
+            if (focuserDot)  focuserDot.className  = 'dot dot-green';
+            if (focuserText) focuserText.textContent = 'Focuser active';
+          } else {
+            if (focuserDot)  focuserDot.className  = 'dot dot-yellow';
+            if (focuserText) focuserText.textContent = 'Not found — autofocus disabled';
+          }
+        } catch (_) {
+          if (focuserDot)  focuserDot.className  = 'dot dot-red';
+          if (focuserText) focuserText.textContent = 'Focuser probe failed';
         }
-      } catch (_) {
-        const focuserDot  = document.getElementById('s1-focuser-dot');
-        const focuserText = document.getElementById('s1-focuser-status-text');
-        if (focuserDot)  focuserDot.className  = 'dot dot-red';
-        if (focuserText) focuserText.textContent = 'Focuser probe failed';
       }
 
       await refreshMount();

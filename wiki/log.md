@@ -4,6 +4,36 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Sprint 35: Stage 5 observation session workflow UI
+
+**What changed**:
+
+- `smart_telescope/static/index.html` — Stage 5 "Run Observation" card added:
+  - Target text input, profile dropdown (C8 Native / 0.63× reducer / 2× Barlow), exposure (s), stack depth (frames), skip-autofocus checkbox
+  - ▶ Start Session button calls `POST /api/session/run` via URLSearchParams; ■ Stop button calls `POST /api/session/stop`
+  - Live status section: phase badge (`state-badge` CSS, maps to all `SessionState` enum values), animated progress bar (frames_integrated / stack_depth, shown during STACKING → SAVED)
+  - Detail rows for centring offset, rejected frames, refocus count — appear only when non-zero
+  - Warnings list (colour: `--warning`); saved image path shown in green on SAVED
+  - State polling every 2 s via `setInterval`; stops automatically on SAVED / STACK_COMPLETE / FAILED
+
+**Result**: 956 tests passing, 15 skipped, 94% coverage.
+
+---
+
+## 2026-05-02 — Sprint 34: Stage 3 GoTo slew watcher + centre button
+
+**What changed**:
+
+- `smart_telescope/static/index.html`:
+  - `watchSlew(statusId, label, timeout_s)` — polls `GET /api/mount/status` every 2 s during slew, updates mount strip live, resolves when state leaves `slewing` (or on timeout)
+  - Stage 3 manual GoTo now calls `watchSlew()` after slew is accepted, replacing the immediate `refreshMount()`
+  - ⌖ Centre button on manual GoTo panel calls `mountGotoAndCenter()` → `POST /api/mount/goto_and_center`
+  - ⌖ button added to each star-list row (`starGotoAndCenter()`) — centring result shown inline; unlocks Stage 4 on success
+
+**Result**: 956 tests passing, 15 skipped, 94% coverage (unchanged — UI-only changes).
+
+---
+
 ## 2026-04-30 — Requirements addon: catalog expansion + process requirements + quickstart
 
 **Source**: requirements_addon_20260430.txt

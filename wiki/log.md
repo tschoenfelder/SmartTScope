@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Sprint 38: Mount Limits display card in Stage 1
+
+**What changed**:
+
+- `smart_telescope/static/index.html` — new "Mount Limits" card in Stage 1, positioned after the mount control card:
+  - Four param fields: Alt min (horizon), Alt max (zenith exclusion), HA east limit, HA west limit.
+  - Populated by `initSiteConfig()` which already calls `GET /api/mount/config` on page load.
+  - Footer note explains each value is controlled by an environment variable.
+- No backend changes.
+
+**Result**: UI-only change.
+
+---
+
 ## 2026-05-02 — Ingest: requirements_addon_20260430 + requirements_addon_20260501
 
 **Sources ingested**:

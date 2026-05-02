@@ -537,6 +537,37 @@
     <div id="s1-mount-status" class="status-line" style="margin-top:1rem"></div>
     <div id="s1-mount-card"></div>
 
+    <!-- Mount Limits -->
+    <div class="card" style="margin-top:0.75rem">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Mount Limits
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Alt min (horizon)</span>
+          <span class="param-value mono" id="limit-alt-min">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Alt max (zenith excl.)</span>
+          <span class="param-value mono" id="limit-alt-max">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">HA east limit</span>
+          <span class="param-value mono" id="limit-ha-east">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">HA west limit</span>
+          <span class="param-value mono" id="limit-ha-west">—</span>
+        </div>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.75rem;line-height:1.5">
+        All GoTo commands are checked against these limits. Configure via environment variables
+        (<code>MOUNT_MIN_ALT_DEG</code>, <code>MOUNT_MAX_ALT_DEG</code>,
+        <code>MOUNT_HA_EAST_LIMIT_H</code>, <code>MOUNT_HA_WEST_LIMIT_H</code>).
+      </p>
+    </div>
+
     <div class="stage-nav">
       <span></span>
       <button id="s1-proceed-btn" onclick="s1Proceed()">Proceed to Alignment →</button>
@@ -1175,6 +1206,14 @@
       const lonEl = document.getElementById('site-lon');
       if (latEl) latEl.textContent = `${_observerLat.toFixed(4)}° N`;
       if (lonEl) lonEl.textContent = `${_observerLon.toFixed(4)}° E`;
+      const altMinEl = document.getElementById("limit-alt-min");
+      const altMaxEl = document.getElementById("limit-alt-max");
+      const haEastEl = document.getElementById("limit-ha-east");
+      const haWestEl = document.getElementById("limit-ha-west");
+      if (altMinEl) altMinEl.textContent = d.mount_min_alt_deg.toFixed(1) + "°";
+      if (altMaxEl) altMaxEl.textContent = d.mount_max_alt_deg.toFixed(1) + "°";
+      if (haEastEl) haEastEl.textContent = d.mount_ha_east_limit_h.toFixed(2) + " h";
+      if (haWestEl) haWestEl.textContent = d.mount_ha_west_limit_h.toFixed(2) + " h";
     } catch {}
     _tickClock();
     _clockInterval = setInterval(_tickClock, 1000);

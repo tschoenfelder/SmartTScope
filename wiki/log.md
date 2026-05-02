@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-02 — Sprint 40: Bahtinov API + Stage 4 UI overlay
+
+**Code changes**:
+- `smart_telescope/api/bahtinov.py` — NEW: `POST /api/bahtinov/analyze`; captures one frame, runs `BahtinovAnalyzer`, returns `CrossingAnalysisResult` fields + `image_size_px`; 422 when fewer than 3 spikes detected
+- `smart_telescope/app.py` — registered `bahtinov_router`
+- `smart_telescope/static/index.html`:
+  - Analyze button (enabled only when preview running, disabled when stopped)
+  - SVG overlay element (`s4-bahtinov-svg`) absolutely positioned over preview image
+  - Results card (focus_error_px with color + direction hint, crossing RMS, confidence)
+  - `_clipLineToRect()` — clips a normal-form line to image bounds for SVG rendering
+  - `_drawBahtinovOverlay(data)` — draws 3 spike lines (outer blue dashed, middle yellow solid), crossing-point ring (green/yellow/red by error magnitude), focus-direction arrow
+  - `_clearBahtinovOverlay()` — clears SVG + hides results (called on preview stop)
+  - `bahtinovAnalyze()` — async; posts to API, populates results, calls draw overlay
+  - `_updatePreviewBtns()` — now also manages analyze button and clears overlay on stop
+
+**Tests**:
+- `tests/unit/api/test_bahtinov.py` — NEW: 12 tests (422 on zero-pixel image, success path with synthetic spike image, key validation, mocked analyzer path)
+
+**Suite result**: 980 passed, 94.40% coverage
+
+---
+
 ## 2026-05-02 — Sprint 39: Focuser availability + shared serial delegation
 
 **Source ingested**: `resources/hlrequirements/requirements_addon_20260502b.txt`

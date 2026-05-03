@@ -27,17 +27,31 @@ DO_PULL=true
 DO_LINT=false
 
 # ── venv detection ─────────────────────────────────────────────────────────────
-# Prefer the venv that install_pi.sh creates; fall back to any activated venv.
+# Search order: .venv in repo root → any currently activated venv ($VIRTUAL_ENV).
+# Each location tries python first, then python3 (Debian/Pi OS has no python symlink).
 VENV_DIR="$REPO_ROOT/.venv"
-if [[ -x "$VENV_DIR/bin/python" ]]; then
-    PIP="$VENV_DIR/bin/pip"
-    PYTHON="$VENV_DIR/bin/python"
-elif [[ -n "${VIRTUAL_ENV:-}" && -x "$VIRTUAL_ENV/bin/python" ]]; then
-    PIP="$VIRTUAL_ENV/bin/pip"
-    PYTHON="$VIRTUAL_ENV/bin/python"
+_pick_python() {
+    local d="$1"
+    if   [[ -x "$d/bin/python"  ]]; then echo "$d/bin/python";  return 0; fi
+    if   [[ -x "$d/bin/python3" ]]; then echo "$d/bin/python3"; return 0; fi
+    return 1
+}
+_pick_pip() {
+    local d="$1"
+    if   [[ -x "$d/bin/pip"  ]]; then echo "$d/bin/pip";  return 0; fi
+    if   [[ -x "$d/bin/pip3" ]]; then echo "$d/bin/pip3"; return 0; fi
+    return 1
+}
+
+if PYTHON="$(_pick_python "$VENV_DIR")" 2>/dev/null; then
+    PIP="$(_pick_pip "$VENV_DIR")"
+elif [[ -n "${VIRTUAL_ENV:-}" ]] && PYTHON="$(_pick_python "$VIRTUAL_ENV")" 2>/dev/null; then
+    PIP="$(_pick_pip "$VIRTUAL_ENV")"
 else
-    echo -e "\033[0;31m[✗]\033[0m No virtual environment found at $VENV_DIR"
-    echo "    Run ./scripts/install_pi.sh first to create it."
+    echo -e "\033[0;31m[✗]\033[0m No virtual environment found."
+    echo "    Tried .venv at: $VENV_DIR"
+    [[ -n "${VIRTUAL_ENV:-}" ]] && echo "    Tried VIRTUAL_ENV: $VIRTUAL_ENV"
+    echo "    Activate your venv first, or run ./scripts/install_pi.sh"
     exit 1
 fi
 

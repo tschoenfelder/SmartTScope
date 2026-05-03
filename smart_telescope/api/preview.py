@@ -39,6 +39,11 @@ async def ws_preview(
     except RuntimeError:
         # Raised by Starlette when the send channel is closed mid-flight
         pass
+    except Exception as exc:
+        try:
+            await websocket.send_text(f"error: {exc}")
+        except Exception:
+            pass
 
 
 def _to_jpeg(frame: FitsFrame) -> bytes:

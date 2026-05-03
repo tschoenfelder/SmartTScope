@@ -822,15 +822,15 @@
 
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
             <label>Cam</label>
-            <input type="number" id="preview-cam-idx-a" value="0" min="0" max="7" step="1"
-                   style="width:5ch" title="SDK camera index">
+            <select id="preview-cam-select" style="font-size:0.8rem;max-width:11ch"
+                    title="Preview camera"></select>
             <label style="margin-left:0.4rem">Exp</label>
             <input type="number" id="preview-exposure" value="2" min="0.1" max="60" step="0.5"
-                   style="width:7ch">
+                   style="width:4ch">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
-                   style="width:6ch">
+                   style="width:5ch">
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-hist-chk" style="width:auto"
                      onchange="previewHistToggle(this.checked)">Hist
@@ -838,6 +838,9 @@
             <button id="solve-btn" onclick="solveFrame()"
                     style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Plate-solve current frame">Solve</button>
+            <button id="preview-af-btn" onclick="runPreviewAutofocus()" disabled
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="Focuser not connected">AF</button>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
           </div>
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
@@ -1144,6 +1147,7 @@
      App-wide state
   ══════════════════════════════════════════════════════════════════════ */
   let _mountConnected  = false;
+  let _focuserOk       = false;
   let _focusCamIdx     = 0;  // camera index used for autofocus (set in Stage 1 focuser tile)
   let _observerLat     = 50.336;
   let _observerLon     = 8.533;
@@ -1233,6 +1237,12 @@
     try {
       const d = await (await fetch('/api/status')).json();
       _renderHealthCard(d);
+      _focuserOk = d.focuser?.ok ?? false;
+      const afBtn = document.getElementById('preview-af-btn');
+      if (afBtn) {
+        afBtn.disabled = !_focuserOk;
+        afBtn.title = _focuserOk ? 'Autofocus with preview camera' : 'Focuser not connected';
+      }
     } catch (_) {}
   }
 
@@ -1888,7 +1898,7 @@
     setStatus('s3-status', '');
     setStatus('s3-center-status', '');
     try {
-      const camIdx = parseInt(document.getElementById('preview-cam-idx-a')?.value, 10) || 0;
+      const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
       const result = await apiPost('/api/mount/goto_and_center',
         { ra, dec, tolerance_arcmin: 2.0, max_iterations: 3, camera_index: camIdx });
       if (result.success) {
@@ -2062,6 +2072,26 @@
     } catch (_) {}
   }
 
+  async function loadPreviewCameras() {
+    const sel = document.getElementById('preview-cam-select');
+    if (!sel) return;
+    try {
+      const scan = await (await fetch('/api/cameras')).json();
+      if (!scan.sdk_available || scan.cameras.length === 0) {
+        sel.innerHTML = '<option value="0">Cam 0</option>';
+        return;
+      }
+      sel.innerHTML = scan.cameras.map((c, i) => {
+        const label = c.display_name
+          ? `${escHtml(c.display_name)} #${i}`
+          : `Cam ${i}`;
+        return `<option value="${i}">${label}</option>`;
+      }).join('');
+    } catch (_) {
+      sel.innerHTML = '<option value="0">Cam 0</option>';
+    }
+  }
+
   async function refreshFocuser() {
     try {
       const data = await (await fetch('/api/focuser/status')).json();
@@ -2128,6 +2158,31 @@
     }
   }
 
+
+  async function runPreviewAutofocus() {
+    const btn    = document.getElementById('preview-af-btn');
+    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const wasRunning = _reconnect && _ws !== null;
+    if (wasRunning) previewStop();
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>';
+    try {
+      const range = parseInt(document.getElementById('af-range')?.value, 10) || 1000;
+      const step  = parseInt(document.getElementById('af-step')?.value, 10) || 100;
+      const exp   = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
+      const d = await apiPost('/api/focuser/autofocus',
+        { range_steps: range, step_size: step, exposure: exp, camera_index: camIdx });
+      const sign = d.metric_gain >= 0 ? '+' : '';
+      setStatus('s3-status',
+        `AF: pos ${d.best_position}  gain ${sign}${d.metric_gain.toFixed(1)}`);
+    } catch (err) {
+      setStatus('s3-status', `AF failed: ${err}`, true);
+    } finally {
+      btn.disabled = !_focuserOk;
+      btn.innerHTML = 'AF';
+      if (wasRunning) previewStart();
+    }
+  }
 
   /* ══════════════════════════════════════════════════════════════════════
      Bahtinov analyzer (Stage 4)
@@ -2419,7 +2474,7 @@
     if (_ws) { _ws.close(); _ws = null; }
     const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
     const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx   = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
+    const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
     const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
     const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}`;
 
@@ -2434,6 +2489,10 @@
     };
 
     _ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        setStatus('s3-status', `Camera: ${ev.data}`, true);
+        return;
+      }
       // Stage 3 image
       const img3 = document.getElementById('s3-preview-img');
       const ph3  = document.getElementById('s3-preview-ph');
@@ -2539,7 +2598,7 @@
     const result   = document.getElementById('solve-result');
     const exposure = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
     const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx   = parseInt(document.getElementById('preview-cam-idx-a').value, 10) || 0;
+    const camIdx   = parseInt(document.getElementById('preview-cam-select').value, 10) || 0;
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Solving…';
     result.style.display = 'none';
@@ -3001,6 +3060,7 @@
   refreshHealth();
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
+  loadPreviewCameras();
   loadStars();
   updateElevationLabel();
 </script>

@@ -149,6 +149,16 @@ class OnStepMount(MountPort):
         self._raw_send(":hP#")
         return True
 
+    def get_park_position(self) -> MountPosition | None:
+        try:
+            ra_str  = self._send(":GpA#")
+            dec_str = self._send(":GpD#")
+            if not ra_str or not dec_str:
+                return None
+            return MountPosition(ra=_parse_ra(ra_str), dec=_parse_dec(dec_str))
+        except Exception:
+            return None
+
     def disable_tracking(self) -> bool:
         self._raw_send(":Td#")
         return True

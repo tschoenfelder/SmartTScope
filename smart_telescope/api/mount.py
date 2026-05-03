@@ -65,8 +65,12 @@ class MountStatus(BaseModel):
     state: str
     ra: float | None
     dec: float | None
-    ha: float | None   # hour angle in hours, normalised [-12, +12]
-    alt: float | None  # altitude in degrees
+    ha: float | None        # hour angle in hours, normalised [-12, +12]
+    alt: float | None       # altitude in degrees
+    park_ra: float | None = None   # stored park position (hours)
+    park_dec: float | None = None  # stored park position (degrees)
+    home_ra: float | None = None   # home RA = LST (HA=0, Dec 89°)
+    home_dec: float | None = None  # always 89.0°
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -89,6 +93,13 @@ class GotoRequest(BaseModel):
     dec: float
 
 
+def _get_lst() -> float | None:
+    with contextlib.suppress(Exception):
+        loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+        return round(Time.now().sidereal_time("apparent", longitude=loc.lon).hour, 4)
+    return None
+
+
 @router.get("/status", response_model=MountStatus)
 def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
     state = mount.get_state()
@@ -101,12 +112,23 @@ def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
     if pos is not None:
         with contextlib.suppress(Exception):
             ha, alt = _compute_ha_alt(pos.ra, pos.dec)
+
+    park_pos = None
+    with contextlib.suppress(Exception):
+        park_pos = mount.get_park_position()
+
+    lst = _get_lst()
+
     return MountStatus(
         state=state.name.lower(),
         ra=pos.ra if pos else None,
         dec=pos.dec if pos else None,
         ha=ha,
         alt=alt,
+        park_ra=park_pos.ra if park_pos else None,
+        park_dec=park_pos.dec if park_pos else None,
+        home_ra=lst,
+        home_dec=89.0 if lst is not None else None,
     )
 
 

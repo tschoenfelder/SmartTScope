@@ -76,5 +76,9 @@ class MountPort(ABC):
         """Write the computed pointing model to EEPROM."""
         ...
 
+    def get_park_position(self) -> MountPosition | None:
+        """Return the stored park position, or None if the adapter doesn't support it."""
+        return None
+
     @abstractmethod
     def disconnect(self) -> None: ...

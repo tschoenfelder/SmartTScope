@@ -1457,12 +1457,40 @@
         </div>
         <div class="params">
           <div class="param">
+            <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Current</span>
+            <span></span>
+          </div>
+          <div class="param">
             <span class="param-label">RA</span>
             <span class="param-value mono">${escHtml(ra)}</span>
           </div>
           <div class="param">
             <span class="param-label">Dec</span>
             <span class="param-value mono">${escHtml(dec)}</span>
+          </div>
+          <div class="param" style="margin-top:0.35rem">
+            <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Home (HA=0, Dec 89°)</span>
+            <span></span>
+          </div>
+          <div class="param">
+            <span class="param-label">RA</span>
+            <span class="param-value mono">${data.home_ra != null ? _formatRA(+data.home_ra) : '—'}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Dec</span>
+            <span class="param-value mono">${data.home_dec != null ? _formatDec(+data.home_dec) : '—'}</span>
+          </div>
+          <div class="param" style="margin-top:0.35rem">
+            <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Park</span>
+            <span></span>
+          </div>
+          <div class="param">
+            <span class="param-label">RA</span>
+            <span class="param-value mono">${data.park_ra != null ? _formatRA(+data.park_ra) : '—'}</span>
+          </div>
+          <div class="param">
+            <span class="param-label">Dec</span>
+            <span class="param-value mono">${data.park_dec != null ? _formatDec(+data.park_dec) : '—'}</span>
           </div>
         </div>
         <div class="controls">

@@ -6,6 +6,13 @@ dist/
 build/
 .venv/
 venv/
+# venv created at repo root (python -m venv .)
+pyvenv.cfg
+bin/
+lib/
+lib64
+include/
+share/
 .env
 *.log
 .pytest_cache/

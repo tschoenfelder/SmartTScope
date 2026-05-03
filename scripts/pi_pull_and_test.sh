@@ -87,7 +87,21 @@ if $DO_PULL; then
         git diff --name-only
         git diff --cached --name-only
         git checkout -- .
-        git clean -fd --quiet
+        # Protect any active venv that lives inside the repo from git-clean.
+        _CLEAN_EXTRA=()
+        if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+            if [[ "$VIRTUAL_ENV" == "$REPO_ROOT" ]]; then
+                # Venv was created at repo root — protect its top-level dirs/files.
+                _CLEAN_EXTRA+=( \
+                    "--exclude=bin" "--exclude=lib" "--exclude=lib64" \
+                    "--exclude=include" "--exclude=share" "--exclude=pyvenv.cfg" \
+                )
+            elif [[ "$VIRTUAL_ENV" == "$REPO_ROOT/"* ]]; then
+                # Venv is a named subdir of the repo (e.g. repo/.venv or repo/myenv).
+                _CLEAN_EXTRA+=("--exclude=${VIRTUAL_ENV#$REPO_ROOT/}")
+            fi
+        fi
+        git clean -fd --quiet "${_CLEAN_EXTRA[@]}"
         warn "Local changes discarded."
     fi
 

@@ -1,4 +1,5 @@
 import configparser
+import os
 import shutil
 import subprocess
 import tempfile
@@ -8,6 +9,9 @@ from ...domain.frame import FitsFrame
 from ...ports.solver import SolveResult, SolverPort
 
 _ASTAP_DEFAULT = Path("C:/Program Files/astap/astap.exe")
+
+# G17/H17 = .290 areas; D-series (D05/D20/D50/D80) = .1476 areas
+_CATALOG_EXTENSIONS = ("*.290", "*.1476")
 
 _CATALOG_SEARCH_DIRS: list[Path] = [
     Path.home() / ".astap",
@@ -33,14 +37,17 @@ def find_catalog(
     astap_exe: str | None = None,
     catalog_dir: str | None = None,
 ) -> Path | None:
-    """Return directory containing an ASTAP star catalog (.290 files), or None.
+    """Return directory containing an ASTAP star catalog (.290 or .1476 files), or None.
 
-    Works with all catalog families: D05, D20, D50, D80 (and legacy G17).
-    *catalog_dir* is checked first when provided (from config file).
-    Searches each candidate directory and one level of subdirectories so
+    Works with all catalog families: D05, D20, D50, D80 (.1476) and legacy G17 (.290).
+    Search order: ASTAP_CATALOG_DIR env var, *catalog_dir* arg, ASTAP exe dir, then
+    _CATALOG_SEARCH_DIRS.  Searches each candidate and one level of subdirectories so
     catalogs installed as e.g. /usr/share/astap/d80/ are found.
     """
     search: list[Path] = []
+    env_dir = os.environ.get("ASTAP_CATALOG_DIR", "").strip()
+    if env_dir:
+        search.append(Path(env_dir))
     if catalog_dir:
         search.append(Path(catalog_dir))
     if astap_exe:
@@ -49,11 +56,11 @@ def find_catalog(
     for d in search:
         if not d.is_dir():
             continue
-        if any(d.glob("*.290")):
+        if any(pat for ext in _CATALOG_EXTENSIONS for pat in d.glob(ext)):
             return d
         # one level of subdirectories (e.g. astap/d80/)
         for sub in d.iterdir():
-            if sub.is_dir() and any(sub.glob("*.290")):
+            if sub.is_dir() and any(pat for ext in _CATALOG_EXTENSIONS for pat in sub.glob(ext)):
                 return sub
     return None
 
@@ -61,6 +68,9 @@ def find_catalog(
 def catalog_search_paths(astap_exe: str | None = None, catalog_dir: str | None = None) -> list[str]:
     """Return the list of paths that would be searched by find_catalog()."""
     paths: list[Path] = []
+    env_dir = os.environ.get("ASTAP_CATALOG_DIR", "").strip()
+    if env_dir:
+        paths.append(Path(env_dir))
     if catalog_dir:
         paths.append(Path(catalog_dir))
     if astap_exe:

@@ -68,3 +68,28 @@ class TestFindCatalog:
             "smart_telescope.adapters.astap.solver._CATALOG_SEARCH_DIRS", []
         )
         assert find_catalog(astap_exe=None) is None
+
+    # D-series (.1476) support ─────────────────────────────────────────────────
+
+    def test_finds_d80_catalog_by_1476_extension(self, tmp_path: Path) -> None:
+        _plant(tmp_path, "d80_3402.1476")
+        result = find_catalog(astap_exe=str(tmp_path / "astap"))
+        assert result == tmp_path
+
+    def test_finds_d80_catalog_in_subdirectory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sub = tmp_path / "d80"
+        sub.mkdir()
+        _plant(sub, "d80_0001.1476")
+
+        monkeypatch.setattr(
+            "smart_telescope.adapters.astap.solver._CATALOG_SEARCH_DIRS",
+            [tmp_path],
+        )
+        result = find_catalog(astap_exe=None)
+        assert result == sub
+
+    def test_does_not_return_dir_with_only_unrelated_files(self, tmp_path: Path) -> None:
+        (tmp_path / "d80_3402.fits").write_bytes(b"fake")
+        assert find_catalog(astap_exe=str(tmp_path / "astap")) is None

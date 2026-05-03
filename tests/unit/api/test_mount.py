@@ -65,8 +65,17 @@ class TestMountStatus:
         assert data["ra"] == pytest.approx(5.58, abs=0.01)
         assert data["dec"] == pytest.approx(-5.39, abs=0.01)
 
-    def test_ra_dec_none_when_parked(self) -> None:
+    def test_ra_dec_present_when_parked(self) -> None:
+        # PARKED mounts still report park position — RA/Dec are fetched and returned.
+        m = _mock_mount(state=MountState.PARKED, ra=5.58, dec=-5.39)
+        _inject(m)
+        data = client.get("/api/mount/status").json()
+        assert data["ra"] == pytest.approx(5.58, abs=0.01)
+        assert data["dec"] == pytest.approx(-5.39, abs=0.01)
+
+    def test_ra_dec_none_when_parked_position_fails(self) -> None:
         m = _mock_mount(state=MountState.PARKED)
+        m.get_position.side_effect = RuntimeError("no pos")
         _inject(m)
         data = client.get("/api/mount/status").json()
         assert data["ra"] is None

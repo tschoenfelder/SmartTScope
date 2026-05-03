@@ -588,6 +588,21 @@
           <span class="param-label">Status</span>
           <span class="param-value" id="s1-focuser-status-text">—</span>
         </div>
+        <div class="param" id="s1-focuser-pos-row" style="display:none">
+          <span class="param-label">Position</span>
+          <span class="param-value mono" id="s1-focuser-pos">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Autofocus cam</span>
+          <span class="param-value">
+            <select id="s1-focuser-cam-select"
+                    onchange="_focusCamIdx = +this.value"
+                    style="background:var(--bg);color:var(--fg);border:1px solid var(--border);
+                           border-radius:3px;padding:0 4px;font-size:0.78rem">
+              <option value="0">Cam 0</option>
+            </select>
+          </span>
+        </div>
       </div>
     </div>
 
@@ -1126,6 +1141,7 @@
      App-wide state
   ══════════════════════════════════════════════════════════════════════ */
   let _mountConnected  = false;
+  let _focusCamIdx     = 0;  // camera index used for autofocus (set in Stage 1 focuser tile)
   let _observerLat     = 50.336;
   let _observerLon     = 8.533;
   let _clockInterval   = null;
@@ -1868,8 +1884,9 @@
     setStatus('s3-status', '');
     setStatus('s3-center-status', '');
     try {
+      const camIdx = parseInt(document.getElementById('preview-cam-idx-a')?.value, 10) || 0;
       const result = await apiPost('/api/mount/goto_and_center',
-        { ra, dec, tolerance_arcmin: 2.0, max_iterations: 3 });
+        { ra, dec, tolerance_arcmin: 2.0, max_iterations: 3, camera_index: camIdx });
       if (result.success) {
         setStatus('s3-stars-status',
           `${name} centred ✓ — ${result.iterations} iter, offset ${result.offset_arcmin.toFixed(2)} arcmin`);
@@ -2069,7 +2086,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Focusing…';
     try {
-      const d = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure });
+      const d = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure, camera_index: _focusCamIdx });
       const method = d.fitted ? 'parabola' : 'argmax';
       const gain   = d.metric_gain >= 0 ? `+${d.metric_gain.toFixed(1)}` : d.metric_gain.toFixed(1);
       res.style.display = 'block';
@@ -2274,6 +2291,16 @@
           if (fd.available) {
             if (focuserDot)  focuserDot.className  = 'dot dot-green';
             if (focuserText) focuserText.textContent = 'Focuser active';
+            // Show current position
+            try {
+              const fs = await (await fetch('/api/focuser/status')).json();
+              const posRow = document.getElementById('s1-focuser-pos-row');
+              const posEl  = document.getElementById('s1-focuser-pos');
+              if (posRow) posRow.style.display = '';
+              if (posEl)  posEl.textContent = fs.max_position
+                ? `${fs.position} / ${fs.max_position} steps`
+                : `${fs.position} steps`;
+            } catch (_) {}
           } else {
             if (focuserDot)  focuserDot.className  = 'dot dot-yellow';
             if (focuserText) focuserText.textContent = 'Not found — autofocus disabled';
@@ -2282,6 +2309,16 @@
           if (focuserDot)  focuserDot.className  = 'dot dot-red';
           if (focuserText) focuserText.textContent = 'Focuser probe failed';
         }
+        // Populate autofocus camera selector from available cameras
+        try {
+          const scan = await (await fetch('/api/cameras')).json();
+          const sel  = document.getElementById('s1-focuser-cam-select');
+          if (sel && scan.cameras.length > 0) {
+            sel.innerHTML = scan.cameras.map((c, i) =>
+              `<option value="${i}">${escHtml(c.display_name || 'Cam ' + i)}</option>`
+            ).join('');
+          }
+        } catch (_) {}
       }
 
       await refreshMount();

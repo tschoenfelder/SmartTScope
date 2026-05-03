@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..domain.solar import is_solar_target
-from ..ports.camera import CameraPort
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
 from ..workflow.goto_center import goto_and_center
@@ -94,7 +93,7 @@ class GotoRequest(BaseModel):
 def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
     state = mount.get_state()
     pos = None
-    if state not in (MountState.PARKED, MountState.UNKNOWN):
+    if state != MountState.UNKNOWN:  # include PARKED — OnStep reports park position
         with contextlib.suppress(Exception):
             pos = mount.get_position()
     ha: float | None = None
@@ -275,6 +274,7 @@ class GotoAndCenterRequest(BaseModel):
     pixel_scale:      float | None = Field(default=None, gt=0.0)
     tolerance_arcmin: float      = Field(default=2.0, gt=0.0)
     max_iterations:   int        = Field(default=3, ge=1, le=5)
+    camera_index:     int        = Field(default=0, ge=0, le=7)
 
 
 class GotoAndCenterResponse(BaseModel):
@@ -290,7 +290,6 @@ class GotoAndCenterResponse(BaseModel):
 async def mount_goto_and_center(
     body:   GotoAndCenterRequest,
     mount:  MountPort  = Depends(deps.get_mount),
-    camera: CameraPort = Depends(deps.get_camera),
     solver: SolverPort = Depends(deps.get_solver),
     confirm_solar: bool = Query(default=False),
 ) -> GotoAndCenterResponse:
@@ -303,6 +302,7 @@ async def mount_goto_and_center(
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
     _check_mount_limits(body.ra, body.dec)
+    camera = deps.get_preview_camera(body.camera_index)
     scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
     result = await goto_and_center(
         mount, camera, solver,

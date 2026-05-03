@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..domain.autofocus import AutofocusParams
-from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..workflow.autofocus import run_autofocus
 from . import deps
@@ -80,20 +79,21 @@ def focuser_stop(focuser: FocuserPort = Depends(deps.get_focuser)) -> dict[str, 
 
 
 class AutofocusRequest(BaseModel):
-    range_steps: int   = 1000  # total sweep width in focuser steps
-    step_size:   int   = 100   # step between samples
-    exposure:    float = 2.0   # seconds per frame
+    range_steps:  int   = 1000
+    step_size:    int   = 100
+    exposure:     float = 2.0
+    camera_index: int   = 0
 
 
 @router.post("/autofocus")
 def focuser_autofocus(
     body:    AutofocusRequest,
     focuser: FocuserPort = Depends(deps.get_focuser),
-    camera:  CameraPort  = Depends(deps.get_camera),
 ) -> dict[str, object]:
     if not focuser.is_available:
         raise HTTPException(status_code=503, detail="Focuser not available")
 
+    camera = deps.get_preview_camera(body.camera_index)
     try:
         params = AutofocusParams(
             range_steps = body.range_steps,

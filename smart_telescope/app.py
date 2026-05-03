@@ -11,6 +11,7 @@ from .api.emergency import router as emergency_router
 from .api.focuser import router as focuser_router
 from .api.health import router as health_router
 from .api.mount import router as mount_router
+from .api.polar import router as polar_router
 from .api.preview import router as preview_router
 from .api.queue import router as queue_router
 from .api.session import router as session_router
@@ -26,6 +27,7 @@ app.include_router(catalog_router)
 app.include_router(emergency_router)
 app.include_router(health_router)
 app.include_router(mount_router)
+app.include_router(polar_router)
 app.include_router(focuser_router)
 app.include_router(preview_router)
 app.include_router(queue_router)

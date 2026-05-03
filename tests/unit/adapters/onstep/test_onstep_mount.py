@@ -176,11 +176,21 @@ class TestGetState:
     def test_limit_flag_returns_at_limit_state(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        # 'E' or 'W' = at hardware limit
-        instance.readline.return_value = b"n|E|0|0|0|0|0|0|0|0|0|0|0|0|0#"
+        # OnStep V4: 'l' (lowercase) = at hardware limit.
+        # 'E'/'W' mean east/west of meridian (normal positions), NOT limits.
+        instance.readline.return_value = b"nlT#"
         mount = _make_mount()
         mount.connect()
         assert mount.get_state() == MountState.AT_LIMIT
+
+    def test_east_of_meridian_is_not_at_limit(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        # 'E' = east of meridian — normal tracking position, must NOT be AT_LIMIT
+        instance.readline.return_value = b"nTE#"
+        mount = _make_mount()
+        mount.connect()
+        assert mount.get_state() != MountState.AT_LIMIT
 
     def test_unreadable_response_returns_unknown(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")

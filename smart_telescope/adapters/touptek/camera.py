@@ -61,9 +61,12 @@ class ToupcamCamera(CameraPort):
 
         devices = _tc.Toupcam.EnumV2()
         if len(devices) <= self._index:
+            names = [str(d.displayname) for d in devices]
+            listing = ", ".join(f"{i}:{n}" for i, n in enumerate(names)) or "none"
             raise RuntimeError(
-                f"ToupTek: no camera at index {self._index} "
-                f"({len(devices)} device(s) found)"
+                f"ToupTek: no camera at index {self._index} — "
+                f"found {len(devices)}: [{listing}]. "
+                f"Check touptek_index in smart_telescope.toml or visit /api/cameras"
             )
 
         cam = _tc.Toupcam.Open(devices[self._index].id)

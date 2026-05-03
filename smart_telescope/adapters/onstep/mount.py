@@ -101,11 +101,14 @@ class OnStepMount(MountPort):
         r = self._send(":GU#")
         if not r:
             return MountState.UNKNOWN
+        # Priority order matters — check tracking before meridian-side letters.
+        # OnStep uses 'E'/'W' for east/west of meridian (normal positions), not limits.
+        # Actual hardware limits are signalled by 'l' (lowercase) in V4 firmware.
         if "P" in r:
             return MountState.PARKED
         if "S" in r:
             return MountState.SLEWING
-        if "E" in r or "W" in r:
+        if "l" in r:
             return MountState.AT_LIMIT
         if "T" in r:
             return MountState.TRACKING

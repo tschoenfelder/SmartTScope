@@ -135,6 +135,18 @@ class TestMountTrack:
         client.post("/api/mount/track")
         m.enable_tracking.assert_called_once()
 
+    def test_auto_unparks_when_parked(self) -> None:
+        m = _mock_mount(state=MountState.PARKED)
+        _inject(m)
+        r = client.post("/api/mount/track")
+        m.unpark.assert_called_once()
+        assert r.status_code == 200
+
+    def test_returns_500_when_auto_unpark_fails(self) -> None:
+        m = _mock_mount(state=MountState.PARKED, unpark_ok=False)
+        _inject(m)
+        assert client.post("/api/mount/track").status_code == 500
+
 
 # ── POST /api/mount/stop ───────────────────────────────────────────────────────
 

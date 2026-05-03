@@ -118,7 +118,8 @@ class OnStepMount(MountPort):
         return len(self._raw_send(":hU#")) > 0
 
     def enable_tracking(self) -> bool:
-        return self._send(":Te#") == "1"
+        r = self._send(":Te#")
+        return r != "0"  # accept "1" (V4 ACK) and "" (no-ACK firmware); reject explicit "0"
 
     def get_position(self) -> MountPosition:
         ra = _parse_ra(self._send(":GR#"))

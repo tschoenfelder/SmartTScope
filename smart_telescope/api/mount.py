@@ -121,6 +121,9 @@ def mount_unpark(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
 
 @router.post("/track")
 def mount_track(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+    if mount.get_state() == MountState.PARKED:
+        if not mount.unpark():
+            raise HTTPException(status_code=500, detail="Auto-unpark before tracking failed")
     ok = mount.enable_tracking()
     if not ok:
         raise HTTPException(status_code=500, detail="Enable tracking failed")

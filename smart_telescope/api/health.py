@@ -45,6 +45,7 @@ class SolverHealth(BaseModel):
     ok: bool
     astap_found: bool
     catalog_found: bool
+    catalog_path: str | None = None
 
 
 class StorageHealth(BaseModel):
@@ -102,6 +103,7 @@ def system_status(
         ok=astap_path is not None and catalog is not None,
         astap_found=astap_path is not None,
         catalog_found=catalog is not None,
+        catalog_path=str(catalog) if catalog is not None else None,
     )
 
     # ── Storage ──────────────────────────────────────────────────────────────

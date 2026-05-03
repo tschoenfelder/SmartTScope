@@ -1189,8 +1189,9 @@
       d.focuser.ok ? 'Active' : 'Not found — autofocus disabled'));
     // Solver
     const sLevel = d.solver.ok ? 'ok' : 'error';
-    const sLabel = d.solver.ok ? 'ASTAP + G17 ready'
-      : !d.solver.astap_found ? 'ASTAP not found' : 'G17 catalog missing';
+    const sLabel = d.solver.ok
+      ? `ASTAP ready — ${d.solver.catalog_path ?? 'catalog found'}`
+      : !d.solver.astap_found ? 'ASTAP not found' : 'Star catalog (.290) not found';
     rows.push(_healthRow('Solver', sLevel, sLabel));
     // Storage
     let stLevel, stLabel;

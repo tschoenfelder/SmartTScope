@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..adapters.astap.solver import find_astap as _find_astap
-from ..adapters.astap.solver import find_g17_catalog as _find_catalog
+from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..ports.solver import SolverPort
 from .deps import get_preview_camera, get_solver
 

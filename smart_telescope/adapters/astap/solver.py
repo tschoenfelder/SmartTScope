@@ -37,6 +37,8 @@ def find_catalog(
 
     Works with all catalog families: D05, D20, D50, D80 (and legacy G17).
     *catalog_dir* is checked first when provided (from config file).
+    Searches each candidate directory and one level of subdirectories so
+    catalogs installed as e.g. /usr/share/astap/d80/ are found.
     """
     search: list[Path] = []
     if catalog_dir:
@@ -45,8 +47,14 @@ def find_catalog(
         search.append(Path(astap_exe).parent)
     search.extend(_CATALOG_SEARCH_DIRS)
     for d in search:
-        if d.is_dir() and any(d.glob("*.290")):
+        if not d.is_dir():
+            continue
+        if any(d.glob("*.290")):
             return d
+        # one level of subdirectories (e.g. astap/d80/)
+        for sub in d.iterdir():
+            if sub.is_dir() and any(sub.glob("*.290")):
+                return sub
     return None
 
 
@@ -100,6 +108,11 @@ class AstapSolver(SolverPort):
         search_radius_deg: float | None = None,
     ) -> SolveResult:
         radius = search_radius_deg if search_radius_deg is not None else self._search_radius
+
+        # Resolve catalog directory at solve time so it picks up any path
+        # found by find_catalog() even if not in ASTAP's own search path.
+        catalog = find_catalog(self._astap, self._catalog_dir)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             fits_path = Path(tmpdir) / "frame.fits"
             fits_path.write_bytes(frame.to_fits_bytes())
@@ -112,6 +125,8 @@ class AstapSolver(SolverPort):
                 "-scale", str(round(pixel_scale_hint, 4)),
                 "-o", str(fits_path.with_suffix("")),
             ]
+            if catalog is not None:
+                cmd += ["-d", str(catalog)]
 
             try:
                 proc = subprocess.run(

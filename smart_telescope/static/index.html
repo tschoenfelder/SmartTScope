@@ -594,13 +594,16 @@
         </div>
         <div class="param">
           <span class="param-label">Autofocus cam</span>
-          <span class="param-value">
+          <span class="param-value" style="display:flex;align-items:center;gap:0.4rem">
             <select id="s1-focuser-cam-select"
                     onchange="_focusCamIdx = +this.value"
-                    style="background:var(--bg);color:var(--fg);border:1px solid var(--border);
+                    style="flex:1;background:var(--bg);color:var(--fg);border:1px solid var(--border);
                            border-radius:3px;padding:0 4px;font-size:0.78rem">
-              <option value="0">Cam 0</option>
+              <option value="0">Scanning…</option>
             </select>
+            <button onclick="loadFocuserCameras()"
+                    style="padding:0.1rem 0.4rem;font-size:0.72rem"
+                    title="Re-scan cameras">↺</button>
           </span>
         </div>
       </div>
@@ -2035,6 +2038,29 @@
       </div>`;
   }
 
+  async function loadFocuserCameras() {
+    const sel = document.getElementById('s1-focuser-cam-select');
+    if (!sel) return;
+    try {
+      const scan = await (await fetch('/api/cameras')).json();
+      if (!scan.sdk_available) {
+        sel.innerHTML = '<option value="0" disabled>SDK not available</option>';
+        return;
+      }
+      if (scan.cameras.length === 0) {
+        sel.innerHTML = '<option value="0" disabled>No cameras found</option>';
+        return;
+      }
+      sel.innerHTML = scan.cameras.map((c, i) => {
+        const label = c.display_name
+          ? `${escHtml(c.display_name)} (${escHtml(c.model_name)}) #${i}`
+          : `Cam ${i} — ${escHtml(c.model_name)}`;
+        return `<option value="${i}">${label}</option>`;
+      }).join('');
+      _focusCamIdx = +sel.value;
+    } catch (_) {}
+  }
+
   async function refreshFocuser() {
     try {
       const data = await (await fetch('/api/focuser/status')).json();
@@ -2309,16 +2335,7 @@
           if (focuserDot)  focuserDot.className  = 'dot dot-red';
           if (focuserText) focuserText.textContent = 'Focuser probe failed';
         }
-        // Populate autofocus camera selector from available cameras
-        try {
-          const scan = await (await fetch('/api/cameras')).json();
-          const sel  = document.getElementById('s1-focuser-cam-select');
-          if (sel && scan.cameras.length > 0) {
-            sel.innerHTML = scan.cameras.map((c, i) =>
-              `<option value="${i}">${escHtml(c.display_name || 'Cam ' + i)}</option>`
-            ).join('');
-          }
-        } catch (_) {}
+        await loadFocuserCameras();
       }
 
       await refreshMount();
@@ -2982,6 +2999,7 @@
   refreshMount();
   refreshHealth();
   setInterval(refreshHealth, 10_000);
+  loadFocuserCameras();
   loadStars();
   updateElevationLabel();
 </script>

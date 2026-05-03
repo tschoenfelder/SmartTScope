@@ -60,20 +60,23 @@ class TestConnect:
         with patch.dict(sys.modules, {"toupcam": None}):
             assert cam.connect() is False
 
-    def test_false_when_no_devices(self) -> None:
+    def test_raises_when_no_devices(self) -> None:
         cam = ToupcamCamera()
         with patch.dict(sys.modules, {"toupcam": _make_toupcam_mock(num_devices=0)}):
-            assert cam.connect() is False
+            with pytest.raises(RuntimeError, match="no camera at index"):
+                cam.connect()
 
-    def test_false_when_index_exceeds_device_count(self) -> None:
+    def test_raises_when_index_exceeds_device_count(self) -> None:
         cam = ToupcamCamera(index=1)
         with patch.dict(sys.modules, {"toupcam": _make_toupcam_mock(num_devices=1)}):
-            assert cam.connect() is False
+            with pytest.raises(RuntimeError, match="no camera at index"):
+                cam.connect()
 
-    def test_false_when_open_returns_none(self) -> None:
+    def test_raises_when_open_returns_none(self) -> None:
         cam = ToupcamCamera()
         with patch.dict(sys.modules, {"toupcam": _make_toupcam_mock(open_succeeds=False)}):
-            assert cam.connect() is False
+            with pytest.raises(RuntimeError, match="Open\\(\\) failed"):
+                cam.connect()
 
     def test_true_on_success(self) -> None:
         cam = ToupcamCamera()
@@ -104,12 +107,13 @@ class TestConnect:
             ToupcamCamera().connect()
         tc.Toupcam.Open.return_value.put_AutoExpoEnable.assert_called_once_with(False)
 
-    def test_false_and_camera_closed_when_option_raises(self) -> None:
+    def test_raises_and_camera_closed_when_option_raises(self) -> None:
         tc = _make_toupcam_mock()
         tc.Toupcam.Open.return_value.put_Option.side_effect = RuntimeError("hw fault")
         cam = ToupcamCamera()
         with patch.dict(sys.modules, {"toupcam": tc}):
-            assert cam.connect() is False
+            with pytest.raises(RuntimeError, match="SDK init failed"):
+                cam.connect()
         tc.Toupcam.Open.return_value.Close.assert_called_once()
 
 

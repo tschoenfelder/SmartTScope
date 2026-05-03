@@ -61,11 +61,16 @@ class ToupcamCamera(CameraPort):
 
         devices = _tc.Toupcam.EnumV2()
         if len(devices) <= self._index:
-            return False
+            raise RuntimeError(
+                f"ToupTek: no camera at index {self._index} "
+                f"({len(devices)} device(s) found)"
+            )
 
         cam = _tc.Toupcam.Open(devices[self._index].id)
         if not cam:
-            return False
+            raise RuntimeError(
+                f"ToupTek: Open() failed for camera index {self._index}"
+            )
 
         try:
             cam.put_Option(_tc.TOUPCAM_OPTION_TRIGGER, 1)   # software trigger
@@ -77,9 +82,9 @@ class ToupcamCamera(CameraPort):
             buf = ctypes.create_string_buffer(width * height * 2)
 
             cam.StartPullModeWithCallback(_camera_event, self)
-        except Exception:
+        except Exception as exc:
             cam.Close()
-            return False
+            raise RuntimeError(f"ToupTek SDK init failed: {exc}") from exc
 
         try:
             cam.put_ExpoAGain(self._gain)

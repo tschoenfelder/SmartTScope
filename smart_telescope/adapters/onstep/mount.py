@@ -70,11 +70,12 @@ class OnStepMount(MountPort):
         # Uses read() instead of readline() so unit-test mocks (which only stub
         # readline) pass through unaffected; non-bytes mock return values are
         # treated as "no response" and accepted as inconclusive.
+        # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
         self._serial.write(b":GVP#")
         raw = self._serial.read(32)
         if isinstance(raw, bytes):
-            product = raw.decode(errors="replace").rstrip("#\r\n")
-            if product and "onstep" not in product.lower():
+            product = raw.decode(errors="replace").rstrip("#\r\n").lower()
+            if product and "on" not in product and "step" not in product:
                 self._serial.close()
                 self._serial = None
                 return False

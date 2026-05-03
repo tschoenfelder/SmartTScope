@@ -841,6 +841,22 @@
                     title="Focuser not connected">AF</button>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
           </div>
+          <div id="s3-focus-row" style="display:flex;align-items:center;gap:0.3rem;margin-top:0.6rem">
+            <span style="font-size:0.78rem;color:var(--muted);margin-right:0.2rem">Focus</span>
+            <button class="s3-nudge-btn secondary" onclick="previewNudge(-20)" disabled
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">−20</button>
+            <button class="s3-nudge-btn secondary" onclick="previewNudge(-2)" disabled
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">−2</button>
+            <button class="s3-nudge-btn secondary" onclick="previewNudge(-1)" disabled
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">−1</button>
+            <button class="s3-nudge-btn secondary" onclick="previewNudge(1)" disabled
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">+1</button>
+            <button class="s3-nudge-btn secondary" onclick="previewNudge(2)" disabled
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">+2</button>
+            <button class="s3-nudge-btn secondary" onclick="previewNudge(20)" disabled
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">+20</button>
+            <span id="s3-focus-pos" style="font-size:0.78rem;color:var(--muted);margin-left:0.4rem"></span>
+          </div>
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
             <button id="preview-start-btn" onclick="previewStart()">Start</button>
             <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
@@ -1241,6 +1257,7 @@
         afBtn.disabled = !_focuserOk;
         afBtn.title = _focuserOk ? 'Autofocus with preview camera' : 'Focuser not connected';
       }
+      document.querySelectorAll('.s3-nudge-btn').forEach(b => b.disabled = !_focuserOk);
     } catch (_) {}
   }
 
@@ -2179,6 +2196,17 @@
       btn.disabled = !_focuserOk;
       btn.innerHTML = 'AF';
       if (wasRunning) previewStart();
+    }
+  }
+
+  async function previewNudge(delta) {
+    try {
+      await apiPost('/api/focuser/nudge', { delta });
+      const data = await (await fetch('/api/focuser/status')).json();
+      const pos = document.getElementById('s3-focus-pos');
+      if (pos && data.position != null) pos.textContent = `pos ${data.position}`;
+    } catch (err) {
+      setStatus('s3-status', `Focus failed: ${err}`, true);
     }
   }
 

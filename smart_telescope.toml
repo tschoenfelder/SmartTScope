@@ -1,0 +1,30 @@
+# SmartTelescope configuration — template
+# On the Pi, copy this file to the server working directory and fill in the
+# hardware values. Environment variables override any setting here.
+
+[observer]
+lat = 50.336   # decimal degrees, north-positive  (Usingen, Hesse)
+lon = 8.533    # decimal degrees, east-positive
+
+[hardware]
+# udev symlink names — stable across reconnects, won't shift like ttyUSB0/1/2
+# Leave empty ("") to use simulator/mock (useful for unit tests).
+onstep_port      = ""            # e.g. "/dev/ttyUSB_ONSTEP0"
+touptek_index    = ""            # e.g. "0"
+gps_port         = ""            # e.g. "/dev/ttyUSB_GPS0"         (future use)
+dew_control_port = ""            # e.g. "/dev/ttyUSB_DEWCONTROL0"  (future use)
+
+[astap]
+path        = ""    # empty = auto-detect via PATH
+catalog_dir = ""    # empty = auto-search standard locations
+
+[mount_limits]
+min_alt_deg     = 10.0
+max_alt_deg     = 88.0
+ha_east_limit_h = -5.5
+ha_west_limit_h = 0.333
+
+[session]
+storage_dir        = ""
+stars_cfg          = "stars.cfg"
+pixel_scale_arcsec = 0.38   # C8 at native focal length

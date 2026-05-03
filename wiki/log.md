@@ -4,6 +4,103 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-03 — Sprint 45: TOML config file, tracking toggle, ASTAP + mount bug fixes
+
+**What changed**:
+
+- `smart_telescope.toml` (NEW) — project-root config template.  Sections: `[observer]` (lat/lon), `[hardware]` (onstep_port, touptek_index, gps_port, dew_control_port), `[astap]` (path, catalog_dir), `[mount_limits]`, `[session]`.  All hardware fields default to `""` (empty = mock/auto-detect); the Pi admin fills in real values.
+- `smart_telescope/config.py` — rewritten: loads TOML from CWD or project root via `tomllib`; env vars override for observer/limits/session settings; hardware/ASTAP settings are TOML-only (env-var override is applied per-call in `deps.py` to preserve `monkeypatch` test behaviour).  New exports: `ONSTEP_PORT`, `TOUPTEK_INDEX`, `GPS_PORT`, `DEW_CONTROL_PORT`, `ASTAP_PATH`, `ASTAP_CATALOG_DIR`, `STORAGE_DIR`.
+- `smart_telescope/api/deps.py` — `_build_adapters()` now reads `os.environ.get(key) or config.KEY` so live env vars always win; same pattern for `get_solver()` / `get_storage()`.  Fixes the false-positive "Connected" bug: previously `ONSTEP_PORT` absent → `MockMount` (always returns True); now the TOML supplies the port → `OnStepMount` → real serial failure reported correctly.
+- `smart_telescope/adapters/astap/solver.py` — `find_catalog()` now accepts optional `catalog_dir` parameter (checked first); added Pi-specific search dirs `/var/lib/astap` and `/opt/astap`.  `AstapSolver.__init__` stores `catalog_dir` for future per-solve pass-through.
+- `smart_telescope/api/session.py` — `_check_solver()` passes `catalog_dir=config.ASTAP_CATALOG_DIR` to `_find_catalog()`; mount hint updated to reference `smart_telescope.toml`.
+- `smart_telescope/static/index.html` — `mountCard()` tracking buttons replaced with a single context-sensitive toggle: shows "Disable Tracking" when `state === 'tracking'`, otherwise "Enable Tracking".
+
+**Tests** — no new test files; updated three existing tests:
+- `tests/unit/api/test_session.py` — patched lambdas for `_find_catalog` updated to `lambda *a, **kw:` to accept new `catalog_dir` keyword argument.
+
+**Suite result**: 1026 passed, 0 failures, 92% coverage
+
+---
+
+## 2026-05-03 — Sprint 44: "Best objects tonight" endpoint (M8)
+
+**What changed**:
+
+- `smart_telescope/api/catalog.py`:
+  - Added `from datetime import UTC, datetime, timedelta` and `compute_visibility_window` import
+  - New `VisibleEntry` Pydantic model — extends catalog fields with `rises_at`, `sets_at`, `peak_altitude`, `peak_time` (ISO8601 UTC strings), `is_observable`, `solar_safe`
+  - New `GET /api/catalog/visible` endpoint:
+    - Optional `?lat=` / `?lon=` to override observer position (defaults to `config.OBSERVER_LAT/LON`)
+    - `?hours=` observation window length in hours (default 10, range 1–24)
+    - `?min_altitude=` minimum peak altitude in degrees (default 20)
+    - `?object_type=` comma-separated type filter (e.g. `GC,SG`)
+    - `?max_magnitude=` upper magnitude bound
+    - `?limit=` max results (default 20)
+    - Calls `compute_visibility_window(..., sample_minutes=15)` for each catalog object
+    - Filters to `is_observable=True`; adds `solar_safe` flag via `is_solar_target()`
+    - Sorted by `peak_altitude` descending
+
+**Tests** — added `TestCatalogVisible` class (15 tests) to `tests/unit/api/test_catalog.py`:
+  - 200 response, empty when all non-observable, expected fields present, is_observable=True
+  - Sorted by peak altitude descending
+  - object_type filter, multi-type filter, max_magnitude filter, limit applied, default limit 20
+  - solar_safe flag (blocked / not-blocked), lat/lon override forwarded, rounding, ISO8601 string format
+
+**Suite result**: 1026 passed, 0 failures, 92% coverage
+
+---
+
+## 2026-05-03 — Sprint 43: Observation Queue REST API (M8)
+
+**What changed**:
+
+- `smart_telescope/api/queue.py` (NEW) — Full CRUD for the observation queue:
+  - `POST /api/queue` → 201 + entry dict; validates profile against `{c8_native, c8_reducer, c8_barlow2x}`; validates RA [0, 24), Dec [−90, 90]
+  - `GET /api/queue` → list all entries; optional `?status=` filter (PENDING / RUNNING / DONE / FAILED / SKIPPED); 422 on unknown status
+  - `GET /api/queue/{entry_id}` → single entry; 404 if not found
+  - `DELETE /api/queue/{entry_id}` → remove PENDING entry; 204 on success; 404 if not found; 409 if not PENDING
+  - `POST /api/queue/clear` → remove all DONE/FAILED/SKIPPED entries; returns `{"cleared": N}`
+  - Module-level `ObservationQueue` singleton with `_reset_queue()` for test isolation; `get_queue()` accessor
+- `smart_telescope/app.py` — registered `queue_router`
+
+**Tests**:
+- `tests/unit/api/test_queue.py` (NEW) — 25 tests across 6 classes:
+  - `TestAddEntry` (8 tests): 201 path, entry_id present, defaults, custom fields, invalid profile, RA/Dec validation, missing name, appears in list
+  - `TestListEntries` (6 tests): empty, all entries, insertion order, status filter, case-insensitive filter, unknown status 422
+  - `TestGetEntry` (2 tests): found, 404
+  - `TestRemoveEntry` (5 tests): 204, gone after remove, 404, 409 on RUNNING, detail includes status
+  - `TestClearCompleted` (3 tests): count returned, PENDING survives, zero when nothing to clear
+  - `queue.py` at 100% coverage
+
+**Suite result**: 1011 passed, 0 failures, 92% coverage
+
+---
+
+## 2026-05-03 — Sprint 42: System Health dashboard card (M5.1)
+
+**What changed**:
+
+- `smart_telescope/api/health.py`:
+  - `CpuHealth(temp_c: float | None)` — new model; reads `/sys/class/thermal/thermal_zone0/temp` via `_read_cpu_temp()`; returns `None` gracefully on non-Linux / missing path
+  - `StorageHealth` gains `frames_capacity: int | None` — computed as `int(free_gb * 1024 / 25)` (25 MB estimated float32 FITS frame for C8 native); `None` when no `STORAGE_DIR` is set
+  - `SystemHealth` gains `cpu: CpuHealth` field
+  - `system_status()` updated to populate both new fields
+- `smart_telescope/static/index.html`:
+  - New "System Health" card in Stage 1 (after the Focuser card): overall dot (green/yellow/red), last-updated timestamp
+  - `_healthRow(label, level, value)` — renders one subsystem row with colored mini-dot
+  - `_renderHealthCard(d)` — populates all 7 rows (Mount, Camera, Focuser, Solver, Storage, CPU temp, Session) with per-row color logic; updates overall dot
+  - `refreshHealth()` — async fetch of `/api/status` + render
+  - Init block: calls `refreshHealth()` on load; `setInterval(refreshHealth, 10_000)` for live updates
+
+**Tests**:
+- `tests/unit/api/test_health.py` — `test_response_has_all_top_level_fields` updated to include `"cpu"`
+- `TestCpuHealth` (4 tests): field present, None on missing path, value returned when patched, rounding
+- `TestStorageCapacity` (2 tests): `frames_capacity` computed from free_gb; None when no path set
+
+**Suite result**: 986 passed, 0 failures, 92% coverage
+
+---
+
 ## 2026-05-03 — Sprint 41: Bahtinov domain unit tests + `_intersect` bugfix
 
 **Bug fixed**:

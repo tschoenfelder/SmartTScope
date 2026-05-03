@@ -12,6 +12,9 @@ _ASTAP_DEFAULT = Path("C:/Program Files/astap/astap.exe")
 _CATALOG_SEARCH_DIRS: list[Path] = [
     Path.home() / ".astap",
     Path("/usr/share/astap"),
+    Path("/usr/local/share/astap"),
+    Path("/var/lib/astap"),
+    Path("/opt/astap"),
     Path("C:/ProgramData/astap"),
 ]
 
@@ -26,12 +29,18 @@ def find_astap() -> str | None:
     return None
 
 
-def find_catalog(astap_exe: str | None = None) -> Path | None:
+def find_catalog(
+    astap_exe: str | None = None,
+    catalog_dir: str | None = None,
+) -> Path | None:
     """Return directory containing an ASTAP star catalog (.290 files), or None.
 
     Works with all catalog families: D05, D20, D50, D80 (and legacy G17).
+    *catalog_dir* is checked first when provided (from config file).
     """
     search: list[Path] = []
+    if catalog_dir:
+        search.append(Path(catalog_dir))
     if astap_exe:
         search.append(Path(astap_exe).parent)
     search.extend(_CATALOG_SEARCH_DIRS)
@@ -39,6 +48,17 @@ def find_catalog(astap_exe: str | None = None) -> Path | None:
         if d.is_dir() and any(d.glob("*.290")):
             return d
     return None
+
+
+def catalog_search_paths(astap_exe: str | None = None, catalog_dir: str | None = None) -> list[str]:
+    """Return the list of paths that would be searched by find_catalog()."""
+    paths: list[Path] = []
+    if catalog_dir:
+        paths.append(Path(catalog_dir))
+    if astap_exe:
+        paths.append(Path(astap_exe).parent)
+    paths.extend(_CATALOG_SEARCH_DIRS)
+    return [str(p) for p in paths]
 
 
 # Backward-compatible alias.
@@ -56,6 +76,7 @@ class AstapSolver(SolverPort):
     def __init__(
         self,
         astap_path: str | None = None,
+        catalog_dir: str | None = None,
         search_radius_deg: float = 30.0,
         downsample: int = 0,
         timeout_seconds: int = 60,
@@ -67,6 +88,7 @@ class AstapSolver(SolverPort):
                 "or pass astap_path explicitly."
             )
         self._astap: str = resolved
+        self._catalog_dir = catalog_dir
         self._search_radius = search_radius_deg
         self._downsample = downsample
         self._timeout = timeout_seconds

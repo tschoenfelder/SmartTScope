@@ -591,6 +591,18 @@
       </div>
     </div>
 
+    <!-- System Health -->
+    <div class="card" style="margin-top:0.75rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-health-dot"></span>
+        System Health
+        <span style="flex:1"></span>
+        <span id="s1-health-ts" style="font-size:0.7rem;color:var(--muted)">—</span>
+      </div>
+      <div class="params" id="s1-health-params">
+      </div>
+    </div>
+
     <div class="stage-nav">
       <span></span>
       <button id="s1-proceed-btn" onclick="s1Proceed()">Proceed to Alignment →</button>
@@ -1133,6 +1145,77 @@
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  function _healthRow(label, level, value) {
+    const dotCls = level === 'ok' ? 'dot-green' : level === 'warn' ? 'dot-yellow' : 'dot-red';
+    return `<div class="param">
+      <span class="param-label" style="display:flex;align-items:center;gap:0.35rem">
+        <span class="dot ${dotCls}" style="width:7px;height:7px;flex-shrink:0"></span>${escHtml(label)}
+      </span>
+      <span class="param-value">${escHtml(String(value))}</span>
+    </div>`;
+  }
+
+  function _renderHealthCard(d) {
+    const params = document.getElementById('s1-health-params');
+    if (!params) return;
+    const rows = [];
+    // Mount
+    rows.push(_healthRow('Mount', d.mount.ok ? 'ok' : 'error',
+      d.mount.ok ? (d.mount.state ?? 'Connected') : (d.mount.message ?? 'Error')));
+    // Camera
+    rows.push(_healthRow('Camera', d.camera.ok ? 'ok' : 'error',
+      d.camera.ok ? 'Connected' : (d.camera.message ?? 'Error')));
+    // Focuser — degraded is warn, not error (session can still run without focuser)
+    rows.push(_healthRow('Focuser', d.focuser.ok ? 'ok' : 'warn',
+      d.focuser.ok ? 'Active' : 'Not found — autofocus disabled'));
+    // Solver
+    const sLevel = d.solver.ok ? 'ok' : 'error';
+    const sLabel = d.solver.ok ? 'ASTAP + G17 ready'
+      : !d.solver.astap_found ? 'ASTAP not found' : 'G17 catalog missing';
+    rows.push(_healthRow('Solver', sLevel, sLabel));
+    // Storage
+    let stLevel, stLabel;
+    if (!d.storage.path) {
+      stLevel = 'warn'; stLabel = 'No path configured';
+    } else if (!d.storage.ok) {
+      stLevel = 'error'; stLabel = d.storage.message ?? 'Error';
+    } else {
+      stLevel = d.storage.free_gb < 2 ? 'error' : d.storage.free_gb < 10 ? 'warn' : 'ok';
+      stLabel = `${d.storage.free_gb} GB free`;
+      if (d.storage.frames_capacity != null)
+        stLabel += ` (~${d.storage.frames_capacity} frames)`;
+    }
+    rows.push(_healthRow('Storage', stLevel, stLabel));
+    // CPU temperature
+    if (d.cpu && d.cpu.temp_c != null) {
+      const tLevel = d.cpu.temp_c > 80 ? 'error' : d.cpu.temp_c > 70 ? 'warn' : 'ok';
+      rows.push(_healthRow('CPU temp', tLevel, `${d.cpu.temp_c} °C`));
+    } else {
+      rows.push(_healthRow('CPU temp', 'warn', '— (not available)'));
+    }
+    // Session
+    rows.push(_healthRow('Session', d.session.running ? 'ok' : 'warn',
+      d.session.running ? (d.session.state ?? 'Running') : 'Idle'));
+
+    params.innerHTML = rows.join('');
+
+    const dot = document.getElementById('s1-health-dot');
+    if (dot) {
+      const critical = d.mount.ok && d.camera.ok && d.solver.ok;
+      const full     = critical && d.storage.ok;
+      dot.className  = full ? 'dot dot-green' : critical ? 'dot dot-yellow' : 'dot dot-red';
+    }
+    const ts = document.getElementById('s1-health-ts');
+    if (ts) ts.textContent = new Date().toLocaleTimeString();
+  }
+
+  async function refreshHealth() {
+    try {
+      const d = await (await fetch('/api/status')).json();
+      _renderHealthCard(d);
+    } catch (_) {}
+  }
+
   function setStatus(id, msg, isError = false) {
     const el = document.getElementById(id);
     if (!el) return;
@@ -1339,8 +1422,9 @@
         </div>
         <div class="controls">
           <button class="secondary" onclick="mountAction('unpark')">Unpark</button>
-          <button class="secondary" onclick="mountAction('track')">Enable Tracking</button>
-          <button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>
+          ${state === 'tracking'
+            ? `<button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>`
+            : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
           <span class="controls-spacer"></span>
           <button class="secondary" onclick="mountHome()"
                   title="Slew to celestial pole (Dec 89°, HA 0)">Home</button>
@@ -2859,6 +2943,8 @@
   ══════════════════════════════════════════════════════════════════════ */
   initSiteConfig();
   refreshMount();
+  refreshHealth();
+  setInterval(refreshHealth, 10_000);
   loadStars();
   updateElevationLabel();
 </script>

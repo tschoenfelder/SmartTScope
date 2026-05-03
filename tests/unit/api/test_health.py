@@ -69,7 +69,7 @@ class TestAlwaysResponds:
         _inject_mount(_mock_mount())
         with _patch_solver_ok():
             body = client.get("/api/status").json()
-        for field in ("mount", "camera", "focuser", "solver", "storage", "session"):
+        for field in ("mount", "camera", "focuser", "solver", "storage", "session", "cpu"):
             assert field in body
 
 
@@ -236,3 +236,61 @@ class TestSessionHealth:
         assert body["session"]["running"] is True
         assert body["session"]["state"] == "STACKING"
         assert body["session"]["session_id"] == "abc-123"
+
+
+# ── cpu temperature ───────────────────────────────────────────────────────────
+
+
+class TestCpuHealth:
+    def test_cpu_field_present(self) -> None:
+        _inject_mount(_mock_mount())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert "cpu" in body
+
+    def test_cpu_temp_none_when_sys_path_absent(self) -> None:
+        # /sys/class/thermal/... does not exist on Windows / CI
+        _inject_mount(_mock_mount())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        # On non-Linux CI the path is missing; _read_cpu_temp() returns None
+        assert body["cpu"]["temp_c"] is None or isinstance(body["cpu"]["temp_c"], float)
+
+    def test_cpu_temp_returned_when_patched(self) -> None:
+        _inject_mount(_mock_mount())
+        with _patch_solver_ok(), patch(
+            "smart_telescope.api.health._read_cpu_temp", return_value=45.5
+        ):
+            body = client.get("/api/status").json()
+        assert body["cpu"]["temp_c"] == pytest.approx(45.5)
+
+    def test_cpu_temp_rounded_to_one_decimal(self) -> None:
+        _inject_mount(_mock_mount())
+        with _patch_solver_ok(), patch(
+            "smart_telescope.api.health._read_cpu_temp", return_value=45.7
+        ):
+            body = client.get("/api/status").json()
+        assert body["cpu"]["temp_c"] == pytest.approx(45.7, abs=0.05)
+
+
+# ── storage frames capacity ───────────────────────────────────────────────────
+
+
+class TestStorageCapacity:
+    def test_frames_capacity_computed_when_storage_set(self, tmp_path) -> None:
+        os.environ["STORAGE_DIR"] = str(tmp_path)
+        _inject_mount(_mock_mount())
+        fake_usage = MagicMock()
+        fake_usage.free = 50 * (1024 ** 3)  # 50 GB
+        with _patch_solver_ok(), patch(
+            "smart_telescope.api.health.shutil.disk_usage", return_value=fake_usage
+        ):
+            body = client.get("/api/status").json()
+        # 50 GB * 1024 MB/GB / 25 MB per frame = 2048
+        assert body["storage"]["frames_capacity"] == 2048
+
+    def test_frames_capacity_none_when_no_storage_dir(self) -> None:
+        _inject_mount(_mock_mount())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["storage"]["frames_capacity"] is None

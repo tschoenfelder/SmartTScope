@@ -24,7 +24,7 @@ def _patch_solver_ok(astap: str = "/usr/bin/astap", catalog: Path | None = None)
     return patch.multiple(
         "smart_telescope.api.session",
         _find_astap=lambda: astap,
-        _find_catalog=lambda exe: catalog,
+        _find_catalog=lambda *a, **kw: catalog,
     )
 
 
@@ -32,7 +32,7 @@ def _patch_solver_missing() -> object:
     return patch.multiple(
         "smart_telescope.api.session",
         _find_astap=lambda: None,
-        _find_catalog=lambda exe: None,
+        _find_catalog=lambda *a, **kw: None,
     )
 
 client = TestClient(app)
@@ -278,7 +278,7 @@ class TestSolverValidation:
         with patch.multiple(
             "smart_telescope.api.session",
             _find_astap=lambda: "/usr/bin/astap",
-            _find_catalog=lambda exe: None,
+            _find_catalog=lambda *a, **kw: None,
         ):
             body = client.post("/api/session/connect").json()
         assert body["solver"]["status"] == "error"

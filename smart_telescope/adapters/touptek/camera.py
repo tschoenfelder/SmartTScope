@@ -51,6 +51,9 @@ class ToupcamCamera(CameraPort):
     # ------------------------------------------------------------------
 
     def connect(self) -> bool:
+        if self._cam is not None:
+            return True  # already open — idempotent
+
         try:
             import toupcam as _tc
         except ImportError:

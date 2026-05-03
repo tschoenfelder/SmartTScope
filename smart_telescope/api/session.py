@@ -8,6 +8,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from .. import config as _config
+from ..adapters.astap.solver import catalog_search_paths as _catalog_search_paths
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..domain.catalog import get_by_name as _catalog_get
@@ -51,7 +53,7 @@ def get_session_running() -> bool:
 
 _ACTIONS: dict[str, str] = {
     "camera": "Check USB connection and power; ensure ToupTek driver is installed",
-    "mount": "Check serial connection and OnStep power; verify ONSTEP_PORT env var",
+    "mount": "Check serial connection and OnStep power; verify onstep_port in smart_telescope.toml",
     "focuser": "Check focuser serial connection and power",
 }
 
@@ -97,12 +99,17 @@ def _check_solver() -> DeviceResult:
             error="ASTAP executable not found",
             action=f"Install ASTAP from {_ASTAP_INSTALL_URL}",
         )
-    catalog = _find_catalog(astap)
+    catalog_dir = _config.ASTAP_CATALOG_DIR or None
+    catalog = _find_catalog(astap, catalog_dir=catalog_dir)
     if catalog is None:
+        searched = ", ".join(_catalog_search_paths(astap, catalog_dir))
         return DeviceResult(
             status="error",
             error="ASTAP star catalog not found",
-            action=f"Download the D80 catalog from {_ASTAP_INSTALL_URL} and extract .290 files to ~/.astap/",
+            action=(
+                f"Download the D80 catalog from {_ASTAP_INSTALL_URL} and extract .290 files "
+                f"to one of: {searched} — or set catalog_dir in smart_telescope.toml"
+            ),
         )
     return DeviceResult(status="ok")
 

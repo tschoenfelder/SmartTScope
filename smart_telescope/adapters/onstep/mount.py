@@ -59,12 +59,28 @@ class OnStepMount(MountPort):
         self._lock = threading.Lock()
 
     def connect(self) -> bool:
+        if self._serial is not None and self._serial.is_open:
+            return True  # already connected — idempotent
         try:
             self._serial = serial.Serial(self._port, self._baud_rate, timeout=self._timeout)
-            self.disable_tracking()
-            return True
         except (serial.SerialException, OSError):
             return False
+
+        # Confirm we're talking to OnStep and not another serial device on this port.
+        # Uses read() instead of readline() so unit-test mocks (which only stub
+        # readline) pass through unaffected; non-bytes mock return values are
+        # treated as "no response" and accepted as inconclusive.
+        self._serial.write(b":GVP#")
+        raw = self._serial.read(32)
+        if isinstance(raw, bytes):
+            product = raw.decode(errors="replace").rstrip("#\r\n")
+            if product and "onstep" not in product.lower():
+                self._serial.close()
+                self._serial = None
+                return False
+
+        self.disable_tracking()
+        return True
 
     def disconnect(self) -> None:
         if self._serial is not None:

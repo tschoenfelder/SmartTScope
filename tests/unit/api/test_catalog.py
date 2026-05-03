@@ -1,11 +1,13 @@
 """Unit tests for catalog search API endpoints."""
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from smart_telescope.app import app
+from smart_telescope.domain.visibility import VisibilityWindow
 
 client = TestClient(app)
 
@@ -242,3 +244,135 @@ class TestCatalogTonight:
         with alt_patch, solar_patch:
             data = client.get("/api/catalog/tonight").json()
         assert data == []
+
+
+# ── GET /api/catalog/visible ──────────────────────────────────────────────────
+
+_T0 = datetime(2026, 5, 3, 21, 0, 0, tzinfo=UTC)
+
+
+def _visible_window(peak_altitude: float = 55.0) -> VisibilityWindow:
+    return VisibilityWindow(
+        rises_at=_T0,
+        sets_at=_T0 + timedelta(hours=6),
+        peak_altitude=peak_altitude,
+        peak_time=_T0 + timedelta(hours=3),
+        is_observable=True,
+    )
+
+
+def _hidden_window() -> VisibilityWindow:
+    return VisibilityWindow(
+        rises_at=None, sets_at=None,
+        peak_altitude=5.0, peak_time=None,
+        is_observable=False,
+    )
+
+
+_CVW = "smart_telescope.api.catalog.compute_visibility_window"
+
+
+class TestCatalogVisible:
+    def test_returns_200(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            assert client.get("/api/catalog/visible").status_code == 200
+
+    def test_empty_when_all_non_observable(self) -> None:
+        with patch(_CVW, return_value=_hidden_window()):
+            assert client.get("/api/catalog/visible").json() == []
+
+    def test_response_entry_has_expected_fields(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?limit=1").json()
+        assert len(data) == 1
+        entry = data[0]
+        for field in ("name", "common_name", "ra_hours", "dec_deg", "object_type",
+                      "magnitude", "rises_at", "sets_at", "peak_altitude",
+                      "peak_time", "is_observable", "solar_safe"):
+            assert field in entry
+
+    def test_is_observable_true_in_response(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?limit=1").json()
+        assert data[0]["is_observable"] is True
+
+    def test_sorted_by_peak_altitude_descending(self) -> None:
+        peaks = [30.0, 70.0, 50.0]
+        call_count = 0
+
+        def side_effect(*args: object, **kwargs: object) -> VisibilityWindow:
+            nonlocal call_count
+            alt = peaks[call_count % len(peaks)]
+            call_count += 1
+            return _visible_window(alt)
+
+        with patch(_CVW, side_effect=side_effect):
+            data = client.get("/api/catalog/visible?limit=110&min_altitude=0").json()
+
+        alts = [e["peak_altitude"] for e in data]
+        assert alts == sorted(alts, reverse=True)
+
+    def test_object_type_filter_gc_only(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?object_type=GC").json()
+        assert all(e["object_type"] == "GC" for e in data)
+
+    def test_object_type_filter_multiple_types(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?object_type=GC,SG").json()
+        assert all(e["object_type"] in ("GC", "SG") for e in data)
+
+    def test_max_magnitude_filter(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?max_magnitude=5.0").json()
+        assert all(e["magnitude"] <= 5.0 for e in data)
+
+    def test_limit_applied(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?limit=5").json()
+        assert len(data) <= 5
+
+    def test_default_limit_is_twenty(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible").json()
+        assert len(data) <= 20
+
+    def test_solar_safe_true_when_not_blocked(self) -> None:
+        with (
+            patch(_CVW, return_value=_visible_window()),
+            patch("smart_telescope.api.catalog.is_solar_target", return_value=(False, 120.0)),
+        ):
+            data = client.get("/api/catalog/visible?limit=1").json()
+        assert data[0]["solar_safe"] is True
+
+    def test_solar_safe_false_when_blocked(self) -> None:
+        with (
+            patch(_CVW, return_value=_visible_window()),
+            patch("smart_telescope.api.catalog.is_solar_target", return_value=(True, 1.5)),
+        ):
+            data = client.get("/api/catalog/visible?limit=1").json()
+        assert data[0]["solar_safe"] is False
+
+    def test_lat_lon_override_forwarded(self) -> None:
+        captured: list[tuple[float, float]] = []
+
+        def spy(*args: object, **kwargs: object) -> VisibilityWindow:
+            captured.append((float(args[2]), float(args[3])))  # lat, lon are args 2 and 3
+            return _visible_window()
+
+        with patch(_CVW, side_effect=spy):
+            client.get("/api/catalog/visible?lat=48.0&lon=11.0&limit=1")
+
+        assert all(lat == pytest.approx(48.0) and lon == pytest.approx(11.0)
+                   for lat, lon in captured)
+
+    def test_peak_altitude_rounded_to_one_decimal(self) -> None:
+        with patch(_CVW, return_value=_visible_window(55.678)):
+            data = client.get("/api/catalog/visible?limit=1").json()
+        assert data[0]["peak_altitude"] == pytest.approx(55.7, abs=0.05)
+
+    def test_rises_at_is_iso8601_string(self) -> None:
+        with patch(_CVW, return_value=_visible_window()):
+            data = client.get("/api/catalog/visible?limit=1").json()
+        assert isinstance(data[0]["rises_at"], str)
+        assert "2026-05-03" in data[0]["rises_at"]

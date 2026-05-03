@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -16,6 +17,17 @@ from . import deps
 from .session import get_active_runner, get_session_running
 
 router = APIRouter()
+
+# Estimated float32 FITS frame size for C8 native (2080×3096 px × 4 bytes ≈ 24.6 MB)
+_FITS_FRAME_MB = 25.0
+
+
+def _read_cpu_temp() -> float | None:
+    try:
+        raw = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
+        return round(int(raw) / 1000, 1)
+    except Exception:
+        return None
 
 
 class MountHealth(BaseModel):
@@ -38,6 +50,7 @@ class SolverHealth(BaseModel):
 class StorageHealth(BaseModel):
     ok: bool
     free_gb: float | None = None
+    frames_capacity: int | None = None
     path: str | None = None
     message: str | None = None
 
@@ -48,6 +61,10 @@ class SessionHealth(BaseModel):
     session_id: str | None = None
 
 
+class CpuHealth(BaseModel):
+    temp_c: float | None = None
+
+
 class SystemHealth(BaseModel):
     mount: MountHealth
     camera: DeviceHealth
@@ -55,6 +72,7 @@ class SystemHealth(BaseModel):
     solver: SolverHealth
     storage: StorageHealth
     session: SessionHealth
+    cpu: CpuHealth
 
 
 @router.get("/api/status", response_model=SystemHealth)
@@ -92,7 +110,10 @@ def system_status(
         try:
             usage    = shutil.disk_usage(storage_dir)
             free_gb  = round(usage.free / (1024 ** 3), 2)
-            storage_health = StorageHealth(ok=True, free_gb=free_gb, path=storage_dir)
+            capacity = int(free_gb * 1024 / _FITS_FRAME_MB)
+            storage_health = StorageHealth(
+                ok=True, free_gb=free_gb, frames_capacity=capacity, path=storage_dir
+            )
         except Exception as exc:
             storage_health = StorageHealth(ok=False, path=storage_dir, message=str(exc))
     else:
@@ -108,6 +129,9 @@ def system_status(
         session_id=log.session_id if log is not None else None,
     )
 
+    # ── CPU temperature ───────────────────────────────────────────────────────
+    cpu_health = CpuHealth(temp_c=_read_cpu_temp())
+
     return SystemHealth(
         mount=mount_health,
         camera=camera_health,
@@ -115,4 +139,5 @@ def system_status(
         solver=solver_health,
         storage=storage_health,
         session=session_health,
+        cpu=cpu_health,
     )

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 
+from .. import config
 from ..adapters.mock.camera import MockCamera
 from ..adapters.mock.focuser import MockFocuser
 from ..adapters.mock.mount import MockMount
@@ -41,8 +42,9 @@ _preview_cameras: dict[int, CameraPort] = {}
 
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
-    touptek_index = os.environ.get("TOUPTEK_INDEX", "")
-    onstep_port   = os.environ.get("ONSTEP_PORT", "")
+    # env vars take priority over the TOML config file
+    touptek_index = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
+    onstep_port   = os.environ.get("ONSTEP_PORT")   or config.ONSTEP_PORT
     sim_dir       = os.environ.get("SIMULATOR_FITS_DIR", "")
 
     # Camera — selected independently of mount
@@ -50,7 +52,6 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     if touptek_index:
         from ..adapters.touptek.camera import ToupcamCamera
         camera = ToupcamCamera(index=int(touptek_index))
-        camera.connect()
     elif sim_dir:
         from pathlib import Path
 
@@ -96,7 +97,7 @@ def get_preview_camera(index: int) -> CameraPort:
     cache it so the WS reconnect path doesn't create a new handle every time.
     """
     _ensure_adapters()
-    touptek_env = os.environ.get("TOUPTEK_INDEX", "")
+    touptek_env = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
     main_index = int(touptek_env) if touptek_env else 0
     if index == main_index or not touptek_env:
         assert _camera is not None
@@ -145,11 +146,12 @@ def make_stacker() -> StackerPort:
 def get_solver() -> SolverPort:
     global _solver
     if _solver is None:
-        astap_path_env = os.environ.get("ASTAP_PATH", "")
+        astap_path = os.environ.get("ASTAP_PATH") or config.ASTAP_PATH
+        catalog_dir = os.environ.get("ASTAP_CATALOG_DIR") or config.ASTAP_CATALOG_DIR
         try:
             from ..adapters.astap.solver import AstapSolver, find_astap
-            path = astap_path_env or find_astap()
-            _solver = AstapSolver(astap_path=path) if path else MockSolver()
+            path = astap_path or find_astap()
+            _solver = AstapSolver(astap_path=path, catalog_dir=catalog_dir or None) if path else MockSolver()
         except Exception:
             _solver = MockSolver()
     return _solver
@@ -158,7 +160,7 @@ def get_solver() -> SolverPort:
 def get_storage() -> StoragePort:
     global _storage
     if _storage is None:
-        storage_dir = os.environ.get("STORAGE_DIR", "")
+        storage_dir = config.STORAGE_DIR  # config already applies env-var override for this one
         if storage_dir:
             from pathlib import Path
 

@@ -1,0 +1,30 @@
+# SmartTScope — installation config
+# Copy this file to ~/.SmartTScope/config.toml and fill in your values.
+# Environment variables override any setting defined here.
+
+[observer]
+lat = 0.0    # decimal degrees, north-positive  (e.g. 50.336 for Usingen, Hesse)
+lon = 0.0    # decimal degrees, east-positive   (e.g. 8.533)
+
+[hardware]
+# Use stable udev symlink names (won't shift like ttyUSB0/1/2 across reconnects).
+# Leave empty ("") to fall back to simulator/mock — useful without hardware attached.
+onstep_port      = ""   # e.g. "/dev/ttyUSB_ONSTEP0"
+touptek_index    = ""   # e.g. "0"
+gps_port         = ""   # e.g. "/dev/ttyUSB_GPS0"          (future use)
+dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
+
+[astap]
+path        = ""   # empty = auto-detect via PATH
+catalog_dir = ""   # empty = auto-search standard locations
+
+[mount_limits]
+min_alt_deg     = 10.0    # horizon clearance
+max_alt_deg     = 88.0    # avoid zenith flip zone
+ha_east_limit_h = -5.5    # negative = east of meridian
+ha_west_limit_h = 0.333   # ~20 min past meridian
+
+[session]
+storage_dir        = ""      # where captured frames are saved; empty = system temp
+stars_cfg          = ""      # path to stars.cfg; empty = ~/.SmartTScope/stars.cfg
+pixel_scale_arcsec = 0.38   # arcsec per pixel at your focal length (C8 native = 0.38)

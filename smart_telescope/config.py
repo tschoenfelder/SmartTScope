@@ -1,11 +1,12 @@
 """Site, hardware, and session configuration.
 
-Settings are loaded from ``smart_telescope.toml`` found in the first of:
-  1. The current working directory (CWD)
-  2. The project root (directory containing this package)
+Settings are loaded from the first config file found in this order:
+  1. ~/.SmartTScope/config.toml          (primary — per-installation)
+  2. <CWD>/smart_telescope.toml          (dev / CI fallback)
+  3. <project root>/smart_telescope.toml (last-resort dev fallback)
 
-Environment variables override the TOML file and are the same names as before,
-so existing deployments keep working without a config file.
+Copy templates/config.toml to ~/.SmartTScope/config.toml to get started.
+Environment variables override any setting from the file.
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ from pathlib import Path
 
 # ── locate and load config file ───────────────────────────────────────────────
 
-_CFG_NAME = "smart_telescope.toml"
+_USER_DIR = Path.home() / ".SmartTScope"
 _SEARCH_PATHS = [
-    Path.cwd() / _CFG_NAME,
-    Path(__file__).parent.parent / _CFG_NAME,
+    _USER_DIR / "config.toml",
+    Path.cwd() / "smart_telescope.toml",
+    Path(__file__).parent.parent / "smart_telescope.toml",
 ]
 
 _cfg: dict = {}
@@ -63,7 +65,8 @@ MOUNT_HA_WEST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_WEST_LIMIT_H", _ge
 # ── session ───────────────────────────────────────────────────────────────────
 
 STORAGE_DIR: str           = os.environ.get("STORAGE_DIR",         _get("session", "storage_dir",        ""))
-STARS_CFG: str             = os.environ.get("STARS_CFG",           _get("session", "stars_cfg",          "stars.cfg"))
+_stars_cfg_raw: str        = os.environ.get("STARS_CFG",           _get("session", "stars_cfg",          ""))
+STARS_CFG: str             = _stars_cfg_raw or str(_USER_DIR / "stars.cfg")
 PIXEL_SCALE_ARCSEC: float  = float(os.environ.get("PIXEL_SCALE_ARCSEC", _get("session", "pixel_scale_arcsec", "0.38")))
 
 # STORAGE_DIR keeps env-var override because health.py checks it at module level.

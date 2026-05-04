@@ -1,6 +1,7 @@
-# SmartTelescope configuration — template
-# On the Pi, copy this file to the server working directory and fill in the
-# hardware values. Environment variables override any setting here.
+# SmartTelescope configuration — dev/CI fallback
+# This file is picked up only when ~/.SmartTScope/config.toml does not exist.
+# For a real installation copy templates/config.toml to ~/.SmartTScope/config.toml
+# and fill in your hardware values. Environment variables override any setting here.
 
 [observer]
 lat = 50.336   # decimal degrees, north-positive  (Usingen, Hesse)

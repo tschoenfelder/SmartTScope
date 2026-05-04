@@ -23,7 +23,13 @@ from ..domain.polar_alignment import (
     correction_direction_az,
     find_rotation_pole,
 )
-from ..domain.visibility import HorizonProfile, compute_altaz, load_horizon
+from ..domain.polar_workflow import (
+    AlignmentResult,
+    PolarAlignmentWorkflow,
+    SolveResult as DomainSolveResult,
+    WorkflowInput,
+)
+from ..domain.visibility import HorizonProfile, load_horizon
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
 from . import deps
@@ -35,7 +41,6 @@ _HORIZON: HorizonProfile | None = load_horizon(config.HORIZON_DAT)
 Step = Literal[
     "idle", "slewing",
     "solving_1", "solving_2", "solving_3",
-    "checking",                  # coarse alignment check after HOME solve
     "coarse_required",           # mount too far from NCP; manual repositioning needed
     "computing", "done",
     "refining",                  # re-measure using cached RA positions
@@ -43,6 +48,20 @@ Step = Literal[
     "camera_fallback_offered",   # repeated solve failures; guide camera offered
     "error",
 ]
+
+# Maps action.message → (step, progress) for UI progress reporting
+_ACTION_PROGRESS: dict[str, tuple[str, int]] = {
+    "Slewing to HOME position":                  ("slewing",   8),
+    "Capturing HOME frame":                      ("solving_1", 20),
+    "Slewing to position 2":                     ("slewing",   38),
+    "Capturing position 2 frame":                ("solving_2", 55),
+    "Solve 2 failed — retrying at alternate RA": ("slewing",   40),
+    "Capturing position 2 retry":                ("solving_2", 55),
+    "Slewing to position 3":                     ("slewing",   65),
+    "Capturing position 3 frame":                ("solving_3", 82),
+    "Solve 3 failed — retrying at alternate RA": ("slewing",   67),
+    "Capturing position 3 retry":                ("solving_3", 82),
+}
 
 
 @dataclass
@@ -56,7 +75,7 @@ class _PolarState:
     total_error_arcmin: float | None = None
     pole_ra: float | None = None
     pole_dec: float | None = None
-    # guidance (tasks 1-3)
+    # guidance
     correction_alt: str | None = None
     correction_az: str | None = None
     quality_label: str | None = None
@@ -65,7 +84,7 @@ class _PolarState:
     # messages
     error_msg: str | None = None
     warning_msg: str | None = None
-    # coarse check (task 6)
+    # coarse check
     coarse_error_deg: float | None = None
     # cached for refine / live
     p1: SkyPoint | None = None
@@ -75,14 +94,14 @@ class _PolarState:
     exposure: float = 5.0
     gain: int = 100
     ra_step_h: float = 1.0
-    # retry / fallback (tasks 9-10)
+    # retry / fallback
     solve_retries: int = 0
     fallback_available: bool = False
 
 
 _state = _PolarState()
 _task: asyncio.Task | None = None
-_checklist_confirmed: bool = False   # persists within server session (task 8)
+_checklist_confirmed: bool = False   # persists within server session
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -102,34 +121,27 @@ async def _wait_not_slewing(mount: MountPort, timeout_s: float = 120.0) -> bool:
     return False
 
 
-def _check_ha_limits(ra_h: float) -> None:
-    """Raise if ra_h falls outside the configured safe HA envelope."""
-    ha = (_get_lst() - ra_h + 12.0) % 24.0 - 12.0
-    if ha < config.MOUNT_HA_EAST_LIMIT_H:
-        raise RuntimeError(
-            f"Target HA {ha:.2f}h east of limit {config.MOUNT_HA_EAST_LIMIT_H}h"
-        )
-    if ha > config.MOUNT_HA_WEST_LIMIT_H:
-        raise RuntimeError(
-            f"Target HA {ha:.2f}h west of limit {config.MOUNT_HA_WEST_LIMIT_H}h"
-        )
+def _apply_alignment_result(result: AlignmentResult) -> None:
+    """Write all fields from a workflow AlignmentResult into _state."""
+    _state.pole_ra            = result.pole_ra
+    _state.pole_dec           = result.pole_dec
+    _state.alt_error_arcmin   = result.alt_error_arcmin
+    _state.az_error_arcmin    = result.az_error_arcmin
+    _state.total_error_arcmin = result.total_error_arcmin
+    _state.correction_alt     = result.correction_alt
+    _state.correction_az      = result.correction_az
+    _state.quality_label      = result.quality_label
+    _state.target_reached     = result.target_reached
+    _state.coarse_error_deg   = result.coarse_error_deg
+    _state.warning_msg        = result.warning_msg
+    _state.solve_retries      = result.solve_retries
+    _state.p1                 = result.p1
+    _state.p2                 = result.p2
+    _state.p3                 = result.p3
 
 
-def _check_horizon(ra_h: float, dec_deg: float, label: str) -> None:
-    """Raise if the position falls below the local horizon profile."""
-    if _HORIZON is None:
-        return
-    alt, az = compute_altaz(ra_h, dec_deg, config.OBSERVER_LAT, config.OBSERVER_LON)
-    if not _HORIZON.is_visible(alt, az):
-        min_alt = _HORIZON.min_alt_at(az)
-        raise RuntimeError(
-            f"{label} blocked by horizon profile "
-            f"(az {az:.0f}°, alt {alt:.1f}° < min {min_alt:.1f}°)"
-        )
-
-
-def _update_result(pole: SkyPoint, err, precision: float) -> None:
-    """Write computed error + all derived guidance fields into _state."""
+def _update_result_from_domain(pole: SkyPoint, err, precision: float) -> None:
+    """Write computed polar error into _state (used by live loop)."""
     _state.pole_ra            = pole.ra
     _state.pole_dec           = pole.dec
     _state.alt_error_arcmin   = err.alt_error_arcmin
@@ -143,187 +155,15 @@ def _update_result(pole: SkyPoint, err, precision: float) -> None:
 
 # ── coroutines ────────────────────────────────────────────────────────────────
 
-async def _run_measurement(
-    ra_step_h: float,
-    exposure: float,
-    gain: int,
-    camera_index: int,
-    precision: float,
+async def _run_workflow_loop(
+    workflow: PolarAlignmentWorkflow,
     mount: MountPort,
     solver: SolverPort,
-) -> None:
-    global _state
-    consecutive_failures = 0
-    try:
-        camera = deps.get_preview_camera(camera_index)
-        if hasattr(camera, "set_gain"):
-            camera.set_gain(gain)  # type: ignore[union-attr]
-        scale = config.PIXEL_SCALE_ARCSEC
-
-        if await asyncio.to_thread(mount.get_state) == MountState.PARKED:
-            await asyncio.to_thread(mount.unpark)
-            await asyncio.sleep(1.0)
-
-        # ── position 1: HOME ──────────────────────────────────────────────────
-        lst = _get_lst()
-        ra1 = lst % 24.0
-        _check_ha_limits(ra1)
-        _check_horizon(ra1, 89.0, "Position 1 (HOME)")
-        _state.step = "slewing"; _state.progress = 8
-        if not await asyncio.to_thread(mount.goto, ra1, 89.0):
-            raise RuntimeError("GoTo home failed")
-        if not await _wait_not_slewing(mount):
-            raise RuntimeError("Slew to position 1 timed out")
-        await asyncio.sleep(1.5)
-
-        _state.step = "solving_1"; _state.progress = 20
-        frame = await asyncio.to_thread(camera.capture, exposure)
-        r1 = await asyncio.to_thread(solver.solve, frame, scale)
-        if not r1.success:
-            consecutive_failures += 1
-            raise RuntimeError(f"Solve 1 failed: {r1.error}")
-        consecutive_failures = 0
-        p1 = SkyPoint(ra=r1.ra, dec=r1.dec)
-
-        # ── coarse alignment check (task 6) ───────────────────────────────────
-        _state.step = "checking"; _state.progress = 25
-        coarse_err_deg = abs(90.0 - p1.dec)
-        _state.coarse_error_deg = round(coarse_err_deg, 2)
-        if coarse_err_deg > 5.0:
-            _state.step = "coarse_required"
-            raise RuntimeError(
-                f"Mount is {coarse_err_deg:.1f}° from the pole — "
-                "rough mechanical repositioning required before precise measurement"
-            )
-        if coarse_err_deg > 1.0:
-            _state.warning_msg = (
-                f"Mount is {coarse_err_deg:.1f}° from pole — "
-                "may be outside fine azimuth screw range"
-            )
-
-        # ── position 2: RA + step ─────────────────────────────────────────────
-        ra2 = (ra1 + ra_step_h) % 24.0
-        _check_ha_limits(ra2)
-        _check_horizon(ra2, 89.0, "Position 2")
-        _state.step = "slewing"; _state.progress = 38
-        if not await asyncio.to_thread(mount.goto, ra2, 89.0):
-            raise RuntimeError("GoTo position 2 failed")
-        if not await _wait_not_slewing(mount):
-            raise RuntimeError("Slew to position 2 timed out")
-        await asyncio.sleep(1.5)
-
-        _state.step = "solving_2"; _state.progress = 55
-        frame = await asyncio.to_thread(camera.capture, exposure)
-        r2 = await asyncio.to_thread(solver.solve, frame, scale)
-        if not r2.success:
-            consecutive_failures += 1
-            _state.solve_retries += 1
-            ra2 = (ra1 + 3 * ra_step_h) % 24.0   # retry at +3× step
-            _check_ha_limits(ra2)
-            _check_horizon(ra2, 89.0, "Position 2 retry")
-            _state.step = "slewing"; _state.progress = 40
-            if not await asyncio.to_thread(mount.goto, ra2, 89.0):
-                raise RuntimeError("GoTo position 2 retry failed")
-            if not await _wait_not_slewing(mount):
-                raise RuntimeError("Slew to position 2 retry timed out")
-            await asyncio.sleep(1.5)
-            _state.step = "solving_2"; _state.progress = 55
-            frame = await asyncio.to_thread(camera.capture, exposure)
-            r2 = await asyncio.to_thread(solver.solve, frame, scale)
-            if not r2.success:
-                consecutive_failures += 1
-                if consecutive_failures >= 2:
-                    _state.fallback_available = True
-                    _state.step = "camera_fallback_offered"
-                    _state.error_msg = (
-                        "Plate solve failed twice — guide camera fallback available. "
-                        "Call POST /api/polar/use_fallback_camera with a camera_index."
-                    )
-                    return
-                raise RuntimeError(f"Solve 2 failed (with retry): {r2.error}")
-        consecutive_failures = 0
-        p2 = SkyPoint(ra=r2.ra, dec=r2.dec)
-
-        # ── position 3: RA + 2×step ───────────────────────────────────────────
-        ra3 = (ra1 + 2 * ra_step_h) % 24.0
-        _check_ha_limits(ra3)
-        _check_horizon(ra3, 89.0, "Position 3")
-        _state.step = "slewing"; _state.progress = 65
-        if not await asyncio.to_thread(mount.goto, ra3, 89.0):
-            raise RuntimeError("GoTo position 3 failed")
-        if not await _wait_not_slewing(mount):
-            raise RuntimeError("Slew to position 3 timed out")
-        await asyncio.sleep(1.5)
-
-        _state.step = "solving_3"; _state.progress = 82
-        frame = await asyncio.to_thread(camera.capture, exposure)
-        r3 = await asyncio.to_thread(solver.solve, frame, scale)
-        if not r3.success:
-            consecutive_failures += 1
-            _state.solve_retries += 1
-            ra3 = (ra1 - ra_step_h) % 24.0   # retry at −step
-            _check_ha_limits(ra3)
-            _check_horizon(ra3, 89.0, "Position 3 retry")
-            _state.step = "slewing"; _state.progress = 67
-            if not await asyncio.to_thread(mount.goto, ra3, 89.0):
-                raise RuntimeError("GoTo position 3 retry failed")
-            if not await _wait_not_slewing(mount):
-                raise RuntimeError("Slew to position 3 retry timed out")
-            await asyncio.sleep(1.5)
-            _state.step = "solving_3"; _state.progress = 82
-            frame = await asyncio.to_thread(camera.capture, exposure)
-            r3 = await asyncio.to_thread(solver.solve, frame, scale)
-            if not r3.success:
-                consecutive_failures += 1
-                if consecutive_failures >= 2:
-                    _state.fallback_available = True
-                    _state.step = "camera_fallback_offered"
-                    _state.error_msg = (
-                        "Plate solve failed twice — guide camera fallback available. "
-                        "Call POST /api/polar/use_fallback_camera with a camera_index."
-                    )
-                    return
-                raise RuntimeError(f"Solve 3 failed (with retry): {r3.error}")
-        p3 = SkyPoint(ra=r3.ra, dec=r3.dec)
-
-        # ── cache and compute ─────────────────────────────────────────────────
-        _state.p1 = p1
-        _state.p2 = p2
-        _state.p3 = p3
-        _state.cam_index  = camera_index
-        _state.exposure   = exposure
-        _state.gain       = gain
-        _state.ra_step_h  = ra_step_h
-        _state.target_precision_arcmin = precision
-
-        _state.step = "computing"; _state.progress = 93
-        pole = find_rotation_pole(p1, p2, p3)
-        err  = compute_polar_error(pole, config.OBSERVER_LAT, _get_lst())
-        _update_result(pole, err, precision)
-
-        with contextlib.suppress(Exception):
-            await asyncio.to_thread(mount.goto, ra1, 89.0)
-
-        _state.step = "done"; _state.progress = 100
-
-    except Exception as exc:
-        if _state.step not in ("coarse_required", "camera_fallback_offered"):
-            _state.step = "error"
-        _state.error_msg = str(exc)
-    finally:
-        _state.running = False
-
-
-async def _run_refine(
-    p2_target: SkyPoint,
-    p3_target: SkyPoint,
+    camera_index: int,
     exposure: float,
     gain: int,
-    camera_index: int,
-    precision: float,
-    mount: MountPort,
-    solver: SolverPort,
 ) -> None:
+    """Execute the polar-alignment workflow state machine against real hardware."""
     global _state
     try:
         camera = deps.get_preview_camera(camera_index)
@@ -335,72 +175,76 @@ async def _run_refine(
             await asyncio.to_thread(mount.unpark)
             await asyncio.sleep(1.0)
 
-        # position 1: fresh home (current LST)
-        lst = _get_lst()
-        ra1 = lst % 24.0
-        _check_ha_limits(ra1)
-        _check_horizon(ra1, 89.0, "Position 1 (HOME)")
-        _state.step = "slewing"; _state.progress = 8
-        if not await asyncio.to_thread(mount.goto, ra1, 89.0):
-            raise RuntimeError("GoTo home failed")
-        if not await _wait_not_slewing(mount):
-            raise RuntimeError("Slew to position 1 timed out")
-        await asyncio.sleep(1.5)
+        inp = WorkflowInput(lst=_get_lst(), observer_lat=config.OBSERVER_LAT)
 
-        _state.step = "solving_1"; _state.progress = 20
-        frame = await asyncio.to_thread(camera.capture, exposure)
-        r1 = await asyncio.to_thread(solver.solve, frame, scale)
-        if not r1.success:
-            raise RuntimeError(f"Solve 1 failed: {r1.error}")
-        p1 = SkyPoint(ra=r1.ra, dec=r1.dec)
+        while True:
+            act = workflow.next_action(inp)
 
-        # position 2: cached RA from prior measurement
-        _check_ha_limits(p2_target.ra)
-        _check_horizon(p2_target.ra, 89.0, "Position 2")
-        _state.step = "slewing"; _state.progress = 38
-        if not await asyncio.to_thread(mount.goto, p2_target.ra, 89.0):
-            raise RuntimeError("GoTo position 2 failed")
-        if not await _wait_not_slewing(mount):
-            raise RuntimeError("Slew to position 2 timed out")
-        await asyncio.sleep(1.5)
+            step, progress = _ACTION_PROGRESS.get(act.message or "", (_state.step, _state.progress))
+            _state.step     = step
+            _state.progress = progress
 
-        _state.step = "solving_2"; _state.progress = 55
-        frame = await asyncio.to_thread(camera.capture, exposure)
-        r2 = await asyncio.to_thread(solver.solve, frame, scale)
-        if not r2.success:
-            raise RuntimeError(f"Solve 2 failed: {r2.error}")
-        p2 = SkyPoint(ra=r2.ra, dec=r2.dec)
+            if act.kind == "SLEW_TO_RA":
+                assert act.ra_h is not None
+                ok = await asyncio.to_thread(mount.goto, act.ra_h, act.dec_deg)
+                if ok:
+                    ok = await _wait_not_slewing(mount)
+                if ok:
+                    await asyncio.sleep(1.5)
+                inp = WorkflowInput(
+                    lst=_get_lst(),
+                    observer_lat=config.OBSERVER_LAT,
+                    slew_ok=ok,
+                )
 
-        # position 3: cached RA from prior measurement
-        _check_ha_limits(p3_target.ra)
-        _check_horizon(p3_target.ra, 89.0, "Position 3")
-        _state.step = "slewing"; _state.progress = 65
-        if not await asyncio.to_thread(mount.goto, p3_target.ra, 89.0):
-            raise RuntimeError("GoTo position 3 failed")
-        if not await _wait_not_slewing(mount):
-            raise RuntimeError("Slew to position 3 timed out")
-        await asyncio.sleep(1.5)
+            elif act.kind == "CAPTURE_AND_SOLVE":
+                frame = await asyncio.to_thread(camera.capture, exposure)
+                r     = await asyncio.to_thread(solver.solve, frame, scale)
+                sr    = DomainSolveResult(
+                    success=r.success,
+                    ra=r.ra   if r.success else 0.0,
+                    dec=r.dec if r.success else 0.0,
+                    error=r.error or "" if not r.success else "",
+                )
+                inp = WorkflowInput(
+                    lst=_get_lst(),
+                    observer_lat=config.OBSERVER_LAT,
+                    solve_result=sr,
+                )
 
-        _state.step = "solving_3"; _state.progress = 82
-        frame = await asyncio.to_thread(camera.capture, exposure)
-        r3 = await asyncio.to_thread(solver.solve, frame, scale)
-        if not r3.success:
-            raise RuntimeError(f"Solve 3 failed: {r3.error}")
-        p3 = SkyPoint(ra=r3.ra, dec=r3.dec)
+            elif act.kind == "DISPLAY_RESULT":
+                assert act.result is not None
+                _state.step = "computing"; _state.progress = 93
+                _apply_alignment_result(act.result)
+                _state.cam_index = camera_index
+                _state.exposure  = exposure
+                _state.gain      = gain
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(mount.goto, workflow.home_ra, 89.0)
+                _state.step = "done"; _state.progress = 100
+                break
 
-        _state.step = "computing"; _state.progress = 93
-        pole = find_rotation_pole(p1, p2, p3)
-        err  = compute_polar_error(pole, config.OBSERVER_LAT, _get_lst())
-        _update_result(pole, err, precision)
-        _state.p1 = p1
-        _state.p2 = p2
-        _state.p3 = p3
+            elif act.kind == "COARSE_REQUIRED":
+                _state.step            = "coarse_required"
+                _state.coarse_error_deg = act.coarse_error_deg
+                _state.error_msg       = act.message
+                break
 
-        with contextlib.suppress(Exception):
-            await asyncio.to_thread(mount.goto, ra1, 89.0)
+            elif act.kind == "FAILED":
+                if act.camera_fallback_suggested:
+                    _state.fallback_available = True
+                    _state.step      = "camera_fallback_offered"
+                    _state.error_msg = (
+                        "Plate solve failed twice — guide camera fallback available. "
+                        "Call POST /api/polar/use_fallback_camera with a camera_index."
+                    )
+                else:
+                    _state.step      = "error"
+                    _state.error_msg = act.message
+                break
 
-        _state.step = "done"; _state.progress = 100
-
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
         _state.step      = "error"
         _state.error_msg = str(exc)
@@ -439,7 +283,7 @@ async def _run_live(
                 with contextlib.suppress(Exception):
                     pole = find_rotation_pole(p1, p2, p3_new)
                     err  = compute_polar_error(pole, config.OBSERVER_LAT, _get_lst())
-                    _update_result(pole, err, precision)
+                    _update_result_from_domain(pole, err, precision)
                 if _state.target_reached:
                     _state.step = "done"
                     break
@@ -538,12 +382,25 @@ async def polar_measure(
         _state.step = "error"
         _state.error_msg = "Safety checklist not confirmed — call POST /api/polar/checklist first"
         return _to_response()
-    _state = _PolarState(running=True, target_precision_arcmin=req.target_precision_arcmin)
+    _state = _PolarState(
+        running=True,
+        ra_step_h=req.ra_step_h,
+        exposure=req.exposure,
+        gain=req.gain,
+        cam_index=req.camera_index,
+        target_precision_arcmin=req.target_precision_arcmin,
+    )
+    workflow = PolarAlignmentWorkflow(
+        ra_step_h=req.ra_step_h,
+        target_precision_arcmin=req.target_precision_arcmin,
+        observer_lat=config.OBSERVER_LAT,
+        observer_lon=config.OBSERVER_LON,
+        ha_east_limit_h=config.MOUNT_HA_EAST_LIMIT_H,
+        ha_west_limit_h=config.MOUNT_HA_WEST_LIMIT_H,
+        horizon=_HORIZON,
+    )
     _task = asyncio.create_task(
-        _run_measurement(
-            req.ra_step_h, req.exposure, req.gain, req.camera_index,
-            req.target_precision_arcmin, mount, solver,
-        )
+        _run_workflow_loop(workflow, mount, solver, req.camera_index, req.exposure, req.gain)
     )
     return _to_response()
 
@@ -572,14 +429,26 @@ async def polar_refine(
     gain      = req.gain      if req.gain      is not None else _state.gain
     precision = req.target_precision_arcmin if req.target_precision_arcmin is not None \
                 else _state.target_precision_arcmin
+    p2_ra = _state.p2.ra
+    p3_ra = _state.p3.ra
+    cam   = _state.cam_index
+    step  = _state.ra_step_h
     _state.running   = True
     _state.step      = "refining"
     _state.error_msg = None
+    workflow = PolarAlignmentWorkflow(
+        ra_step_h=step,
+        target_precision_arcmin=precision,
+        observer_lat=config.OBSERVER_LAT,
+        observer_lon=config.OBSERVER_LON,
+        ha_east_limit_h=config.MOUNT_HA_EAST_LIMIT_H,
+        ha_west_limit_h=config.MOUNT_HA_WEST_LIMIT_H,
+        horizon=_HORIZON,
+        pos2_ra_override=p2_ra,
+        pos3_ra_override=p3_ra,
+    )
     _task = asyncio.create_task(
-        _run_refine(
-            _state.p2, _state.p3, exposure, gain, _state.cam_index,
-            precision, mount, solver,
-        )
+        _run_workflow_loop(workflow, mount, solver, cam, exposure, gain)
     )
     return _to_response()
 
@@ -622,16 +491,29 @@ async def polar_use_fallback_camera(
         _state.step      = "error"
         _state.error_msg = "No fallback pending — call /measure first"
         return _to_response()
-    precision  = req.target_precision_arcmin or _state.target_precision_arcmin
-    ra_step_h  = _state.ra_step_h
-    exposure   = _state.exposure
-    gain       = _state.gain
-    _state = _PolarState(running=True, target_precision_arcmin=precision)
+    precision = req.target_precision_arcmin or _state.target_precision_arcmin
+    ra_step_h = _state.ra_step_h
+    exposure  = _state.exposure
+    gain      = _state.gain
+    _state = _PolarState(
+        running=True,
+        ra_step_h=ra_step_h,
+        exposure=exposure,
+        gain=gain,
+        cam_index=req.camera_index,
+        target_precision_arcmin=precision,
+    )
+    workflow = PolarAlignmentWorkflow(
+        ra_step_h=ra_step_h,
+        target_precision_arcmin=precision,
+        observer_lat=config.OBSERVER_LAT,
+        observer_lon=config.OBSERVER_LON,
+        ha_east_limit_h=config.MOUNT_HA_EAST_LIMIT_H,
+        ha_west_limit_h=config.MOUNT_HA_WEST_LIMIT_H,
+        horizon=_HORIZON,
+    )
     _task = asyncio.create_task(
-        _run_measurement(
-            ra_step_h, exposure, gain, req.camera_index,
-            precision, mount, solver,
-        )
+        _run_workflow_loop(workflow, mount, solver, req.camera_index, exposure, gain)
     )
     return _to_response()
 

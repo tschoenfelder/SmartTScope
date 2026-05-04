@@ -75,6 +75,49 @@ class PolarError:
     total_error_arcmin: float
 
 
+def correction_direction_alt(alt_error_arcmin: float) -> str:
+    if alt_error_arcmin > 0.1:
+        return "Lower polar axis (altitude too high)"
+    if alt_error_arcmin < -0.1:
+        return "Raise polar axis (altitude too low)"
+    return "Altitude correct"
+
+
+def correction_direction_az(az_error_arcmin: float) -> str:
+    if az_error_arcmin > 0.1:
+        return "Move polar axis west (pointing too far east)"
+    if az_error_arcmin < -0.1:
+        return "Move polar axis east (pointing too far west)"
+    return "Azimuth correct"
+
+
+def classify_alignment(total_error_arcmin: float) -> str:
+    if total_error_arcmin > 300:   # > 5°
+        return "Very far off — rough mechanical adjustment recommended"
+    if total_error_arcmin > 60:    # 1°–5°
+        return "Far off — likely outside fine screw range"
+    if total_error_arcmin > 15:    # 15′–1°
+        return "Roughly aligned — correction needed"
+    if total_error_arcmin > 5:
+        return "Moderate"
+    if total_error_arcmin > 1:
+        return "Good"
+    if total_error_arcmin > 0.5:   # 30″–1′
+        return "Very good"
+    return "Excellent"
+
+
+# ── Precision presets (arcmin) ─────────────────────────────────────────────────
+
+class Precision:
+    ROUGH_VISUAL    = 30.0
+    BASIC_TRACKING  = 10.0
+    GUIDED_IMAGING  =  5.0
+    GOOD_IMAGING    =  2.0
+    HIGH            =  1.0
+    VERY_HIGH       =  0.5   # 30 arcsec
+
+
 def compute_polar_error(
     pole: SkyPoint,
     observer_lat: float,  # degrees

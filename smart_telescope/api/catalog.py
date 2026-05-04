@@ -12,9 +12,10 @@ from pydantic import BaseModel
 from .. import config
 from ..domain.catalog import CatalogObject, get_all, search
 from ..domain.solar import is_solar_target
-from ..domain.visibility import compute_altaz, compute_visibility_window
+from ..domain.visibility import HorizonProfile, compute_altaz, compute_visibility_window, load_horizon
 
 _STARS_CFG = Path(config.STARS_CFG)
+_HORIZON: HorizonProfile | None = load_horizon(config.HORIZON_DAT)
 
 router = APIRouter(prefix="/api/catalog")
 
@@ -63,7 +64,12 @@ def catalog_search(
     results = search(q, limit=limit if min_altitude is None else 110)
     entries = [CatalogEntry.from_domain(obj, with_altaz=True) for obj in results]
     if min_altitude is not None:
-        entries = [e for e in entries if e.altitude_deg is not None and e.altitude_deg >= min_altitude]
+        entries = [
+            e for e in entries
+            if e.altitude_deg is not None
+            and e.altitude_deg >= min_altitude
+            and (_HORIZON is None or (e.azimuth_deg is not None and _HORIZON.is_visible(e.altitude_deg, e.azimuth_deg)))
+        ]
     return entries[:limit]
 
 
@@ -73,7 +79,12 @@ def catalog_objects(
 ) -> list[CatalogEntry]:
     entries = [CatalogEntry.from_domain(obj, with_altaz=min_altitude is not None) for obj in get_all()]
     if min_altitude is not None:
-        entries = [e for e in entries if e.altitude_deg is not None and e.altitude_deg >= min_altitude]
+        entries = [
+            e for e in entries
+            if e.altitude_deg is not None
+            and e.altitude_deg >= min_altitude
+            and (_HORIZON is None or (e.azimuth_deg is not None and _HORIZON.is_visible(e.altitude_deg, e.azimuth_deg)))
+        ]
     return entries
 
 
@@ -103,6 +114,8 @@ def catalog_tonight(
             obj.ra_hours, obj.dec_deg, config.OBSERVER_LAT, config.OBSERVER_LON
         )
         if alt < min_altitude:
+            continue
+        if _HORIZON and not _HORIZON.is_visible(alt, az):
             continue
         blocked, _ = is_solar_target(obj.ra_hours, obj.dec_deg)
         results.append(TonightEntry(
@@ -193,6 +206,7 @@ def catalog_visible(
             now, night_end,
             min_altitude_deg=min_altitude,
             sample_minutes=15,
+            horizon=_HORIZON,
         )
         if not window.is_observable:
             continue

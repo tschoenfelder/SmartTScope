@@ -26,5 +26,6 @@ ha_west_limit_h = 0.333   # ~20 min past meridian
 
 [session]
 storage_dir        = ""      # where captured frames are saved; empty = system temp
-stars_cfg          = ""      # path to stars.cfg; empty = ~/.SmartTScope/stars.cfg
+stars_cfg          = ""      # path to custom target list; empty = ~/.SmartTScope/stars.cfg
+horizon_dat        = ""      # path to KStars horizon export; empty = ~/.SmartTScope/horizon.dat
 pixel_scale_arcsec = 0.38   # arcsec per pixel at your focal length (C8 native = 0.38)

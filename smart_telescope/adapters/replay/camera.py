@@ -22,6 +22,9 @@ _REPLAY_CAPABILITIES = CameraCapabilities(
 )
 
 
+_FITS_GLOB = ("*.fits", "*.fit")
+
+
 class ReplayCamera(CameraPort):
     """
     Camera adapter that serves prerecorded FITS files from disk.
@@ -35,6 +38,20 @@ class ReplayCamera(CameraPort):
             raise ValueError("ReplayCamera requires at least one FITS path")
         self._paths = [Path(p) for p in fits_paths]
         self._index = 0
+
+    @classmethod
+    def from_directory(cls, dir_path: str | Path) -> "ReplayCamera":
+        """Discover all FITS files in *dir_path* (sorted) and create a ReplayCamera."""
+        d = Path(dir_path)
+        if not d.is_dir():
+            raise ValueError(f"ReplayCamera.from_directory: not a directory: {d}")
+        seen: set[Path] = set()
+        for pattern in _FITS_GLOB:
+            seen.update(d.glob(pattern))
+        paths = sorted(seen)
+        if not paths:
+            raise ValueError(f"ReplayCamera.from_directory: no FITS files in {d}")
+        return cls([str(p) for p in paths])
         self._exposure_ms: float = 2000.0
         self._gain: int = 100
         self._black_level: int = 0

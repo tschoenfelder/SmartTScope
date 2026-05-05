@@ -47,12 +47,12 @@ Implementation phases follow section 16 of that document.
 ---
 
 ### AGT-0-3 — Replay camera adapter for deterministic tests
-- [ ] `adapters/replay/camera.py`: reads FITS files from a directory in
+- [x] `adapters/replay/camera.py`: reads FITS files from a directory in
   order; wraps them as `FitsFrame`; supports `set_gain()` / `set_exposure()`
   stubs so auto-gain loops can run without hardware.
-- [ ] Register in `deps._build_adapters()` via `REPLAY_FITS_DIR` env var
+- [x] Register in `deps._build_adapters()` via `REPLAY_FITS_DIR` env var
   (lower priority than `SIMULATOR_FITS_DIR`).
-- [ ] Unit tests: auto-gain loop converges on a set of replay frames
+- [x] Unit tests: auto-gain loop converges on a set of replay frames
   with known statistics.
 
 *Covers:* Phase 0 step 5, NFR-007  

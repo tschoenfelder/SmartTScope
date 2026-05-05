@@ -5,6 +5,7 @@ Adapter selection priority (highest first):
   Camera:
     TOUPTEK_INDEX set  → ToupcamCamera(index=int(TOUPTEK_INDEX))
     SIMULATOR_FITS_DIR → SimulatorCamera
+    REPLAY_FITS_DIR    → ReplayCamera.from_directory (deterministic test frames)
     (neither)          → MockCamera (unit-test default)
 
   Mount + Focuser:
@@ -47,6 +48,8 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     onstep_port   = os.environ.get("ONSTEP_PORT")   or config.ONSTEP_PORT
     sim_dir       = os.environ.get("SIMULATOR_FITS_DIR", "")
 
+    replay_dir = os.environ.get("REPLAY_FITS_DIR", "")
+
     # Camera — selected independently of mount
     camera: CameraPort
     if touptek_index:
@@ -57,6 +60,9 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
 
         from ..adapters.simulator.camera import SimulatorCamera
         camera = SimulatorCamera(Path(sim_dir))
+    elif replay_dir:
+        from ..adapters.replay.camera import ReplayCamera
+        camera = ReplayCamera.from_directory(replay_dir)
     else:
         camera = MockCamera()
 

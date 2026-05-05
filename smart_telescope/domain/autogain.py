@@ -36,7 +36,13 @@ class AutoGainController:
 
     def update(self, pixels: np.ndarray) -> None:  # type: ignore[type-arg]
         """Inspect *pixels* and adjust (exposure, gain) for the next capture."""
-        adc_max = float(np.iinfo(pixels.dtype).max) if np.issubdtype(pixels.dtype, np.integer) else 1.0
+        if np.issubdtype(pixels.dtype, np.integer):
+            adc_max = float(np.iinfo(pixels.dtype).max)
+        elif float(np.max(pixels)) > 1.0:
+            # float32 from camera: uint16 values cast to float — use 16-bit max
+            adc_max = 65535.0
+        else:
+            adc_max = 1.0
         mean_frac = float(np.mean(pixels)) / adc_max
 
         if mean_frac < _LO:

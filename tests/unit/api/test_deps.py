@@ -58,6 +58,38 @@ class TestSimulatorMode:
         assert cam._data_dir == tmp_path
 
 
+# ── replay mode (REPLAY_FITS_DIR set) ────────────────────────────────────────
+
+
+class TestReplayMode:
+    def _make_fits_dir(self, tmp_path: Path) -> Path:
+        import io
+        import numpy as np
+        from astropy.io import fits
+
+        d = tmp_path / "replay"
+        d.mkdir()
+        hdu = fits.PrimaryHDU(np.zeros((32, 32), dtype=np.uint16))
+        buf = io.BytesIO()
+        hdu.writeto(buf)
+        (d / "frame.fits").write_bytes(buf.getvalue())
+        return d
+
+    def test_camera_is_replay(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        d = self._make_fits_dir(tmp_path)
+        monkeypatch.setenv("REPLAY_FITS_DIR", str(d))
+        assert isinstance(deps.get_camera(), ReplayCamera)
+
+    def test_replay_lower_priority_than_simulator(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        d = self._make_fits_dir(tmp_path)
+        monkeypatch.setenv("REPLAY_FITS_DIR", str(d))
+        monkeypatch.setenv("SIMULATOR_FITS_DIR", str(tmp_path))
+        assert isinstance(deps.get_camera(), SimulatorCamera)
+
+
 # ── ToupTek camera mode (TOUPTEK_INDEX set) ───────────────────────────────────
 
 

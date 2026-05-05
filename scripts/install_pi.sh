@@ -13,7 +13,7 @@ set -euo pipefail
 # ── configuration ─────────────────────────────────────────────────────────────
 PYTHON_REQUIRED="3.13"
 REPO_URL="https://github.com/tschoenfelder/SmartTScope.git"
-INSTALL_DIR="$HOME/SmartTScope"
+INSTALL_DIR="$HOME/astro_sw/SmartTScope"
 ASTAP_URL="https://www.hnsky.org/astap_arm64.deb"
 ASTAP_DEB="/tmp/astap_arm64.deb"
 

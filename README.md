@@ -88,7 +88,7 @@ cd ~/astro_sw/SmartTScope
 bash scripts/install_pi.sh --dev-only
 ```
 
-`--dev-only` skips the second clone and installs into the current directory. Omit it to let the installer clone a fresh copy to `~/SmartTScope` instead.
+`--dev-only` skips the second clone and installs into the current directory. Omit it to let the installer clone a fresh copy to `~/astro_sw/SmartTScope` instead.
 
 To also install the ASTAP plate solver in the same step:
 
@@ -246,7 +246,16 @@ The ToupTek SDK files (`toupcam.py` + `libtoupcam.so`) live in the venv site-pac
 
 ### On the Raspberry Pi (production)
 
-The recommended path — pulls from `master`, rebuilds the wheel (required on Pi OS Debian 13), and runs the unit suite:
+The recommended all-in-one script — pulls the latest `master`, rebuilds and installs the wheel (required on Pi OS Debian 13), and starts the server:
+
+```bash
+cd ~/astro_sw/SmartTScope
+bash scripts/astro_start.sh
+```
+
+`astro_start.sh` is equivalent to running pull → build → install → launch in a single step. It is the standard daily-use script on the Pi.
+
+If you only want to update and test without restarting the server:
 
 ```bash
 cd ~/astro_sw/SmartTScope

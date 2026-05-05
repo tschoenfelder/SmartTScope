@@ -38,6 +38,7 @@ class MountHealth(BaseModel):
 
 class DeviceHealth(BaseModel):
     ok: bool
+    required: bool = False   # True when the device is mandatory on this hardware config
     message: str | None = None
 
 
@@ -91,10 +92,19 @@ def system_status(
 
     # ── Camera / Focuser ─────────────────────────────────────────────────────
     camera_health = DeviceHealth(ok=True, message="adapter available")
+    onstep_active = bool(os.environ.get("ONSTEP_PORT"))
     if focuser.is_available:
-        focuser_health = DeviceHealth(ok=True, message="focuser active")
+        focuser_health = DeviceHealth(ok=True, required=onstep_active, message="focuser active")
     else:
-        focuser_health = DeviceHealth(ok=False, message="focuser not found — autofocus disabled")
+        focuser_health = DeviceHealth(
+            ok=False,
+            required=onstep_active,
+            message=(
+                "Focuser not found — check OnStep focuser wiring and configuration"
+                if onstep_active
+                else "focuser not found — autofocus disabled"
+            ),
+        )
 
     # ── Solver ───────────────────────────────────────────────────────────────
     astap_path = _find_astap()

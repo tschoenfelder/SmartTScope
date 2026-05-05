@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -210,6 +210,7 @@
     .state-slewing  { background: rgba(56,139,253,0.15);  color: var(--accent-hi); }
     .state-unknown  { background: rgba(139,148,158,0.15); color: var(--muted); }
     .state-at_limit { background: rgba(248,81,73,0.15);   color: var(--danger); }
+    .state-error    { background: rgba(248,81,73,0.15);   color: var(--error); }
 
     /* ── params grid ── */
     .params {
@@ -733,22 +734,46 @@
       </div>
     </div>
 
-    <!-- Polar Alignment Measurement -->
-    <div class="card" style="margin-top:1rem">
+    <!-- PA: pre-start safety checklist -->
+    <div class="card" style="margin-top:1rem" id="pa-checklist-card">
+      <div class="card-title">
+        <span class="dot" id="pa-chk-dot" style="background:var(--muted)"></span>
+        Polar Alignment — Pre-Start Checklist
+      </div>
+      <p style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem">
+        Confirm every item before starting the measurement run.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.85rem;margin-bottom:0.9rem">
+        <label><input type="checkbox" id="pa-chk-home">    Mount is mechanically in HOME (counterweight down, scope near Polaris)</label>
+        <label><input type="checkbox" id="pa-chk-north">   Telescope points roughly toward Polaris / northern celestial pole</label>
+        <label><input type="checkbox" id="pa-chk-clutch">  Clutches are locked</label>
+        <label><input type="checkbox" id="pa-chk-camera">  Camera is connected and live</label>
+        <label><input type="checkbox" id="pa-chk-focus">   Focus is good enough for plate solving</label>
+        <label><input type="checkbox" id="pa-chk-cables">  Cables have enough slack for RA rotation</label>
+        <label><input type="checkbox" id="pa-chk-collision"> No expected collision during planned RA movement</label>
+        <label><input type="checkbox" id="pa-chk-stable">  Tripod and mount head are mechanically stable</label>
+        <label><input type="checkbox" id="pa-chk-screws">  ALT/AZ fine-adjustment screws are accessible</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        <button id="pa-chk-btn" onclick="paConfirmChecklist()">Confirm Checklist</button>
+        <span id="pa-chk-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- PA: measurement controls -->
+    <div class="card" style="margin-top:1rem" id="pa-measure-card">
       <div class="card-title">
         <span class="dot dot-grey" id="pa-dot"></span>
         Polar Alignment Measurement
       </div>
-      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem">
+      <p style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem">
         The mount slews to three RA positions (Dec&nbsp;89°) and plate-solves each frame.
-        The detected rotation axis is compared to the true pole to give ALT and AZ corrections.
+        The detected rotation axis is compared to the true pole to give ALT / AZ corrections.
       </p>
-
-      <!-- controls row -->
       <div class="controls" style="flex-wrap:wrap;gap:0.5rem 0.75rem">
         <label>RA step</label>
         <input type="number" id="pa-ra-step" value="1.0" min="0.2" max="3.0" step="0.1"
-               style="width:4ch" title="RA rotation between positions (hours)">
+               style="width:4.5ch" title="RA rotation between positions (hours)">
         <label>h</label>
         <label style="margin-left:0.5rem">Exp</label>
         <input type="number" id="pa-exposure" value="5" min="1" max="60" step="1"
@@ -759,57 +784,113 @@
                style="width:5ch">
         <label style="margin-left:0.5rem">Cam</label>
         <select id="pa-cam-select" style="font-size:0.8rem;max-width:11ch"></select>
+        <label style="margin-left:0.5rem">Target</label>
+        <select id="pa-precision" style="font-size:0.8rem">
+          <option value="30">Rough visual (30′)</option>
+          <option value="10">Basic tracking (10′)</option>
+          <option value="5">Guided imaging (5′)</option>
+          <option value="2" selected>Good imaging (2′)</option>
+          <option value="1">High precision (1′)</option>
+          <option value="0.5">Very high (30″)</option>
+        </select>
       </div>
-
-      <!-- action buttons + step label -->
       <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.75rem;flex-wrap:wrap">
         <button id="pa-measure-btn" onclick="paMeasure()">Measure</button>
         <button id="pa-cancel-btn" class="danger" onclick="paCancel()" disabled
                 style="padding:0.35rem 0.75rem">Cancel</button>
         <span id="pa-step-label" style="font-size:0.82rem;color:var(--muted)"></span>
       </div>
-
-      <!-- progress bar -->
       <div id="pa-progress-wrap" style="margin-top:0.6rem;display:none">
         <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
           <div id="pa-progress-bar"
                style="height:100%;background:var(--accent);width:0%;transition:width 0.4s"></div>
         </div>
       </div>
+      <div id="pa-warning-msg" style="display:none;margin-top:0.5rem;font-size:0.82rem;color:var(--warning)"></div>
+    </div>
 
-      <!-- results -->
-      <div id="pa-results" style="display:none;margin-top:1rem">
-        <div class="params">
-          <div class="param">
-            <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Detected pole</span>
-            <span></span>
-          </div>
-          <div class="param">
-            <span class="param-label">RA</span>
-            <span class="param-value mono" id="pa-pole-ra">—</span>
-          </div>
-          <div class="param">
-            <span class="param-label">Dec</span>
-            <span class="param-value mono" id="pa-pole-dec">—</span>
-          </div>
-          <div class="param" style="margin-top:0.5rem">
-            <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Corrections needed</span>
-            <span></span>
-          </div>
-          <div class="param">
-            <span class="param-label">ALT error</span>
-            <span class="param-value" id="pa-alt-error">—</span>
-          </div>
-          <div class="param">
-            <span class="param-label">AZ error</span>
-            <span class="param-value" id="pa-az-error">—</span>
-          </div>
-          <div class="param">
-            <span class="param-label">Total</span>
-            <span class="param-value" id="pa-total-error">—</span>
-          </div>
+    <!-- PA: coarse alignment required -->
+    <div class="card" style="margin-top:1rem;display:none;border-color:var(--warning)" id="pa-coarse-card">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Coarse Alignment Required
+      </div>
+      <p id="pa-coarse-msg" style="font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem"></p>
+      <p style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem">
+        Manually reposition the tripod or mount head, then press <strong>Measure</strong> again.
+      </p>
+    </div>
+
+    <!-- PA: camera fallback offered -->
+    <div class="card" style="margin-top:1rem;display:none;border-color:var(--warning)" id="pa-fallback-card">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Plate Solve Failures — Use Guide Camera?
+      </div>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">
+        The main camera failed to plate solve twice. You can retry with a guide / fallback camera.
+      </p>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.82rem">Guide cam index</label>
+        <input type="number" id="pa-fallback-cam" value="1" min="0" max="7" style="width:3.5ch">
+        <button id="pa-fallback-btn" onclick="paFallback()">Use Guide Camera</button>
+      </div>
+    </div>
+
+    <!-- PA: results -->
+    <div class="card" style="margin-top:1rem;display:none" id="pa-results-card">
+      <div class="card-title">
+        <span class="dot dot-green"></span>
+        Polar Error — Results
+      </div>
+      <div class="params" style="margin-bottom:0.75rem">
+        <div class="param">
+          <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Detected pole</span>
+          <span></span>
         </div>
-        <div id="pa-verdict" style="margin-top:0.6rem;font-size:0.85rem;font-weight:500"></div>
+        <div class="param">
+          <span class="param-label">RA</span>
+          <span class="param-value mono" id="pa-pole-ra">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Dec</span>
+          <span class="param-value mono" id="pa-pole-dec">—</span>
+        </div>
+        <div class="param" style="margin-top:0.4rem">
+          <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Corrections needed</span>
+          <span></span>
+        </div>
+        <div class="param">
+          <span class="param-label">ALT error</span>
+          <span class="param-value" id="pa-alt-error">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">AZ error</span>
+          <span class="param-value" id="pa-az-error">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Total</span>
+          <span class="param-value" id="pa-total-error">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Quality</span>
+          <span class="param-value" id="pa-quality">—</span>
+        </div>
+      </div>
+      <div id="pa-verdict" style="margin-bottom:0.75rem;font-size:0.85rem;font-weight:500"></div>
+
+      <!-- live adjustment sub-section -->
+      <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.5rem">
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.6rem">
+          Adjust the ALT/AZ screws physically. Press <strong>Start Live Adjustment</strong> to
+          continuously capture and re-solve while you turn the screws — no slewing occurs.
+        </p>
+        <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+          <button id="pa-live-btn" onclick="paLive()">Start Live Adjustment</button>
+          <button id="pa-refine-btn" class="secondary" onclick="paRefine()"
+                  style="padding:0.35rem 0.75rem">Second Run</button>
+          <span id="pa-live-label" style="font-size:0.82rem;color:var(--muted)"></span>
+        </div>
       </div>
     </div>
 
@@ -909,6 +990,10 @@
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
                    style="width:5ch">
+            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
+              <input type="checkbox" id="preview-autogain-chk" style="width:auto"
+                     title="Auto-adjust exposure (≤4 s) and gain (near min) for display">AG
+            </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-hist-chk" style="width:auto"
                      onchange="previewHistToggle(this.checked)">Hist
@@ -1282,9 +1367,12 @@
     // Camera
     rows.push(_healthRow('Camera', d.camera.ok ? 'ok' : 'error',
       d.camera.ok ? 'Connected' : (d.camera.message ?? 'Error')));
-    // Focuser — degraded is warn, not error (session can still run without focuser)
-    rows.push(_healthRow('Focuser', d.focuser.ok ? 'ok' : 'warn',
-      d.focuser.ok ? 'Active' : 'Not found — autofocus disabled'));
+    // Focuser — error when required (OnStep hardware) and not found; warn otherwise
+    const focLevel = d.focuser.ok ? 'ok' : (d.focuser.required ? 'error' : 'warn');
+    const focLabel = d.focuser.ok ? 'Active'
+      : (d.focuser.required ? (d.focuser.message ?? 'Focuser not found — check OnStep config')
+                             : 'Not found — autofocus disabled');
+    rows.push(_healthRow('Focuser', focLevel, focLabel));
     // Solver
     const sLevel = d.solver.ok ? 'ok' : 'error';
     const sLabel = d.solver.ok
@@ -1854,19 +1942,49 @@
 
   let _paTimer = null;
 
+  async function paConfirmChecklist() {
+    const ids = ['pa-chk-home','pa-chk-north','pa-chk-clutch','pa-chk-camera',
+                 'pa-chk-focus','pa-chk-cables','pa-chk-collision','pa-chk-stable','pa-chk-screws'];
+    if (!ids.every(id => document.getElementById(id)?.checked)) {
+      document.getElementById('pa-chk-status').textContent = 'All items must be checked.';
+      document.getElementById('pa-chk-status').style.color = 'var(--error)';
+      return;
+    }
+    const body = {
+      mount_at_home:            true, telescope_points_north: true, clutches_locked:       true,
+      camera_connected:         true, focus_ok:               true, cables_slack:          true,
+      no_collision_risk:        true, mount_stable:           true, alt_az_screws_accessible: true,
+    };
+    try {
+      const r = await apiPost('/api/polar/checklist', body);
+      if (r.confirmed) {
+        document.getElementById('pa-chk-dot').style.background = 'var(--success)';
+        document.getElementById('pa-chk-status').textContent   = 'Confirmed — ready to measure.';
+        document.getElementById('pa-chk-status').style.color   = 'var(--success)';
+        document.getElementById('pa-chk-btn').disabled = true;
+      }
+    } catch (err) {
+      document.getElementById('pa-chk-status').textContent = `Error: ${err}`;
+      document.getElementById('pa-chk-status').style.color = 'var(--error)';
+    }
+  }
+
   async function paMeasure() {
     const btn = document.getElementById('pa-measure-btn');
     btn.disabled = true;
     document.getElementById('pa-cancel-btn').disabled = false;
-    document.getElementById('pa-results').style.display = 'none';
+    document.getElementById('pa-results-card').style.display = 'none';
+    document.getElementById('pa-coarse-card').style.display  = 'none';
+    document.getElementById('pa-fallback-card').style.display = 'none';
     document.getElementById('pa-progress-wrap').style.display = '';
+    document.getElementById('pa-warning-msg').style.display   = 'none';
     _paSetProgress(0, 'Starting…');
-
     const body = {
-      ra_step_h:    parseFloat(document.getElementById('pa-ra-step').value)   || 1.0,
-      exposure:     parseFloat(document.getElementById('pa-exposure').value)   || 5.0,
-      gain:         parseInt(document.getElementById('pa-gain').value, 10)     || 100,
-      camera_index: parseInt(document.getElementById('pa-cam-select')?.value, 10) || 0,
+      ra_step_h:               parseFloat(document.getElementById('pa-ra-step').value)    || 1.0,
+      exposure:                parseFloat(document.getElementById('pa-exposure').value)    || 5.0,
+      gain:                    parseInt(document.getElementById('pa-gain').value, 10)      || 100,
+      camera_index:            parseInt(document.getElementById('pa-cam-select')?.value, 10) || 0,
+      target_precision_arcmin: parseFloat(document.getElementById('pa-precision').value)   || 2.0,
     };
     try {
       await apiPost('/api/polar/measure', body);
@@ -1880,13 +1998,70 @@
     _paTimer = setInterval(_paPoll, 2000);
   }
 
+  async function paLive() {
+    const btn = document.getElementById('pa-live-btn');
+    btn.disabled = true;
+    document.getElementById('pa-cancel-btn').disabled = false;
+    document.getElementById('pa-live-label').textContent = 'Live adjustment running…';
+    document.getElementById('pa-progress-wrap').style.display = '';
+    _paSetProgress(100, 'Live adjustment…');
+    try {
+      await apiPost('/api/polar/live', {});
+    } catch (err) {
+      document.getElementById('pa-live-label').textContent = `Error: ${err}`;
+      btn.disabled = false;
+      return;
+    }
+    clearInterval(_paTimer);
+    _paTimer = setInterval(_paPoll, 2500);
+  }
+
+  async function paRefine() {
+    document.getElementById('pa-refine-btn').disabled = true;
+    document.getElementById('pa-results-card').style.display = 'none';
+    document.getElementById('pa-progress-wrap').style.display = '';
+    _paSetProgress(0, 'Starting second run…');
+    document.getElementById('pa-cancel-btn').disabled = false;
+    try {
+      await apiPost('/api/polar/refine', {});
+    } catch (err) {
+      _paSetProgress(0, `Error: ${err}`, true);
+      document.getElementById('pa-refine-btn').disabled = false;
+      return;
+    }
+    clearInterval(_paTimer);
+    _paTimer = setInterval(_paPoll, 2000);
+  }
+
+  async function paFallback() {
+    const camIdx = parseInt(document.getElementById('pa-fallback-cam').value, 10) || 1;
+    document.getElementById('pa-fallback-btn').disabled = true;
+    document.getElementById('pa-fallback-card').style.display = 'none';
+    document.getElementById('pa-progress-wrap').style.display = '';
+    _paSetProgress(0, 'Retrying with guide camera…');
+    document.getElementById('pa-cancel-btn').disabled = false;
+    try {
+      await apiPost('/api/polar/use_fallback_camera', { camera_index: camIdx });
+    } catch (err) {
+      _paSetProgress(0, `Error: ${err}`, true);
+      document.getElementById('pa-fallback-btn').disabled = false;
+      document.getElementById('pa-fallback-card').style.display = '';
+      return;
+    }
+    clearInterval(_paTimer);
+    _paTimer = setInterval(_paPoll, 2000);
+  }
+
   async function paCancel() {
     clearInterval(_paTimer); _paTimer = null;
-    try { await apiPost('/api/polar/cancel'); } catch (_) {}
+    try { await apiPost('/api/polar/cancel', {}); } catch (_) {}
     _paSetProgress(0, 'Cancelled');
     document.getElementById('pa-measure-btn').disabled = false;
     document.getElementById('pa-cancel-btn').disabled = true;
     document.getElementById('pa-progress-wrap').style.display = 'none';
+    document.getElementById('pa-live-label').textContent = '';
+    document.getElementById('pa-live-btn').disabled = false;
+    document.getElementById('pa-refine-btn').disabled = false;
   }
 
   async function _paPoll() {
@@ -1896,65 +2071,112 @@
     } catch (_) {}
   }
 
-  const _PA_LABELS = {
-    idle: 'Idle', slewing: 'Slewing…', solving_1: 'Solving position 1…',
-    solving_2: 'Solving position 2…', solving_3: 'Solving position 3…',
-    computing: 'Computing pole…', done: 'Done', error: 'Error',
+  const _PA_STEP_LABELS = {
+    idle:                    'Idle',
+    slewing:                 'Slewing…',
+    solving_1:               'Solving position 1…',
+    solving_2:               'Solving position 2…',
+    solving_3:               'Solving position 3…',
+    computing:               'Computing pole…',
+    done:                    'Done',
+    refining:                'Refining…',
+    live:                    'Live — adjusting screws…',
+    coarse_required:         'Coarse alignment needed',
+    camera_fallback_offered: 'Plate solve failed — fallback available',
+    error:                   'Error',
   };
 
   function _paRender(d) {
-    _paSetProgress(d.progress, _PA_LABELS[d.step] || d.step, d.step === 'error');
+    _paSetProgress(d.progress, _PA_STEP_LABELS[d.step] || d.step, d.step === 'error');
 
     const dot = document.getElementById('pa-dot');
-    if (dot) {
-      dot.className = 'dot ' + (
-        d.step === 'done'  ? 'dot-green'  :
-        d.step === 'error' ? 'dot-red'    :
-        d.running          ? 'dot-yellow' : 'dot-grey'
-      );
+    if (dot) dot.className = 'dot ' + (
+      d.step === 'done' ? 'dot-green' : d.step === 'error' ? 'dot-red' :
+      d.running ? 'dot-yellow' : 'dot-grey'
+    );
+
+    if (d.checklist_confirmed) {
+      document.getElementById('pa-chk-dot').style.background = 'var(--success)';
+      document.getElementById('pa-chk-status').textContent   = 'Confirmed';
+      document.getElementById('pa-chk-status').style.color   = 'var(--success)';
+      document.getElementById('pa-chk-btn').disabled = true;
     }
 
-    if (d.step === 'done' || d.step === 'error') {
+    const terminalSteps = new Set(['done','error','coarse_required','camera_fallback_offered']);
+    if (!d.running && terminalSteps.has(d.step)) {
       clearInterval(_paTimer); _paTimer = null;
       document.getElementById('pa-measure-btn').disabled = false;
-      document.getElementById('pa-cancel-btn').disabled = true;
+      document.getElementById('pa-cancel-btn').disabled  = true;
+      document.getElementById('pa-live-btn').disabled    = false;
+      document.getElementById('pa-refine-btn').disabled  = false;
     }
 
-    if (d.step === 'done' && d.alt_error_arcmin != null) {
-      document.getElementById('pa-results').style.display = '';
+    // warning
+    const warnEl = document.getElementById('pa-warning-msg');
+    if (d.warning_msg) {
+      warnEl.textContent = d.warning_msg;
+      warnEl.style.display = '';
+    } else {
+      warnEl.style.display = 'none';
+    }
+
+    // coarse required
+    document.getElementById('pa-coarse-card').style.display =
+      d.step === 'coarse_required' ? '' : 'none';
+    if (d.step === 'coarse_required') {
+      const deg = d.coarse_error_deg != null ? d.coarse_error_deg.toFixed(1) : '?';
+      document.getElementById('pa-coarse-msg').textContent =
+        `Detected pole is ${deg}° from NCP — this is outside the fine-screw range. ` +
+        `Manually reposition the tripod or mount head closer to the celestial pole, then press Measure again.`;
+    }
+
+    // camera fallback
+    document.getElementById('pa-fallback-card').style.display =
+      d.step === 'camera_fallback_offered' ? '' : 'none';
+
+    // results / live
+    if ((d.step === 'done' || d.step === 'live') && d.alt_error_arcmin != null) {
+      document.getElementById('pa-results-card').style.display = '';
       document.getElementById('pa-pole-ra').textContent  =
         d.pole_ra  != null ? _formatRA(d.pole_ra)   : '—';
       document.getElementById('pa-pole-dec').textContent =
         d.pole_dec != null ? _formatDec(d.pole_dec) : '—';
 
-      const altErr = d.alt_error_arcmin;
-      const azErr  = d.az_error_arcmin;
-      const altDir = altErr > 0 ? '↓ lower ALT screw' : '↑ raise ALT screw';
-      const azDir  = azErr  > 0 ? '← move AZ west'    : '→ move AZ east';
+      const altErr = d.alt_error_arcmin ?? 0;
+      const azErr  = d.az_error_arcmin  ?? 0;
+      const fmt    = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '′';
       document.getElementById('pa-alt-error').innerHTML =
-        `<span style="font-family:ui-monospace,monospace">${altErr > 0 ? '+' : ''}${altErr.toFixed(1)}′</span>`
-        + `<span style="color:var(--muted);font-size:0.78rem;margin-left:0.4rem">${altDir}</span>`;
+        `<span class="mono">${fmt(altErr)}</span>` +
+        (d.correction_alt ? `<span style="color:var(--muted);font-size:0.78rem;margin-left:0.4rem">${d.correction_alt}</span>` : '');
       document.getElementById('pa-az-error').innerHTML =
-        `<span style="font-family:ui-monospace,monospace">${azErr > 0 ? '+' : ''}${azErr.toFixed(1)}′</span>`
-        + `<span style="color:var(--muted);font-size:0.78rem;margin-left:0.4rem">${azDir}</span>`;
+        `<span class="mono">${fmt(azErr)}</span>` +
+        (d.correction_az ? `<span style="color:var(--muted);font-size:0.78rem;margin-left:0.4rem">${d.correction_az}</span>` : '');
       document.getElementById('pa-total-error').textContent =
-        d.total_error_arcmin.toFixed(1) + '′';
+        d.total_error_arcmin != null ? d.total_error_arcmin.toFixed(1) + '′' : '—';
+      document.getElementById('pa-quality').textContent = d.quality_label || '—';
 
       const verdict = document.getElementById('pa-verdict');
-      if (d.total_error_arcmin <= 2.0) {
-        verdict.style.color = 'var(--success)';
-        verdict.textContent = '✓ Aligned (< 2′ total error)';
-      } else if (d.total_error_arcmin <= 10.0) {
-        verdict.style.color = 'var(--warning, #f5a623)';
-        verdict.textContent = '⚠ Adjust screws, then Measure again';
+      if (d.target_reached) {
+        verdict.style.color   = 'var(--success)';
+        verdict.textContent   = `Target reached (${d.total_error_arcmin?.toFixed(1)}′ ≤ ${d.target_precision_arcmin}′)`;
+      } else if (d.total_error_arcmin != null && d.total_error_arcmin <= 10) {
+        verdict.style.color   = 'var(--warning)';
+        verdict.textContent   = `Adjust screws, then Start Live Adjustment or Second Run`;
       } else {
-        verdict.style.color = 'var(--error)';
-        verdict.textContent = '✗ Large error — adjust screws significantly, then Measure again';
+        verdict.style.color   = 'var(--error)';
+        verdict.textContent   = `Large error — use Coarse Adjustment then Measure again`;
       }
+
+      if (d.step === 'live') {
+        document.getElementById('pa-live-label').textContent = 'Live — updating…';
+      } else {
+        document.getElementById('pa-live-label').textContent = '';
+      }
+    } else if (d.step !== 'coarse_required' && d.step !== 'camera_fallback_offered') {
+      document.getElementById('pa-results-card').style.display = 'none';
     }
 
     if (d.step === 'error' && d.error_msg) {
-      document.getElementById('pa-results').style.display = 'none';
       setStatus('s2-status', `Polar alignment error: ${d.error_msg}`, true);
     }
   }
@@ -1962,9 +2184,9 @@
   function _paSetProgress(pct, label, isError = false) {
     const bar = document.getElementById('pa-progress-bar');
     if (bar) bar.style.width = pct + '%';
-    document.getElementById('pa-step-label').textContent = label;
-    document.getElementById('pa-step-label').style.color =
-      isError ? 'var(--error)' : 'var(--muted)';
+    const lbl = document.getElementById('pa-step-label');
+    lbl.textContent = label;
+    lbl.style.color = isError ? 'var(--error)' : 'var(--muted)';
   }
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -2224,17 +2446,18 @@
   ══════════════════════════════════════════════════════════════════════ */
   function focuserCard(data) {
     if (!data.available) {
+      const required = data.required ?? false;
       return `
-      <div class="card">
+      <div class="card"${required ? ' style="border-color:var(--error)"' : ''}>
         <div class="card-title">
-          <span class="dot dot-yellow"></span>
+          <span class="dot ${required ? 'dot-red' : 'dot-yellow'}"></span>
           OnStep Focuser
-          <span class="state-badge state-parked">Not found</span>
+          <span class="state-badge ${required ? 'state-error' : 'state-parked'}">Not found</span>
         </div>
-        <p style="font-size:0.82rem;color:var(--muted);margin:0.5rem 0 0">
-          No focuser detected on the OnStep controller (:FA# = 0).<br>
-          Autofocus is disabled â all other operations continue normally.
-        </p>
+        <p style="font-size:0.82rem;color:${required ? 'var(--error)' : 'var(--muted)'};margin:0.5rem 0 0">
+          ${required
+            ? 'Focuser not detected on the OnStep controller (:FA# = 0). Check focuser wiring and OnStep focuser configuration.'
+            : 'No focuser detected on the OnStep controller (:FA# = 0). Autofocus is disabled — all other operations continue normally.'}${NL}        </p>
       </div>`;
     }
     const pos    = data.position ?? '—';
@@ -2727,11 +2950,12 @@
 
   function _connectWs() {
     if (_ws) { _ws.close(); _ws = null; }
-    const exposure = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
-    const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
-    const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}`;
+    const exposure  = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
+    const gain      = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const camIdx    = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const autoGain  = document.getElementById('preview-autogain-chk')?.checked ? '&autogain=true' : '';
+    const proto     = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url       = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}${autoGain}`;
 
     _setWsStatus('connecting');
     _updatePreviewBtns(true);
@@ -3319,6 +3543,8 @@
   _loadSelectFromCameras('pa-cam-select');
   loadStars();
   updateElevationLabel();
+  // restore polar alignment state from server (in case page was reloaded mid-session)
+  _paPoll();
 </script>
 
 </body>

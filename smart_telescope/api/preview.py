@@ -7,6 +7,7 @@ import io
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from ..domain.autogain import AutoGainController
 from ..domain.frame import FitsFrame
 from ..domain.stretch import auto_stretch
 from .deps import get_preview_camera
@@ -20,20 +21,38 @@ async def ws_preview(
     exposure: float = Query(default=2.0, gt=0.0, le=60.0),
     gain: int = Query(default=100, ge=100, le=3200),
     camera_index: int = Query(default=0, ge=0, le=7),
+    autogain: bool = Query(default=False),
 ) -> None:
-    """Stream auto-stretched JPEG frames to the client until it disconnects."""
+    """Stream auto-stretched JPEG frames to the client until it disconnects.
+
+    When *autogain* is True the server adaptively adjusts exposure (≤ 4 s) and
+    gain (near minimum) after each frame to keep the display well-exposed.
+    Raw capture settings for science operations are not affected.
+    """
     await websocket.accept()
     try:
         camera = get_preview_camera(camera_index)
     except RuntimeError as exc:
         await websocket.close(code=1011, reason=str(exc))
         return
+
+    ctrl: AutoGainController | None = AutoGainController(exposure, gain) if autogain else None
+    cur_exposure = exposure
+    cur_gain     = gain
+
     if hasattr(camera, "set_gain"):
-        camera.set_gain(gain)  # type: ignore[union-attr]
+        camera.set_gain(cur_gain)  # type: ignore[union-attr]
     try:
         while True:
-            frame: FitsFrame = await asyncio.to_thread(camera.capture, exposure)
+            frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)
             await websocket.send_bytes(_to_jpeg(frame))
+            if ctrl is not None:
+                ctrl.update(frame.pixels)
+                if ctrl.gain != cur_gain:
+                    cur_gain = ctrl.gain
+                    if hasattr(camera, "set_gain"):
+                        camera.set_gain(cur_gain)  # type: ignore[union-attr]
+                cur_exposure = ctrl.exposure
     except WebSocketDisconnect:
         pass
     except RuntimeError:

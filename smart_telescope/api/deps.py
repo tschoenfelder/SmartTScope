@@ -62,10 +62,17 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
 
     # Mount + Focuser
     if onstep_port:
+        import logging
         from ..adapters.onstep.focuser import OnStepFocuser
         from ..adapters.onstep.mount import OnStepMount
         mount = OnStepMount(onstep_port)
         focuser = OnStepFocuser(mount)
+        focuser.connect()
+        if not focuser.is_available:
+            logging.getLogger(__name__).error(
+                "OnStep focuser not found (:FA# returned 0). "
+                "Check focuser wiring and OnStep focuser configuration."
+            )
         return camera, mount, focuser
     if sim_dir:
         from pathlib import Path

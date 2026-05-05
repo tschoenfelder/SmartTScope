@@ -63,12 +63,12 @@ Implementation phases follow section 16 of that document.
 ## Phase 1 — Storage model
 
 ### AGT-1-1 — App-state folder and image-root configuration
-- [ ] `domain/storage_config.py`: `resolve_app_state_dir()` — checks
+- [x] `domain/storage_config.py`: `resolve_app_state_dir()` — checks
   `~/.SmartTScope` then `~/.smarttscope`, creates if absent (FR-STORE-001).
-- [ ] Add `IMAGE_ROOT` to `config.py` (env var + `smart_telescope.toml`).
-- [ ] `domain/session_folder.py`: `make_session_path(image_root, target, date)`
+- [x] Add `IMAGE_ROOT` to `config.py` (env var + `smart_telescope.toml`).
+- [x] `domain/session_folder.py`: `make_session_path(image_root, target, date)`
   → `image_root/YYYY-MM-DD_<sanitised_target>/` (FR-STORE-004).
-- [ ] Unit tests: folder resolution, sanitisation edge cases.
+- [x] Unit tests: folder resolution, sanitisation edge cases.
 
 *Covers:* FR-STORE-001, FR-STORE-002, FR-STORE-003, FR-STORE-004  
 *Depends:* —

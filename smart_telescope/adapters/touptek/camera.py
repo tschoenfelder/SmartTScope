@@ -56,6 +56,8 @@ class ToupcamCamera(CameraPort):
         self._height = 0
         self._gain: int = 100  # AGain% — 100 = 1×; camera-specific max (typically 3200)
         self._model_flag: int = 0
+        self._serial_number: str = ""
+        self._logical_name: str = ""
         self._frame_ready = threading.Event()
         self._capture_error: Exception | None = None
 
@@ -116,6 +118,14 @@ class ToupcamCamera(CameraPort):
             self._model_flag = int(devices[self._index].model.flag)
         except Exception:
             self._model_flag = 0
+        try:
+            self._logical_name = str(devices[self._index].displayname)
+        except Exception:
+            self._logical_name = ""
+        try:
+            self._serial_number = cam.SerialNumber()
+        except Exception:
+            self._serial_number = ""
         return True
 
     def disconnect(self) -> None:
@@ -301,6 +311,12 @@ class ToupcamCamera(CameraPort):
             sensor_width_px=self._width,
             sensor_height_px=self._height,
         )
+
+    def get_serial_number(self) -> str:
+        return self._serial_number
+
+    def get_logical_name(self) -> str:
+        return self._logical_name
 
 
 def _camera_event(event: int, ctx: ToupcamCamera) -> None:

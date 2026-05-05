@@ -30,16 +30,16 @@ Implementation phases follow section 16 of that document.
 ---
 
 ### AGT-0-2 — Camera identity, CameraProfile, and OpticalTrainProfile models
-- [ ] Add `serial_number` / `logical_name` to `CameraPort`; implement in
+- [x] Add `serial_number` / `logical_name` to `CameraPort`; implement in
   ToupcamCamera via `Toupcam.EnumV2` device info.
-- [ ] Create `domain/camera_profile.py`:
+- [x] Create `domain/camera_profile.py`:
   `CameraProfile` (model, sensor, pixels, pixel_um, max_gain, unity_gain_hcg,
   unity_gain_lcg, min_preview_exp_ms, max_preview_exp_ms, supports_cooling)
   for ATR585M, G3M678M, GPCMOS02000KPA.
-- [ ] Create `domain/optical_train.py`:
+- [x] Create `domain/optical_train.py`:
   `OpticalTrainProfile` (profile_id, focal_mm, camera_model, pixel_scale_arcsec,
   role) for all 7 profiles in §1.2.
-- [ ] Unit tests for each profile constant and pixel-scale derivation.
+- [x] Unit tests for each profile constant and pixel-scale derivation.
 
 *Covers:* §1.1, §1.2, §1.3, Phase 0 steps 3–4  
 *Depends:* AGT-0-1

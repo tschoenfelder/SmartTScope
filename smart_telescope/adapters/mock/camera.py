@@ -110,3 +110,9 @@ class MockCamera(CameraPort):
 
     def get_capabilities(self) -> CameraCapabilities:
         return _MOCK_CAPABILITIES
+
+    def get_serial_number(self) -> str:
+        return ""
+
+    def get_logical_name(self) -> str:
+        return "MockCamera"

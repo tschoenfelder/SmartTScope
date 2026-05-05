@@ -46,3 +46,9 @@ class CameraPort(ABC):
 
     @abstractmethod
     def get_capabilities(self) -> CameraCapabilities: ...
+
+    @abstractmethod
+    def get_serial_number(self) -> str: ...
+
+    @abstractmethod
+    def get_logical_name(self) -> str: ...

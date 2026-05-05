@@ -388,3 +388,25 @@ class TestSensorInfo:
         cam = _connect(tc)
         caps = cam.get_capabilities()
         assert caps.supports_cooling is True
+
+
+# ── serial number / logical name ──────────────────────────────────────────────
+
+class TestIdentity:
+    def test_serial_number_empty_before_connect(self) -> None:
+        assert ToupcamCamera().get_serial_number() == ""
+
+    def test_logical_name_empty_before_connect(self) -> None:
+        assert ToupcamCamera().get_logical_name() == ""
+
+    def test_serial_number_read_after_connect(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.SerialNumber.return_value = "TP110826145730ABCD1234FEDC5678AB"
+        cam = _connect(tc)
+        assert cam.get_serial_number() == "TP110826145730ABCD1234FEDC5678AB"
+
+    def test_logical_name_from_displayname(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.EnumV2.return_value[0].displayname = "ATR585M"
+        cam = _connect(tc)
+        assert cam.get_logical_name() == "ATR585M"

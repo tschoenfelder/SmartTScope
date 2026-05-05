@@ -85,3 +85,9 @@ class ReplayCamera(CameraPort):
 
     def get_capabilities(self) -> CameraCapabilities:
         return _REPLAY_CAPABILITIES
+
+    def get_serial_number(self) -> str:
+        return ""
+
+    def get_logical_name(self) -> str:
+        return "ReplayCamera"

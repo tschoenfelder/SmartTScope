@@ -1,8 +1,25 @@
 from dataclasses import replace
 from pathlib import Path
 
+from ...domain.camera_capabilities import CameraCapabilities, ConversionGain
 from ...domain.frame import FitsFrame
 from ...ports.camera import CameraPort
+
+_REPLAY_CAPABILITIES = CameraCapabilities(
+    min_gain=100,
+    max_gain=3200,
+    min_exposure_ms=0.1,
+    max_exposure_ms=60_000.0,
+    supports_cooling=False,
+    supports_hcg=False,
+    supports_lcg=False,
+    supports_hdr=False,
+    supports_black_level=False,
+    bit_depth=16,
+    pixel_size_um=2.4,
+    sensor_width_px=3096,
+    sensor_height_px=2080,
+)
 
 
 class ReplayCamera(CameraPort):
@@ -18,6 +35,10 @@ class ReplayCamera(CameraPort):
             raise ValueError("ReplayCamera requires at least one FITS path")
         self._paths = [Path(p) for p in fits_paths]
         self._index = 0
+        self._exposure_ms: float = 2000.0
+        self._gain: int = 100
+        self._black_level: int = 0
+        self._conversion_gain: ConversionGain = ConversionGain.LCG
 
     def connect(self) -> bool:
         missing = [p for p in self._paths if not p.exists()]
@@ -31,3 +52,36 @@ class ReplayCamera(CameraPort):
 
     def disconnect(self) -> None:
         pass
+
+    def get_exposure_ms(self) -> float:
+        return self._exposure_ms
+
+    def set_exposure_ms(self, ms: float) -> None:
+        self._exposure_ms = max(0.1, ms)
+
+    def get_gain(self) -> int:
+        return self._gain
+
+    def set_gain(self, gain: int) -> None:
+        self._gain = max(100, gain)
+
+    def get_black_level(self) -> int:
+        return self._black_level
+
+    def set_black_level(self, level: int) -> None:
+        self._black_level = max(0, level)
+
+    def get_conversion_gain(self) -> ConversionGain:
+        return self._conversion_gain
+
+    def set_conversion_gain(self, mode: ConversionGain) -> None:
+        self._conversion_gain = mode
+
+    def get_bit_depth(self) -> int:
+        return 16
+
+    def get_temperature(self) -> float | None:
+        return None
+
+    def get_capabilities(self) -> CameraCapabilities:
+        return _REPLAY_CAPABILITIES

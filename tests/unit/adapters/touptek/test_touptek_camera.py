@@ -14,6 +14,7 @@ from smart_telescope.adapters.touptek.camera import (
     ToupcamCamera,
     _camera_event,
 )
+from smart_telescope.domain.camera_capabilities import CameraCapabilities, ConversionGain
 from smart_telescope.domain.frame import FitsFrame
 
 _WIDTH, _HEIGHT = 100, 80
@@ -22,15 +23,26 @@ _WIDTH, _HEIGHT = 100, 80
 def _make_toupcam_mock(
     num_devices: int = 1,
     open_succeeds: bool = True,
+    model_flag: int = 0,
 ) -> MagicMock:
     tc = MagicMock()
     tc.TOUPCAM_OPTION_TRIGGER = 0x0B
     tc.TOUPCAM_OPTION_RAW = 0x04
     tc.TOUPCAM_OPTION_BITDEPTH = 0x06
-    tc.Toupcam.EnumV2.return_value = [MagicMock() for _ in range(num_devices)]
+
+    device = MagicMock()
+    device.model.flag = model_flag
+    tc.Toupcam.EnumV2.return_value = [device for _ in range(num_devices)]
+
     if open_succeeds:
         hw = MagicMock()
         hw.get_Size.return_value = (_WIDTH, _HEIGHT)
+        hw.get_ExpoAGain.return_value = 100
+        hw.get_ExpoAGainRange.return_value = (100, 3200, 100)
+        hw.get_ExpTimeRange.return_value = (100, 60_000_000, 2_000_000)
+        hw.get_Option.return_value = 1  # BITDEPTH=1 → 16-bit, CG=1 → HCG
+        hw.get_Temperature.return_value = 235  # 23.5 °C
+        hw.get_PixelSize.return_value = (2.4, 2.4)
         tc.Toupcam.Open.return_value = hw
     else:
         tc.Toupcam.Open.return_value = None
@@ -222,3 +234,157 @@ class TestDisconnect:
         cam = _connect(tc)
         cam.disconnect()
         cam.disconnect()
+
+
+# ── gain / exposure ────────────────────────────────────────────────────────────
+
+class TestGainExposure:
+    def test_get_gain_reads_sdk(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_ExpoAGain.return_value = 400
+        cam = _connect(tc)
+        assert cam.get_gain() == 400
+
+    def test_set_gain_calls_sdk(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        cam.set_gain(500)
+        tc.Toupcam.Open.return_value.put_ExpoAGain.assert_called_with(500)
+
+    def test_set_gain_clamps_below_100(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        cam.set_gain(50)
+        tc.Toupcam.Open.return_value.put_ExpoAGain.assert_called_with(100)
+
+    def test_get_exposure_ms_converts_from_microseconds(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_ExpoTime.return_value = 2_000_000
+        cam = _connect(tc)
+        assert cam.get_exposure_ms() == pytest.approx(2000.0)
+
+    def test_set_exposure_ms_converts_to_microseconds(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        cam.set_exposure_ms(500.0)
+        tc.Toupcam.Open.return_value.put_ExpoTime.assert_called_with(500_000)
+
+    def test_set_exposure_ms_clamps_below_one_microsecond(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        cam.set_exposure_ms(0.0)
+        tc.Toupcam.Open.return_value.put_ExpoTime.assert_called_with(1)
+
+
+# ── black level / conversion gain ─────────────────────────────────────────────
+
+class TestBlackLevelConversionGain:
+    def test_get_black_level_reads_sdk(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_Option.return_value = 42
+        cam = _connect(tc)
+        assert cam.get_black_level() == 42
+
+    def test_set_black_level_calls_sdk(self) -> None:
+        from smart_telescope.adapters.touptek.camera import _OPTION_BLACKLEVEL
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        cam.set_black_level(20)
+        tc.Toupcam.Open.return_value.put_Option.assert_any_call(_OPTION_BLACKLEVEL, 20)
+
+    def test_get_conversion_gain_returns_enum(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_Option.return_value = 1  # HCG
+        cam = _connect(tc)
+        assert cam.get_conversion_gain() == ConversionGain.HCG
+
+    def test_set_conversion_gain_calls_sdk(self) -> None:
+        from smart_telescope.adapters.touptek.camera import _OPTION_CG
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        cam.set_conversion_gain(ConversionGain.HDR)
+        tc.Toupcam.Open.return_value.put_Option.assert_any_call(_OPTION_CG, 2)
+
+
+# ── sensor info / capabilities ────────────────────────────────────────────────
+
+class TestSensorInfo:
+    def test_get_bit_depth_16_when_option_is_1(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_Option.return_value = 1
+        cam = _connect(tc)
+        assert cam.get_bit_depth() == 16
+
+    def test_get_bit_depth_8_when_option_is_0(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_Option.return_value = 0
+        cam = _connect(tc)
+        assert cam.get_bit_depth() == 8
+
+    def test_get_temperature_converts_from_tenths(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_Temperature.return_value = 235
+        cam = _connect(tc)
+        assert cam.get_temperature() == pytest.approx(23.5)
+
+    def test_get_temperature_returns_none_before_connect(self) -> None:
+        assert ToupcamCamera().get_temperature() is None
+
+    def test_get_capabilities_returns_dataclass(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert isinstance(caps, CameraCapabilities)
+
+    def test_capabilities_gain_range_from_sdk(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_ExpoAGainRange.return_value = (100, 4800, 100)
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.min_gain == 100
+        assert caps.max_gain == 4800
+
+    def test_capabilities_exposure_range_ms(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_ExpTimeRange.return_value = (200, 120_000_000, 2_000_000)
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.min_exposure_ms == pytest.approx(0.2)
+        assert caps.max_exposure_ms == pytest.approx(120_000.0)
+
+    def test_capabilities_pixel_size_from_sdk(self) -> None:
+        tc = _make_toupcam_mock()
+        tc.Toupcam.Open.return_value.get_PixelSize.return_value = (3.76, 3.76)
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.pixel_size_um == pytest.approx(3.76)
+
+    def test_capabilities_sensor_size_matches_camera(self) -> None:
+        tc = _make_toupcam_mock()
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.sensor_width_px == _WIDTH
+        assert caps.sensor_height_px == _HEIGHT
+
+    def test_capabilities_cg_flags_from_model(self) -> None:
+        _FLAG_CG = 0x04000000
+        tc = _make_toupcam_mock(model_flag=_FLAG_CG)
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.supports_hcg is True
+        assert caps.supports_lcg is True
+        assert caps.supports_hdr is False
+
+    def test_capabilities_hdr_flag_from_model(self) -> None:
+        _FLAG_CGHDR = 0x0000000800000000
+        tc = _make_toupcam_mock(model_flag=_FLAG_CGHDR)
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.supports_hdr is True
+
+    def test_capabilities_cooling_flag_from_model(self) -> None:
+        _FLAG_TEC = 0x00000080
+        tc = _make_toupcam_mock(model_flag=_FLAG_TEC)
+        cam = _connect(tc)
+        caps = cam.get_capabilities()
+        assert caps.supports_cooling is True

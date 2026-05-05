@@ -40,8 +40,7 @@ async def ws_preview(
     cur_exposure = exposure
     cur_gain     = gain
 
-    if hasattr(camera, "set_gain"):
-        camera.set_gain(cur_gain)  # type: ignore[union-attr]
+    camera.set_gain(cur_gain)
     try:
         while True:
             frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)
@@ -50,8 +49,7 @@ async def ws_preview(
                 ctrl.update(frame.pixels)
                 if ctrl.gain != cur_gain:
                     cur_gain = ctrl.gain
-                    if hasattr(camera, "set_gain"):
-                        camera.set_gain(cur_gain)  # type: ignore[union-attr]
+                    camera.set_gain(cur_gain)
                 cur_exposure = ctrl.exposure
     except WebSocketDisconnect:
         pass

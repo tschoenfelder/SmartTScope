@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import io
+import json
 import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..domain.autogain import AutoGainController
 from ..domain.frame import FitsFrame
+from ..domain.histogram import analyze as _hist_analyze
+from ..domain.histogram import histogram_bins as _hist_bins
 from ..domain.stretch import auto_stretch
 from . import deps
 
@@ -91,6 +95,12 @@ async def ws_preview(
         eff_gain,
     )
 
+    cur_bit_depth = 16
+    try:
+        cur_bit_depth = camera.get_bit_depth()
+    except Exception:
+        pass
+
     try:
         while True:
             # --- capture frame ---
@@ -107,7 +117,22 @@ async def ws_preview(
                     pass
                 break
 
-            # --- encode and send ---
+            # --- STS-ADDON-007: send histogram JSON before the JPEG ---
+            try:
+                stats = _hist_analyze(frame.pixels, bit_depth=cur_bit_depth)
+                counts, edges = _hist_bins(frame.pixels, bit_depth=cur_bit_depth, n_bins=128)
+                await websocket.send_text(json.dumps({
+                    "type": "histogram",
+                    "stats": dataclasses.asdict(stats),
+                    "bin_counts": counts,
+                    "bin_edges": edges,
+                }))
+            except (WebSocketDisconnect, RuntimeError):
+                break
+            except Exception:
+                pass  # histogram failure must never block frame delivery
+
+            # --- encode and send JPEG ---
             try:
                 await websocket.send_bytes(_to_jpeg(frame))
             except (WebSocketDisconnect, RuntimeError):

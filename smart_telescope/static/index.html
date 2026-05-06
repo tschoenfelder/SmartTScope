@@ -110,7 +110,7 @@
 
     /* ── main layout ── */
     main {
-      padding: 1.5rem 5%;
+      padding: 1.5rem 2%;
       display: flex;
       flex-direction: column;
       gap: 2rem;
@@ -438,6 +438,11 @@
       font-size: 0.85rem;
     }
 
+    /* ── visibility badges (custom targets) ── */
+    .vis-badge { font-size: 0.62rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 3px; flex-shrink: 0; }
+    .vis-now   { background: rgba(63,185,80,0.15);  color: var(--success); }
+    .vis-later { background: rgba(210,153,34,0.15); color: var(--warning); }
+
     /* ── guide pad (3×3 grid N/S/E/W) ── */
     .guide-pad {
       display: grid;
@@ -562,7 +567,8 @@
           <span class="param-label">Current Alt</span>
           <span class="param-value mono" id="current-alt">—</span>
         </div>
-        <div class="param" style="border-top:1px solid var(--border);margin-top:0.25rem;padding-top:0.25rem">
+        <div style="grid-column:1/-1;border-top:1px solid var(--border);margin:0.15rem 0"></div>
+        <div class="param">
           <span class="param-label">Alt min (horizon)</span>
           <span class="param-value mono" id="limit-alt-min">—</span>
         </div>
@@ -2282,9 +2288,14 @@
     const dec = (t.dec >= 0 ? '+' : '') + t.dec.toFixed(2) + '°';
     const mag = t.magnitude != null ? ` m${t.magnitude}` : '';
     const trk = t.tracking || 'sidereal';
+    const altTxt = t.altitude_deg != null ? ` ${t.altitude_deg}°` : '';
+    let visBadge = '';
+    if      (t.visibility_state === 'visible_now')   visBadge = `<span class="vis-badge vis-now"  title="Currently above 10°${altTxt}">Now</span>`;
+    else if (t.visibility_state === 'visible_later') visBadge = `<span class="vis-badge vis-later" title="Rises above 10° later tonight${altTxt}">Later</span>`;
     return `
       <div class="star-item" data-star-name="${escHtml(t.name)}"
            onclick="starSelect(${t.ra},${t.dec},'${escHtml(t.name)}','${escHtml(trk)}')">
+        ${visBadge}
         <span class="si-name">${escHtml(t.name)}</span>
         <span class="si-common">${escHtml(t.common_name || '')}${mag}</span>
         <span class="si-coords">${ra} ${dec}</span>
@@ -2579,23 +2590,25 @@
     return parseFloat(s.toFixed(4)).toString();
   }
 
-  /* Update Live Preview controls from camera capabilities */
+  /* Update Live Preview controls from camera capabilities (STS-ADDON-008/009) */
   async function onPreviewCamChange(idx) {
     try {
       const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
       const expIn  = document.getElementById('preview-exposure');
       const gainIn = document.getElementById('preview-gain');
       if (expIn) {
-        expIn.min  = fmtExp(caps.min_exposure_s);
-        expIn.max  = fmtExp(caps.max_exposure_s);
-        expIn.step = 'any';
-        const cur  = parseFloat(expIn.value) || 2.0;
+        expIn.min   = fmtExp(caps.min_exposure_s);
+        expIn.max   = fmtExp(caps.max_exposure_s);
+        expIn.step  = 'any';
+        expIn.title = `Exposure range: ${fmtExp(caps.min_exposure_s)}–${fmtExp(caps.max_exposure_s)} s`;
+        const cur = parseFloat(expIn.value) || 2.0;
         if (cur < caps.min_exposure_s) expIn.value = fmtExp(caps.min_exposure_s);
         if (cur > caps.max_exposure_s) expIn.value = fmtExp(caps.max_exposure_s);
       }
       if (gainIn) {
-        gainIn.min = caps.min_gain;
-        gainIn.max = caps.max_gain;
+        gainIn.min   = caps.min_gain;
+        gainIn.max   = caps.max_gain;
+        gainIn.title = `Gain range: ${caps.min_gain}–${caps.max_gain}`;
         const curG = parseInt(gainIn.value, 10) || caps.min_gain;
         if (curG < caps.min_gain) gainIn.value = caps.min_gain;
         if (curG > caps.max_gain) gainIn.value = caps.max_gain;
@@ -2603,23 +2616,25 @@
     } catch (_) { /* camera not reachable yet — keep current values */ }
   }
 
-  /* Update Polar Alignment controls from camera capabilities */
+  /* Update Polar Alignment controls from camera capabilities (STS-ADDON-008/009) */
   async function onPaCamChange(idx) {
     try {
       const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
       const expIn  = document.getElementById('pa-exposure');
       const gainIn = document.getElementById('pa-gain');
       if (expIn) {
-        expIn.min  = fmtExp(caps.min_exposure_s);
-        expIn.max  = fmtExp(caps.max_exposure_s);
-        expIn.step = 'any';
-        const cur  = parseFloat(expIn.value) || 5.0;
+        expIn.min   = fmtExp(caps.min_exposure_s);
+        expIn.max   = fmtExp(caps.max_exposure_s);
+        expIn.step  = 'any';
+        expIn.title = `Exposure range: ${fmtExp(caps.min_exposure_s)}–${fmtExp(caps.max_exposure_s)} s`;
+        const cur = parseFloat(expIn.value) || 5.0;
         if (cur < caps.min_exposure_s) expIn.value = fmtExp(caps.min_exposure_s);
         if (cur > caps.max_exposure_s) expIn.value = fmtExp(caps.max_exposure_s);
       }
       if (gainIn) {
-        gainIn.min = caps.min_gain;
-        gainIn.max = caps.max_gain;
+        gainIn.min   = caps.min_gain;
+        gainIn.max   = caps.max_gain;
+        gainIn.title = `Gain range: ${caps.min_gain}–${caps.max_gain}`;
         const curG = parseInt(gainIn.value, 10) || caps.min_gain;
         if (curG < caps.min_gain) gainIn.value = caps.min_gain;
         if (curG > caps.max_gain) gainIn.value = caps.max_gain;
@@ -3040,10 +3055,26 @@
     _ws.onopen = () => {
       _frameCount = 0;
       _setWsStatus('live');
+      // WS now delivers histogram with each frame — stop the API polling timer
+      clearInterval(_histInterval);
+      _histInterval = null;
     };
 
     _ws.onmessage = (ev) => {
       if (typeof ev.data === 'string') {
+        // Could be a histogram JSON or a camera error string
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'histogram') {
+            if (document.getElementById('preview-hist-chk')?.checked) {
+              const panel = document.getElementById('s3-hist-panel');
+              if (panel && panel.style.display !== 'none') {
+                showHistogram('s3-histogram', 's3-hist-stats', msg.stats, msg.bin_counts, msg.bin_edges);
+              }
+            }
+            return;
+          }
+        } catch (_) {}
         setStatus('s3-status', `Camera: ${ev.data}`, true);
         return;
       }
@@ -3087,6 +3118,11 @@
       } else {
         _updatePreviewBtns(false);
         _setWsStatus('stopped');
+        // Preview ended — if histogram is still enabled, resume API polling
+        if (document.getElementById('preview-hist-chk')?.checked) {
+          _fetchAndDrawHistogram();
+          _histInterval = setInterval(_fetchAndDrawHistogram, 4000);
+        }
       }
     };
   }
@@ -3192,14 +3228,15 @@
     _histEnabled = enabled;
     const panel = document.getElementById('s3-hist-panel');
     if (panel) panel.style.display = enabled ? '' : 'none';
+    clearInterval(_histInterval);
+    _histInterval = null;
     if (!enabled) {
-      clearInterval(_histInterval);
-      _histInterval = null;
       const canvas = document.getElementById('s3-histogram');
       if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
       const stats = document.getElementById('s3-hist-stats');
       if (stats) stats.textContent = '';
-    } else {
+    } else if (!(_reconnect && _ws)) {
+      // Preview WS not running — use API polling; WS delivers histogram when live
       _fetchAndDrawHistogram();
       _histInterval = setInterval(_fetchAndDrawHistogram, 4000);
     }
@@ -3686,7 +3723,20 @@
   /* ══════════════════════════════════════════════════════════════════════
      Init
   ══════════════════════════════════════════════════════════════════════ */
+
+  async function loadVersion() {
+    try {
+      const v = await (await fetch('/api/version')).json();
+      const pill = document.querySelector('header .pill');
+      if (pill) {
+        pill.textContent = v.git_hash ? `v${v.version} ${v.git_hash}` : `v${v.version}`;
+        pill.title = `SmartTScope v${v.version}${v.git_hash ? ' (' + v.git_hash + ')' : ''}`;
+      }
+    } catch (_) {}
+  }
+
   initSiteConfig();
+  loadVersion();
   refreshMount();
   refreshHealth();
   setInterval(refreshHealth, 10_000);

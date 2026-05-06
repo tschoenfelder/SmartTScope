@@ -142,16 +142,49 @@ class CustomTarget(BaseModel):
     type: str = "star"
     tracking: str = "sidereal"
     magnitude: float | None = None
+    visibility_state: str | None = None   # "visible_now" | "visible_later" | "not_visible"
+    altitude_deg: float | None = None
 
 
 @router.get("/stars", response_model=list[CustomTarget])
 def catalog_stars() -> list[CustomTarget]:
-    """Return custom targets from stars.cfg (TOML format)."""
+    """Return custom targets from stars.cfg with current visibility status.
+
+    Visibility is computed only when observer lat/lon are non-zero:
+      visible_now    — altitude currently > 10°
+      visible_later  — rises above 10° within the next 8 hours
+      not_visible    — otherwise
+    """
     if not _STARS_CFG.exists():
         return []
     with _STARS_CFG.open("rb") as fh:
         data = tomllib.load(fh)
-    return [CustomTarget(**t) for t in data.get("targets", [])]
+    raw = data.get("targets", [])
+
+    lat, lon = config.OBSERVER_LAT, config.OBSERVER_LON
+    if lat == 0.0 and lon == 0.0:
+        return [CustomTarget(**t) for t in raw]
+
+    now       = datetime.now(UTC)
+    night_end = now + timedelta(hours=8)
+
+    result: list[CustomTarget] = []
+    for td in raw:
+        t = CustomTarget(**td)
+        alt, _ = compute_altaz(t.ra, t.dec, lat, lon)
+        t_alt  = round(alt, 1)
+        if alt >= 10.0:
+            state: str = "visible_now"
+        else:
+            window = compute_visibility_window(
+                t.ra, t.dec, lat, lon,
+                night_start=now, night_end=night_end,
+                min_altitude_deg=10.0, sample_minutes=30,
+                horizon=_HORIZON,
+            )
+            state = "visible_later" if window.is_observable else "not_visible"
+        result.append(CustomTarget(**{**td, "visibility_state": state, "altitude_deg": t_alt}))
+    return result
 
 
 # ── /visible — full-night visibility windows ──────────────────────────────────

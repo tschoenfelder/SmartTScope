@@ -376,3 +376,87 @@ class TestCatalogVisible:
             data = client.get("/api/catalog/visible?limit=1").json()
         assert isinstance(data[0]["rises_at"], str)
         assert "2026-05-03" in data[0]["rises_at"]
+
+
+# ── GET /api/catalog/stars — custom target visibility ─────────────────────────
+
+_PATCH_ALTAZ = "smart_telescope.api.catalog.compute_altaz"
+_PATCH_CVW   = "smart_telescope.api.catalog.compute_visibility_window"
+_STARS_CFG   = "smart_telescope.api.catalog._STARS_CFG"
+
+
+def _make_cfg(tmp_path, targets):
+    import tomllib, pathlib
+    # write TOML manually so we can control content without tomli write
+    lines = ["[[targets]]\n"]
+    for t in targets:
+        for k, v in t.items():
+            val = f'"{v}"' if isinstance(v, str) else str(v)
+            lines.append(f"{k} = {val}\n")
+        lines.append("\n[[targets]]\n" if t is not targets[-1] else "")
+    p = tmp_path / "stars.cfg"
+    # Use a simple TOML writer compatible with tomllib
+    import tomllib as _tl
+    # Build the TOML string
+    toml_str = ""
+    for t in targets:
+        toml_str += "[[targets]]\n"
+        for k, v in t.items():
+            if isinstance(v, str):
+                toml_str += f'{k} = "{v}"\n'
+            elif v is None:
+                pass
+            else:
+                toml_str += f"{k} = {v}\n"
+        toml_str += "\n"
+    p.write_text(toml_str)
+    return p
+
+
+class TestCatalogStarsVisibility:
+    """Verify visibility_state and altitude_deg are populated."""
+
+    def _get_stars(self, cfg_path, altaz=(45.0, 180.0), window_observable=True):
+        window = VisibilityWindow(
+            rises_at=_T0, sets_at=_T0 + timedelta(hours=4),
+            peak_altitude=50.0, peak_time=_T0,
+            is_observable=window_observable,
+        )
+        from pathlib import Path
+        with (
+            patch(_STARS_CFG, cfg_path),
+            patch(_PATCH_ALTAZ, return_value=altaz),
+            patch(_PATCH_CVW, return_value=window),
+        ):
+            return client.get("/api/catalog/stars").json()
+
+    def test_returns_200(self, tmp_path) -> None:
+        p = _make_cfg(tmp_path, [{"name": "Vega", "ra": 18.6157, "dec": 38.78}])
+        resp_data = self._get_stars(p)
+        assert isinstance(resp_data, list)
+
+    def test_visible_now_when_altitude_above_threshold(self, tmp_path) -> None:
+        p = _make_cfg(tmp_path, [{"name": "Vega", "ra": 18.6157, "dec": 38.78}])
+        stars = self._get_stars(p, altaz=(45.0, 180.0))
+        assert stars[0]["visibility_state"] == "visible_now"
+
+    def test_altitude_deg_populated(self, tmp_path) -> None:
+        p = _make_cfg(tmp_path, [{"name": "Vega", "ra": 18.6157, "dec": 38.78}])
+        stars = self._get_stars(p, altaz=(45.0, 180.0))
+        assert stars[0]["altitude_deg"] == pytest.approx(45.0)
+
+    def test_visible_later_when_below_now_but_rises(self, tmp_path) -> None:
+        p = _make_cfg(tmp_path, [{"name": "Vega", "ra": 18.6157, "dec": 38.78}])
+        stars = self._get_stars(p, altaz=(5.0, 90.0), window_observable=True)
+        assert stars[0]["visibility_state"] == "visible_later"
+
+    def test_not_visible_when_never_rises(self, tmp_path) -> None:
+        p = _make_cfg(tmp_path, [{"name": "Vega", "ra": 18.6157, "dec": 38.78}])
+        stars = self._get_stars(p, altaz=(5.0, 90.0), window_observable=False)
+        assert stars[0]["visibility_state"] == "not_visible"
+
+    def test_no_visibility_when_cfg_missing(self) -> None:
+        from pathlib import Path
+        with patch(_STARS_CFG, Path("/nonexistent/stars.cfg")):
+            data = client.get("/api/catalog/stars").json()
+        assert data == []

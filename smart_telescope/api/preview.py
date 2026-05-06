@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..domain.autogain import AutoGainController
 from ..domain.frame import FitsFrame
 from ..domain.stretch import auto_stretch
-from .deps import get_preview_camera
+from . import deps
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -31,7 +34,7 @@ async def ws_preview(
     """
     await websocket.accept()
     try:
-        camera = get_preview_camera(camera_index)
+        camera = deps.get_preview_camera(camera_index)
     except RuntimeError as exc:
         await websocket.close(code=1011, reason=str(exc))
         return
@@ -41,6 +44,19 @@ async def ws_preview(
     cur_gain     = gain
 
     camera.set_gain(cur_gain)
+
+    # STS-ADDON-005: log effective camera identity and settings at stream start
+    _log.info(
+        "Preview started: camera=%s camera_index=%d "
+        "requested_exposure_s=%.3f requested_gain=%d "
+        "adapter=%s",
+        getattr(camera, "get_logical_name", lambda: "unknown")(),
+        camera_index,
+        cur_exposure,
+        cur_gain,
+        type(camera).__name__,
+    )
+
     try:
         while True:
             frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)

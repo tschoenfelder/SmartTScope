@@ -105,22 +105,46 @@ def get_camera() -> CameraPort:
 def get_preview_camera(index: int) -> CameraPort:
     """Return a camera for live preview at the given SDK index.
 
-    Index 0 (or any index when TOUPTEK_INDEX is not set) shares the primary
-    camera singleton.  Additional indices open a separate ToupcamCamera and
-    cache it so the WS reconnect path doesn't create a new handle every time.
+    When TOUPTEK_INDEX is configured, index == main_index returns the primary
+    singleton; other indices open a separate ToupcamCamera handle and cache it.
+
+    When TOUPTEK_INDEX is NOT configured (empty TOML / no env var), we still
+    try to open a real ToupcamCamera at *index* so that cameras connected on
+    the Pi are accessible even without an explicit config.  Falls back to the
+    primary singleton (MockCamera in dev) only if the SDK is unavailable or
+    no camera exists at that index.
     """
     _ensure_adapters()
     touptek_env = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
-    main_index = int(touptek_env) if touptek_env else 0
-    if index == main_index or not touptek_env:
-        assert _camera is not None
-        return _camera
+
+    if touptek_env:
+        # Explicit TOUPTEK_INDEX configured
+        main_index = int(touptek_env)
+        if index == main_index:
+            assert _camera is not None
+            return _camera
+        # Secondary camera — open a dedicated handle
+        if index not in _preview_cameras:
+            from ..adapters.touptek.camera import ToupcamCamera
+            cam = ToupcamCamera(index=index)
+            if not cam.connect():
+                raise RuntimeError(f"Camera {index} failed to connect")
+            _preview_cameras[index] = cam
+        return _preview_cameras[index]
+
+    # TOUPTEK_INDEX not configured — attempt SDK auto-detection by index
     if index not in _preview_cameras:
-        from ..adapters.touptek.camera import ToupcamCamera
-        cam = ToupcamCamera(index=index)
-        if not cam.connect():
-            raise RuntimeError(f"Camera {index} failed to connect")
-        _preview_cameras[index] = cam
+        try:
+            from ..adapters.touptek.camera import ToupcamCamera
+            cam = ToupcamCamera(index=index)
+            if not cam.connect():
+                # SDK not installed or no camera at this index
+                raise RuntimeError(f"Camera {index}: SDK unavailable or connect() returned False")
+            _preview_cameras[index] = cam
+        except (ImportError, RuntimeError):
+            # Fall back to primary adapter (MockCamera in dev / test environments)
+            assert _camera is not None
+            return _camera
     return _preview_cameras[index]
 
 

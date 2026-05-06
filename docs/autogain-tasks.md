@@ -10,9 +10,9 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-## Phase 0 — Foundation and capability discovery
+## Phase 0 — Foundation and capability discovery ✅
 
-### AGT-0-1 — Extend CameraPort and ToupcamCamera with full control API
+### AGT-0-1 — Extend CameraPort and ToupcamCamera with full control API ✅
 - [x] Add `get/set_exposure_ms()`, `get/set_gain()`, `get/set_black_level()`,
   `get/set_conversion_gain()` (HCG / LCG / HDR), `get_bit_depth()`,
   `get_temperature()` to `ports/camera.py` (abstract) and
@@ -29,7 +29,7 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-0-2 — Camera identity, CameraProfile, and OpticalTrainProfile models
+### AGT-0-2 — Camera identity, CameraProfile, and OpticalTrainProfile models ✅
 - [x] Add `serial_number` / `logical_name` to `CameraPort`; implement in
   ToupcamCamera via `Toupcam.EnumV2` device info.
 - [x] Create `domain/camera_profile.py`:
@@ -46,7 +46,7 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-0-3 — Replay camera adapter for deterministic tests
+### AGT-0-3 — Replay camera adapter for deterministic tests ✅
 - [x] `adapters/replay/camera.py`: reads FITS files from a directory in
   order; wraps them as `FitsFrame`; supports `set_gain()` / `set_exposure()`
   stubs so auto-gain loops can run without hardware.
@@ -62,7 +62,7 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 1 — Storage model
 
-### AGT-1-1 — App-state folder and image-root configuration
+### AGT-1-1 — App-state folder and image-root configuration ✅
 - [x] `domain/storage_config.py`: `resolve_app_state_dir()` — checks
   `~/.SmartTScope` then `~/.smarttscope`, creates if absent (FR-STORE-001).
 - [x] Add `IMAGE_ROOT` to `config.py` (env var + `smart_telescope.toml`).
@@ -75,8 +75,8 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-1-2 — Master calibration library and calibration index
-- [ ] `domain/calibration_store.py`:
+### AGT-1-2 — Master calibration library and calibration index ✅
+- [x] `domain/calibration_store.py`:
   - `master_path(image_root, camera_model, serial, cal_type, **meta)`
     → `image_root/masters/<model>_<serial>/biases|darks|flats/<filename>.fits`
     (FR-STORE-005, FR-STORE-006).
@@ -84,10 +84,11 @@ Implementation phases follow section 16 of that document.
     relative paths (FR-STORE-009).
   - `find_best_match(index, cal_type, criteria)` → best entry or `None`
     with `MismatchDetail` (FR-CAL-060, FR-CAL-070).
-- [ ] `domain/last_good_settings.py`: load / save per-camera-profile
+- [x] `domain/last_good_settings.py`: load / save per-camera-profile
   last-good gain/exposure/offset/conversion-gain JSON in app-state folder
   (FR-STORE-008, FR-AG-010 step 4).
-- [ ] Unit tests: index round-trip, matching logic (exact/partial/mismatch).
+- [x] Unit tests: index round-trip, matching logic (exact/partial/mismatch).
+  45 tests, all green. Suite: 1228 passed, 86.81% coverage.
 
 *Covers:* FR-STORE-005–009, FR-CAL-060, FR-CAL-070, FR-STORE-008  
 *Depends:* AGT-1-1
@@ -438,8 +439,8 @@ Implementation phases follow section 16 of that document.
 
 | Phase | Tasks | Done |
 |---|---:|---:|
-| 0 — Foundation | 3 | 0 |
-| 1 — Storage | 2 | 0 |
+| 0 — Foundation | 3 | 3 |
+| 1 — Storage | 2 | 2 |
 | 2 — Histogram | 2 | 0 |
 | 3 — Calibration masters | 4 | 0 |
 | 4 — Cooling | 2 | 0 |

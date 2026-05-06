@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-06 — Ingest: SmartTScope_Fixes_Requirements_20260506
+
+**Source ingested**: `resources/hlrequirements/SmartTScope_Fixes_Requirements_20260506.md`
+
+**New wiki pages**:
+- `wiki/requirements-addon-20260506.md` — fix/update requirements v1.1: camera naming/registry (§1), Live Preview backend (§2.3–2.10), Polar Alignment selector (§3), Startup tab polish (§4). 13 tasks added to persistent SmartTScope tasklist (STS-ADDON-001 through STS-ADDON-013).
+
+**Updated wiki pages**:
+- `wiki/index.md` — new Planning entry
+
+**Task snapshot**: STS-ADDON-001 completed (tasklist populated); 002–013 pending. P1 tasks: camera registry (002), camera name selectors (003, 004), Live Preview backend (005, 006). All 13 tasks to be executed after the current AutoGain (AGT) implementation run completes.
+
+---
+
 ## 2026-05-03 — Sprint 45: TOML config file, tracking toggle, ASTAP + mount bug fixes
 
 **What changed**:

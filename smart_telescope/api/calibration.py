@@ -16,8 +16,10 @@ from ..api import deps
 from ..domain.calibration_capture import (
     BiasValidationError,
     DarkValidationError,
+    FlatValidationError,
     prepare_bias,
     prepare_dark,
+    prepare_flat,
 )
 from ..domain.calibration_store import CalibrationIndex
 from ..domain.camera_capabilities import ConversionGain
@@ -38,7 +40,7 @@ class _JobState:
     frames_done: int = 0
     n_frames: int = 0
     error: str | None = None
-    warning: str | None = None
+    warnings: list[str] = field(default_factory=list)
     result_path: str | None = None
     result_entry: dict[str, Any] = field(default_factory=dict)
 
@@ -120,6 +122,18 @@ class DarkRequest(BaseModel):
     conversion_gain: str | None = Field(default=None, description="HCG | LCG | HDR")
 
 
+class FlatRequest(BaseModel):
+    camera_index: int = Field(default=0, ge=0, le=7)
+    optical_train: str = Field(min_length=1, max_length=64, description="Optical train profile ID")
+    filter_id: str = Field(default="none", max_length=32, description="Filter identifier or 'none'")
+    n_frames: int = Field(default=15, ge=1, le=200)
+    initial_exposure_s: float = Field(default=1.0, ge=0.001, le=3600.0,
+                                      description="Starting exposure for auto-tune")
+    gain: int | None = Field(default=None, ge=0, le=5000)
+    offset: int | None = Field(default=None, ge=0, le=255)
+    conversion_gain: str | None = Field(default=None, description="HCG | LCG | HDR")
+
+
 class JobStartedResponse(BaseModel):
     job_id: str
     status: str = "running"
@@ -131,7 +145,7 @@ class JobStatusResponse(BaseModel):
     frames_done: int
     n_frames: int
     error: str | None = None
-    warning: str | None = None
+    warnings: list[str] = []    # non-fatal notes (flat p50 zone, temperature)
     result_path: str | None = None
     result_entry: dict[str, Any] = {}
 
@@ -205,7 +219,8 @@ def start_dark(req: DarkRequest) -> JobStartedResponse:
             with _jobs_lock:
                 job.status = "done"
                 job.frames_done = req.n_frames
-                job.warning = temp_warn
+                if temp_warn:
+                    job.warnings = [temp_warn]
                 job.result_path = str(Path(image_root) / entry.relative_path)
                 job.result_entry = entry.to_dict()
             _log.info("Dark job %s done: %s", job.job_id, job.result_path)
@@ -224,6 +239,59 @@ def start_dark(req: DarkRequest) -> JobStartedResponse:
     return JobStartedResponse(job_id=job.job_id)
 
 
+@router.post("/flat", response_model=JobStartedResponse, status_code=202)
+def start_flat(req: FlatRequest) -> JobStartedResponse:
+    """Start a flat master preparation job (async).
+
+    Exposure is auto-tuned to reach p50 ≈ 50 % before capturing all frames.
+    Poll GET /api/calibration/status/{job_id} for progress.
+    A non-empty *warnings* list indicates the p50 is in the warn zone
+    (35–40 % or 60–70 %) — the master is still usable.
+    """
+    image_root = _get_image_root()
+    camera = _get_camera(req.camera_index)
+    cg = _resolve_cg(req.conversion_gain)
+    job = _register_job(req.n_frames)
+    cal_index = CalibrationIndex.load(image_root)
+
+    def _run() -> None:
+        try:
+            entry, warns = prepare_flat(
+                camera,
+                req.optical_train,
+                req.filter_id,
+                req.n_frames,
+                image_root,
+                cal_index,
+                initial_exposure_s=req.initial_exposure_s,
+                gain=req.gain,
+                offset=req.offset,
+                conversion_gain=cg,
+                progress=_progress_fn(job),
+            )
+            cal_index.save()
+            with _jobs_lock:
+                job.status = "done"
+                job.frames_done = req.n_frames
+                job.warnings = warns
+                job.result_path = str(Path(image_root) / entry.relative_path)
+                job.result_entry = entry.to_dict()
+            _log.info("Flat job %s done: %s", job.job_id, job.result_path)
+        except FlatValidationError as exc:
+            with _jobs_lock:
+                job.status = "failed"
+                job.error = str(exc)
+            _log.warning("Flat job %s validation failed: %s", job.job_id, exc)
+        except Exception as exc:
+            with _jobs_lock:
+                job.status = "failed"
+                job.error = f"Unexpected error: {exc}"
+            _log.exception("Flat job %s failed", job.job_id)
+
+    threading.Thread(target=_run, daemon=True, name=f"flat-{job.job_id[:8]}").start()
+    return JobStartedResponse(job_id=job.job_id)
+
+
 @router.get("/status/{job_id}", response_model=JobStatusResponse)
 def get_job_status(job_id: str) -> JobStatusResponse:
     """Return current status of a calibration job."""
@@ -237,7 +305,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
             frames_done=job.frames_done,
             n_frames=job.n_frames,
             error=job.error,
-            warning=job.warning,
+            warnings=list(job.warnings),
             result_path=job.result_path,
             result_entry=job.result_entry,
         )

@@ -304,7 +304,127 @@ class TestDarkStart:
         result = _wait_for_job(job_id)
         assert result["status"] == "failed"
 
-    def test_status_response_has_warning_field(self, tmp_path: Path) -> None:
+    def test_status_response_has_warnings_field(self, tmp_path: Path) -> None:
         job_id = self._start_dark(tmp_path).json()["job_id"]
         result = _wait_for_job(job_id)
-        assert "warning" in result
+        assert "warnings" in result
+        assert isinstance(result["warnings"], list)
+
+
+# ── POST /api/calibration/flat ────────────────────────────────────────────────
+
+
+def _write_flat_fits(path: Path, p50_fraction: float = 0.50) -> None:
+    value = int(max(1, min(65534, p50_fraction * 65535)))
+    pixels = np.full((32, 32), value, dtype=np.uint16)
+    hdu = fits.PrimaryHDU(data=pixels)
+    buf = io.BytesIO()
+    hdu.writeto(buf)
+    path.write_bytes(buf.getvalue())
+
+
+class TestFlatStart:
+    def setup_method(self) -> None:
+        cal_mod._reset_jobs()
+
+    def _start_flat(self, tmp_path: Path, **extra) -> "requests.Response":
+        fits_path = tmp_path / "f.fits"
+        _write_flat_fits(fits_path, p50_fraction=0.50)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            payload = {
+                "n_frames": 1,
+                "optical_train": "C8_NATIVE_ATR585M",
+                "filter_id": "none",
+                **extra,
+            }
+            return client.post("/api/calibration/flat", json=payload)
+
+    def test_returns_202(self, tmp_path: Path) -> None:
+        assert self._start_flat(tmp_path).status_code == 202
+
+    def test_returns_job_id(self, tmp_path: Path) -> None:
+        assert "job_id" in self._start_flat(tmp_path).json()
+
+    def test_503_when_image_root_not_configured(self) -> None:
+        with patch.object(cal_mod, "config") as mock_cfg:
+            mock_cfg.IMAGE_ROOT = ""
+            resp = client.post("/api/calibration/flat",
+                               json={"optical_train": "X", "filter_id": "none"})
+        assert resp.status_code == 503
+
+    def test_flat_job_completes(self, tmp_path: Path) -> None:
+        job_id = self._start_flat(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert result["status"] == "done"
+
+    def test_flat_result_path_is_fits(self, tmp_path: Path) -> None:
+        job_id = self._start_flat(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert result["result_path"].endswith(".fits")
+
+    def test_warnings_field_is_list(self, tmp_path: Path) -> None:
+        job_id = self._start_flat(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert isinstance(result["warnings"], list)
+
+    def test_warn_zone_flat_still_succeeds(self, tmp_path: Path) -> None:
+        """p50=37% is in the warn zone but should not be rejected."""
+        fits_path = tmp_path / "warn.fits"
+        _write_flat_fits(fits_path, p50_fraction=0.37)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/flat", json={
+                "n_frames": 1, "optical_train": "C8_NATIVE_ATR585M", "filter_id": "none",
+            }).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "done"
+        assert len(result["warnings"]) > 0
+
+    def test_flat_fails_on_zero_pixels(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "zero.fits"
+        pixels = np.zeros((32, 32), dtype=np.uint16)
+        hdu = fits.PrimaryHDU(data=pixels)
+        buf = io.BytesIO()
+        hdu.writeto(buf)
+        fits_path.write_bytes(buf.getvalue())
+
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/flat", json={
+                "n_frames": 1, "optical_train": "C8_NATIVE_ATR585M", "filter_id": "none",
+            }).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "failed"

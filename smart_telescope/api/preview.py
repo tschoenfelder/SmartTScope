@@ -25,7 +25,7 @@ router = APIRouter()
 @router.websocket("/ws/preview")
 async def ws_preview(
     websocket: WebSocket,
-    exposure: float = Query(default=2.0, gt=0.0, le=60.0),
+    exposure: float = Query(default=2.0, gt=0.0, le=3600.0),
     gain: int = Query(default=100, ge=100, le=3200),
     camera_index: int = Query(default=0, ge=0, le=7),
     autogain: bool = Query(default=False),

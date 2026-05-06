@@ -168,15 +168,15 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-3-3 — Flat preparation
-- [ ] Extend `calibration_capture.py`: `prepare_flat(camera, optical_train,
+### AGT-3-3 — Flat preparation ✅
+- [x] Extend `calibration_capture.py`: `prepare_flat(camera, optical_train,
   filter_id, n_frames, **meta)` — iterates exposure toward 50% median target
   (accept 40–60%, warn 35–40% / 60–70%, reject <35% / >70%); stacks master
   flat per optical-train + filter (FR-CAL-030, FR-CAL-040).
-- [ ] `POST /api/calibration/flat` endpoint + UI button.
-- [ ] Show informational note about rotation / focus user responsibility.
-- [ ] Writes master FITS + updates index.
-- [ ] Unit tests with a replay camera that has a known flat level.
+- [x] `POST /api/calibration/flat` endpoint + UI button.
+- [x] Show informational note about rotation / focus user responsibility.
+- [x] Writes master FITS + updates index.
+- [x] Unit tests with a replay camera that has a known flat level.
 
 *Covers:* FR-CAL-030, FR-CAL-040, FR-CAL-050  
 *Depends:* AGT-3-1, AGT-0-2 (optical train profile)

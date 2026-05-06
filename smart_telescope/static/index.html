@@ -999,7 +999,7 @@
                     title="Preview camera"
                     onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
-            <input type="number" id="preview-exposure" value="2" min="0.001" max="60" step="any"
+            <input type="number" id="preview-exposure" value="2" min="0.001" max="3600" step="any"
                    style="width:4ch" onchange="previewReconnectIfRunning()">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
@@ -1164,6 +1164,28 @@
             <span id="s4-dark-progress" style="font-size:0.82rem;color:var(--muted)"></span>
           </div>
           <div id="s4-dark-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Flat row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);flex-wrap:wrap">
+            <label style="white-space:nowrap;min-width:6ch">Flat</label>
+            <input type="number" id="s4-flat-nframes" value="15" min="1" max="200"
+                   style="width:5ch" title="Number of flat frames">
+            <label>fr</label>
+            <input type="number" id="s4-flat-init-exp" value="1" min="0.001" max="3600"
+                   style="width:5ch" title="Initial exposure for auto-tune (s)">
+            <label>s</label>
+            <input type="text" id="s4-flat-train" value="C8_NATIVE_ATR585M" maxlength="64"
+                   style="width:14ch;font-size:0.82rem" title="Optical train profile ID">
+            <input type="text" id="s4-flat-filter" value="none" maxlength="32"
+                   style="width:6ch;font-size:0.82rem" title="Filter ID (or 'none')">
+            <button id="s4-flat-btn" onclick="prepareFlat()" style="margin-left:auto">Prepare</button>
+            <span id="s4-flat-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0;line-height:1.35">
+            Flat quality depends on optical train, filter, camera orientation, dust, and focus.
+            Rotation and focus are not tracked. Retake flats if orientation, filter, or focus changed.
+          </p>
+          <div id="s4-flat-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
         </div>
       </div>
 
@@ -2345,8 +2367,8 @@
           btn.innerHTML = label;
           progress.textContent = '';
           const path = s.result_path || s.result_entry?.relative_path || '';
-          const warn = s.warning ? ` — ${s.warning}` : '';
-          setStatus(statusId, `Master saved: ${path}${warn}`);
+          const warns = (s.warnings || []).join(' ');
+          setStatus(statusId, `Master saved: ${path}${warns ? ' — ' + warns : ''}`);
         } else if (s.status === 'failed') {
           clearInterval(poll);
           btn.disabled = false;
@@ -2372,6 +2394,36 @@
       _pollCalJob(job_id, 's4-bias-btn', 's4-bias-progress', 's4-bias-status', 'Prepare');
     } catch (err) {
       setStatus('s4-bias-status', `Failed to start: ${err}`, true);
+      btn.disabled = false;
+      btn.innerHTML = 'Prepare';
+    }
+  }
+
+  async function prepareFlat() {
+    const btn = document.getElementById('s4-flat-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>…';
+    document.getElementById('s4-flat-progress').textContent = '';
+    setStatus('s4-flat-status', '');
+    const { camIdx, gain, offset } = _calSharedParams();
+    const nFrames  = parseInt(document.getElementById('s4-flat-nframes').value,    10) || 15;
+    const initExpS = parseFloat(document.getElementById('s4-flat-init-exp').value) || 1.0;
+    const train    = (document.getElementById('s4-flat-train').value  || '').trim();
+    const filter   = (document.getElementById('s4-flat-filter').value || 'none').trim();
+    if (!train) {
+      setStatus('s4-flat-status', 'Optical train profile ID is required.', true);
+      btn.disabled = false; btn.innerHTML = 'Prepare'; return;
+    }
+    try {
+      const { job_id } = await apiPost('/api/calibration/flat', {
+        camera_index: camIdx, n_frames: nFrames,
+        initial_exposure_s: initExpS,
+        optical_train: train, filter_id: filter,
+        gain, offset,
+      });
+      _pollCalJob(job_id, 's4-flat-btn', 's4-flat-progress', 's4-flat-status', 'Prepare');
+    } catch (err) {
+      setStatus('s4-flat-status', `Failed to start: ${err}`, true);
       btn.disabled = false;
       btn.innerHTML = 'Prepare';
     }
@@ -2717,13 +2769,14 @@
       const expIn  = document.getElementById('preview-exposure');
       const gainIn = document.getElementById('preview-gain');
       if (expIn) {
+        const capMax = Math.min(caps.max_exposure_s, 3600);
         expIn.min   = fmtExp(caps.min_exposure_s);
-        expIn.max   = fmtExp(caps.max_exposure_s);
+        expIn.max   = fmtExp(capMax);
         expIn.step  = 'any';
-        expIn.title = `Exposure range: ${fmtExp(caps.min_exposure_s)}–${fmtExp(caps.max_exposure_s)} s`;
+        expIn.title = `Exposure range: ${fmtExp(caps.min_exposure_s)}–${fmtExp(capMax)} s`;
         const cur = parseFloat(expIn.value) || 2.0;
         if (cur < caps.min_exposure_s) expIn.value = fmtExp(caps.min_exposure_s);
-        if (cur > caps.max_exposure_s) expIn.value = fmtExp(caps.max_exposure_s);
+        if (cur > capMax) expIn.value = fmtExp(capMax);
       }
       if (gainIn) {
         gainIn.min   = caps.min_gain;
@@ -2762,9 +2815,26 @@
     } catch (_) {}
   }
 
+  /* Arrow-key handler for exposure input: 0.1 s steps ≤ 1 s, 1 s steps above.
+     With step="any" browsers use a 1-unit implicit step and refuse to go below min
+     when the result would be ≤ 0, so we replace the default behaviour entirely. */
+  function _expArrowHandler(ev) {
+    if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+    ev.preventDefault();
+    const el  = ev.currentTarget;
+    const cur = parseFloat(el.value) || 1.0;
+    const step  = cur <= 1 ? 0.1 : 1.0;
+    const delta = ev.key === 'ArrowUp' ? step : -step;
+    const minV  = parseFloat(el.min) || 0.001;
+    const maxV  = parseFloat(el.max) || 3600;
+    el.value = fmtExp(Math.max(minV, Math.min(maxV, cur + delta)));
+    el.dispatchEvent(new Event('change'));
+  }
+
   async function loadPreviewCameras() {
     const sel = await _loadSelectFromCameras('preview-cam-select');
     if (sel) onPreviewCamChange(parseInt(sel.value, 10) || 0);
+    document.getElementById('preview-exposure')?.addEventListener('keydown', _expArrowHandler);
   }
 
   async function refreshFocuser() {

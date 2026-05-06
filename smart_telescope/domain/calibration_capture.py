@@ -1,7 +1,8 @@
-"""Calibration master capture — bias and dark.
+"""Calibration master capture — bias, dark, and flat.
 
 FR-CAL-010: Bias preparation
 FR-CAL-020: Dark preparation
+FR-CAL-030/040: Flat preparation with exposure auto-tuning
 """
 from __future__ import annotations
 
@@ -285,3 +286,174 @@ def prepare_dark(
     _log.info("Dark master written: %s", dest)
     cal_index.add(entry)
     return entry, temp_warning
+
+
+# ── prepare_flat ──────────────────────────────────────────────────────────────
+
+_FLAT_TARGET_P50  = 0.50
+_FLAT_ACCEPT_LOW  = 0.40
+_FLAT_ACCEPT_HIGH = 0.60
+_FLAT_WARN_LOW    = 0.35
+_FLAT_WARN_HIGH   = 0.70
+_FLAT_MAX_TUNE    = 6     # auto-exposure tuning iterations
+
+
+class FlatValidationError(ValueError):
+    """Raised when the flat histogram is outside the acceptable range (<35 % or >70 %)."""
+
+
+def _tune_flat_exposure(
+    camera: CameraPort,
+    initial_exp_ms: float,
+    bit_depth: int,
+) -> tuple[float, float]:
+    """Iteratively adjust exposure so p50 ≈ 50 % of ADC range.
+
+    Returns (tuned_exposure_ms, final_p50).
+    Raises FlatValidationError if unable to reach 35–70 % range.
+    """
+    caps = camera.get_capabilities()
+    cur_ms = max(caps.min_exposure_ms, min(caps.max_exposure_ms, initial_exp_ms))
+    p50 = 0.0
+
+    for _i in range(_FLAT_MAX_TUNE):
+        camera.set_exposure_ms(cur_ms)
+        frame = camera.capture(cur_ms / 1000.0)
+        stats = hist_analyze(frame.pixels, bit_depth=bit_depth)
+        p50 = stats.p50
+        _log.debug("Flat tune iter %d: exp=%.1fms p50=%.3f", _i + 1, cur_ms, p50)
+
+        if _FLAT_ACCEPT_LOW <= p50 <= _FLAT_ACCEPT_HIGH:
+            break                           # within the accept zone — stop
+
+        if p50 <= 0.0:
+            raise FlatValidationError(
+                "Flat test frame p50 = 0 — flat source too dim or camera is covered."
+            )
+
+        new_ms = cur_ms * (_FLAT_TARGET_P50 / p50)
+        new_ms = max(caps.min_exposure_ms, min(caps.max_exposure_ms, new_ms))
+
+        if abs(new_ms - cur_ms) < 0.5:     # converged (exposure at limit)
+            cur_ms = new_ms
+            break
+
+        cur_ms = new_ms
+
+    # Final check: hard-reject if outside 35–70 %
+    if p50 < _FLAT_WARN_LOW or p50 > _FLAT_WARN_HIGH:
+        raise FlatValidationError(
+            f"Flat p50 = {p50 * 100:.1f}% is outside the acceptable 35–70% range. "
+            "Adjust the flat-field light source brightness or exposure."
+        )
+
+    return cur_ms, p50
+
+
+def prepare_flat(
+    camera: CameraPort,
+    optical_train: str,
+    filter_id: str,
+    n_frames: int,
+    image_root: str | Path,
+    cal_index: CalibrationIndex,
+    *,
+    initial_exposure_s: float = 1.0,
+    gain: int | None = None,
+    offset: int | None = None,
+    conversion_gain: Any | None = None,
+    progress: ProgressCallback | None = None,
+) -> tuple[CalibrationEntry, list[str]]:
+    """Auto-tune exposure and capture *n_frames* flat frames into a master flat FITS.
+
+    Returns (entry, warnings) where *warnings* is a list of human-readable
+    strings about sub-optimal but acceptable conditions (e.g. p50 in the
+    35–40 % or 60–70 % warn zone).
+
+    Raises FlatValidationError for out-of-range p50 or clipping failures.
+    """
+    if n_frames < 1:
+        raise ValueError("n_frames must be >= 1")
+
+    if gain is not None:
+        camera.set_gain(gain)
+    if offset is not None:
+        camera.set_black_level(offset)
+    if conversion_gain is not None:
+        camera.set_conversion_gain(conversion_gain)
+
+    eff_gain      = camera.get_gain()
+    eff_offset    = camera.get_black_level()
+    eff_cg        = camera.get_conversion_gain()
+    eff_bit_depth = camera.get_bit_depth()
+    cam_model     = camera.get_logical_name()
+    cam_serial    = camera.get_serial_number()
+    temp_c        = camera.get_temperature()
+
+    _log.info(
+        "Flat capture start: camera=%s optical_train=%s filter=%s n=%d",
+        cam_model, optical_train, filter_id, n_frames,
+    )
+
+    # ── auto-tune exposure ────────────────────────────────────────────────────
+    tuned_exp_ms, final_p50 = _tune_flat_exposure(
+        camera, initial_exposure_s * 1000.0, eff_bit_depth
+    )
+    eff_exp_ms = camera.get_exposure_ms()   # use what camera actually accepted
+
+    _log.info("Flat tuned: exp=%.1fms p50=%.3f", eff_exp_ms, final_p50)
+
+    # Collect warnings for p50 in the warn zone (but not rejected)
+    warnings: list[str] = []
+    if final_p50 < _FLAT_ACCEPT_LOW:
+        warnings.append(
+            f"Flat p50 = {final_p50 * 100:.1f}% is below the ideal 40–60 % range. "
+            "Consider increasing flat-field brightness for better signal."
+        )
+    elif final_p50 > _FLAT_ACCEPT_HIGH:
+        warnings.append(
+            f"Flat p50 = {final_p50 * 100:.1f}% is above the ideal 40–60 % range. "
+            "Consider reducing flat-field brightness."
+        )
+
+    # ── capture and stack ─────────────────────────────────────────────────────
+    master = _capture_and_stack(camera, eff_exp_ms / 1000.0, n_frames, progress, "Flat")
+
+    # ── validate master ───────────────────────────────────────────────────────
+    _validate_floor(master, eff_bit_depth, "Flat", FlatValidationError)
+
+    stats = hist_analyze(master, bit_depth=eff_bit_depth)
+    if stats.saturation_pct >= 0.5:
+        raise FlatValidationError(
+            f"Flat master has {stats.saturation_pct:.2f}% saturated pixels (>= 0.5%); "
+            "reduce flat-field brightness or exposure time."
+        )
+
+    # ── write master FITS ─────────────────────────────────────────────────────
+    entry = make_entry(
+        image_root, "flat", cam_model, cam_serial,
+        gain=eff_gain, offset=eff_offset,
+        conversion_gain=_cg_name(eff_cg),
+        bit_depth=eff_bit_depth,
+        frame_count=n_frames,
+        optical_train=optical_train,
+        filter_id=filter_id,
+        temperature_c=temp_c,
+    )
+    dest = Path(image_root) / entry.relative_path
+    _write_master_fits(
+        dest, master, "flat", n_frames, eff_exp_ms,
+        eff_gain, eff_offset, eff_cg, eff_bit_depth,
+        cam_model, cam_serial, temp_c,
+    )
+    # Append flat-specific headers
+    with fits.open(str(dest), mode="update") as hdul:
+        hdul[0].header["OPTTRAIN"] = optical_train
+        hdul[0].header["FILTERID"] = filter_id
+        hdul[0].header["ROTKNOWN"] = False
+        hdul[0].header["FOCKNOWN"] = False
+        hdul.flush()
+
+    _log.info("Flat master written: %s", dest)
+    cal_index.add(entry)
+    return entry, warnings

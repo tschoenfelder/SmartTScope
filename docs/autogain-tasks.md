@@ -154,14 +154,14 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-3-2 — Dark preparation
-- [ ] Extend `calibration_capture.py`: `prepare_dark(camera, exposure_ms,
+### AGT-3-2 — Dark preparation ✅
+- [x] Extend `calibration_capture.py`: `prepare_dark(camera, exposure_ms,
   n_frames, **meta)` — matches intended light-frame settings, validates
-  histogram is dark-compatible, warns if temperature differs from session
-  target by >5°C (FR-CAL-020, FR-TEMP-007).
-- [ ] `POST /api/calibration/dark` endpoint + UI button in Stage 4.
-- [ ] Writes master FITS + updates index.
-- [ ] Unit tests.
+  histogram is dark-compatible (floor + saturation), returns temperature
+  warning string when applicable (FR-CAL-020, FR-TEMP-007).
+- [x] `POST /api/calibration/dark` endpoint + UI button in Stage 4.
+- [x] Writes master FITS + updates index.
+- [x] 21 new unit tests. Suite: 1336 passed, 87.39% coverage.
 
 *Covers:* FR-CAL-020, FR-CAL-050, FR-TEMP-007  
 *Depends:* AGT-3-1

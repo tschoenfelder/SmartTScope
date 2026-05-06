@@ -398,13 +398,23 @@
     .ws-stopped    { background: var(--muted); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
-    /* ── histogram ── */
-    .preview-histogram {
-      position: absolute;
-      bottom: 4px; right: 4px;
-      border-radius: 3px;
-      pointer-events: none;
-      opacity: 0.85;
+    /* ── histogram widget ── */
+    .hist-canvas {
+      display: block;
+      width: 100%;
+      height: 80px;
+      border-radius: 4px;
+      background: #111;
+    }
+    .hist-stats {
+      font-size: 0.70rem;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 0.15rem;
+      line-height: 1.3;
     }
 
     /* ── spinner ── */
@@ -974,9 +984,6 @@
             <div class="preview-placeholder" id="s3-preview-ph">Press Start to begin</div>
             <img id="s3-preview-img" alt="" style="display:none">
             <div class="preview-overlay" id="s3-preview-overlay"></div>
-            <canvas id="s3-histogram" class="preview-histogram"
-                    width="200" height="60" style="display:none"></canvas>
-            <canvas id="s3-hist-decode" width="1" height="1" style="display:none"></canvas>
           </div>
 
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
@@ -1006,6 +1013,11 @@
                     title="Focuser not connected">AF</button>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
           </div>
+          <div id="s3-hist-panel" style="display:none;margin-top:0.5rem">
+            <canvas id="s3-histogram" class="hist-canvas" width="400" height="80"></canvas>
+            <div id="s3-hist-stats" class="hist-stats"></div>
+          </div>
+
           <div id="s3-focus-row" style="display:flex;align-items:center;gap:0.3rem;margin-top:0.6rem">
             <span style="font-size:0.78rem;color:var(--muted);margin-right:0.2rem">Focus</span>
             <button class="s3-nudge-btn secondary" onclick="previewNudge(-20)" disabled
@@ -2909,7 +2921,7 @@
   let _reconnect      = true;
   let _reconnectTimer = null;
   let _histEnabled    = false;
-  let _histDrawing    = false;
+  let _histInterval   = null;
 
   function _setWsStatus(state) {
     const labels = { live: 'Live', connecting: 'Connecting…', stopped: 'Stopped' };
@@ -2943,6 +2955,8 @@
     _reconnect = false;
     clearTimeout(_reconnectTimer);
     if (_ws) { _ws.close(1000, 'user stop'); _ws = null; }
+    clearInterval(_histInterval);
+    _histInterval = null;
     _updatePreviewBtns(false);
     _setWsStatus('stopped');
     setStatus('s3-status', '');
@@ -2998,7 +3012,7 @@
       document.getElementById('s3-preview-overlay').textContent =
         `#${_frameCount} · ${new Date().toLocaleTimeString()}`;
 
-      if (_histEnabled) _drawHistogram(ev.data);
+      // histogram is now fetched via API on a timer; no per-frame JPEG decode needed
     };
 
     _ws.onerror = () => setStatus('s3-status', 'WebSocket error — check server', true);
@@ -3017,56 +3031,133 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════════
-     Histogram (Stage 3)
+     Histogram widget — shared across stages (AGT-2-2)
   ══════════════════════════════════════════════════════════════════════ */
-  function previewHistToggle(enabled) {
-    _histEnabled = enabled;
-    const canvas = document.getElementById('s3-histogram');
-    if (!enabled) {
-      canvas.style.display = 'none';
-      canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+  /**
+   * Render a raw linear histogram on *canvasId* using data from the API.
+   * Also populates *statsId* text line when provided.
+   *
+   * @param {string}   canvasId   - id of <canvas> element
+   * @param {string|null} statsId - id of text element for stats line (or null)
+   * @param {object}   stats      - HistogramStats object from /api/histogram/analyze
+   * @param {number[]} binCounts  - histogram bin counts
+   * @param {number[]} binEdges   - histogram bin edges (length = binCounts.length + 1)
+   */
+  function showHistogram(canvasId, statsId, stats, binCounts, binEdges) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const CW = canvas.offsetWidth || canvas.width || 400;
+    const CH = canvas.height || 80;
+    canvas.width = CW;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, CW, CH);
+
+    // Background
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, CW, CH);
+
+    // Bar area leaves 12 px at bottom for inline stats
+    const barH = CH - 14;
+    const n = binCounts.length;
+    const peak = Math.max(1, ...binCounts);
+    const logPeak = Math.log1p(peak);
+    const bw = CW / n;
+
+    // Draw bars (log scale for dynamic range)
+    ctx.fillStyle = 'rgba(170,195,235,0.85)';
+    for (let i = 0; i < n; i++) {
+      const h = Math.round(Math.log1p(binCounts[i]) / logPeak * barH);
+      if (h > 0) ctx.fillRect(i * bw, barH - h, Math.max(1, bw - 0.5), h);
+    }
+
+    // Black-level marker (p0.5 ≈ pedestal)
+    const blX = Math.round(stats.black_level * CW);
+    ctx.strokeStyle = 'rgba(100,150,255,0.75)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(blX, 0); ctx.lineTo(blX, barH); ctx.stroke();
+
+    // Target band 75–80 % of ADC range (green)
+    ctx.fillStyle = 'rgba(0,210,100,0.10)';
+    ctx.fillRect(Math.round(0.75 * CW), 0, Math.round(0.05 * CW), barH);
+    ctx.strokeStyle = 'rgba(0,210,100,0.55)';
+    ctx.lineWidth = 1;
+    [0.75, 0.80].forEach(f => {
+      const x = Math.round(f * CW);
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, barH); ctx.stroke();
+    });
+
+    // Saturation marker at right edge (red)
+    ctx.strokeStyle = 'rgba(255,80,60,0.80)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(CW - 1, 0); ctx.lineTo(CW - 1, barH); ctx.stroke();
+
+    // Inline bottom stats strip
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, barH, CW, CH - barH);
+    ctx.font = '9px ui-monospace, monospace';
+
+    ctx.fillStyle = stats.zero_clipped_pct > 10 ? 'rgba(120,160,255,0.9)' : 'rgba(150,170,210,0.9)';
+    ctx.textAlign = 'left';
+    ctx.fillText(`0-clip:${stats.zero_clipped_pct.toFixed(1)}%`, 3, CH - 3);
+
+    ctx.fillStyle = 'rgba(180,200,230,0.9)';
+    ctx.textAlign = 'center';
+    ctx.fillText(`p50:${(stats.p50 * 100).toFixed(1)}%  p99:${(stats.p99 * 100).toFixed(1)}%`, CW / 2, CH - 3);
+
+    ctx.fillStyle = stats.saturation_pct > 1 ? 'rgba(255,110,80,0.95)' : 'rgba(150,170,210,0.9)';
+    ctx.textAlign = 'right';
+    ctx.fillText(`sat:${stats.saturation_pct.toFixed(1)}%`, CW - 3, CH - 3);
+    ctx.textAlign = 'left';
+
+    // Full stats text line (below canvas)
+    if (statsId) {
+      const el = document.getElementById(statsId);
+      if (el) {
+        el.textContent =
+          `p50:${(stats.p50*100).toFixed(1)}%  ` +
+          `p95:${(stats.p95*100).toFixed(1)}%  ` +
+          `p99:${(stats.p99*100).toFixed(1)}%  ` +
+          `p99.5:${(stats.p99_5*100).toFixed(1)}%  ` +
+          `p99.9:${(stats.p99_9*100).toFixed(1)}%  ` +
+          `sat:${stats.saturation_pct.toFixed(2)}%  ` +
+          `0-clip:${stats.zero_clipped_pct.toFixed(2)}%`;
+      }
     }
   }
 
-  async function _drawHistogram(blob) {
-    if (_histDrawing) return;
-    _histDrawing = true;
-    try {
-      const bitmap = await createImageBitmap(blob);
-      const dec    = document.getElementById('s3-hist-decode');
-      const DW = 160, DH = Math.max(1, Math.round(160 * bitmap.height / bitmap.width));
-      dec.width = DW; dec.height = DH;
-      const dctx = dec.getContext('2d');
-      dctx.drawImage(bitmap, 0, 0, DW, DH);
-      bitmap.close();
-      const px   = dctx.getImageData(0, 0, DW, DH).data;
-      const bins = new Uint32Array(256);
-      for (let i = 0; i < px.length; i += 4)
-        bins[Math.round(0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2])]++;
+  function previewHistToggle(enabled) {
+    _histEnabled = enabled;
+    const panel = document.getElementById('s3-hist-panel');
+    if (panel) panel.style.display = enabled ? '' : 'none';
+    if (!enabled) {
+      clearInterval(_histInterval);
+      _histInterval = null;
       const canvas = document.getElementById('s3-histogram');
-      const CW = canvas.width, CH = canvas.height;
-      canvas.style.display = '';
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, CW, CH);
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.fillRect(0, 0, CW, CH);
-      const peak    = Math.max(1, ...bins);
-      const logPeak = Math.log1p(peak);
-      ctx.fillStyle = 'rgba(210,210,210,0.9)';
-      const bw = CW / 256;
-      for (let i = 0; i < 256; i++) {
-        const h = Math.round(Math.log1p(bins[i]) / logPeak * (CH - 2));
-        ctx.fillRect(i * bw, CH - h, Math.max(1, bw), h);
-      }
-      const total = DW * DH;
-      ctx.font = '9px ui-monospace, monospace';
-      ctx.fillStyle = 'rgba(120,180,255,0.9)';
-      ctx.fillText(`${(bins[0]/total*100).toFixed(1)}%`, 3, CH-3);
-      ctx.fillStyle = 'rgba(255,140,100,0.9)';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${(bins[255]/total*100).toFixed(1)}%`, CW-3, CH-3);
-      ctx.textAlign = 'left';
-    } finally { _histDrawing = false; }
+      if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+      const stats = document.getElementById('s3-hist-stats');
+      if (stats) stats.textContent = '';
+    } else {
+      _fetchAndDrawHistogram();
+      _histInterval = setInterval(_fetchAndDrawHistogram, 4000);
+    }
+  }
+
+  async function _fetchAndDrawHistogram() {
+    if (!_histEnabled) return;
+    const exposure = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
+    const gain     = parseInt(document.getElementById('preview-gain')?.value, 10)   || 100;
+    const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const params   = new URLSearchParams({
+      camera_index: camIdx, exposure, gain, bit_depth: 12, n_bins: 256,
+    });
+    try {
+      const r = await fetch(`/api/histogram/analyze?${params}`, { method: 'POST' });
+      if (!r.ok) return;
+      const d = await r.json();
+      showHistogram('s3-histogram', 's3-hist-stats', d, d.bin_counts, d.bin_edges);
+    } catch (_) { /* ignore network errors during preview */ }
   }
 
   /* ══════════════════════════════════════════════════════════════════════

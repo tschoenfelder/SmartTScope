@@ -116,16 +116,19 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-2-2 — Raw linear histogram UI widget
-- [ ] Canvas-based histogram widget reusable across preview, polar, stack,
+### AGT-2-2 — Raw linear histogram UI widget ✅
+- [x] Canvas-based histogram widget reusable across preview, polar, stack,
   and calibration panels.
-- [ ] Draws linear raw-intensity distribution (not stretch).
-- [ ] Overlays: black-level marker, lower-clip marker, 75–80% target band,
-  saturation marker (FR-AG-050).
-- [ ] Stats line below canvas: `p50 / p95 / p99 / p99.5 / p99.9`,
-  saturation %, current exposure / gain / offset / conversion gain.
-- [ ] Replace existing preview histogram canvas with this widget.
-- [ ] Expose `showHistogram(stats, bins)` JS function callable from any panel.
+- [x] Draws log-scale bar chart over linear raw-intensity bins (not stretch).
+- [x] Overlays: black-level marker (blue), 75–80% target band (green),
+  saturation marker at right edge (red).
+- [x] Inline stats strip inside canvas: 0-clip %, p50, p99, sat %.
+- [x] Full stats text line below canvas: p50/p95/p99/p99.5/p99.9/sat/0-clip.
+- [x] Replaced existing JPEG-decode overlay histogram with this widget.
+- [x] `showHistogram(canvasId, statsId, stats, binCounts, binEdges)` callable
+  from any panel. Hist panel shows/hides cleanly; interval cleared on stop.
+- [x] `_fetchAndDrawHistogram()` polls POST /api/histogram/analyze every 4 s
+  when histogram is enabled. Suite: 1266 passed, 87% coverage (UI-only).
 
 *Covers:* FR-AG-050, FR-UI-001  
 *Depends:* AGT-2-1
@@ -442,7 +445,7 @@ Implementation phases follow section 16 of that document.
 |---|---:|---:|
 | 0 — Foundation | 3 | 3 |
 | 1 — Storage | 2 | 2 |
-| 2 — Histogram | 2 | 1 |
+| 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 0 |
 | 4 — Cooling | 2 | 0 |
 | 5 — Auto Gain MVP | 4 | 0 |

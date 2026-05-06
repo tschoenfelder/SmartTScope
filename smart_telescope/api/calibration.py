@@ -1,4 +1,4 @@
-"""Calibration preparation API — bias and dark endpoints."""
+"""Calibration preparation API — bias, dark, flat, and match endpoints."""
 from __future__ import annotations
 
 import logging
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .. import config
@@ -21,7 +21,7 @@ from ..domain.calibration_capture import (
     prepare_dark,
     prepare_flat,
 )
-from ..domain.calibration_store import CalibrationIndex
+from ..domain.calibration_store import CalibrationIndex, find_best_match
 from ..domain.camera_capabilities import ConversionGain
 
 _log = logging.getLogger(__name__)
@@ -309,3 +309,91 @@ def get_job_status(job_id: str) -> JobStatusResponse:
             result_path=job.result_path,
             result_entry=job.result_entry,
         )
+
+
+# ── Calibration match endpoint ────────────────────────────────────────────────
+
+
+class CalibrationMatchResult(BaseModel):
+    """Match result for one calibration type."""
+    status: str                          # "MATCHED" | "PARTIAL" | "NOT_FOUND"
+    entry: dict[str, Any] | None = None  # best candidate entry, if any
+    mismatches: list[dict[str, Any]] = []
+    message: str = ""
+
+
+class CalibrationMatchResponse(BaseModel):
+    bias: CalibrationMatchResult
+    dark: CalibrationMatchResult
+    flat: CalibrationMatchResult
+
+
+def _match_result(index: CalibrationIndex, cal_type: str, criteria: dict[str, Any]) -> CalibrationMatchResult:
+    entry, mismatches = find_best_match(index, cal_type, criteria)
+    if entry is None:
+        return CalibrationMatchResult(status="NOT_FOUND", message=f"No {cal_type} master found for this camera.")
+    if not mismatches:
+        return CalibrationMatchResult(status="MATCHED", entry=entry.to_dict())
+    mismatch_dicts = [{"field": m.field, "expected": m.expected, "actual": m.actual} for m in mismatches]
+    fields_str = ", ".join(m.field for m in mismatches)
+    return CalibrationMatchResult(
+        status="PARTIAL",
+        entry=entry.to_dict(),
+        mismatches=mismatch_dicts,
+        message=f"Closest {cal_type} master differs in: {fields_str}.",
+    )
+
+
+@router.get("/match", response_model=CalibrationMatchResponse)
+def get_calibration_match(
+    camera_index: int   = Query(default=0, ge=0, le=7),
+    gain: int           = Query(ge=0, le=5000),
+    offset: int         = Query(default=0, ge=0, le=255),
+    conversion_gain: str = Query(default="LCG"),
+    bit_depth: int      = Query(default=16, ge=8, le=16),
+    exposure_ms: float | None  = Query(default=None, gt=0.0),
+    optical_train: str | None  = Query(default=None),
+    filter_id: str | None      = Query(default=None),
+    temperature_c: float | None = Query(default=None),
+) -> CalibrationMatchResponse:
+    """Return the best matching calibration master for each type (bias/dark/flat).
+
+    Status values:
+    - ``MATCHED``   — exact match found.
+    - ``PARTIAL``   — closest match has mismatched fields (usable with warning).
+    - ``NOT_FOUND`` — no master exists for this camera/type combination.
+    """
+    image_root = _get_image_root()
+    camera = _get_camera(camera_index)
+
+    try:
+        camera_model  = camera.get_logical_name()
+        camera_serial = camera.get_serial_number()
+    except Exception:
+        camera_model  = "unknown"
+        camera_serial = ""
+
+    index = CalibrationIndex.load(image_root)
+
+    base_criteria: dict[str, Any] = {
+        "camera_model":    camera_model,
+        "camera_serial":   camera_serial,
+        "gain":            gain,
+        "offset":          offset,
+        "conversion_gain": conversion_gain.upper(),
+        "bit_depth":       bit_depth,
+    }
+
+    dark_criteria = dict(base_criteria, exposure_ms=exposure_ms, temperature_c=temperature_c)
+    flat_criteria = dict(
+        base_criteria,
+        optical_train=optical_train,
+        filter_id=filter_id,
+        temperature_c=temperature_c,
+    )
+
+    return CalibrationMatchResponse(
+        bias=_match_result(index, "bias", base_criteria),
+        dark=_match_result(index, "dark", dark_criteria),
+        flat=_match_result(index, "flat", flat_criteria),
+    )

@@ -1186,6 +1186,17 @@
             Rotation and focus are not tracked. Retake flats if orientation, filter, or focus changed.
           </p>
           <div id="s4-flat-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Calibration match status (FR-CAL-060 / FR-CAL-070) -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+            <span style="font-size:0.82rem;font-weight:500">Library status</span>
+            <button id="s4-cal-match-btn" onclick="checkCalibrationMatch()"
+                    style="padding:0.2rem 0.6rem;font-size:0.78rem;margin-left:auto">Check</button>
+          </div>
+          <div id="s4-cal-match-badges" style="display:none;margin-top:0.35rem;font-size:0.82rem">
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap" id="s4-cal-match-row"></div>
+          </div>
+          <div id="s4-cal-match-detail" style="display:none;margin-top:0.3rem;font-size:0.78rem;color:var(--muted);line-height:1.4"></div>
         </div>
       </div>
 
@@ -1301,6 +1312,15 @@
           </span>
         </div>
       </div>
+      <!-- Calibration readiness row (FR-CAL-060 / FR-CAL-070) -->
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.6rem;font-size:0.82rem">
+        <span style="color:var(--muted)">Calibration</span>
+        <span id="s5-cal-badges" style="display:flex;gap:0.4rem;flex-wrap:wrap"></span>
+        <button onclick="s5CheckCalibration()"
+                style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:auto">Check</button>
+      </div>
+      <div id="s5-cal-detail" style="display:none;font-size:0.75rem;color:var(--muted);margin-top:0.25rem;line-height:1.4"></div>
+
       <div class="controls" style="margin-top:0.75rem">
         <button id="s5-start-btn" onclick="s5StartSession()">&#x25B6;&nbsp;Start Session</button>
         <button id="s5-stop-btn" class="danger" onclick="s5StopSession()" disabled>&#x25A0;&nbsp;Stop</button>
@@ -2447,6 +2467,117 @@
       setStatus('s4-dark-status', `Failed to start: ${err}`, true);
       btn.disabled = false;
       btn.innerHTML = 'Prepare';
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Calibration match check (FR-CAL-060 / FR-CAL-070)
+  ══════════════════════════════════════════════════════════════════════ */
+  function _calMatchBadge(type, result) {
+    const colors = { MATCHED: 'var(--success)', PARTIAL: 'var(--warning)', NOT_FOUND: 'var(--danger)' };
+    const labels = { MATCHED: '✓', PARTIAL: '~', NOT_FOUND: '✗' };
+    const color = colors[result.status] || 'var(--muted)';
+    const sym   = labels[result.status]  || '?';
+    return `<span style="display:inline-flex;align-items:center;gap:0.2rem;border:1px solid ${color};
+            border-radius:3px;padding:0.1rem 0.4rem;font-size:0.75rem;color:${color}">
+              ${sym} ${type}
+            </span>`;
+  }
+
+  async function checkCalibrationMatch() {
+    const btn      = document.getElementById('s4-cal-match-btn');
+    const rowEl    = document.getElementById('s4-cal-match-row');
+    const badgesEl = document.getElementById('s4-cal-match-badges');
+    const detailEl = document.getElementById('s4-cal-match-detail');
+
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    const { camIdx, gain, offset } = _calSharedParams();
+    const expS      = parseFloat(document.getElementById('s4-dark-exp').value) || 120.0;
+    const train     = (document.getElementById('s4-flat-train').value  || '').trim() || null;
+    const filter    = (document.getElementById('s4-flat-filter').value || 'none').trim() || null;
+
+    const params = new URLSearchParams({ gain, offset, camera_index: camIdx });
+    if (expS)   params.set('exposure_ms', String(expS * 1000));
+    if (train)  params.set('optical_train', train);
+    if (filter) params.set('filter_id', filter);
+
+    try {
+      const resp = await fetch(`/api/calibration/match?${params}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const d = await resp.json();
+
+      rowEl.innerHTML =
+        _calMatchBadge('Bias', d.bias) +
+        _calMatchBadge('Dark', d.dark) +
+        _calMatchBadge('Flat', d.flat);
+      badgesEl.style.display = '';
+
+      const details = [];
+      for (const [t, r] of [['Bias', d.bias], ['Dark', d.dark], ['Flat', d.flat]]) {
+        if (r.status === 'PARTIAL') {
+          const fields = r.mismatches.map(m =>
+            `${m.field}: expected ${m.expected}, found ${m.actual}`).join('; ');
+          details.push(`${t}: ${r.message} (${fields}) — <em>Use anyway?</em>`);
+        } else if (r.status === 'NOT_FOUND') {
+          details.push(`${t}: ${r.message}`);
+        }
+      }
+      if (details.length) {
+        detailEl.innerHTML = details.join('<br>');
+        detailEl.style.display = '';
+      } else {
+        detailEl.style.display = 'none';
+      }
+    } catch (err) {
+      rowEl.innerHTML = `<span style="color:var(--danger)">Error: ${escHtml(String(err))}</span>`;
+      badgesEl.style.display = '';
+      detailEl.style.display = 'none';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Check';
+    }
+  }
+
+  async function s5CheckCalibration() {
+    const badgesEl = document.getElementById('s5-cal-badges');
+    const detailEl = document.getElementById('s5-cal-detail');
+    if (!badgesEl) return;
+
+    const gain   = parseInt(document.getElementById('s4-cal-gain')?.value,  10) || 100;
+    const offset = parseInt(document.getElementById('s4-cal-offset')?.value, 10) || 0;
+    const expS   = parseFloat(document.getElementById('s4-dark-exp')?.value) || 120.0;
+    const train  = (document.getElementById('s4-flat-train')?.value || '').trim() || null;
+    const filter = (document.getElementById('s4-flat-filter')?.value || 'none').trim() || null;
+
+    const params = new URLSearchParams({ gain, offset });
+    if (expS)   params.set('exposure_ms', String(expS * 1000));
+    if (train)  params.set('optical_train', train);
+    if (filter) params.set('filter_id', filter);
+
+    try {
+      const resp = await fetch(`/api/calibration/match?${params}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const d = await resp.json();
+
+      badgesEl.innerHTML =
+        _calMatchBadge('Bias', d.bias) +
+        _calMatchBadge('Dark', d.dark) +
+        _calMatchBadge('Flat', d.flat);
+
+      const warnings = [];
+      for (const [t, r] of [['Bias', d.bias], ['Dark', d.dark], ['Flat', d.flat]]) {
+        if (r.status !== 'MATCHED') warnings.push(`${t}: ${r.message || r.status}`);
+      }
+      if (warnings.length) {
+        detailEl.textContent = warnings.join(' | ');
+        detailEl.style.display = '';
+      } else {
+        detailEl.style.display = 'none';
+      }
+    } catch (err) {
+      badgesEl.innerHTML = `<span style="color:var(--danger);font-size:0.75rem">Check failed</span>`;
     }
   }
 

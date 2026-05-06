@@ -1120,31 +1120,50 @@
         <div id="s4-focuser-status" class="status-line" style="margin-top:1rem;margin-bottom:0.25rem"></div>
         <div id="s4-focuser-card"></div>
 
-        <!-- Calibration: Bias -->
+        <!-- Calibration: Bias + Dark -->
         <div class="card" style="margin-top:1rem">
           <div class="card-title">
             <span class="dot dot-grey"></span>
             Calibration
           </div>
-          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.6rem">
-            Cover the camera or scope cap before capturing bias frames.
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+            Cover the camera or scope cap before capturing.
           </p>
-          <div class="controls" style="flex-wrap:wrap;gap:0.4rem 0.6rem">
-            <label>Frames</label>
-            <input type="number" id="s4-bias-nframes" value="32" min="1" max="200"
-                   style="width:5ch" title="16 minimum, 32 recommended">
-            <label style="margin-left:0.4rem">Gain</label>
-            <input type="number" id="s4-bias-gain" value="100" min="0" max="5000"
-                   style="width:6ch" title="Leave blank to use camera current gain">
+
+          <!-- Shared gain / offset row -->
+          <div class="controls" style="flex-wrap:wrap;gap:0.4rem 0.6rem;margin-bottom:0.5rem">
+            <label>Gain</label>
+            <input type="number" id="s4-cal-gain" value="100" min="0" max="5000"
+                   style="width:6ch" title="Applied to both bias and dark">
             <label>Offset</label>
-            <input type="number" id="s4-bias-offset" value="0" min="0" max="255"
+            <input type="number" id="s4-cal-offset" value="0" min="0" max="255"
                    style="width:5ch">
           </div>
-          <div style="margin-top:0.6rem;display:flex;gap:0.5rem;align-items:center">
-            <button id="s4-bias-btn" onclick="prepareBias()">Prepare Bias</button>
+
+          <!-- Bias row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.3rem;border-top:1px solid var(--border)">
+            <label style="white-space:nowrap;min-width:6ch">Bias</label>
+            <input type="number" id="s4-bias-nframes" value="32" min="1" max="200"
+                   style="width:5ch" title="16 minimum, 32 recommended">
+            <label>fr</label>
+            <button id="s4-bias-btn" onclick="prepareBias()" style="margin-left:auto">Prepare</button>
             <span id="s4-bias-progress" style="font-size:0.82rem;color:var(--muted)"></span>
           </div>
-          <div id="s4-bias-status" class="status-line" style="margin-top:0.4rem;min-height:auto"></div>
+          <div id="s4-bias-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Dark row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);flex-wrap:wrap">
+            <label style="white-space:nowrap;min-width:6ch">Dark</label>
+            <input type="number" id="s4-dark-nframes" value="20" min="1" max="200"
+                   style="width:5ch" title="Number of dark frames">
+            <label>fr</label>
+            <input type="number" id="s4-dark-exp" value="120" min="0.001" max="3600"
+                   style="width:6ch" title="Dark exposure in seconds">
+            <label>s</label>
+            <button id="s4-dark-btn" onclick="prepareDark()" style="margin-left:auto">Prepare</button>
+            <span id="s4-dark-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="s4-dark-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
         </div>
       </div>
 
@@ -2305,55 +2324,78 @@
     goToStage(5);
   }
 
-  async function prepareBias() {
-    const btn      = document.getElementById('s4-bias-btn');
-    const progress = document.getElementById('s4-bias-progress');
-    const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
-    const nFrames  = parseInt(document.getElementById('s4-bias-nframes').value, 10)     || 32;
-    const gain     = parseInt(document.getElementById('s4-bias-gain').value, 10);
-    const offset   = parseInt(document.getElementById('s4-bias-offset').value, 10);
+  function _calSharedParams() {
+    return {
+      camIdx : parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0,
+      gain   : parseInt(document.getElementById('s4-cal-gain').value,    10) || 100,
+      offset : parseInt(document.getElementById('s4-cal-offset').value,  10) || 0,
+    };
+  }
 
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spin"></span>Capturing…';
-    progress.textContent = '';
-    setStatus('s4-bias-status', '');
-
-    let jobId = null;
-    try {
-      const started = await apiPost('/api/calibration/bias', {
-        camera_index: camIdx, n_frames: nFrames, gain, offset,
-      });
-      jobId = started.job_id;
-    } catch (err) {
-      setStatus('s4-bias-status', `Failed to start: ${err}`, true);
-      btn.disabled = false;
-      btn.innerHTML = 'Prepare Bias';
-      return;
-    }
-
-    // Poll for progress
+  function _pollCalJob(jobId, btnId, progressId, statusId, label) {
+    const btn      = document.getElementById(btnId);
+    const progress = document.getElementById(progressId);
     const poll = setInterval(async () => {
       try {
         const s = await (await fetch(`/api/calibration/status/${jobId}`)).json();
-        if (s.n_frames > 0) {
-          progress.textContent = `${s.frames_done} / ${s.n_frames} frames`;
-        }
+        if (s.n_frames > 0) progress.textContent = `${s.frames_done} / ${s.n_frames}`;
         if (s.status === 'done') {
           clearInterval(poll);
           btn.disabled = false;
-          btn.innerHTML = 'Prepare Bias';
+          btn.innerHTML = label;
           progress.textContent = '';
-          const relPath = s.result_path || s.result_entry?.relative_path || '';
-          setStatus('s4-bias-status', `Master bias saved: ${relPath}`);
+          const path = s.result_path || s.result_entry?.relative_path || '';
+          const warn = s.warning ? ` — ${s.warning}` : '';
+          setStatus(statusId, `Master saved: ${path}${warn}`);
         } else if (s.status === 'failed') {
           clearInterval(poll);
           btn.disabled = false;
-          btn.innerHTML = 'Prepare Bias';
+          btn.innerHTML = label;
           progress.textContent = '';
-          setStatus('s4-bias-status', `Bias failed: ${s.error || 'unknown error'}`, true);
+          setStatus(statusId, `${label} failed: ${s.error || 'unknown error'}`, true);
         }
       } catch (_) {}
     }, 1000);
+  }
+
+  async function prepareBias() {
+    const btn = document.getElementById('s4-bias-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>…';
+    document.getElementById('s4-bias-progress').textContent = '';
+    setStatus('s4-bias-status', '');
+    const { camIdx, gain, offset } = _calSharedParams();
+    const nFrames = parseInt(document.getElementById('s4-bias-nframes').value, 10) || 32;
+    try {
+      const { job_id } = await apiPost('/api/calibration/bias',
+        { camera_index: camIdx, n_frames: nFrames, gain, offset });
+      _pollCalJob(job_id, 's4-bias-btn', 's4-bias-progress', 's4-bias-status', 'Prepare');
+    } catch (err) {
+      setStatus('s4-bias-status', `Failed to start: ${err}`, true);
+      btn.disabled = false;
+      btn.innerHTML = 'Prepare';
+    }
+  }
+
+  async function prepareDark() {
+    const btn = document.getElementById('s4-dark-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>…';
+    document.getElementById('s4-dark-progress').textContent = '';
+    setStatus('s4-dark-status', '');
+    const { camIdx, gain, offset } = _calSharedParams();
+    const nFrames   = parseInt(document.getElementById('s4-dark-nframes').value,  10) || 20;
+    const expS      = parseFloat(document.getElementById('s4-dark-exp').value) || 120.0;
+    const exposureMs = expS * 1000.0;
+    try {
+      const { job_id } = await apiPost('/api/calibration/dark',
+        { camera_index: camIdx, n_frames: nFrames, exposure_ms: exposureMs, gain, offset });
+      _pollCalJob(job_id, 's4-dark-btn', 's4-dark-progress', 's4-dark-status', 'Prepare');
+    } catch (err) {
+      setStatus('s4-dark-status', `Failed to start: ${err}`, true);
+      btn.disabled = false;
+      btn.innerHTML = 'Prepare';
+    }
   }
 
   /* ══════════════════════════════════════════════════════════════════════

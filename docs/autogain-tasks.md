@@ -137,16 +137,17 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 3 — Calibration master library
 
-### AGT-3-1 — Bias preparation
-- [ ] `domain/calibration_capture.py`: `prepare_bias(camera, n_frames, **meta)`
+### AGT-3-1 — Bias preparation ✅
+- [x] `domain/calibration_capture.py`: `prepare_bias(camera, n_frames, **meta)`
   — minimum exposure, configured gain/offset/conversion-gain, stacks N frames
   into master bias FITS, validates histogram is bias-compatible (FR-CAL-010).
-- [ ] `POST /api/calibration/bias` endpoint: starts async job, streams
+- [x] `POST /api/calibration/bias` endpoint: starts async job, streams
   progress via `GET /api/calibration/status`.
-- [ ] Stage 4 (Collimation) UI: add "Prepare Bias" button with progress
+- [x] Stage 4 (Collimation) UI: add "Prepare Bias" button with progress
   display and stored-path confirmation (FR-UI-001, FR-CAL-001).
-- [ ] Writes master FITS + updates `calibration_index.json` (FR-CAL-050).
-- [ ] Unit tests using replay camera.
+- [x] Writes master FITS + updates `calibration_index.json` (FR-CAL-050).
+- [x] Unit tests using replay camera.
+  24 new tests. Suite: 1315 passed, 87.35% coverage.
 
 *Covers:* FR-CAL-001, FR-CAL-010, FR-CAL-050, FR-STORE-005  
 *Depends:* AGT-1-2, AGT-0-3

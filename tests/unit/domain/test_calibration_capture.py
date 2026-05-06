@@ -1,4 +1,4 @@
-"""Unit tests for domain/calibration_capture.py (AGT-3-1)."""
+"""Unit tests for domain/calibration_capture.py (AGT-3-1, AGT-3-2)."""
 from __future__ import annotations
 
 import io
@@ -11,7 +11,9 @@ from astropy.io import fits
 from smart_telescope.adapters.replay.camera import ReplayCamera
 from smart_telescope.domain.calibration_capture import (
     BiasValidationError,
+    DarkValidationError,
     prepare_bias,
+    prepare_dark,
 )
 from smart_telescope.domain.calibration_store import CalibrationIndex
 
@@ -164,3 +166,102 @@ class TestPrepareBiasValidation:
         idx = CalibrationIndex(tmp_path)
         with pytest.raises(ValueError):
             prepare_bias(cam, 0, tmp_path, idx)
+
+
+# ── prepare_dark — happy path ─────────────────────────────────────────────────
+
+
+class TestPrepareDarkSuccess:
+    def test_returns_entry_and_none_warning(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path, value=150)
+        idx = CalibrationIndex(tmp_path)
+        entry, warn = prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+        assert entry.cal_type == "dark"
+        assert warn is None
+
+    def test_master_fits_file_created(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        entry, _ = prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+        assert (tmp_path / entry.relative_path).exists()
+
+    def test_entry_added_to_index(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        entry, _ = prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+        assert len(idx.entries("dark")) == 1
+        assert idx.entries("dark")[0].relative_path == entry.relative_path
+
+    def test_exposure_ms_recorded_in_entry(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        entry, _ = prepare_dark(cam, 5000.0, 3, tmp_path, idx)
+        assert entry.exposure_ms == pytest.approx(5000.0, abs=1.0)
+
+    def test_gain_param_applied(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        entry, _ = prepare_dark(cam, 2000.0, 3, tmp_path, idx, gain=400)
+        assert entry.gain == 400
+
+    def test_master_fits_has_caltype_dark(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        entry, _ = prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+        dest = tmp_path / entry.relative_path
+        with fits.open(str(dest)) as hdul:
+            assert hdul[0].header.get("CALTYPE") == "DARK"
+
+    def test_progress_callback_called(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path, n_fits=4)
+        idx = CalibrationIndex(tmp_path)
+        calls: list[tuple[int, int]] = []
+        prepare_dark(cam, 2000.0, 4, tmp_path, idx, progress=lambda d, t: calls.append((d, t)))
+        assert len(calls) == 4
+        assert calls[-1] == (4, 4)
+
+    def test_index_persists_after_save(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        entry, _ = prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+        idx.save()
+        reloaded = CalibrationIndex.load(tmp_path)
+        assert len(reloaded.entries("dark")) == 1
+        assert reloaded.entries("dark")[0].relative_path == entry.relative_path
+
+
+# ── prepare_dark — validation failures ───────────────────────────────────────
+
+
+class TestPrepareDarkValidation:
+    def test_raises_when_pixels_zero(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path, value=0)
+        idx = CalibrationIndex(tmp_path)
+        with pytest.raises(DarkValidationError):
+            prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+
+    def test_raises_when_saturated(self, tmp_path: Path) -> None:
+        """Saturated dark (all pixels at max) must fail validation."""
+        cam = _make_camera(tmp_path, value=65535)
+        idx = CalibrationIndex(tmp_path)
+        with pytest.raises(DarkValidationError, match="saturated"):
+            prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+
+    def test_no_entry_on_validation_failure(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path, value=0)
+        idx = CalibrationIndex(tmp_path)
+        with pytest.raises(DarkValidationError):
+            prepare_dark(cam, 2000.0, 3, tmp_path, idx)
+        assert len(idx.entries("dark")) == 0
+
+    def test_raises_on_invalid_n_frames(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        with pytest.raises(ValueError):
+            prepare_dark(cam, 2000.0, 0, tmp_path, idx)
+
+    def test_raises_on_zero_exposure(self, tmp_path: Path) -> None:
+        cam = _make_camera(tmp_path)
+        idx = CalibrationIndex(tmp_path)
+        with pytest.raises(ValueError):
+            prepare_dark(cam, 0.0, 3, tmp_path, idx)

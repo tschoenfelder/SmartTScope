@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from .api.bahtinov import router as bahtinov_router
+from .api.histogram import router as histogram_router
 from .api.cameras import router as cameras_router
 from .api.catalog import router as catalog_router
 from .api.emergency import router as emergency_router
@@ -22,6 +23,7 @@ _STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="SmartTelescope", version="0.1.0")
 app.include_router(bahtinov_router)
+app.include_router(histogram_router)
 app.include_router(cameras_router)
 app.include_router(catalog_router)
 app.include_router(emergency_router)

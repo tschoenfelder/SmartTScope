@@ -97,8 +97,8 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 2 — Histogram and frame statistics
 
-### AGT-2-1 — HistogramAnalyzer domain service and REST endpoint
-- [ ] `domain/histogram.py`:
+### AGT-2-1 — HistogramAnalyzer domain service and REST endpoint ✅
+- [x] `domain/histogram.py`:
   - `HistogramStats` dataclass: `p50`, `p95`, `p99`, `p99_5`, `p99_9`,
     `mean_frac`, `saturation_pct`, `zero_clipped_pct`, `black_level`,
     `effective_bit_depth`, `adc_max`.
@@ -106,9 +106,10 @@ Implementation phases follow section 16 of that document.
     bit-depth (FR-AG-060), compute all percentiles, saturation and
     zero-clipped pixel counts.
   - `histogram_bins(pixels, bit_depth, n_bins=512) → (counts, edges)`.
-- [ ] `POST /api/histogram/analyze` — accepts camera_index + exposure + gain,
+- [x] `POST /api/histogram/analyze` — accepts camera_index + exposure + gain,
   captures one frame, returns `HistogramStats` + bin data as JSON.
-- [ ] Unit tests: 8-bit, 12-bit-in-16, uniform / saturated / dark frames.
+- [x] Unit tests: 8-bit, 12-bit-in-16, uniform / saturated / dark frames.
+  38 tests, all green. Suite: 1266 passed, 87.03% coverage.
 
 *Covers:* FR-AG-050, FR-AG-060, FR-AG-070  
 *Depends:* AGT-0-1
@@ -441,7 +442,7 @@ Implementation phases follow section 16 of that document.
 |---|---:|---:|
 | 0 — Foundation | 3 | 3 |
 | 1 — Storage | 2 | 2 |
-| 2 — Histogram | 2 | 0 |
+| 2 — Histogram | 2 | 1 |
 | 3 — Calibration masters | 4 | 0 |
 | 4 — Cooling | 2 | 0 |
 | 5 — Auto Gain MVP | 4 | 0 |

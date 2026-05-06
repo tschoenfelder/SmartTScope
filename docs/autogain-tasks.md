@@ -183,15 +183,16 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-3-4 — Calibration matching service and mismatch warnings
-- [ ] Implement `find_best_match()` properly (AGT-1-2 stub → production):
+### AGT-3-4 — Calibration matching service and mismatch warnings ✅
+- [x] Implement `find_best_match()` properly (AGT-1-2 stub → production):
   bias, dark, flat criteria tables from §FR-CAL-060.
-- [ ] `GET /api/calibration/match` — returns best match per type or
-  `MismatchDetail`; used by recording start and live stacking.
-- [ ] UI: calibration match summary in Stage 3 (recording setup) and Stage 5
-  (sky shot / stack); red/yellow/green badge; show mismatch reason and
-  "Use anyway?" option (FR-CAL-070).
-- [ ] Unit tests: exact match, temperature mismatch, missing master.
+- [x] `GET /api/calibration/match` — returns MATCHED/PARTIAL/NOT_FOUND per
+  type; `CalibrationMatchResult` + `CalibrationMatchResponse` Pydantic models.
+- [x] UI: calibration match summary in Stage 4 (calibration card) and Stage 5
+  (session setup); green/yellow/red badges; shows mismatch fields with "Use anyway?" hint.
+- [x] Unit tests: exact match, partial mismatch, temperature tolerance (±5 °C),
+  missing master, 503 when IMAGE_ROOT not configured.
+  10 new tests. Suite: 1367 passed, 87.46% coverage.
 
 *Covers:* FR-CAL-060, FR-CAL-070, FR-CAL-080 (precursor)  
 *Depends:* AGT-3-1, AGT-3-2, AGT-3-3
@@ -447,7 +448,7 @@ Implementation phases follow section 16 of that document.
 | 0 — Foundation | 3 | 3 |
 | 1 — Storage | 2 | 2 |
 | 2 — Histogram | 2 | 2 |
-| 3 — Calibration masters | 4 | 0 |
+| 3 — Calibration masters | 4 | 4 |
 | 4 — Cooling | 2 | 0 |
 | 5 — Auto Gain MVP | 4 | 0 |
 | 6 — Live stacking calibration | 2 | 0 |
@@ -456,8 +457,8 @@ Implementation phases follow section 16 of that document.
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **0** |
+| **Total** | **26** | **13** |
 
 ---
 
-*Last updated: 2026-05-06*
+*Last updated: 2026-05-07*

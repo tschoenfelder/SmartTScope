@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from smart_telescope.api import deps
 from smart_telescope.app import app
 
 client = TestClient(app)
@@ -193,6 +194,106 @@ class TestCameraFlags:
         assert cam["usb3"] is True
         assert cam["has_raw16"] is True
         assert cam["has_fan"] is False
+
+
+# ── display_label and sdk_index ───────────────────────────────────────────────
+
+
+class TestDisplayLabel:
+    def _get_cameras(self, devices: list[SimpleNamespace]) -> list[dict]:  # type: ignore[type-arg]
+        tc = _make_toupcam_mock(devices)
+        with patch.dict(sys.modules, {"toupcam": tc}):
+            return client.get("/api/cameras").json()["cameras"]
+
+    def test_single_camera_label_is_model_name(self) -> None:
+        dev = _make_device(model=_make_model(name="ATR585M"))
+        cams = self._get_cameras([dev])
+        assert cams[0]["display_label"] == "ATR585M"
+
+    def test_single_camera_sdk_index_is_zero(self) -> None:
+        cams = self._get_cameras([_make_device()])
+        assert cams[0]["sdk_index"] == 0
+
+    def test_two_different_models_no_suffix(self) -> None:
+        devs = [
+            _make_device(model=_make_model(name="ATR585M")),
+            _make_device(model=_make_model(name="G3M678M")),
+        ]
+        cams = self._get_cameras(devs)
+        assert cams[0]["display_label"] == "ATR585M"
+        assert cams[1]["display_label"] == "G3M678M"
+
+    def test_duplicate_models_get_numbered_suffix(self) -> None:
+        devs = [
+            _make_device(model=_make_model(name="G3M678M")),
+            _make_device(model=_make_model(name="G3M678M")),
+        ]
+        cams = self._get_cameras(devs)
+        assert cams[0]["display_label"] == "G3M678M (1)"
+        assert cams[1]["display_label"] == "G3M678M (2)"
+
+    def test_sdk_index_matches_enumeration_order(self) -> None:
+        devs = [_make_device("A"), _make_device("B"), _make_device("C")]
+        cams = self._get_cameras(devs)
+        assert [c["sdk_index"] for c in cams] == [0, 1, 2]
+
+    def test_mixed_models_only_duplicates_get_suffix(self) -> None:
+        devs = [
+            _make_device(model=_make_model(name="ATR585M")),
+            _make_device(model=_make_model(name="G3M678M")),
+            _make_device(model=_make_model(name="G3M678M")),
+        ]
+        cams = self._get_cameras(devs)
+        assert cams[0]["display_label"] == "ATR585M"
+        assert cams[1]["display_label"] == "G3M678M (1)"
+        assert cams[2]["display_label"] == "G3M678M (2)"
+
+
+# ── /api/cameras/{index}/capabilities ─────────────────────────────────────────
+
+
+class TestCameraCapabilities:
+    @pytest.fixture(autouse=True)
+    def _reset(self) -> None:
+        deps.reset()
+        yield
+        deps.reset()
+
+    def test_returns_200_with_mock_camera(self) -> None:
+        resp = client.get("/api/cameras/0/capabilities")
+        assert resp.status_code == 200
+
+    def test_response_has_gain_range(self) -> None:
+        data = client.get("/api/cameras/0/capabilities").json()
+        assert "min_gain" in data
+        assert "max_gain" in data
+        assert data["min_gain"] <= data["max_gain"]
+
+    def test_response_has_exposure_range_in_seconds(self) -> None:
+        data = client.get("/api/cameras/0/capabilities").json()
+        assert "min_exposure_s" in data
+        assert "max_exposure_s" in data
+        assert data["max_exposure_s"] > data["min_exposure_s"]
+
+    def test_response_has_sensor_info(self) -> None:
+        data = client.get("/api/cameras/0/capabilities").json()
+        assert data["sensor_width_px"] > 0
+        assert data["sensor_height_px"] > 0
+        assert data["bit_depth"] in (8, 12, 14, 16)
+
+    def test_index_out_of_range_returns_422(self) -> None:
+        resp = client.get("/api/cameras/8/capabilities")
+        assert resp.status_code == 422
+
+    def test_mock_camera_gain_range(self) -> None:
+        data = client.get("/api/cameras/0/capabilities").json()
+        assert data["min_gain"] == 100
+        assert data["max_gain"] == 3200
+
+    def test_mock_camera_max_exposure_is_60s(self) -> None:
+        data = client.get("/api/cameras/0/capabilities").json()
+        # MockCamera max_exposure_ms = 60_000 ms = 60 s
+        assert data["max_exposure_s"] == pytest.approx(60.0)
 
 
 # ── UI and health ──────────────────────────────────────────────────────────────

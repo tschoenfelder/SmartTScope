@@ -793,7 +793,8 @@
         <input type="number" id="pa-gain" value="100" min="100" max="3200" step="100"
                style="width:5ch">
         <label style="margin-left:0.5rem">Cam</label>
-        <select id="pa-cam-select" style="font-size:0.8rem;max-width:11ch"></select>
+        <select id="pa-cam-select" style="font-size:0.8rem;max-width:16ch"
+                onchange="onPaCamChange(parseInt(this.value,10))"></select>
         <label style="margin-left:0.5rem">Target</label>
         <select id="pa-precision" style="font-size:0.8rem">
           <option value="30">Rough visual (30′)</option>
@@ -988,10 +989,11 @@
 
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
             <label>Cam</label>
-            <select id="preview-cam-select" style="font-size:0.8rem;max-width:11ch"
-                    title="Preview camera"></select>
+            <select id="preview-cam-select" style="font-size:0.8rem;max-width:16ch"
+                    title="Preview camera"
+                    onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
-            <input type="number" id="preview-exposure" value="2" min="0.1" max="60" step="0.5"
+            <input type="number" id="preview-exposure" value="2" min="0.001" max="60" step="any"
                    style="width:4ch">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
@@ -2540,35 +2542,94 @@
         return;
       }
       sel.innerHTML = scan.cameras.map((c, i) => {
-        const label = c.display_name
-          ? `${escHtml(c.display_name)} (${escHtml(c.model_name)}) #${i}`
-          : `Cam ${i} — ${escHtml(c.model_name)}`;
-        return `<option value="${i}">${label}</option>`;
+        const label = c.display_label || c.model_name || `Cam ${i}`;
+        return `<option value="${i}">${escHtml(label)}</option>`;
       }).join('');
       _focusCamIdx = +sel.value;
     } catch (_) {}
   }
 
+  /* Shared helper: populate any <select> with the camera list from /api/cameras.
+     Returns the populated select element (or null) so callers can read .value. */
   async function _loadSelectFromCameras(selId) {
     const sel = document.getElementById(selId);
-    if (!sel) return;
+    if (!sel) return null;
     try {
       const scan = await (await fetch('/api/cameras')).json();
       if (!scan.sdk_available || scan.cameras.length === 0) {
         sel.innerHTML = '<option value="0">Cam 0</option>';
-        return;
+        return sel;
       }
       sel.innerHTML = scan.cameras.map((c, i) => {
-        const label = c.display_name ? `${escHtml(c.display_name)} #${i}` : `Cam ${i}`;
-        return `<option value="${i}">${label}</option>`;
+        const label = c.display_label || c.model_name || `Cam ${i}`;
+        return `<option value="${i}">${escHtml(label)}</option>`;
       }).join('');
     } catch (_) {
       sel.innerHTML = '<option value="0">Cam 0</option>';
     }
+    return sel;
+  }
+
+  /* Adaptive exposure formatter: avoids pointless trailing zeros */
+  function fmtExp(s) {
+    if (s >= 100)      return String(Math.round(s));
+    if (s >= 10)       return parseFloat(s.toFixed(1)).toString();
+    if (s >= 1)        return parseFloat(s.toFixed(2)).toString();
+    if (s >= 0.1)      return parseFloat(s.toFixed(3)).toString();
+    return parseFloat(s.toFixed(4)).toString();
+  }
+
+  /* Update Live Preview controls from camera capabilities */
+  async function onPreviewCamChange(idx) {
+    try {
+      const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
+      const expIn  = document.getElementById('preview-exposure');
+      const gainIn = document.getElementById('preview-gain');
+      if (expIn) {
+        expIn.min  = fmtExp(caps.min_exposure_s);
+        expIn.max  = fmtExp(caps.max_exposure_s);
+        expIn.step = 'any';
+        const cur  = parseFloat(expIn.value) || 2.0;
+        if (cur < caps.min_exposure_s) expIn.value = fmtExp(caps.min_exposure_s);
+        if (cur > caps.max_exposure_s) expIn.value = fmtExp(caps.max_exposure_s);
+      }
+      if (gainIn) {
+        gainIn.min = caps.min_gain;
+        gainIn.max = caps.max_gain;
+        const curG = parseInt(gainIn.value, 10) || caps.min_gain;
+        if (curG < caps.min_gain) gainIn.value = caps.min_gain;
+        if (curG > caps.max_gain) gainIn.value = caps.max_gain;
+      }
+    } catch (_) { /* camera not reachable yet — keep current values */ }
+  }
+
+  /* Update Polar Alignment controls from camera capabilities */
+  async function onPaCamChange(idx) {
+    try {
+      const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
+      const expIn  = document.getElementById('pa-exposure');
+      const gainIn = document.getElementById('pa-gain');
+      if (expIn) {
+        expIn.min  = fmtExp(caps.min_exposure_s);
+        expIn.max  = fmtExp(caps.max_exposure_s);
+        expIn.step = 'any';
+        const cur  = parseFloat(expIn.value) || 5.0;
+        if (cur < caps.min_exposure_s) expIn.value = fmtExp(caps.min_exposure_s);
+        if (cur > caps.max_exposure_s) expIn.value = fmtExp(caps.max_exposure_s);
+      }
+      if (gainIn) {
+        gainIn.min = caps.min_gain;
+        gainIn.max = caps.max_gain;
+        const curG = parseInt(gainIn.value, 10) || caps.min_gain;
+        if (curG < caps.min_gain) gainIn.value = caps.min_gain;
+        if (curG > caps.max_gain) gainIn.value = caps.max_gain;
+      }
+    } catch (_) {}
   }
 
   async function loadPreviewCameras() {
-    await _loadSelectFromCameras('preview-cam-select');
+    const sel = await _loadSelectFromCameras('preview-cam-select');
+    if (sel) onPreviewCamChange(parseInt(sel.value, 10) || 0);
   }
 
   async function refreshFocuser() {
@@ -3631,7 +3692,9 @@
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
   loadPreviewCameras();
-  _loadSelectFromCameras('pa-cam-select');
+  _loadSelectFromCameras('pa-cam-select').then(sel => {
+    if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
+  });
   loadStars();
   updateElevationLabel();
   // restore polar alignment state from server (in case page was reloaded mid-session)

@@ -59,15 +59,36 @@ async def ws_preview(
     except Exception as exc:
         _log.warning("Preview: set_gain(%d) failed on camera_index=%d: %s", cur_gain, camera_index, exc)
 
-    # STS-ADDON-005: log camera identity and settings so server log shows real vs mock
+    # Read back effective gain (camera may clamp the requested value)
+    eff_gain = cur_gain
+    try:
+        eff_gain = camera.get_gain()
+    except Exception:
+        pass
+
+    # Set and read back effective exposure so the log matches what the camera will use
+    try:
+        camera.set_exposure_ms(cur_exposure * 1000.0)
+    except Exception:
+        pass
+    eff_exposure_s = cur_exposure
+    try:
+        eff_exposure_s = camera.get_exposure_ms() / 1000.0
+    except Exception:
+        pass
+
+    # STS-ADDON-005: log camera identity and all effective settings
     _log.info(
         "Preview started: camera=%s camera_index=%d adapter=%s "
-        "requested_exposure_s=%.3f requested_gain=%d",
+        "requested_exposure_s=%.3f effective_exposure_s=%.3f "
+        "requested_gain=%d effective_gain=%d",
         getattr(camera, "get_logical_name", lambda: "unknown")(),
         camera_index,
         type(camera).__name__,
         cur_exposure,
+        eff_exposure_s,
         cur_gain,
+        eff_gain,
     )
 
     try:
@@ -75,7 +96,7 @@ async def ws_preview(
             # --- capture frame ---
             try:
                 frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)
-            except RuntimeError as exc:
+            except Exception as exc:
                 _log.error(
                     "Preview: capture failed on camera_index=%d adapter=%s: %s",
                     camera_index, type(camera).__name__, exc,

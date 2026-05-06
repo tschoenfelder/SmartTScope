@@ -1000,11 +1000,11 @@
                     onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
             <input type="number" id="preview-exposure" value="2" min="0.001" max="60" step="any"
-                   style="width:4ch">
+                   style="width:4ch" onchange="previewReconnectIfRunning()">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
-                   style="width:5ch">
+                   style="width:5ch" onchange="previewReconnectIfRunning()">
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-autogain-chk" style="width:auto"
                      title="Auto-adjust exposure (≤4 s) and gain (near min) for display">AG
@@ -1119,6 +1119,33 @@
         <!-- Focuser -->
         <div id="s4-focuser-status" class="status-line" style="margin-top:1rem;margin-bottom:0.25rem"></div>
         <div id="s4-focuser-card"></div>
+
+        <!-- Calibration: Bias -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Calibration
+          </div>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.6rem">
+            Cover the camera or scope cap before capturing bias frames.
+          </p>
+          <div class="controls" style="flex-wrap:wrap;gap:0.4rem 0.6rem">
+            <label>Frames</label>
+            <input type="number" id="s4-bias-nframes" value="32" min="1" max="200"
+                   style="width:5ch" title="16 minimum, 32 recommended">
+            <label style="margin-left:0.4rem">Gain</label>
+            <input type="number" id="s4-bias-gain" value="100" min="0" max="5000"
+                   style="width:6ch" title="Leave blank to use camera current gain">
+            <label>Offset</label>
+            <input type="number" id="s4-bias-offset" value="0" min="0" max="255"
+                   style="width:5ch">
+          </div>
+          <div style="margin-top:0.6rem;display:flex;gap:0.5rem;align-items:center">
+            <button id="s4-bias-btn" onclick="prepareBias()">Prepare Bias</button>
+            <span id="s4-bias-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="s4-bias-status" class="status-line" style="margin-top:0.4rem;min-height:auto"></div>
+        </div>
       </div>
 
       <!-- ── Right: Large preview ── -->
@@ -2278,6 +2305,57 @@
     goToStage(5);
   }
 
+  async function prepareBias() {
+    const btn      = document.getElementById('s4-bias-btn');
+    const progress = document.getElementById('s4-bias-progress');
+    const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const nFrames  = parseInt(document.getElementById('s4-bias-nframes').value, 10)     || 32;
+    const gain     = parseInt(document.getElementById('s4-bias-gain').value, 10);
+    const offset   = parseInt(document.getElementById('s4-bias-offset').value, 10);
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>Capturing…';
+    progress.textContent = '';
+    setStatus('s4-bias-status', '');
+
+    let jobId = null;
+    try {
+      const started = await apiPost('/api/calibration/bias', {
+        camera_index: camIdx, n_frames: nFrames, gain, offset,
+      });
+      jobId = started.job_id;
+    } catch (err) {
+      setStatus('s4-bias-status', `Failed to start: ${err}`, true);
+      btn.disabled = false;
+      btn.innerHTML = 'Prepare Bias';
+      return;
+    }
+
+    // Poll for progress
+    const poll = setInterval(async () => {
+      try {
+        const s = await (await fetch(`/api/calibration/status/${jobId}`)).json();
+        if (s.n_frames > 0) {
+          progress.textContent = `${s.frames_done} / ${s.n_frames} frames`;
+        }
+        if (s.status === 'done') {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.innerHTML = 'Prepare Bias';
+          progress.textContent = '';
+          const relPath = s.result_path || s.result_entry?.relative_path || '';
+          setStatus('s4-bias-status', `Master bias saved: ${relPath}`);
+        } else if (s.status === 'failed') {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.innerHTML = 'Prepare Bias';
+          progress.textContent = '';
+          setStatus('s4-bias-status', `Bias failed: ${s.error || 'unknown error'}`, true);
+        }
+      } catch (_) {}
+    }, 1000);
+  }
+
   /* ══════════════════════════════════════════════════════════════════════
      Custom Targets — Stage 3
   ══════════════════════════════════════════════════════════════════════ */
@@ -3027,6 +3105,10 @@
     _connectWs();
   }
 
+  function previewReconnectIfRunning() {
+    if (_ws) _connectWs();
+  }
+
   function previewStop() {
     _reconnect = false;
     clearTimeout(_reconnectTimer);
@@ -3062,19 +3144,20 @@
 
     _ws.onmessage = (ev) => {
       if (typeof ev.data === 'string') {
-        // Could be a histogram JSON or a camera error string
-        try {
-          const msg = JSON.parse(ev.data);
-          if (msg.type === 'histogram') {
-            if (document.getElementById('preview-hist-chk')?.checked) {
-              const panel = document.getElementById('s3-hist-panel');
-              if (panel && panel.style.display !== 'none') {
+        let msg = null;
+        try { msg = JSON.parse(ev.data); } catch (_) {}
+        if (msg?.type === 'histogram') {
+          if (document.getElementById('preview-hist-chk')?.checked) {
+            const panel = document.getElementById('s3-hist-panel');
+            if (panel && panel.style.display !== 'none') {
+              try {
                 showHistogram('s3-histogram', 's3-hist-stats', msg.stats, msg.bin_counts, msg.bin_edges);
-              }
+              } catch (_) {}
             }
-            return;
           }
-        } catch (_) {}
+          return;
+        }
+        // non-histogram text = camera error
         setStatus('s3-status', `Camera: ${ev.data}`, true);
         return;
       }
@@ -3605,6 +3688,7 @@
     _skyshotWs = new WebSocket(`${proto}://${location.host}/ws/preview?exposure=${exposure}`);
     _skyshotWs.binaryType = 'blob';
     _skyshotWs.onmessage = (ev) => {
+      if (typeof ev.data === 'string') return; // skip histogram JSON
       const img = document.getElementById('skyshot-img');
       const ph  = document.getElementById('skyshot-placeholder');
       if (img.src?.startsWith('blob:')) URL.revokeObjectURL(img.src);

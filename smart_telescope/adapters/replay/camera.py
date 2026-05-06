@@ -38,6 +38,10 @@ class ReplayCamera(CameraPort):
             raise ValueError("ReplayCamera requires at least one FITS path")
         self._paths = [Path(p) for p in fits_paths]
         self._index = 0
+        self._exposure_ms: float = 2000.0
+        self._gain: int = 100
+        self._black_level: int = 0
+        self._conversion_gain: ConversionGain = ConversionGain.LCG
 
     @classmethod
     def from_directory(cls, dir_path: str | Path) -> "ReplayCamera":
@@ -52,10 +56,6 @@ class ReplayCamera(CameraPort):
         if not paths:
             raise ValueError(f"ReplayCamera.from_directory: no FITS files in {d}")
         return cls([str(p) for p in paths])
-        self._exposure_ms: float = 2000.0
-        self._gain: int = 100
-        self._black_level: int = 0
-        self._conversion_gain: ConversionGain = ConversionGain.LCG
 
     def connect(self) -> bool:
         missing = [p for p in self._paths if not p.exists()]

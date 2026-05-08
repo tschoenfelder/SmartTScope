@@ -125,7 +125,7 @@ class TestWsPreviewParams:
                 preview_client.websocket_connect("/ws/preview?exposure=-1") as ws:
             ws.receive_bytes()
 
-    def test_exposure_above_60_rejected(self, preview_client: TestClient) -> None:
+    def test_exposure_above_3600_rejected(self, preview_client: TestClient) -> None:
         with pytest.raises(WebSocketDisconnect), \
-                preview_client.websocket_connect("/ws/preview?exposure=61") as ws:
+                preview_client.websocket_connect("/ws/preview?exposure=3601") as ws:
             ws.receive_bytes()

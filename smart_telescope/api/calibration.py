@@ -311,7 +311,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
         )
 
 
-# ── Calibration match endpoint ────────────────────────────────────────────────
+# ── Calibration match endpoint (FR-CAL-060, FR-CAL-070) ──────────────────────
 
 
 class CalibrationMatchResult(BaseModel):

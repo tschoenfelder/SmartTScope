@@ -213,8 +213,8 @@ def find_best_match(
             if expected is not None and actual != expected:
                 mismatches.append(MismatchDetail(field=f, expected=expected, actual=actual))
 
-        # Temperature tolerance (±5 °C) for dark frames
-        if cal_type == "dark":
+        # Temperature tolerance (±5 °C) for cooled-camera frames (FR-CAL-060)
+        if cal_type in ("bias", "dark"):
             exp_temp = criteria.get("temperature_c")
             if exp_temp is not None and entry.temperature_c is not None:
                 if abs(entry.temperature_c - exp_temp) > 5.0:

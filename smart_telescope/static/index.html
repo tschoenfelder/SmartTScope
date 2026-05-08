@@ -2474,6 +2474,7 @@
      Calibration match check (FR-CAL-060 / FR-CAL-070)
   ══════════════════════════════════════════════════════════════════════ */
   function _calMatchBadge(type, result) {
+    if (!result) return '';   // not requested (e.g. dark badge when no exposure_ms)
     const colors = { MATCHED: 'var(--success)', PARTIAL: 'var(--warning)', NOT_FOUND: 'var(--danger)' };
     const labels = { MATCHED: '✓', PARTIAL: '~', NOT_FOUND: '✗' };
     const color = colors[result.status] || 'var(--muted)';
@@ -2545,13 +2546,16 @@
     const detailEl = document.getElementById('s5-cal-detail');
     if (!badgesEl) return;
 
+    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
     const gain   = parseInt(document.getElementById('s4-cal-gain')?.value,  10) || 100;
     const offset = parseInt(document.getElementById('s4-cal-offset')?.value, 10) || 0;
-    const expS   = parseFloat(document.getElementById('s4-dark-exp')?.value) || 120.0;
-    const train  = (document.getElementById('s4-flat-train')?.value || '').trim() || null;
+    // Use the session exposure (science frame) for dark matching
+    const expS   = parseFloat(document.getElementById('s5-exposure')?.value) || 30.0;
+    // Use the session optical train profile for flat matching
+    const train  = (document.getElementById('s5-profile')?.value || '').trim() || null;
     const filter = (document.getElementById('s4-flat-filter')?.value || 'none').trim() || null;
 
-    const params = new URLSearchParams({ gain, offset });
+    const params = new URLSearchParams({ gain, offset, camera_index: camIdx });
     if (expS)   params.set('exposure_ms', String(expS * 1000));
     if (train)  params.set('optical_train', train);
     if (filter) params.set('filter_id', filter);

@@ -278,3 +278,16 @@ class TestFindBestMatch:
         assert entry is not None
         assert entry.gain == 300   # fewer mismatches
         assert len(mismatches) == 1
+
+    def test_bias_temperature_within_tolerance_no_mismatch(self, tmp_path: Path) -> None:
+        idx = self._index_with_bias(tmp_path, temperature_c=-8.0)
+        criteria = dict(self._criteria, temperature_c=-10.0)
+        entry, mismatches = find_best_match(idx, "bias", criteria)
+        assert entry is not None
+        assert not any(m.field == "temperature_c" for m in mismatches)
+
+    def test_bias_temperature_outside_tolerance_mismatch(self, tmp_path: Path) -> None:
+        idx = self._index_with_bias(tmp_path, temperature_c=5.0)
+        criteria = dict(self._criteria, temperature_c=-10.0)
+        entry, mismatches = find_best_match(idx, "bias", criteria)
+        assert any(m.field == "temperature_c" for m in mismatches)

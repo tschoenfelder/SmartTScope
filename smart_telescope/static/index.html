@@ -259,6 +259,15 @@
       outline: none;
     }
     input[type="number"]:focus, input[type="text"]:focus { border-color: var(--accent); }
+    /* Compact preview inputs — suppress spinner arrows so the full ch width is text space;
+       keyboard arrows and direct typing remain fully functional. */
+    #preview-exposure::-webkit-inner-spin-button,
+    #preview-exposure::-webkit-outer-spin-button,
+    #preview-gain::-webkit-inner-spin-button,
+    #preview-gain::-webkit-outer-spin-button,
+    #preview-offset::-webkit-inner-spin-button,
+    #preview-offset::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    #preview-exposure, #preview-gain, #preview-offset { -moz-appearance: textfield; }
     label { font-size: 0.8rem; color: var(--muted); }
 
     /* ── stage nav row ── */
@@ -1000,14 +1009,14 @@
                     onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
             <input type="number" id="preview-exposure" value="2" min="0.0001" max="1000" step="any"
-                   style="width:7ch" onchange="previewReconnectIfRunning()">
+                   style="width:10ch" onchange="previewReconnectIfRunning()">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="preview-gain" value="100" min="100" max="15000" step="100"
-                   style="width:6ch" onchange="previewReconnectIfRunning()">
+                   style="width:8ch" onchange="previewReconnectIfRunning()">
             <label style="margin-left:0.4rem">Off</label>
             <input type="number" id="preview-offset" value="0" min="0" max="10000" step="1"
-                   style="width:6ch" title="Camera black level / offset (0–10000)"
+                   style="width:8ch" title="Camera black level / offset (0–10000)"
                    onchange="previewReconnectIfRunning()">
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-stretch-chk" style="width:auto" checked
@@ -2970,8 +2979,8 @@
     const cur = parseFloat(el.value) || 1.0;
     const step  = cur <= 1 ? 0.1 : 1.0;
     const delta = ev.key === 'ArrowUp' ? step : -step;
-    const minV  = parseFloat(el.min) || 0.001;
-    const maxV  = parseFloat(el.max) || 3600;
+    const minV  = parseFloat(el.min) || 0.0001;
+    const maxV  = parseFloat(el.max) || 1000;
     el.value = fmtExp(Math.max(minV, Math.min(maxV, cur + delta)));
     el.dispatchEvent(new Event('change'));
   }

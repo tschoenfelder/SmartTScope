@@ -1000,11 +1000,15 @@
                     onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
             <input type="number" id="preview-exposure" value="2" min="0.001" max="3600" step="any"
-                   style="width:4ch" onchange="previewReconnectIfRunning()">
+                   style="width:6ch" onchange="previewReconnectIfRunning()">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
-                   style="width:5ch" onchange="previewReconnectIfRunning()">
+                   style="width:6ch" onchange="previewReconnectIfRunning()">
+            <label style="margin-left:0.4rem">Off</label>
+            <input type="number" id="preview-offset" value="0" min="0" max="255" step="1"
+                   style="width:5ch" title="Camera black level / offset (0–255)"
+                   onchange="previewReconnectIfRunning()">
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-autogain-chk" style="width:auto"
                      title="Auto-adjust exposure (≤4 s) and gain (near min) for display">AG
@@ -1026,19 +1030,19 @@
             <div id="s3-hist-stats" class="hist-stats"></div>
           </div>
 
-          <div id="s3-focus-row" style="display:flex;align-items:center;gap:0.3rem;margin-top:0.6rem">
+          <div id="s3-focus-row" style="display:none;align-items:center;gap:0.3rem;margin-top:0.6rem">
             <span style="font-size:0.78rem;color:var(--muted);margin-right:0.2rem">Focus</span>
-            <button class="s3-nudge-btn secondary" onclick="previewNudge(-20)" disabled
+            <button class="secondary" onclick="previewNudge(-20)"
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">−20</button>
-            <button class="s3-nudge-btn secondary" onclick="previewNudge(-2)" disabled
+            <button class="secondary" onclick="previewNudge(-2)"
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">−2</button>
-            <button class="s3-nudge-btn secondary" onclick="previewNudge(-1)" disabled
+            <button class="secondary" onclick="previewNudge(-1)"
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">−1</button>
-            <button class="s3-nudge-btn secondary" onclick="previewNudge(1)" disabled
+            <button class="secondary" onclick="previewNudge(1)"
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">+1</button>
-            <button class="s3-nudge-btn secondary" onclick="previewNudge(2)" disabled
+            <button class="secondary" onclick="previewNudge(2)"
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">+2</button>
-            <button class="s3-nudge-btn secondary" onclick="previewNudge(20)" disabled
+            <button class="secondary" onclick="previewNudge(20)"
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">+20</button>
             <span id="s3-focus-pos" style="font-size:0.78rem;color:var(--muted);margin-left:0.4rem"></span>
           </div>
@@ -1533,7 +1537,8 @@
         afBtn.disabled = !_focuserOk;
         afBtn.title = _focuserOk ? 'Autofocus with preview camera' : 'Focuser not connected';
       }
-      document.querySelectorAll('.s3-nudge-btn').forEach(b => b.disabled = !_focuserOk);
+      const focusRow = document.getElementById('s3-focus-row');
+      if (focusRow) focusRow.style.display = _focuserOk ? 'flex' : 'none';
     } catch (_) {}
   }
 
@@ -3066,10 +3071,9 @@
 
   async function previewNudge(delta) {
     try {
-      await apiPost('/api/focuser/nudge', { delta });
-      const data = await (await fetch('/api/focuser/status')).json();
+      const result = await apiPost('/api/focuser/nudge', { delta });
       const pos = document.getElementById('s3-focus-pos');
-      if (pos && data.position != null) pos.textContent = `pos ${data.position}`;
+      if (pos) pos.textContent = `→ ${result.target}`;
     } catch (err) {
       setStatus('s3-status', `Focus failed: ${err}`, true);
     }
@@ -3371,10 +3375,11 @@
     if (_ws) { _ws.close(); _ws = null; }
     const exposure  = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
     const gain      = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const offset    = parseInt(document.getElementById('preview-offset')?.value, 10) || 0;
     const camIdx    = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
     const autoGain  = document.getElementById('preview-autogain-chk')?.checked ? '&autogain=true' : '';
     const proto     = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url       = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}${autoGain}`;
+    const url       = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}&offset=${offset}${autoGain}`;
 
     _setWsStatus('connecting');
     _updatePreviewBtns(true);

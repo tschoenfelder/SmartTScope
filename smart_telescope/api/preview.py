@@ -29,6 +29,7 @@ async def ws_preview(
     gain: int = Query(default=100, ge=100, le=3200),
     camera_index: int = Query(default=0, ge=0, le=7),
     autogain: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0, le=255),
 ) -> None:
     """Stream auto-stretched JPEG frames to the client until it disconnects.
 
@@ -63,6 +64,11 @@ async def ws_preview(
     except Exception as exc:
         _log.warning("Preview: set_gain(%d) failed on camera_index=%d: %s", cur_gain, camera_index, exc)
 
+    try:
+        camera.set_black_level(offset)
+    except Exception as exc:
+        _log.warning("Preview: set_black_level(%d) failed on camera_index=%d: %s", offset, camera_index, exc)
+
     # Read back effective gain (camera may clamp the requested value)
     eff_gain = cur_gain
     try:
@@ -85,7 +91,7 @@ async def ws_preview(
     _log.info(
         "Preview started: camera=%s camera_index=%d adapter=%s "
         "requested_exposure_s=%.3f effective_exposure_s=%.3f "
-        "requested_gain=%d effective_gain=%d",
+        "requested_gain=%d effective_gain=%d offset=%d",
         getattr(camera, "get_logical_name", lambda: "unknown")(),
         camera_index,
         type(camera).__name__,
@@ -93,6 +99,7 @@ async def ws_preview(
         eff_exposure_s,
         cur_gain,
         eff_gain,
+        offset,
     )
 
     cur_bit_depth = 16

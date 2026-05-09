@@ -8,6 +8,8 @@ import io
 import json
 import logging
 
+import numpy as np
+
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from ..domain.autogain import AutoGainController
@@ -26,10 +28,11 @@ router = APIRouter()
 async def ws_preview(
     websocket: WebSocket,
     exposure: float = Query(default=2.0, gt=0.0, le=3600.0),
-    gain: int = Query(default=100, ge=100, le=3200),
+    gain: int = Query(default=100, ge=100, le=15000),
     camera_index: int = Query(default=0, ge=0, le=7),
     autogain: bool = Query(default=False),
-    offset: int = Query(default=0, ge=0, le=255),
+    offset: int = Query(default=0, ge=0, le=10000),
+    stretch: bool = Query(default=True),
 ) -> None:
     """Stream auto-stretched JPEG frames to the client until it disconnects.
 
@@ -91,7 +94,7 @@ async def ws_preview(
     _log.info(
         "Preview started: camera=%s camera_index=%d adapter=%s "
         "requested_exposure_s=%.3f effective_exposure_s=%.3f "
-        "requested_gain=%d effective_gain=%d offset=%d",
+        "requested_gain=%d effective_gain=%d offset=%d stretch=%s",
         getattr(camera, "get_logical_name", lambda: "unknown")(),
         camera_index,
         type(camera).__name__,
@@ -100,6 +103,7 @@ async def ws_preview(
         cur_gain,
         eff_gain,
         offset,
+        stretch,
     )
 
     cur_bit_depth = 16
@@ -141,7 +145,7 @@ async def ws_preview(
 
             # --- encode and send JPEG ---
             try:
-                await websocket.send_bytes(_to_jpeg(frame))
+                await websocket.send_bytes(_to_jpeg(frame, stretch=stretch))
             except (WebSocketDisconnect, RuntimeError):
                 # Client disconnected or Starlette transport error mid-send
                 break
@@ -161,9 +165,13 @@ async def ws_preview(
         pass
 
 
-def _to_jpeg(frame: FitsFrame) -> bytes:
+def _to_jpeg(frame: FitsFrame, stretch: bool = True) -> bytes:
     from PIL import Image  # runtime import — keeps startup fast on Pi
-    stretched = auto_stretch(frame.pixels)
+    if stretch:
+        display = auto_stretch(frame.pixels)
+    else:
+        # Linear map: raw 16-bit range [0, 65535] → uint8 [0, 255]
+        display = np.clip(frame.pixels.astype(np.float64) / 65535.0 * 255.0, 0.0, 255.0).astype(np.uint8)
     buf = io.BytesIO()
-    Image.fromarray(stretched).save(buf, format="JPEG", quality=85)
+    Image.fromarray(display).save(buf, format="JPEG", quality=85)
     return buf.getvalue()

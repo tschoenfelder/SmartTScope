@@ -999,16 +999,21 @@
                     title="Preview camera"
                     onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
-            <input type="number" id="preview-exposure" value="2" min="0.001" max="3600" step="any"
-                   style="width:6ch" onchange="previewReconnectIfRunning()">
+            <input type="number" id="preview-exposure" value="2" min="0.0001" max="1000" step="any"
+                   style="width:7ch" onchange="previewReconnectIfRunning()">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
-            <input type="number" id="preview-gain" value="100" min="100" max="3200" step="100"
+            <input type="number" id="preview-gain" value="100" min="100" max="15000" step="100"
                    style="width:6ch" onchange="previewReconnectIfRunning()">
             <label style="margin-left:0.4rem">Off</label>
-            <input type="number" id="preview-offset" value="0" min="0" max="255" step="1"
-                   style="width:5ch" title="Camera black level / offset (0–255)"
+            <input type="number" id="preview-offset" value="0" min="0" max="10000" step="1"
+                   style="width:6ch" title="Camera black level / offset (0–10000)"
                    onchange="previewReconnectIfRunning()">
+            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
+              <input type="checkbox" id="preview-stretch-chk" style="width:auto" checked
+                     title="Auto-stretch: percentile clip to fill display range"
+                     onchange="previewReconnectIfRunning()">Str
+            </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-autogain-chk" style="width:auto"
                      title="Auto-adjust exposure (≤4 s) and gain (near min) for display">AG
@@ -2909,7 +2914,7 @@
       const expIn  = document.getElementById('preview-exposure');
       const gainIn = document.getElementById('preview-gain');
       if (expIn) {
-        const capMax = Math.min(caps.max_exposure_s, 3600);
+        const capMax = Math.min(caps.max_exposure_s, 1000);
         expIn.min   = fmtExp(caps.min_exposure_s);
         expIn.max   = fmtExp(capMax);
         expIn.step  = 'any';
@@ -3376,10 +3381,11 @@
     const exposure  = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
     const gain      = parseInt(document.getElementById('preview-gain').value, 10) || 100;
     const offset    = parseInt(document.getElementById('preview-offset')?.value, 10) || 0;
+    const stretch   = document.getElementById('preview-stretch-chk')?.checked !== false;
     const camIdx    = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
     const autoGain  = document.getElementById('preview-autogain-chk')?.checked ? '&autogain=true' : '';
     const proto     = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url       = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}&offset=${offset}${autoGain}`;
+    const url       = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}&offset=${offset}&stretch=${stretch}${autoGain}`;
 
     _setWsStatus('connecting');
     _updatePreviewBtns(true);

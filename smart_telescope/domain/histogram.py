@@ -87,3 +87,33 @@ def histogram_bins(
     normed = flat / amax
     counts, edges = np.histogram(normed, bins=n_bins, range=(0.0, 1.0))
     return counts.tolist(), edges.tolist()
+
+
+def histogram_bins_focused(
+    pixels: np.ndarray[Any, np.dtype[Any]],
+    bit_depth: int = 16,
+    n_bins: int = 256,
+) -> tuple[list[int], list[float], float]:
+    """Focused histogram with fine resolution on the active signal range.
+
+    The histogram range is [0, adu_hi] where adu_hi = max(p99.9 × 1.3,
+    adc_max × 0.05, 1000), capped at adc_max.  For a 12-bit sensor in
+    16-bit output mode (values 0-4095, adc_max=65535) this typically gives
+    adu_hi ≈ 5000 with 256 bins → ~19 ADU per bin instead of 512 ADU/bin.
+
+    Returns:
+        counts   – list of n_bins integers
+        edges    – list of n_bins+1 normalised [0, 1] bin boundaries
+        adu_hi   – upper bound of the histogram in raw ADU units (float)
+    """
+    amax = _adc_max(bit_depth)
+    flat = pixels.astype(np.float64, copy=False).ravel()
+    p999_adu = float(np.percentile(flat, 99.9))
+    adu_hi = float(np.clip(
+        max(p999_adu * 1.3, amax * 0.05, 1000.0),
+        1.0, amax,
+    ))
+    hi_normed = adu_hi / amax
+    normed = flat / amax
+    counts, edges = np.histogram(normed, bins=n_bins, range=(0.0, hi_normed))
+    return counts.tolist(), edges.tolist(), adu_hi

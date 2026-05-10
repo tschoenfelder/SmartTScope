@@ -7,6 +7,7 @@ import dataclasses
 import io
 import json
 import logging
+import time
 
 import numpy as np
 
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from ..domain.autogain import AutoGainController
 from ..domain.frame import FitsFrame
 from ..domain.histogram import analyze as _hist_analyze
-from ..domain.histogram import histogram_bins as _hist_bins
+from ..domain.histogram import histogram_bins_focused as _hist_bins
 from ..domain.stretch import auto_stretch
 from . import deps
 
@@ -139,28 +140,41 @@ async def ws_preview(
     try:
         while True:
             # --- capture frame ---
+            _t_capture = time.monotonic()
             try:
                 frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)
             except Exception as exc:
+                exc_str = str(exc)
+                hex_note = ""
+                if exc_str.lstrip("-").isdigit():
+                    hex_note = f" (0x{int(exc_str) & 0xFFFFFFFF:08X})"
                 _log.error(
-                    "Preview: capture failed on camera_index=%d adapter=%s: %s",
-                    camera_index, type(camera).__name__, exc,
+                    "Preview: capture failed on camera_index=%d adapter=%s: %s%s",
+                    camera_index, type(camera).__name__, exc, hex_note,
                 )
                 try:
-                    await websocket.send_text(f"capture_error: {exc}")
+                    await websocket.send_text(f"capture_error: {exc}{hex_note}")
                 except Exception:
                     pass
                 break
+            _dt = time.monotonic() - _t_capture
+            _log.debug(
+                "Preview frame: camera_index=%d capture_time=%.3fs requested_exp=%.3fs",
+                camera_index, _dt, cur_exposure,
+            )
 
             # --- STS-ADDON-007: send histogram JSON before the JPEG ---
             try:
                 stats = _hist_analyze(frame.pixels, bit_depth=cur_bit_depth)
-                counts, edges = _hist_bins(frame.pixels, bit_depth=cur_bit_depth, n_bins=128)
+                counts, edges, adu_hi = _hist_bins(
+                    frame.pixels, bit_depth=cur_bit_depth, n_bins=256,
+                )
                 await websocket.send_text(json.dumps({
                     "type": "histogram",
                     "stats": dataclasses.asdict(stats),
                     "bin_counts": counts,
                     "bin_edges": edges,
+                    "hist_adu_hi": adu_hi,
                 }))
             except (WebSocketDisconnect, RuntimeError):
                 break

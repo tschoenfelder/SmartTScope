@@ -16,7 +16,10 @@ Adapter selection priority (highest first):
 
 from __future__ import annotations
 
+import logging
 import os
+
+_log = logging.getLogger(__name__)
 
 from .. import config
 from ..adapters.mock.camera import MockCamera
@@ -116,34 +119,48 @@ def get_preview_camera(index: int) -> CameraPort:
     """
     _ensure_adapters()
     touptek_env = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
+    _log.info(
+        "get_preview_camera(%d): touptek_env=%r cached=%s primary=%s",
+        index,
+        touptek_env or None,
+        list(_preview_cameras.keys()),
+        type(_camera).__name__,
+    )
 
     if touptek_env:
         # Explicit TOUPTEK_INDEX configured
         main_index = int(touptek_env)
         if index == main_index:
+            _log.info("get_preview_camera(%d): returning primary camera (%s)", index, type(_camera).__name__)
             assert _camera is not None
             return _camera
         # Secondary camera — open a dedicated handle
         if index not in _preview_cameras:
+            _log.info("get_preview_camera(%d): opening secondary ToupcamCamera", index)
             from ..adapters.touptek.camera import ToupcamCamera
             cam = ToupcamCamera(index=index)
             if not cam.connect():
                 raise RuntimeError(f"Camera {index} failed to connect")
             _preview_cameras[index] = cam
+            _log.info("get_preview_camera(%d): connected → %s", index, cam.get_logical_name())
         return _preview_cameras[index]
 
     # TOUPTEK_INDEX not configured — attempt SDK auto-detection by index
     if index not in _preview_cameras:
+        _log.info("get_preview_camera(%d): no TOUPTEK_INDEX — trying SDK auto-detect", index)
         try:
             from ..adapters.touptek.camera import ToupcamCamera
         except ImportError:
             # toupcam SDK not installed (dev / test environment) — use primary adapter
+            _log.warning("get_preview_camera(%d): toupcam SDK not importable — falling back to %s",
+                         index, type(_camera).__name__)
             assert _camera is not None
             return _camera
         cam = ToupcamCamera(index=index)
         if not cam.connect():
             raise RuntimeError(f"Camera {index}: connect() returned False — is the camera plugged in?")
         _preview_cameras[index] = cam
+        _log.info("get_preview_camera(%d): auto-detect connected → %s", index, cam.get_logical_name())
     return _preview_cameras[index]
 
 

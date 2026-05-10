@@ -147,11 +147,18 @@ class ToupcamCamera(CameraPort):
         if self._cam is None or self._buf is None:
             raise RuntimeError("Camera not connected")
 
-        self._cam.put_ExpoTime(max(1, int(exposure_seconds * 1_000_000)))
+        us = max(1, int(exposure_seconds * 1_000_000))
+        try:
+            self._cam.put_ExpoTime(us)
+        except Exception as exc:
+            raise RuntimeError(f"put_ExpoTime({us} µs) failed: {exc}") from exc
 
         self._capture_error = None
         self._frame_ready.clear()
-        self._cam.Trigger(1)
+        try:
+            self._cam.Trigger(1)
+        except Exception as exc:
+            raise RuntimeError(f"Trigger(1) failed: {exc}") from exc
 
         timeout = exposure_seconds + self._timeout_extra
         if not self._frame_ready.wait(timeout=timeout):
@@ -159,8 +166,12 @@ class ToupcamCamera(CameraPort):
         if self._capture_error is not None:
             raise self._capture_error
 
-        # rowPitch=-1 → zero padding → width * 2 bytes per row (RAW 16-bit)
-        self._cam.PullImageV4(self._buf, 0, 0, -1, None)
+        # bits=16 → always request 16-bit output (matches TOUPCAM_OPTION_BITDEPTH=1)
+        # rowPitch=-1 → auto (width * 2 bytes per row for RAW-16)
+        try:
+            self._cam.PullImageV4(self._buf, 0, 16, -1, None)
+        except Exception as exc:
+            raise RuntimeError(f"PullImageV4 failed: {exc}") from exc
 
         pixels = (
             np.frombuffer(self._buf, dtype=np.uint16)

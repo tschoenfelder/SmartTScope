@@ -3433,7 +3433,7 @@
             const panel = document.getElementById('s3-hist-panel');
             if (panel && panel.style.display !== 'none') {
               try {
-                showHistogram('s3-histogram', 's3-hist-stats', msg.stats, msg.bin_counts, msg.bin_edges);
+                showHistogram('s3-histogram', 's3-hist-stats', msg.stats, msg.bin_counts, msg.bin_edges, msg.hist_adu_hi);
               } catch (_) {}
             }
           }
@@ -3506,7 +3506,7 @@
    * @param {number[]} binCounts  - histogram bin counts
    * @param {number[]} binEdges   - histogram bin edges (length = binCounts.length + 1)
    */
-  function showHistogram(canvasId, statsId, stats, binCounts, binEdges) {
+  function showHistogram(canvasId, statsId, stats, binCounts, binEdges, histAduHi) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const CW = canvas.offsetWidth || canvas.width || 400;
@@ -3526,13 +3526,15 @@
     const logPeak = Math.log1p(peak);
     const bw      = CW / n;
     const adcMax  = (stats && stats.adc_max) ? stats.adc_max : 65535;
+    // histAduMax: the ADU value at the right edge of the histogram display
+    const histAduMax = (typeof histAduHi === 'number' && histAduHi > 0) ? histAduHi : adcMax;
 
     // Background
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, CW, CH);
 
     // Shaded region 0–4000 ADU (light blue tint)
-    const x4k = Math.round(Math.min(4000 / adcMax, 1.0) * CW);
+    const x4k = Math.round(Math.min(4000 / histAduMax, 1.0) * CW);
     if (x4k > 0) {
       ctx.fillStyle = 'rgba(80,130,220,0.07)';
       ctx.fillRect(0, 0, x4k, barH);
@@ -3545,8 +3547,8 @@
       if (h > 0) ctx.fillRect(i * bw, barH - h, Math.max(1, bw - 0.5), h);
     }
 
-    // 4000 ADU boundary line (dashed, subtle)
-    if (x4k > 2 && x4k < CW - 2) {
+    // 4000 ADU boundary line (dashed, only when it's in-range and not trivially at the edge)
+    if (x4k > 4 && x4k < CW - 4) {
       ctx.save();
       ctx.setLineDash([2, 3]);
       ctx.strokeStyle = 'rgba(100,160,255,0.35)';
@@ -3555,21 +3557,28 @@
       ctx.restore();
     }
 
-    // Black-level marker (p0.5 ≈ pedestal)
-    const blX = Math.round(stats.black_level * CW);
+    // Black-level marker (p0.5 ≈ pedestal) — position relative to focused range
+    const blFrac = Math.min(stats.black_level * adcMax / histAduMax, 1.0);
+    const blX = Math.round(blFrac * CW);
     ctx.strokeStyle = 'rgba(100,150,255,0.75)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(blX, 0); ctx.lineTo(blX, barH); ctx.stroke();
 
-    // Target band 75–80 % of ADC range (green)
-    ctx.fillStyle = 'rgba(0,210,100,0.10)';
-    ctx.fillRect(Math.round(0.75 * CW), 0, Math.round(0.05 * CW), barH);
-    ctx.strokeStyle = 'rgba(0,210,100,0.55)';
-    ctx.lineWidth = 1;
-    [0.75, 0.80].forEach(f => {
-      const x = Math.round(f * CW);
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, barH); ctx.stroke();
-    });
+    // Target band 75–80 % of ADC range — only draw if in focused range
+    const t75 = 0.75 * adcMax / histAduMax;
+    const t80 = 0.80 * adcMax / histAduMax;
+    if (t75 < 1.0) {
+      ctx.fillStyle = 'rgba(0,210,100,0.10)';
+      ctx.fillRect(Math.round(t75 * CW), 0, Math.round((t80 - t75) * CW), barH);
+      ctx.strokeStyle = 'rgba(0,210,100,0.55)';
+      ctx.lineWidth = 1;
+      [t75, Math.min(t80, 1.0)].forEach(f => {
+        if (f > 0.02 && f < 0.99) {
+          const x = Math.round(f * CW);
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, barH); ctx.stroke();
+        }
+      });
+    }
 
     // Saturation marker at right edge (red)
     ctx.strokeStyle = 'rgba(255,80,60,0.80)';
@@ -3582,71 +3591,68 @@
     ctx.fillRect(0, statsY, CW, statsH);
     ctx.font = '9px ui-monospace, monospace';
 
+    const p50adu  = Math.round(stats.p50  * adcMax);
+    const p99adu  = Math.round(stats.p99  * adcMax);
     ctx.fillStyle = stats.zero_clipped_pct > 10 ? 'rgba(120,160,255,0.9)' : 'rgba(150,170,210,0.9)';
     ctx.textAlign = 'left';
     ctx.fillText(`0-clip:${stats.zero_clipped_pct.toFixed(1)}%`, 3, statsY + statsH - 3);
 
     ctx.fillStyle = 'rgba(180,200,230,0.9)';
     ctx.textAlign = 'center';
-    ctx.fillText(`p50:${(stats.p50 * 100).toFixed(1)}%  p99:${(stats.p99 * 100).toFixed(1)}%`, CW / 2, statsY + statsH - 3);
+    ctx.fillText(`p50:${p50adu}  p99:${p99adu}`, CW / 2, statsY + statsH - 3);
 
     ctx.fillStyle = stats.saturation_pct > 1 ? 'rgba(255,110,80,0.95)' : 'rgba(150,170,210,0.9)';
     ctx.textAlign = 'right';
     ctx.fillText(`sat:${stats.saturation_pct.toFixed(1)}%`, CW - 3, statsY + statsH - 3);
 
-    // ── x-axis strip ────────────────────────────────────────────────────
+    // ── x-axis strip with two-level ticks ───────────────────────────────
     const xY = barH + statsH;
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
     ctx.fillRect(0, xY, CW, xAxisH);
-
     ctx.font = '8px ui-monospace, monospace';
-    ctx.fillStyle = 'rgba(160,185,215,0.9)';
-    ctx.lineWidth = 0.8;
 
-    const ticks = _histXTicks(adcMax);
-    for (const adu of ticks) {
-      const xTick = Math.round((adu / adcMax) * CW);
-      // tick mark
-      ctx.strokeStyle = 'rgba(140,165,200,0.5)';
-      ctx.beginPath(); ctx.moveTo(xTick, xY); ctx.lineTo(xTick, xY + 3); ctx.stroke();
-      // label
-      const label = adu === 0 ? '0' : adu >= 1000 ? `${(adu / 1000).toFixed(adu % 1000 === 0 ? 0 : 1)}k` : String(adu);
-      ctx.textAlign = xTick < 14 ? 'left' : xTick > CW - 14 ? 'right' : 'center';
-      ctx.fillStyle = 'rgba(160,185,215,0.9)';
-      ctx.fillText(label, Math.min(Math.max(xTick, 4), CW - 4), xY + xAxisH - 2);
+    // Choose major/minor intervals based on displayed range
+    const majorInt = histAduMax <= 10000 ? 1000 : histAduMax <= 40000 ? 5000 : 10000;
+    const minorInt = majorInt / 2;
+
+    // Minor ticks (2 px, no label)
+    ctx.strokeStyle = 'rgba(120,145,180,0.45)';
+    ctx.lineWidth = 0.8;
+    for (let adu = minorInt; adu < histAduMax; adu += minorInt) {
+      if (adu % majorInt === 0) continue;
+      const x = Math.round((adu / histAduMax) * CW);
+      ctx.beginPath(); ctx.moveTo(x, xY); ctx.lineTo(x, xY + 2); ctx.stroke();
     }
 
-    // highlight the 4k tick label in blue if it was drawn
-    if (ticks.includes(4000)) {
-      const xTick = Math.round((4000 / adcMax) * CW);
-      ctx.textAlign = xTick < 14 ? 'left' : xTick > CW - 14 ? 'right' : 'center';
-      ctx.fillStyle = 'rgba(110,170,255,0.95)';
-      ctx.fillText('4k', Math.min(Math.max(xTick, 4), CW - 4), xY + xAxisH - 2);
+    // Major ticks (4 px + label)
+    ctx.strokeStyle = 'rgba(140,165,200,0.55)';
+    for (let adu = 0; adu <= histAduMax * 1.01; adu += majorInt) {
+      const x = Math.round((adu / histAduMax) * CW);
+      ctx.beginPath(); ctx.moveTo(x, xY); ctx.lineTo(x, xY + 4); ctx.stroke();
+      const label = adu === 0 ? '0' : adu >= 1000 ? `${adu / 1000}k` : String(adu);
+      const is4k  = adu === 4000;
+      ctx.fillStyle = is4k ? 'rgba(110,170,255,0.95)' : 'rgba(160,185,215,0.9)';
+      ctx.textAlign = x < 14 ? 'left' : x > CW - 14 ? 'right' : 'center';
+      ctx.fillText(label, Math.min(Math.max(x, 4), CW - 4), xY + xAxisH - 2);
     }
 
     ctx.textAlign = 'left';
 
-    // Full stats text line (below canvas)
+    // Full stats text line (below canvas) — show ADU values
     if (statsId) {
       const el = document.getElementById(statsId);
       if (el) {
+        const fmt = f => Math.round(f * adcMax);
         el.textContent =
-          `p50:${(stats.p50*100).toFixed(1)}%  ` +
-          `p95:${(stats.p95*100).toFixed(1)}%  ` +
-          `p99:${(stats.p99*100).toFixed(1)}%  ` +
-          `p99.5:${(stats.p99_5*100).toFixed(1)}%  ` +
-          `p99.9:${(stats.p99_9*100).toFixed(1)}%  ` +
+          `p50:${fmt(stats.p50)}  ` +
+          `p95:${fmt(stats.p95)}  ` +
+          `p99:${fmt(stats.p99)}  ` +
+          `p99.5:${fmt(stats.p99_5)}  ` +
+          `p99.9:${fmt(stats.p99_9)}  ` +
           `sat:${stats.saturation_pct.toFixed(2)}%  ` +
           `0-clip:${stats.zero_clipped_pct.toFixed(2)}%`;
       }
     }
-  }
-
-  function _histXTicks(adcMax) {
-    if (adcMax <= 512)   return [0, 128, 256, 384, 512];
-    if (adcMax <= 4096)  return [0, 1000, 2000, 3000, 4000];
-    if (adcMax <= 16384) return [0, 2000, 4000, 8000, 12000, 16000];
-    return [0, 10000, 20000, 40000, 60000, 65535];
   }
 
   function previewHistToggle(enabled) {

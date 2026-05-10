@@ -236,8 +236,8 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 5 — MVP one-shot Auto Gain (main camera)
 
-### AGT-5-1 — Enhance AutoGainController with camera-profile limits
-- [ ] Refactor `domain/autogain.py`:
+### AGT-5-1 — Enhance AutoGainController with camera-profile limits ✅
+- [x] Refactor `domain/autogain.py`:
   - Accept `CameraProfile` → derive `min_gain`, `max_gain`,
     `min_exp_ms`, `max_exp_ms` (replaces hardcoded constants).
   - Add `conversion_gain` selection: choose HCG/LCG/HDR from profile
@@ -245,8 +245,9 @@ Implementation phases follow section 16 of that document.
   - Add `offset_adu` field: shift histogram baseline check to avoid
     zero-clipping (FR-AG-070, §FR-AG-090 steps 4, 7).
   - Effective bit-depth normalisation via `HistogramStats` (not raw mean).
-- [ ] Keep existing WebSocket autogain mode working; update to pass profile.
-- [ ] Unit tests: ATR585M HCG profile, G3M678M LCG planetary profile.
+- [x] Keep existing WebSocket autogain mode working; update to pass profile.
+- [x] Unit tests: ATR585M HCG profile, G3M678M LCG planetary profile.
+  34 new tests. Suite: 1453 passed, 85% coverage.
 
 *Covers:* FR-AG-020, FR-AG-080, FR-AG-090 steps 1–4  
 *Depends:* AGT-0-2, AGT-2-1
@@ -452,14 +453,14 @@ Implementation phases follow section 16 of that document.
 | 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 4 |
 | 4 — Cooling | 2 | 2 |
-| 5 — Auto Gain MVP | 4 | 0 |
+| 5 — Auto Gain MVP | 4 | 1 |
 | 6 — Live stacking calibration | 2 | 0 |
 | 7 — Guide camera | 2 | 0 |
 | 8 — Planetary | 2 | 0 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **15** |
+| **Total** | **26** | **16** |
 
 ---
 

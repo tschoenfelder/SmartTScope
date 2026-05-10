@@ -272,16 +272,15 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-5-3 — Auto Gain REST endpoint, UI button, and last-good persistence
-- [ ] `POST /api/autogain/run` — runs `AutoGainService.run_one_shot()`
-  in background, returns job id; `GET /api/autogain/status/{job_id}`.
-- [ ] Each live-preview camera control row: **Auto Gain** button; while
-  running shows spinner + step label; on completion updates exposure/gain
-  inputs and shows status badge (FR-AG-010, FR-UI-001).
-- [ ] On `AUTO_GAIN_OK`: write last-good settings to app-state folder
-  (AGT-1-2); show "Apply to recording" button that copies settings to the
-  recording-start fields (FR-AG-010 step 9).
-- [ ] Unit tests for endpoint + persistence.
+### AGT-5-3 — Auto Gain REST endpoint, UI button, and last-good persistence ✅
+- [x] `POST /api/autogain/run` — runs `AutoGainService.run_one_shot()` in background,
+  returns 202; `GET /api/autogain/status` polls result; `POST /api/autogain/cancel`.
+- [x] Preview section: **Auto Gain** button with spinner badge, result badge
+  (OK/status), Apply button that copies exp/gain/offset into preview inputs.
+- [x] On `AUTO_GAIN_OK`: persists `LastGoodSettings` to `~/.SmartTScope/last_good/`
+  via `LastGoodStore`.
+- [x] 20 unit tests: idle status, run/409/400/422, cancel, round-trip OK, camera
+  error, last-good saved on OK / not saved on non-OK.
 
 *Covers:* FR-AG-010, FR-UI-001, FR-STORE-008  
 *Depends:* AGT-5-2, AGT-1-2
@@ -455,15 +454,15 @@ Implementation phases follow section 16 of that document.
 | 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 4 |
 | 4 — Cooling | 2 | 2 |
-| 5 — Auto Gain MVP | 4 | 2 |
+| 5 — Auto Gain MVP | 4 | 3 |
 | 6 — Live stacking calibration | 2 | 0 |
 | 7 — Guide camera | 2 | 0 |
 | 8 — Planetary | 2 | 0 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **17** |
+| **Total** | **26** | **18** |
 
 ---
 
-*Last updated: 2026-05-10 — AGT-5-2 done (17/26)*
+*Last updated: 2026-05-10 — AGT-5-3 done (18/26)*

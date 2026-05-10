@@ -30,9 +30,13 @@ _FLAG_CGHDR       = 0x0000000800000000
 _FLAG_BLACKLEVEL  = 0x00400000
 _FLAG_MONO        = 0x00000040  # monochrome / no Bayer filter
 
-_OPTION_BLACKLEVEL = 0x15
-_OPTION_CG         = 0x19
-_OPTION_BITDEPTH   = 0x06
+_OPTION_BLACKLEVEL      = 0x15
+_OPTION_CG              = 0x19
+_OPTION_BITDEPTH        = 0x06
+_OPTION_TEC             = 0x18  # 0=off, 1=on
+_OPTION_TECTARGET       = 0x07  # target temp × 10 (e.g. -100 = −10.0 °C)
+_OPTION_TEC_VOLTAGE     = 0x26  # current TEC voltage (0–1000, proportional to power)
+_OPTION_TEC_VOLTAGE_MAX = 0x27  # max TEC voltage rating for this model
 
 
 class ToupcamCamera(CameraPort):
@@ -354,6 +358,36 @@ class ToupcamCamera(CameraPort):
 
     def get_logical_name(self) -> str:
         return self._logical_name
+
+    # ------------------------------------------------------------------
+    # TEC cooling control (ATR585M and other cooled cameras)
+    # ------------------------------------------------------------------
+
+    def set_tec_enabled(self, on: bool) -> None:
+        if self._cam is not None:
+            try:
+                self._cam.put_Option(_OPTION_TEC, 1 if on else 0)
+            except Exception:
+                pass
+
+    def set_tec_target_c(self, target_c: float) -> None:
+        if self._cam is not None:
+            try:
+                self._cam.put_Option(_OPTION_TECTARGET, int(target_c * 10))
+            except Exception:
+                pass
+
+    def get_tec_power_pct(self) -> float:
+        """Return TEC power draw as 0–100 %.  Returns 0.0 if unavailable."""
+        if self._cam is not None:
+            try:
+                v     = self._cam.get_Option(_OPTION_TEC_VOLTAGE)
+                v_max = self._cam.get_Option(_OPTION_TEC_VOLTAGE_MAX)
+                if v_max > 0:
+                    return min(100.0, max(0.0, v / v_max * 100.0))
+            except Exception:
+                pass
+        return 0.0
 
     # ------------------------------------------------------------------
     # CameraPort — color sensor detection

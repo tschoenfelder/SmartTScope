@@ -557,6 +557,70 @@
       <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
     </div>
 
+    <!-- Camera Cooling (ATR585M and other TEC cameras) -->
+    <div class="card" style="margin-top:0.75rem" id="s1-cooling-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-cooling-dot"></span>
+        Camera Cooling
+        <span style="flex:1"></span>
+        <span id="s1-cooling-badge"
+              style="font-size:0.72rem;padding:0.1rem 0.5rem;border-radius:999px;
+                     background:var(--surface);border:1px solid var(--border)">—</span>
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Camera</span>
+          <span class="param-value">
+            <select id="s1-cooling-cam-select"
+                    style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);
+                           border-radius:3px;padding:0 4px;font-size:0.78rem">
+              <option value="0">CAM0</option>
+            </select>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Target</span>
+          <span class="param-value" style="display:flex;align-items:center;gap:0.4rem">
+            <input type="number" id="s1-cooling-target" value="-10" min="-10" max="10" step="1"
+                   style="width:4.5ch;background:var(--bg);color:var(--text);
+                          border:1px solid var(--border);border-radius:3px;
+                          padding:0.1rem 0.3rem;font-size:0.82rem">
+            <span style="color:var(--muted)">°C</span>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Sensor Temp</span>
+          <span class="param-value mono" id="s1-cooling-temp">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">TEC Power</span>
+          <span class="param-value" style="display:flex;flex-direction:column;gap:3px;width:100%">
+            <div style="display:flex;align-items:center;gap:0.4rem">
+              <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+                <div id="s1-cooling-power-fill"
+                     style="height:100%;width:0%;border-radius:4px;background:var(--success);
+                            transition:width 0.4s,background 0.4s"></div>
+              </div>
+              <span id="s1-cooling-power-pct" class="mono"
+                    style="font-size:0.78rem;min-width:3.5ch;text-align:right">—</span>
+            </div>
+            <div id="s1-cooling-countdown"
+                 style="font-size:0.72rem;color:var(--muted);display:none"></div>
+          </span>
+        </div>
+        <div class="param" id="s1-cooling-warn-row" style="display:none">
+          <span class="param-label">Warning</span>
+          <span class="param-value" style="color:var(--warning);font-size:0.8rem"
+                id="s1-cooling-warn-msg"></span>
+        </div>
+      </div>
+      <div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button id="s1-cooling-enable-btn" onclick="coolingEnable()">Enable Cooling</button>
+        <button id="s1-cooling-disable-btn" onclick="coolingDisable()"
+                style="display:none;background:var(--surface)">Disable Cooling</button>
+      </div>
+    </div>
+
     <!-- Mount -->
     <div id="s1-mount-status" class="status-line" style="margin-top:1rem"></div>
     <div id="s1-mount-card"></div>
@@ -3245,6 +3309,145 @@
   }
 
   /* ══════════════════════════════════════════════════════════════════════
+     Camera Cooling (Stage 1)
+  ══════════════════════════════════════════════════════════════════════ */
+  let _coolingPollInterval = null;
+
+  function _coolingRenderStatus(d) {
+    const dot        = document.getElementById('s1-cooling-dot');
+    const badge      = document.getElementById('s1-cooling-badge');
+    const tempEl     = document.getElementById('s1-cooling-temp');
+    const fill       = document.getElementById('s1-cooling-power-fill');
+    const pctEl      = document.getElementById('s1-cooling-power-pct');
+    const countdown  = document.getElementById('s1-cooling-countdown');
+    const warnRow    = document.getElementById('s1-cooling-warn-row');
+    const warnMsg    = document.getElementById('s1-cooling-warn-msg');
+    const enableBtn  = document.getElementById('s1-cooling-enable-btn');
+    const disableBtn = document.getElementById('s1-cooling-disable-btn');
+    if (!dot) return;
+
+    if (!d.enabled) {
+      dot.className = 'dot dot-grey';
+      badge.textContent = '—';
+      badge.style.borderColor = 'var(--border)';
+      tempEl.textContent = '—';
+      fill.style.width = '0%';
+      pctEl.textContent = '—';
+      if (countdown) countdown.style.display = 'none';
+      if (warnRow) warnRow.style.display = 'none';
+      if (enableBtn)  enableBtn.style.display = '';
+      if (disableBtn) disableBtn.style.display = 'none';
+      return;
+    }
+
+    // Temperature
+    tempEl.textContent = d.current_temp_c !== null
+      ? `${d.current_temp_c.toFixed(1)} °C` : '—';
+
+    // Power gauge
+    const pct = d.power_pct ?? 0;
+    fill.style.width = `${Math.min(100, pct)}%`;
+    pctEl.textContent = d.power_pct !== null ? `${pct.toFixed(0)}%` : '—';
+    if (pct > 80)      fill.style.background = 'var(--danger)';
+    else if (pct > 75) fill.style.background = 'var(--warning)';
+    else               fill.style.background = 'var(--success)';
+
+    // Action badge
+    const action = d.action ?? '—';
+    badge.textContent = action;
+    if (d.stable) {
+      dot.className = 'dot dot-green';
+      badge.style.borderColor = 'var(--success)';
+      badge.style.color = 'var(--success)';
+    } else if (action === 'WARN' || action === 'RAISE_TARGET') {
+      dot.className = 'dot dot-yellow';
+      badge.style.borderColor = 'var(--warning)';
+      badge.style.color = 'var(--warning)';
+    } else {
+      dot.className = 'dot dot-grey';
+      badge.style.borderColor = 'var(--border)';
+      badge.style.color = 'var(--text)';
+    }
+
+    // Countdown
+    if (countdown) {
+      if (!d.stable && d.seconds_remaining !== null && d.seconds_remaining > 0) {
+        const mins = Math.floor(d.seconds_remaining / 60);
+        const secs = Math.round(d.seconds_remaining % 60);
+        countdown.textContent = mins > 0
+          ? `Stabilising: ${mins}m ${secs}s remaining`
+          : `Stabilising: ${secs}s remaining`;
+        countdown.style.display = '';
+      } else {
+        countdown.style.display = 'none';
+      }
+    }
+
+    // Warning message
+    if (warnRow && warnMsg) {
+      if (d.warning_msg) {
+        warnMsg.textContent = d.warning_msg;
+        warnRow.style.display = '';
+      } else {
+        warnRow.style.display = 'none';
+      }
+    }
+
+    // Buttons
+    if (enableBtn)  enableBtn.style.display  = 'none';
+    if (disableBtn) disableBtn.style.display = '';
+  }
+
+  async function coolingRefreshStatus() {
+    try {
+      const d = await (await fetch('/api/cooling/status')).json();
+      _coolingRenderStatus(d);
+    } catch (_) {}
+  }
+
+  async function coolingEnable() {
+    const btn   = document.getElementById('s1-cooling-enable-btn');
+    const camSel = document.getElementById('s1-cooling-cam-select');
+    const tgtEl = document.getElementById('s1-cooling-target');
+    const cameraIndex = camSel ? parseInt(camSel.value, 10) : 0;
+    const targetC     = tgtEl  ? parseFloat(tgtEl.value)    : -10.0;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Enabling…'; }
+    try {
+      const r = await fetch('/api/cooling/set_target', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({camera_index: cameraIndex, target_c: targetC, enabled: true}),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({detail: r.statusText}));
+        alert(`Cooling error: ${err.detail ?? r.statusText}`);
+        return;
+      }
+      if (_coolingPollInterval) clearInterval(_coolingPollInterval);
+      _coolingPollInterval = setInterval(coolingRefreshStatus, 30_000);
+      await coolingRefreshStatus();
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Enable Cooling'; }
+    }
+  }
+
+  async function coolingDisable() {
+    const btn = document.getElementById('s1-cooling-disable-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Disabling…'; }
+    try {
+      await fetch('/api/cooling/set_target', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: false}),
+      });
+      if (_coolingPollInterval) { clearInterval(_coolingPollInterval); _coolingPollInterval = null; }
+      _coolingRenderStatus({enabled: false});
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Disable Cooling'; }
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
      Connect All (Stage 1)
   ══════════════════════════════════════════════════════════════════════ */
   async function connectAll() {
@@ -4234,6 +4437,7 @@
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
   loadPreviewCameras();
+  _loadSelectFromCameras('s1-cooling-cam-select');
   _loadSelectFromCameras('pa-cam-select').then(sel => {
     if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
   });

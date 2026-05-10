@@ -83,6 +83,12 @@ class CoolingController:
         """Effective target temperature after any relaxation steps."""
         return self._current_target
 
+    @property
+    def seconds_remaining(self) -> float:
+        """Seconds left in current stabilisation window before RAISE_TARGET could fire."""
+        elapsed = self._clock() - self._start_time
+        return max(0.0, self._config.stabilisation_timeout_s - elapsed)
+
     def tick(self, current_temp_c: float, current_power_pct: float) -> CoolingAction:
         """Evaluate current sensor state and return the recommended action.
 

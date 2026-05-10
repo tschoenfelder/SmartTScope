@@ -3430,6 +3430,19 @@
             el.style.color  = isMock ? 'orange' : 'var(--muted)';
             el.style.fontWeight = isMock ? 'bold' : '';
           }
+          // Reflect effective settings back into the input fields
+          if (typeof msg.effective_exposure === 'number') {
+            const expEl = document.getElementById('preview-exposure');
+            if (expEl) expEl.value = msg.effective_exposure;
+          }
+          if (typeof msg.effective_gain === 'number') {
+            const gainEl = document.getElementById('preview-gain');
+            if (gainEl) gainEl.value = msg.effective_gain;
+          }
+          if (typeof msg.effective_offset === 'number') {
+            const offEl = document.getElementById('preview-offset');
+            if (offEl) offEl.value = msg.effective_offset;
+          }
           return;
         }
         if (msg?.type === 'autogain') {

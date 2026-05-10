@@ -80,6 +80,13 @@ async def ws_preview(
     except Exception:
         pass
 
+    # Read back effective offset (camera may clamp the requested value)
+    eff_offset = offset
+    try:
+        eff_offset = camera.get_black_level()
+    except Exception:
+        pass
+
     # Set and read back effective exposure so the log matches what the camera will use
     try:
         camera.set_exposure_ms(cur_exposure * 1000.0)
@@ -94,8 +101,9 @@ async def ws_preview(
     # STS-ADDON-005: log camera identity and all effective settings
     _log.info(
         "Preview started: camera=%s camera_index=%d adapter=%s "
-        "requested_exposure_s=%.3f effective_exposure_s=%.3f "
-        "requested_gain=%d effective_gain=%d offset=%d stretch=%s",
+        "requested_exposure_s=%.4f effective_exposure_s=%.4f "
+        "requested_gain=%d effective_gain=%d "
+        "requested_offset=%d effective_offset=%d stretch=%s",
         getattr(camera, "get_logical_name", lambda: "unknown")(),
         camera_index,
         type(camera).__name__,
@@ -104,6 +112,7 @@ async def ws_preview(
         cur_gain,
         eff_gain,
         offset,
+        eff_offset,
         stretch,
     )
 
@@ -125,7 +134,8 @@ async def ws_preview(
     except Exception:
         pass
 
-    # Send one-shot camera identity so the UI can warn if MockCamera is active.
+    # Send one-shot camera identity so the UI can warn if MockCamera is active
+    # and reflect the effective settings back into the input fields.
     try:
         await websocket.send_text(json.dumps({
             "type": "camera_info",
@@ -133,6 +143,9 @@ async def ws_preview(
             "name": getattr(camera, "get_logical_name", lambda: "")(),
             "is_color": bool(bayer_pattern),
             "bayer_pattern": bayer_pattern,
+            "effective_exposure": round(eff_exposure_s, 6),
+            "effective_gain": eff_gain,
+            "effective_offset": eff_offset,
         }))
     except Exception:
         pass

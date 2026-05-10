@@ -3612,23 +3612,23 @@
     ctx.font = '8px ui-monospace, monospace';
 
     // Choose major/minor intervals based on displayed range
-    const majorInt = histAduMax <= 10000 ? 1000 : histAduMax <= 40000 ? 5000 : 10000;
+    const majorInt = histAduMax <= 20000 ? 1000 : histAduMax <= 40000 ? 5000 : 10000;
     const minorInt = majorInt / 2;
 
-    // Minor ticks (2 px, no label)
-    ctx.strokeStyle = 'rgba(120,145,180,0.45)';
-    ctx.lineWidth = 0.8;
+    // Minor ticks (4 px, no label)
+    ctx.strokeStyle = 'rgba(140,165,200,0.75)';
+    ctx.lineWidth = 1.2;
     for (let adu = minorInt; adu < histAduMax; adu += minorInt) {
       if (adu % majorInt === 0) continue;
       const x = Math.round((adu / histAduMax) * CW);
-      ctx.beginPath(); ctx.moveTo(x, xY); ctx.lineTo(x, xY + 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, xY); ctx.lineTo(x, xY + 4); ctx.stroke();
     }
 
-    // Major ticks (4 px + label)
-    ctx.strokeStyle = 'rgba(140,165,200,0.55)';
+    // Major ticks (6 px + label)
+    ctx.strokeStyle = 'rgba(160,185,215,0.9)';
     for (let adu = 0; adu <= histAduMax * 1.01; adu += majorInt) {
       const x = Math.round((adu / histAduMax) * CW);
-      ctx.beginPath(); ctx.moveTo(x, xY); ctx.lineTo(x, xY + 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, xY); ctx.lineTo(x, xY + 6); ctx.stroke();
       const label = adu === 0 ? '0' : adu >= 1000 ? `${adu / 1000}k` : String(adu);
       const is4k  = adu === 4000;
       ctx.fillStyle = is4k ? 'rgba(110,170,255,0.95)' : 'rgba(160,185,215,0.9)';

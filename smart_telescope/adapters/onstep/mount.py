@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
 
 import serial
 
 from ...ports.mount import MountPort, MountPosition, MountState
+
+_log = logging.getLogger(__name__)
 
 # ── sexagesimal helpers ────────────────────────────────────────────────────────
 
@@ -60,10 +63,14 @@ class OnStepMount(MountPort):
 
     def connect(self) -> bool:
         if self._serial is not None and self._serial.is_open:
+            _log.info("OnStepMount.connect(): already open on %s", self._port)
             return True  # already connected — idempotent
+        _log.info("OnStepMount.connect(): opening %s @ %d baud timeout=%.1fs",
+                  self._port, self._baud_rate, self._timeout)
         try:
             self._serial = serial.Serial(self._port, self._baud_rate, timeout=self._timeout)
-        except (serial.SerialException, OSError):
+        except (serial.SerialException, OSError) as exc:
+            _log.error("OnStepMount.connect(): failed to open %s — %s", self._port, exc)
             return False
 
         # Confirm we're talking to OnStep and not another serial device on this port.
@@ -73,14 +80,20 @@ class OnStepMount(MountPort):
         # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
         self._serial.write(b":GVP#")
         raw = self._serial.read(32)
+        product = ""
         if isinstance(raw, bytes):
-            product = raw.decode(errors="replace").rstrip("#\r\n").lower()
-            if product and "on" not in product and "step" not in product:
+            product = raw.decode(errors="replace").rstrip("#\r\n")
+            _log.info("OnStepMount.connect(): :GVP# response = %r", product)
+            if product and "on" not in product.lower() and "step" not in product.lower():
+                _log.error("OnStepMount.connect(): unexpected product %r — not OnStep, closing", product)
                 self._serial.close()
                 self._serial = None
                 return False
+        else:
+            _log.warning("OnStepMount.connect(): :GVP# returned non-bytes %r (mock?)", raw)
 
         self.disable_tracking()
+        _log.info("OnStepMount.connect(): connected — product=%r port=%s", product, self._port)
         return True
 
     def disconnect(self) -> None:

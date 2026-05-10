@@ -7,8 +7,12 @@ OnStepMount._send / _raw_send so that all traffic shares the mount's lock.
 
 from __future__ import annotations
 
+import logging
+
 from ...ports.focuser import FocuserPort
 from .mount import OnStepMount
+
+_log = logging.getLogger(__name__)
 
 
 class OnStepFocuser(FocuserPort):
@@ -28,8 +32,12 @@ class OnStepFocuser(FocuserPort):
     def connect(self) -> bool:
         reply = self._mount._send(":FA#")
         self._available = reply == "1"
+        _log.info("OnStepFocuser.connect(): :FA# reply=%r available=%s", reply, self._available)
         if self._available:
             self._max_position = self._fetch_max_position()
+            _log.info("OnStepFocuser.connect(): max_position=%d", self._max_position)
+        else:
+            _log.warning("OnStepFocuser.connect(): focuser not available — check OnStep focuser wiring/config")
         return True
 
     def disconnect(self) -> None:
@@ -50,6 +58,7 @@ class OnStepFocuser(FocuserPort):
         return self._max_position
 
     def move(self, steps: int) -> None:
+        _log.info("OnStepFocuser.move(): steps=%d", steps)
         self._mount._raw_send(f":FS{steps}#")
 
     def is_moving(self) -> bool:

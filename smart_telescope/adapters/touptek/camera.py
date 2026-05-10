@@ -148,8 +148,8 @@ class ToupcamCamera(CameraPort):
     def capture(self, exposure_seconds: float) -> FitsFrame:
         if self._cam is None or self._buf is None:
             raise RuntimeError("Camera not connected")
-        if not self._capture_lock.acquire(blocking=False):
-            raise RuntimeError("Camera busy — another capture is already in progress")
+        if not self._capture_lock.acquire(blocking=True, timeout=12.0):
+            raise RuntimeError("Camera busy — timed out after 12 s waiting for previous capture to finish")
         try:
             us = max(1, int(exposure_seconds * 1_000_000))
             try:

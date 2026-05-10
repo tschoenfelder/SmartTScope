@@ -3389,6 +3389,10 @@
   }
 
   function _connectWs() {
+    // Kill histogram poll before opening the socket so no in-flight fetch
+    // can hold the camera lock when the WebSocket attempts its first capture.
+    clearInterval(_histInterval);
+    _histInterval = null;
     if (_ws) { _ws.close(); _ws = null; }
     const exposure  = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
     const gain      = parseInt(document.getElementById('preview-gain').value, 10) || 100;
@@ -3666,15 +3670,15 @@
       if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
       const stats = document.getElementById('s3-hist-stats');
       if (stats) stats.textContent = '';
-    } else if (!(_reconnect && _ws)) {
-      // Preview WS not running — use API polling; WS delivers histogram when live
+    } else if (!_reconnect) {
+      // Preview WS not running and not reconnecting — use API polling
       _fetchAndDrawHistogram();
       _histInterval = setInterval(_fetchAndDrawHistogram, 4000);
     }
   }
 
   async function _fetchAndDrawHistogram() {
-    if (!_histEnabled) return;
+    if (!_histEnabled || _reconnect) return;  // skip when WS is active or reconnecting
     const exposure = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
     const gain     = parseInt(document.getElementById('preview-gain')?.value, 10)   || 100;
     const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;

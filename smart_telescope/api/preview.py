@@ -199,7 +199,9 @@ async def ws_preview(
 
             # --- autogain update ---
             if ctrl is not None:
+                prev_exp, prev_gain = ctrl.exposure, ctrl.gain
                 ctrl.update(frame.pixels)
+                changed = ctrl.exposure != prev_exp or ctrl.gain != prev_gain
                 if ctrl.gain != cur_gain:
                     cur_gain = ctrl.gain
                     try:
@@ -207,6 +209,20 @@ async def ws_preview(
                     except Exception:
                         pass
                 cur_exposure = ctrl.exposure
+                if changed:
+                    _log.info(
+                        "Autogain update: camera_index=%d exposure=%.3fs→%.3fs gain=%d→%d",
+                        camera_index, prev_exp, cur_exposure, prev_gain, cur_gain,
+                    )
+                try:
+                    await websocket.send_text(json.dumps({
+                        "type": "autogain",
+                        "exposure": round(cur_exposure, 4),
+                        "gain": cur_gain,
+                        "changed": changed,
+                    }))
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
         pass

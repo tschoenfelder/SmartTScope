@@ -3432,6 +3432,18 @@
           }
           return;
         }
+        if (msg?.type === 'autogain') {
+          const expEl  = document.getElementById('preview-exposure');
+          const gainEl = document.getElementById('preview-gain');
+          if (expEl)  expEl.value  = msg.exposure;
+          if (gainEl) gainEl.value = msg.gain;
+          const adEl = document.getElementById('s3-cam-adapter');
+          if (adEl && adEl.textContent && !adEl.textContent.includes('MockCamera')) {
+            const base = adEl.textContent.replace(/ · AG:.*$/, '');
+            adEl.textContent = `${base} · AG: ${msg.exposure.toFixed(3)}s / gain ${msg.gain}`;
+          }
+          return;
+        }
         if (msg?.type === 'histogram') {
           if (document.getElementById('preview-hist-chk')?.checked) {
             const panel = document.getElementById('s3-hist-panel');

@@ -1149,6 +1149,24 @@
                     title="Copy auto-gain settings to exposure/gain inputs">Apply</button>
           </div>
 
+          <!-- Diagnostic prompt (shown when NO_SIGNAL detected) -->
+          <div id="autogain-diag-prompt" style="display:none;margin-top:0.5rem;padding:0.5rem 0.7rem;
+               border-radius:4px;border:1px solid var(--warn,#f5a623);font-size:0.82rem;background:var(--bg)">
+            <b>No usable signal within normal exposure.</b>
+            Run diagnostic at up to 10 s?
+            <div style="margin-top:0.4rem;display:flex;gap:0.5rem">
+              <button id="autogain-diag-yes-btn" onclick="autoGainDiagnostic()"
+                      style="padding:0.18rem 0.6rem;font-size:0.8rem">Run diagnostic</button>
+              <button class="secondary" onclick="autoGainDiagDismiss()"
+                      style="padding:0.18rem 0.6rem;font-size:0.8rem">Dismiss</button>
+            </div>
+          </div>
+          <div id="autogain-diag-result" style="display:none;margin-top:0.5rem;padding:0.4rem 0.7rem;
+               border-radius:4px;border:1px solid var(--muted);font-size:0.82rem;background:var(--bg)">
+            <b id="autogain-diag-title"></b>
+            <p id="autogain-diag-msg" style="margin:0.25rem 0 0"></p>
+          </div>
+
           <div id="solve-result" style="display:none;margin-top:0.75rem;padding:0.4rem 0.6rem;
                border-radius:4px;background:var(--bg);font-size:0.8rem;
                font-family:ui-monospace,monospace;line-height:1.6"></div>
@@ -3987,12 +4005,33 @@
     }
   }
 
+  // Actionable messages per diagnostic classification (FR-UI-002)
+  const _AG_DIAG_MESSAGES = {
+    'AUTO_GAIN_NO_SIGNAL': {
+      title: 'No signal at 10 s',
+      msg: 'No photons detected even at maximum gain and 10 s exposure. Confirm the telescope is unobstructed and pointing at sky, polar alignment is correct, and tracking is active.',
+    },
+    'AUTO_GAIN_POSSIBLE_DUST_CAP': {
+      title: 'Dust cap may be on',
+      msg: 'The histogram is indistinguishable from a dark frame. Remove the dust cap (or lens cap) and try again.',
+    },
+    'AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR': {
+      title: 'Faint signal detected — focus or pointing issue',
+      msg: 'A very faint signal was found at 10 s. The target may be defocused, slightly out of frame, or the mount may have lost tracking. Check focus, confirm the mount is tracking, and re-center the target.',
+    },
+  };
+
   function _agShowResult(d) {
     const badge     = document.getElementById('autogain-status-badge');
     const resultRow = document.getElementById('autogain-result-row');
     const resultTxt = document.getElementById('autogain-result-text');
     const applyBtn  = document.getElementById('autogain-apply-btn');
+    const diagPrompt = document.getElementById('autogain-diag-prompt');
+    const diagResult = document.getElementById('autogain-diag-result');
     if (!badge) return;
+
+    // Hide diagnostic panels on a fresh result
+    if (diagResult) diagResult.style.display = 'none';
 
     badge.style.display = '';
     const ok = d.status === 'AUTO_GAIN_OK';
@@ -4016,7 +4055,28 @@
     } else {
       applyBtn.style.display = 'none';
     }
+
+    // Show diagnostic prompt only for NO_SIGNAL on a non-diagnostic run
+    if (diagPrompt) {
+      diagPrompt.style.display =
+        (d.status === 'AUTO_GAIN_NO_SIGNAL' && !d.diagnostic) ? '' : 'none';
+    }
   }
+
+  function _agShowDiagResult(d) {
+    const diagPrompt = document.getElementById('autogain-diag-prompt');
+    const diagResult = document.getElementById('autogain-diag-result');
+    const diagTitle  = document.getElementById('autogain-diag-title');
+    const diagMsg    = document.getElementById('autogain-diag-msg');
+    if (!diagResult) return;
+    if (diagPrompt) diagPrompt.style.display = 'none';
+    const info = _AG_DIAG_MESSAGES[d.status] || { title: d.status || 'Unknown', msg: d.warning_msg || '' };
+    diagTitle.textContent = info.title;
+    diagMsg.textContent   = info.msg;
+    diagResult.style.display = '';
+  }
+
+  let _agIsDiag = false;  // true while polling a diagnostic run
 
   async function _agPoll() {
     try {
@@ -4027,18 +4087,67 @@
         clearInterval(_agPollTimer);
         _agPollTimer = null;
         _agSetBusy(false);
-        _agShowResult(d);
+        if (_agIsDiag) {
+          _agIsDiag = false;
+          _agShowDiagResult(d);
+        } else {
+          _agShowResult(d);
+        }
       }
     } catch (_) { /* ignore transient network error */ }
+  }
+
+  async function autoGainDiagnostic() {
+    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const diagPrompt = document.getElementById('autogain-diag-prompt');
+    const diagResult = document.getElementById('autogain-diag-result');
+    if (diagPrompt) diagPrompt.style.display = 'none';
+    if (diagResult) diagResult.style.display = 'none';
+
+    _agIsDiag = true;
+    _agSetBusy(true);
+    const badge = document.getElementById('autogain-status-badge');
+    if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.innerHTML = '<span class="spin"></span> Diagnostic…'; }
+
+    try {
+      const r = await fetch('/api/autogain/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera_index: camIdx, diagnostic: true, max_iterations: 15 }),
+      });
+      if (!r.ok) {
+        _agIsDiag = false;
+        _agSetBusy(false);
+        const d = await r.json().catch(() => ({}));
+        if (badge) { badge.textContent = '⚠ ' + (d.detail || r.statusText); }
+        return;
+      }
+    } catch (err) {
+      _agIsDiag = false;
+      _agSetBusy(false);
+      if (badge) { badge.textContent = '⚠ Network error'; }
+      return;
+    }
+    _agPollTimer = setInterval(_agPoll, 1500);
+  }
+
+  function autoGainDiagDismiss() {
+    const diagPrompt = document.getElementById('autogain-diag-prompt');
+    if (diagPrompt) diagPrompt.style.display = 'none';
   }
 
   async function autoGainRun() {
     const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
     const badge  = document.getElementById('autogain-status-badge');
     const row    = document.getElementById('autogain-result-row');
+    const diagPrompt = document.getElementById('autogain-diag-prompt');
+    const diagResult = document.getElementById('autogain-diag-result');
     if (badge) { badge.style.display = 'none'; }
     if (row)   { row.style.display = 'none'; }
+    if (diagPrompt) diagPrompt.style.display = 'none';
+    if (diagResult) diagResult.style.display = 'none';
     _agLastResult = null;
+    _agIsDiag = false;
 
     _agSetBusy(true);
     try {

@@ -37,13 +37,14 @@ _log = logging.getLogger(__name__)
 
 # ── Tuning constants ──────────────────────────────────────────────────────────
 
-_GAIN_MIN           = 100      # minimum camera gain (1× = 100 for ToupTek)
-_NO_SIGNAL_EXP_MS   = 4_000.0  # exposure threshold for no-signal classification
-_NO_SIGNAL_THRESHOLD = 0.02    # effective mean_frac below which we declare no signal
-_SAT_LIMIT_PCT      = 1.0      # saturation_pct above which we must dim
-_CLIP_THRESHOLD_PCT = 1.0      # zero_clipped_pct above which offset needs raising
-_OFFSET_STEP_ADU    = 100      # ADU increment when zero clipping detected
-_OFFSET_MAX_ADU     = 2_000    # hard cap on offset
+_GAIN_MIN              = 100      # minimum camera gain (1× = 100 for ToupTek)
+_NO_SIGNAL_EXP_MS      = 4_000.0  # exposure threshold for no-signal classification
+_NO_SIGNAL_THRESHOLD   = 0.02     # effective mean_frac below which we declare no signal
+_FOCUS_ERROR_THRESHOLD = 0.001    # tiny-but-nonzero signal → focus/pointing issue
+_SAT_LIMIT_PCT         = 1.0      # saturation_pct above which we must dim
+_CLIP_THRESHOLD_PCT    = 1.0      # zero_clipped_pct above which offset needs raising
+_OFFSET_STEP_ADU       = 100      # ADU increment when zero clipping detected
+_OFFSET_MAX_ADU        = 2_000    # hard cap on offset
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -253,6 +254,16 @@ class AutoGainService:
                                 conversion_gain=cg,
                                 histogram_stats=stats,
                                 warning_msg="Histogram consistent with dark frame — check dust cap",
+                            )
+                        if eff_mean > _FOCUS_ERROR_THRESHOLD:
+                            return AutoGainResult(
+                                status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
+                                exposure_ms=cur_exp_ms,
+                                gain=cur_gain,
+                                offset=cur_offset,
+                                conversion_gain=cg,
+                                histogram_stats=stats,
+                                warning_msg="Faint signal detected — check focus and confirm mount is tracking",
                             )
                         return AutoGainResult(
                             status=AutoGainStatus.NO_SIGNAL,

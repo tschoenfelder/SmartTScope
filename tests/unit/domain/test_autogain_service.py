@@ -169,7 +169,7 @@ class TestNoSignal:
             max_preview_exp_ms=4000.0,
             supports_cooling=False,
         )
-        cam = _SeqCamera([_frame(0.005)] * 20)  # mean < 2% at all iterations
+        cam = _SeqCamera([_frame(0.0005)] * 20)  # mean < 0.1% — below focus-error threshold
         result = AutoGainService.run_one_shot(cam, profile, max_iterations=5)
         assert result.status == AutoGainStatus.NO_SIGNAL
 
@@ -197,6 +197,56 @@ class TestNoSignal:
         cam = _SeqCamera([_frame(0.001, zero_clipped_pct=80.0)] * 5)
         result = AutoGainService.run_one_shot(cam, profile, last_good=lg, max_iterations=5)
         assert result.status == AutoGainStatus.POSSIBLE_DUST_CAP
+
+    def test_focus_or_pointing_error_when_tiny_signal_exists(self) -> None:
+        # mean_frac=0.005 is > _FOCUS_ERROR_THRESHOLD (0.001) but < _NO_SIGNAL_THRESHOLD (0.02)
+        # zero_clipped_pct=0 (< 1% threshold) — not dust cap → POSSIBLE_FOCUS_OR_POINTING_ERROR
+        # offset=0 so eff_mean == mean_frac
+        profile = CameraProfile(
+            model="TestCam",
+            sensor="IMX000",
+            width_px=640, height_px=480, pixel_um=3.0,
+            max_gain=100,
+            unity_gain_hcg=None,
+            unity_gain_lcg=100,
+            unity_gain_hdr=None,
+            min_preview_exp_ms=4000.0,
+            max_preview_exp_ms=4000.0,
+            supports_cooling=False,
+        )
+        lg = LastGoodSettings(
+            camera_model="TestCam", camera_serial="0001", mode="DSO",
+            gain=100, exposure_ms=4000.0, offset=0,
+            conversion_gain="LCG", saved_at="2026-01-01T00:00:00+00:00",
+        )
+        # eff_mean ≈ 0.005 (> 0.001) with zero zero-clipping
+        cam = _SeqCamera([_frame(0.005)] * 5)
+        result = AutoGainService.run_one_shot(cam, profile, last_good=lg, max_iterations=5)
+        assert result.status == AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR
+
+    def test_true_no_signal_when_mean_below_focus_threshold(self) -> None:
+        # mean_frac very close to 0 (< 0.001) with low zero-clipping → NO_SIGNAL
+        profile = CameraProfile(
+            model="TestCam",
+            sensor="IMX000",
+            width_px=640, height_px=480, pixel_um=3.0,
+            max_gain=100,
+            unity_gain_hcg=None,
+            unity_gain_lcg=100,
+            unity_gain_hdr=None,
+            min_preview_exp_ms=4000.0,
+            max_preview_exp_ms=4000.0,
+            supports_cooling=False,
+        )
+        lg = LastGoodSettings(
+            camera_model="TestCam", camera_serial="0001", mode="DSO",
+            gain=100, exposure_ms=4000.0, offset=2000,
+            conversion_gain="LCG", saved_at="2026-01-01T00:00:00+00:00",
+        )
+        # eff_mean ≈ 0.0001 (< _FOCUS_ERROR_THRESHOLD) → NO_SIGNAL
+        cam = _SeqCamera([_frame(0.0001, zero_clipped_pct=5.0)] * 5)
+        result = AutoGainService.run_one_shot(cam, profile, last_good=lg, max_iterations=5)
+        assert result.status == AutoGainStatus.NO_SIGNAL
 
 
 # ── Over-bright / clipping risk ───────────────────────────────────────────────
@@ -241,7 +291,7 @@ class TestGainLimit:
             max_preview_exp_ms=4000.0,
             supports_cooling=False,
         )
-        cam = _SeqCamera([_frame(0.001)] * 20)
+        cam = _SeqCamera([_frame(0.0005)] * 20)  # below focus-error threshold → NO_SIGNAL path
         result = AutoGainService.run_one_shot(cam, profile, max_iterations=10)
         assert result.status in (
             AutoGainStatus.GAIN_LIMIT_REACHED,

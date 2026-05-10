@@ -260,3 +260,102 @@ class TestLastGoodPersistence:
         last_good_dir = tmp_path / "last_good"
         files = list(last_good_dir.glob("*.json")) if last_good_dir.exists() else []
         assert len(files) == 0
+
+
+# ── Diagnostic flag (FR-AG-040) ───────────────────────────────────────────────
+
+class TestDiagnostic:
+    def _wait_for_result(self, max_s: float = 8.0) -> dict:
+        deadline = time.monotonic() + max_s
+        while time.monotonic() < deadline:
+            d = client.get("/api/autogain/status").json()
+            if not d["running"]:
+                return d
+            time.sleep(0.05)
+        pytest.fail("AutoGain diagnostic run did not finish within timeout")
+
+    def test_diagnostic_flag_reflected_in_status(self) -> None:
+        with patch.object(deps, "get_preview_camera", return_value=_FakeCamera()):
+            client.post("/api/autogain/run", json={"camera_index": 0, "diagnostic": True})
+        d = self._wait_for_result()
+        assert d["diagnostic"] is True
+
+    def test_normal_run_diagnostic_flag_false(self) -> None:
+        with patch.object(deps, "get_preview_camera", return_value=_FakeCamera()):
+            client.post("/api/autogain/run", json={"camera_index": 0})
+        d = self._wait_for_result()
+        assert d["diagnostic"] is False
+
+    def test_diagnostic_extends_profile_exp_to_10s(self) -> None:
+        """The profile passed to the service must have max_preview_exp_ms >= 10 000."""
+        captured_profile = {}
+
+        original = ag_mod.AutoGainService.run_one_shot
+
+        def _intercept(*args, **kwargs):
+            captured_profile["profile"] = kwargs.get("profile") or (args[1] if len(args) > 1 else None)
+            return original(*args, **kwargs)
+
+        with (
+            patch.object(ag_mod.AutoGainService, "run_one_shot", side_effect=_intercept),
+            patch.object(deps, "get_preview_camera", return_value=_FakeCamera()),
+        ):
+            client.post("/api/autogain/run", json={
+                "camera_index": 0,
+                "camera_model": "ATR585M",
+                "diagnostic": True,
+            })
+            self._wait_for_result()
+
+        profile = captured_profile.get("profile")
+        assert profile is not None
+        assert profile.max_preview_exp_ms >= 10_000.0
+
+    def test_non_diagnostic_run_leaves_profile_exp_unchanged(self) -> None:
+        captured_profile = {}
+
+        original = ag_mod.AutoGainService.run_one_shot
+
+        def _intercept(*args, **kwargs):
+            captured_profile["profile"] = kwargs.get("profile") or (args[1] if len(args) > 1 else None)
+            return original(*args, **kwargs)
+
+        with (
+            patch.object(ag_mod.AutoGainService, "run_one_shot", side_effect=_intercept),
+            patch.object(deps, "get_preview_camera", return_value=_FakeCamera()),
+        ):
+            client.post("/api/autogain/run", json={
+                "camera_index": 0,
+                "camera_model": "ATR585M",
+                "diagnostic": False,
+            })
+            self._wait_for_result()
+
+        from smart_telescope.domain.camera_profile import ATR585M
+        profile = captured_profile.get("profile")
+        assert profile is not None
+        assert profile.max_preview_exp_ms == ATR585M.max_preview_exp_ms
+
+    def test_focus_error_status_returned_in_diagnostic(self) -> None:
+        """A camera returning faint signal at max limits → POSSIBLE_FOCUS_OR_POINTING_ERROR."""
+        from smart_telescope.domain.autogain_service import AutoGainStatus
+
+        class _FaintCamera(_FakeCamera):
+            def capture(self, _exp):
+                # mean_frac ≈ 0.005 — above focus threshold, below no-signal threshold
+                return _make_frame(0.005)
+
+        with patch.object(deps, "get_preview_camera", return_value=_FaintCamera()):
+            client.post("/api/autogain/run", json={
+                "camera_index": 0,
+                "camera_model": "ATR585M",
+                "diagnostic": True,
+                "max_iterations": 20,
+            })
+        d = self._wait_for_result()
+        assert d["status"] in (
+            AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR.value,
+            AutoGainStatus.NO_SIGNAL.value,
+            AutoGainStatus.GAIN_LIMIT_REACHED.value,
+            AutoGainStatus.EXPOSURE_LIMIT_REACHED.value,
+        )

@@ -31,15 +31,20 @@ def _app_state_dir() -> Path:
 
 # ── Request / Response models ─────────────────────────────────────────────────
 
+_DIAGNOSTIC_EXP_MS = 10_000.0  # extended exposure for diagnostic runs
+
+
 class RunRequest(BaseModel):
     camera_index: int = Field(default=0, ge=0, le=7)
     mode: str = Field(default="DSO")
     camera_model: str | None = Field(default=None, description="Profile model name (e.g. ATR585M)")
     max_iterations: int = Field(default=12, ge=1, le=30)
+    diagnostic: bool = Field(default=False, description="Extend max exposure to 10 s for no-signal diagnosis")
 
 
 class AutoGainStatusResponse(BaseModel):
     running: bool
+    diagnostic: bool = False
     status: str | None = None
     exposure_ms: float | None = None
     gain: int | None = None
@@ -54,6 +59,7 @@ class AutoGainStatusResponse(BaseModel):
 @dataclass
 class _Job:
     running: bool
+    diagnostic: bool = False
     result: AutoGainResult | None = None
     error: str | None = None
     cancel: threading.Event = None  # type: ignore[assignment]
@@ -170,13 +176,18 @@ def run_autogain(req: RunRequest) -> dict:
         from ..domain.camera_profile import ATR585M
         profile = ATR585M
 
+    # Extend max exposure for diagnostic runs (FR-AG-040)
+    if req.diagnostic and profile.max_preview_exp_ms < _DIAGNOSTIC_EXP_MS:
+        from dataclasses import replace as _dc_replace
+        profile = _dc_replace(profile, max_preview_exp_ms=_DIAGNOSTIC_EXP_MS)
+
     # Resolve mode
     try:
         mode = AutoGainMode(req.mode)
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Unknown mode: {req.mode!r}")
 
-    job = _Job(running=True)
+    job = _Job(running=True, diagnostic=req.diagnostic)
     with _lock:
         _job = job
 
@@ -205,17 +216,18 @@ def get_status() -> AutoGainStatusResponse:
         return AutoGainStatusResponse(running=False)
 
     if j.running:
-        return AutoGainStatusResponse(running=True)
+        return AutoGainStatusResponse(running=True, diagnostic=j.diagnostic)
 
     if j.error:
-        return AutoGainStatusResponse(running=False, error=j.error)
+        return AutoGainStatusResponse(running=False, diagnostic=j.diagnostic, error=j.error)
 
     r = j.result
     if r is None:
-        return AutoGainStatusResponse(running=False)
+        return AutoGainStatusResponse(running=False, diagnostic=j.diagnostic)
 
     return AutoGainStatusResponse(
         running=False,
+        diagnostic=j.diagnostic,
         status=r.status.value,
         exposure_ms=round(r.exposure_ms, 3),
         gain=r.gain,

@@ -136,15 +136,14 @@ def get_preview_camera(index: int) -> CameraPort:
     if index not in _preview_cameras:
         try:
             from ..adapters.touptek.camera import ToupcamCamera
-            cam = ToupcamCamera(index=index)
-            if not cam.connect():
-                # SDK not installed or no camera at this index
-                raise RuntimeError(f"Camera {index}: SDK unavailable or connect() returned False")
-            _preview_cameras[index] = cam
-        except (ImportError, RuntimeError):
-            # Fall back to primary adapter (MockCamera in dev / test environments)
+        except ImportError:
+            # toupcam SDK not installed (dev / test environment) — use primary adapter
             assert _camera is not None
             return _camera
+        cam = ToupcamCamera(index=index)
+        if not cam.connect():
+            raise RuntimeError(f"Camera {index}: connect() returned False — is the camera plugged in?")
+        _preview_cameras[index] = cam
     return _preview_cameras[index]
 
 

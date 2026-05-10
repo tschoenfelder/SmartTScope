@@ -24,6 +24,7 @@ _FLAG_TEC_ONOFF   = 0x00020000
 _FLAG_CG          = 0x04000000
 _FLAG_CGHDR       = 0x0000000800000000
 _FLAG_BLACKLEVEL  = 0x00400000
+_FLAG_MONO        = 0x00000040  # monochrome / no Bayer filter
 
 _OPTION_BLACKLEVEL = 0x15
 _OPTION_CG         = 0x19
@@ -317,6 +318,34 @@ class ToupcamCamera(CameraPort):
 
     def get_logical_name(self) -> str:
         return self._logical_name
+
+    # ------------------------------------------------------------------
+    # CameraPort — color sensor detection
+    # ------------------------------------------------------------------
+
+    def is_color_sensor(self) -> bool:
+        """Return True when the sensor has a Bayer colour filter (not monochrome)."""
+        return not bool(self._model_flag & _FLAG_MONO)
+
+    def get_bayer_pattern(self) -> str:
+        """Return the Bayer CFA pattern string: 'RGGB', 'BGGR', 'GRBG', or 'GBRG'.
+
+        Reads the FOURCC from the SDK if available; defaults to 'RGGB' on failure
+        (the most common pattern for Touptek colour cameras).
+        """
+        if self._cam is None:
+            return "RGGB"
+        try:
+            fourcc, _ = self._cam.get_RawFormat()
+            # FOURCC uint32 → 4 ASCII bytes (little-endian)
+            s = bytes(
+                [(fourcc >> (8 * i)) & 0xFF for i in range(4)]
+            ).decode("ascii", errors="replace")
+            if s in ("RGGB", "BGGR", "GRBG", "GBRG"):
+                return s
+        except Exception:
+            pass
+        return "RGGB"
 
 
 def _camera_event(event: int, ctx: ToupcamCamera) -> None:

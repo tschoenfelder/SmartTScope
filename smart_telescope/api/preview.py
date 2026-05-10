@@ -112,6 +112,18 @@ async def ws_preview(
     except Exception:
         pass
 
+    # Detect colour sensor once; derive Bayer pattern for all frames.
+    bayer_pattern = ""
+    try:
+        if getattr(camera, "is_color_sensor", lambda: False)():
+            bayer_pattern = getattr(camera, "get_bayer_pattern", lambda: "RGGB")()
+            _log.info(
+                "Preview: colour sensor detected on camera_index=%d — Bayer=%s",
+                camera_index, bayer_pattern,
+            )
+    except Exception:
+        pass
+
     try:
         while True:
             # --- capture frame ---
@@ -145,7 +157,9 @@ async def ws_preview(
 
             # --- encode and send JPEG ---
             try:
-                await websocket.send_bytes(_to_jpeg(frame, stretch=stretch))
+                await websocket.send_bytes(
+                    _to_jpeg(frame, stretch=stretch, bayer_pattern=bayer_pattern)
+                )
             except (WebSocketDisconnect, RuntimeError):
                 # Client disconnected or Starlette transport error mid-send
                 break
@@ -165,13 +179,71 @@ async def ws_preview(
         pass
 
 
-def _to_jpeg(frame: FitsFrame, stretch: bool = True) -> bytes:
+def _debayer(raw: np.ndarray, pattern: str) -> np.ndarray:
+    """2×2 block-average Bayer demosaic → (H/2, W/2, 3) float32 RGB.
+
+    Half-resolution is acceptable for live preview and needs no extra deps.
+    """
+    h, w = raw.shape
+    h2, w2 = h // 2, w // 2
+    if pattern == "RGGB":
+        r = raw[0::2, 0::2][:h2, :w2].astype(np.float32)
+        g = (raw[0::2, 1::2][:h2, :w2].astype(np.float32) +
+             raw[1::2, 0::2][:h2, :w2].astype(np.float32)) * 0.5
+        b = raw[1::2, 1::2][:h2, :w2].astype(np.float32)
+    elif pattern == "BGGR":
+        b = raw[0::2, 0::2][:h2, :w2].astype(np.float32)
+        g = (raw[0::2, 1::2][:h2, :w2].astype(np.float32) +
+             raw[1::2, 0::2][:h2, :w2].astype(np.float32)) * 0.5
+        r = raw[1::2, 1::2][:h2, :w2].astype(np.float32)
+    elif pattern == "GRBG":
+        g1 = raw[0::2, 0::2][:h2, :w2].astype(np.float32)
+        r  = raw[0::2, 1::2][:h2, :w2].astype(np.float32)
+        b  = raw[1::2, 0::2][:h2, :w2].astype(np.float32)
+        g2 = raw[1::2, 1::2][:h2, :w2].astype(np.float32)
+        g  = (g1 + g2) * 0.5
+    else:  # GBRG
+        g1 = raw[0::2, 0::2][:h2, :w2].astype(np.float32)
+        b  = raw[0::2, 1::2][:h2, :w2].astype(np.float32)
+        r  = raw[1::2, 0::2][:h2, :w2].astype(np.float32)
+        g2 = raw[1::2, 1::2][:h2, :w2].astype(np.float32)
+        g  = (g1 + g2) * 0.5
+    return np.stack([r, g, b], axis=-1)
+
+
+def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
+    """Per-channel percentile auto-stretch (H, W, 3) float32 → uint8."""
+    out = np.empty(rgb.shape, dtype=np.uint8)
+    for c in range(3):
+        ch = rgb[:, :, c]
+        lo = float(np.percentile(ch, 0.5))
+        hi = float(np.percentile(ch, 99.5))
+        if hi > lo:
+            scaled = (ch - lo) / (hi - lo) * 255.0
+        else:
+            scaled = np.zeros_like(ch)
+        out[:, :, c] = np.clip(scaled, 0.0, 255.0).astype(np.uint8)
+    return out
+
+
+def _to_jpeg(frame: FitsFrame, stretch: bool = True, bayer_pattern: str = "") -> bytes:
     from PIL import Image  # runtime import — keeps startup fast on Pi
-    if stretch:
-        display = auto_stretch(frame.pixels)
+    if bayer_pattern:
+        # Colour camera: demosaic then per-channel stretch
+        rgb = _debayer(frame.pixels, bayer_pattern)
+        display = _auto_stretch_color(rgb) if stretch else np.clip(
+            rgb / 65535.0 * 255.0, 0.0, 255.0
+        ).astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(display, mode="RGB").save(buf, format="JPEG", quality=85)
     else:
-        # Linear map: raw 16-bit range [0, 65535] → uint8 [0, 255]
-        display = np.clip(frame.pixels.astype(np.float64) / 65535.0 * 255.0, 0.0, 255.0).astype(np.uint8)
-    buf = io.BytesIO()
-    Image.fromarray(display).save(buf, format="JPEG", quality=85)
+        # Monochrome camera: existing single-channel path
+        if stretch:
+            display = auto_stretch(frame.pixels)
+        else:
+            display = np.clip(
+                frame.pixels.astype(np.float64) / 65535.0 * 255.0, 0.0, 255.0
+            ).astype(np.uint8)
+        buf = io.BytesIO()
+        Image.fromarray(display).save(buf, format="JPEG", quality=85)
     return buf.getvalue()

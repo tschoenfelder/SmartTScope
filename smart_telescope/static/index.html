@@ -411,7 +411,7 @@
     .hist-canvas {
       display: block;
       width: 100%;
-      height: 80px;
+      height: 100px;
       border-radius: 4px;
       background: #111;
     }
@@ -1040,7 +1040,7 @@
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
           </div>
           <div id="s3-hist-panel" style="display:none;margin-top:0.5rem">
-            <canvas id="s3-histogram" class="hist-canvas" width="400" height="80"></canvas>
+            <canvas id="s3-histogram" class="hist-canvas" width="400" height="100"></canvas>
             <div id="s3-hist-stats" class="hist-stats"></div>
           </div>
 
@@ -3495,28 +3495,49 @@
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const CW = canvas.offsetWidth || canvas.width || 400;
-    const CH = canvas.height || 80;
+    const CH = canvas.height || 100;
     canvas.width = CW;
 
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, CW, CH);
 
+    // Layout: [bars] [statsStrip 14px] [xAxis 16px]
+    const statsH = 14;
+    const xAxisH = 16;
+    const barH   = CH - statsH - xAxisH;  // ≈ 70 px
+
+    const n       = binCounts.length;
+    const peak    = Math.max(1, ...binCounts);
+    const logPeak = Math.log1p(peak);
+    const bw      = CW / n;
+    const adcMax  = (stats && stats.adc_max) ? stats.adc_max : 65535;
+
     // Background
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, CW, CH);
 
-    // Bar area leaves 12 px at bottom for inline stats
-    const barH = CH - 14;
-    const n = binCounts.length;
-    const peak = Math.max(1, ...binCounts);
-    const logPeak = Math.log1p(peak);
-    const bw = CW / n;
+    // Shaded region 0–4000 ADU (light blue tint)
+    const x4k = Math.round(Math.min(4000 / adcMax, 1.0) * CW);
+    if (x4k > 0) {
+      ctx.fillStyle = 'rgba(80,130,220,0.07)';
+      ctx.fillRect(0, 0, x4k, barH);
+    }
 
     // Draw bars (log scale for dynamic range)
     ctx.fillStyle = 'rgba(170,195,235,0.85)';
     for (let i = 0; i < n; i++) {
       const h = Math.round(Math.log1p(binCounts[i]) / logPeak * barH);
       if (h > 0) ctx.fillRect(i * bw, barH - h, Math.max(1, bw - 0.5), h);
+    }
+
+    // 4000 ADU boundary line (dashed, subtle)
+    if (x4k > 2 && x4k < CW - 2) {
+      ctx.save();
+      ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = 'rgba(100,160,255,0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x4k, 0); ctx.lineTo(x4k, barH); ctx.stroke();
+      ctx.restore();
     }
 
     // Black-level marker (p0.5 ≈ pedestal)
@@ -3540,22 +3561,54 @@
     ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(CW - 1, 0); ctx.lineTo(CW - 1, barH); ctx.stroke();
 
-    // Inline bottom stats strip
+    // ── inline stats strip ──────────────────────────────────────────────
+    const statsY = barH;
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(0, barH, CW, CH - barH);
+    ctx.fillRect(0, statsY, CW, statsH);
     ctx.font = '9px ui-monospace, monospace';
 
     ctx.fillStyle = stats.zero_clipped_pct > 10 ? 'rgba(120,160,255,0.9)' : 'rgba(150,170,210,0.9)';
     ctx.textAlign = 'left';
-    ctx.fillText(`0-clip:${stats.zero_clipped_pct.toFixed(1)}%`, 3, CH - 3);
+    ctx.fillText(`0-clip:${stats.zero_clipped_pct.toFixed(1)}%`, 3, statsY + statsH - 3);
 
     ctx.fillStyle = 'rgba(180,200,230,0.9)';
     ctx.textAlign = 'center';
-    ctx.fillText(`p50:${(stats.p50 * 100).toFixed(1)}%  p99:${(stats.p99 * 100).toFixed(1)}%`, CW / 2, CH - 3);
+    ctx.fillText(`p50:${(stats.p50 * 100).toFixed(1)}%  p99:${(stats.p99 * 100).toFixed(1)}%`, CW / 2, statsY + statsH - 3);
 
     ctx.fillStyle = stats.saturation_pct > 1 ? 'rgba(255,110,80,0.95)' : 'rgba(150,170,210,0.9)';
     ctx.textAlign = 'right';
-    ctx.fillText(`sat:${stats.saturation_pct.toFixed(1)}%`, CW - 3, CH - 3);
+    ctx.fillText(`sat:${stats.saturation_pct.toFixed(1)}%`, CW - 3, statsY + statsH - 3);
+
+    // ── x-axis strip ────────────────────────────────────────────────────
+    const xY = barH + statsH;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0, xY, CW, xAxisH);
+
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(160,185,215,0.9)';
+    ctx.lineWidth = 0.8;
+
+    const ticks = _histXTicks(adcMax);
+    for (const adu of ticks) {
+      const xTick = Math.round((adu / adcMax) * CW);
+      // tick mark
+      ctx.strokeStyle = 'rgba(140,165,200,0.5)';
+      ctx.beginPath(); ctx.moveTo(xTick, xY); ctx.lineTo(xTick, xY + 3); ctx.stroke();
+      // label
+      const label = adu === 0 ? '0' : adu >= 1000 ? `${(adu / 1000).toFixed(adu % 1000 === 0 ? 0 : 1)}k` : String(adu);
+      ctx.textAlign = xTick < 14 ? 'left' : xTick > CW - 14 ? 'right' : 'center';
+      ctx.fillStyle = 'rgba(160,185,215,0.9)';
+      ctx.fillText(label, Math.min(Math.max(xTick, 4), CW - 4), xY + xAxisH - 2);
+    }
+
+    // highlight the 4k tick label in blue if it was drawn
+    if (ticks.includes(4000)) {
+      const xTick = Math.round((4000 / adcMax) * CW);
+      ctx.textAlign = xTick < 14 ? 'left' : xTick > CW - 14 ? 'right' : 'center';
+      ctx.fillStyle = 'rgba(110,170,255,0.95)';
+      ctx.fillText('4k', Math.min(Math.max(xTick, 4), CW - 4), xY + xAxisH - 2);
+    }
+
     ctx.textAlign = 'left';
 
     // Full stats text line (below canvas)
@@ -3572,6 +3625,13 @@
           `0-clip:${stats.zero_clipped_pct.toFixed(2)}%`;
       }
     }
+  }
+
+  function _histXTicks(adcMax) {
+    if (adcMax <= 512)   return [0, 128, 256, 384, 512];
+    if (adcMax <= 4096)  return [0, 1000, 2000, 3000, 4000];
+    if (adcMax <= 16384) return [0, 2000, 4000, 8000, 12000, 16000];
+    return [0, 10000, 20000, 40000, 60000, 65535];
   }
 
   function previewHistToggle(enabled) {

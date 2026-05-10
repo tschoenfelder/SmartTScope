@@ -1468,6 +1468,15 @@
             <span class="param-label">Frames rejected</span>
             <span class="param-value mono" id="s5-rejected-val">—</span>
           </div>
+          <div class="param" id="s5-calibrated-row" style="display:none">
+            <span class="param-label">Calibration</span>
+            <span class="param-value">
+              <span id="s5-calibrated-badge"
+                    style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 6px;font-size:0.78rem">
+                Calibrated
+              </span>
+            </span>
+          </div>
           <div class="param" id="s5-refocus-row" style="display:none">
             <span class="param-label">Refocus count</span>
             <span class="param-value mono" id="s5-refocus-val">—</span>
@@ -4293,6 +4302,9 @@
               document.getElementById('s5-rejected-row').style.display = '';
               document.getElementById('s5-rejected-val').textContent = String(rej);
             }
+            if (d.calibrated) {
+              document.getElementById('s5-calibrated-row').style.display = '';
+            }
           }
         } catch {}
       } else {
@@ -4387,7 +4399,7 @@
     document.getElementById('s5-progress-bar-wrap').style.display = 'none';
     document.getElementById('s5-progress-bar').style.width = '0%';
     document.getElementById('s5-frames-text').textContent = '';
-    ['s5-centering-row','s5-rejected-row','s5-refocus-row'].forEach(id => {
+    ['s5-centering-row','s5-rejected-row','s5-calibrated-row','s5-refocus-row'].forEach(id => {
       document.getElementById(id).style.display = 'none';
     });
     const wl = document.getElementById('s5-warnings-list');

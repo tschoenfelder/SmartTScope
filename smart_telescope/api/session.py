@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import io
+import logging
 import threading
 import uuid
+from pathlib import Path
 
+import numpy as np
+from astropy.io import fits
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+_log = logging.getLogger(__name__)
 from pydantic import BaseModel
 
 from .. import config as _config
@@ -28,6 +35,31 @@ _PROFILES: dict[str, OpticalProfile] = {
 }
 
 router = APIRouter(prefix="/api/session")
+
+
+def _load_fits_master(path: str) -> np.ndarray:
+    """Load a calibration master FITS from *path* and return its pixel array."""
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(status_code=422, detail=f"Calibration master not found: {path}")
+    try:
+        with fits.open(io.BytesIO(p.read_bytes())) as hdul:
+            return np.array(hdul[0].data, dtype=np.float32)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Cannot read calibration FITS {path}: {exc}") from exc
+
+
+def _apply_calibration(stacker, bias, dark, flat) -> None:  # noqa: ANN001
+    if not any(x is not None for x in (bias, dark, flat)):
+        return
+    if hasattr(stacker, "set_calibration"):
+        stacker.set_calibration(bias=bias, dark=dark, flat=flat)
+        _log.info(
+            "Calibration masters applied — bias=%s dark=%s flat=%s",
+            bias is not None, dark is not None, flat is not None,
+        )
+    else:
+        _log.warning("Stacker does not support set_calibration; calibration skipped")
 
 # ── Session runner state ─────────────────────────────────────────────────────
 
@@ -172,6 +204,9 @@ def session_run(
     enable_quality_filter: bool = Query(default=True),
     quality_min_snr: float = Query(default=0.3, ge=0.0, le=1.0),
     quality_baseline_frames: int = Query(default=3, ge=1, le=20),
+    bias_path: str | None = Query(default=None, description="Absolute path to master bias FITS"),
+    dark_path: str | None = Query(default=None, description="Absolute path to master dark FITS"),
+    flat_path: str | None = Query(default=None, description="Absolute path to master flat FITS"),
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
@@ -192,16 +227,22 @@ def session_run(
                 status_code=403,
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
+    bias_arr = _load_fits_master(bias_path) if bias_path else None
+    dark_arr = _load_fits_master(dark_path) if dark_path else None
+    flat_arr = _load_fits_master(flat_path) if flat_path else None
+
     global _active_runner, _runner_thread
     with _session_lock:
         if _runner_thread is not None and _runner_thread.is_alive():
             raise HTTPException(status_code=409, detail="Session already running")
+        stacker = deps.get_stacker()
+        _apply_calibration(stacker, bias_arr, dark_arr, flat_arr)
         session_id = str(uuid.uuid4())
         runner = VerticalSliceRunner(
             camera=camera,
             mount=mount,
             solver=deps.get_solver(),
-            stacker=deps.get_stacker(),
+            stacker=stacker,
             storage=deps.get_storage(),
             focuser=focuser,
             optical_profile=optical_profile,

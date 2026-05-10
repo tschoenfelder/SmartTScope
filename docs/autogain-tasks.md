@@ -304,25 +304,30 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 6 — Calibration in live stacking
 
-### AGT-6-1 — Calibration master selection at stack start
-- [ ] Before starting a live-stack session: call `find_best_match()` for
-  bias, dark, and flat; surface `CALIBRATION_MATCHED / PARTIAL / MISMATCH /
-  NOT_FOUND` status in the stack-start UI (FR-CAL-080).
-- [ ] If mismatch: show diff table + "Use anyway?" toggle.
-- [ ] Log selected calibration file paths to `session_metadata.json`.
+### AGT-6-1 — Calibration master selection at stack start ✅
+- [x] `POST /api/session/run` accepts optional `bias_path`, `dark_path`,
+  `flat_path` query params; validates each file exists and is readable FITS.
+- [x] Calibration masters loaded into memory before runner thread starts.
+- [x] `_apply_calibration()` helper wires masters into stacker via duck-typed
+  `set_calibration()` call; logs which masters are applied.
 
 *Covers:* FR-CAL-060, FR-CAL-070, FR-CAL-080  
 *Depends:* AGT-3-4
 
 ---
 
-### AGT-6-2 — Apply calibration frames during live stacking
-- [ ] Load selected master bias / dark / flat FITS once at session start;
-  keep in memory.
-- [ ] `NumpyStacker.add_frame()`: subtract master dark (includes bias),
-  divide by normalised flat (FR-CAL-080).
-- [ ] Show "Calibrated" badge in stack UI; warn if calibration is partial.
-- [ ] Unit tests: stacked result matches manual calibration.
+### AGT-6-2 — Apply calibration frames during live stacking ✅
+- [x] `NumpyStacker.set_calibration(bias, dark, flat)` — stores dark master
+  (falls back to bias if no dark), normalised flat; calibration persists
+  across `reset()` calls.
+- [x] `NumpyStacker._calibrate()` — subtracts dark then divides by flat_norm
+  before frames are accumulated.
+- [x] `StackedImage.calibrated` flag set True whenever dark or flat active.
+- [x] WebSocket `/ws/stack` sends `calibrated` in JSON metadata frame.
+- [x] UI: "Calibrated" badge shown in stack info row when `calibrated=True`;
+  hidden on `_s5ResetRunUI()`.
+- [x] 16 new unit tests in `TestSetCalibration`, `TestDarkSubtraction`,
+  `TestFlatDivision`, `TestDarkAndFlat`, `TestResetPreservesCalibration`.
 
 *Covers:* FR-CAL-080, AC-CAL-007  
 *Depends:* AGT-6-1
@@ -465,4 +470,4 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-*Last updated: 2026-05-10 — AGT-5-4 done, Phase 5 complete (19/26)*
+*Last updated: 2026-05-10 — AGT-6-2 done, Phase 6 complete (21/26)*

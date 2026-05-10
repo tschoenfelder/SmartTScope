@@ -203,3 +203,154 @@ class TestGetCurrentStack:
         s.add_frame(_frame(signal=5000.0), 1)
         pixels = _parse_fits_pixels(s.get_current_stack().data)
         assert pixels.dtype == np.float32
+
+
+# ── calibration ───────────────────────────────────────────────────────────────
+
+
+def _master(value: float) -> np.ndarray[Any, np.dtype[Any]]:
+    return np.full((_H, _W), value, dtype=np.float32)
+
+
+class TestSetCalibration:
+    def test_no_calibration_calibrated_false(self) -> None:
+        s = NumpyStacker()
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        assert result.calibrated is False
+
+    def test_dark_only_calibrated_true(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(dark=_master(100.0))
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        assert result.calibrated is True
+
+    def test_flat_only_calibrated_true(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(flat=_master(32000.0))
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        assert result.calibrated is True
+
+    def test_bias_only_calibrated_true(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(bias=_master(50.0))
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        assert result.calibrated is True
+
+
+class TestDarkSubtraction:
+    def test_dark_subtracted_from_frame(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(dark=_master(200.0))
+        result = s.add_frame(_frame(signal=1200.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        assert np.allclose(pixels, 1000.0, atol=1.0)
+
+    def test_dark_subtracted_matches_manual(self) -> None:
+        dark = _master(300.0)
+        signal = 5000.0
+        s = NumpyStacker()
+        s.set_calibration(dark=dark)
+        s.add_frame(_frame(signal=signal), 1)
+        result = s.add_frame(_frame(signal=signal), 2)
+        pixels = _parse_fits_pixels(result.data)
+        expected = signal - 300.0
+        assert np.allclose(pixels, expected, atol=1.0)
+
+    def test_bias_used_when_no_dark(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(bias=_master(150.0))
+        result = s.add_frame(_frame(signal=1150.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        assert np.allclose(pixels, 1000.0, atol=1.0)
+
+    def test_dark_takes_precedence_over_bias(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(bias=_master(50.0), dark=_master(200.0))
+        result = s.add_frame(_frame(signal=1200.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        assert np.allclose(pixels, 1000.0, atol=1.0)
+
+
+class TestFlatDivision:
+    def test_flat_normalised_to_mean(self) -> None:
+        flat = _master(40000.0)
+        s = NumpyStacker()
+        s.set_calibration(flat=flat)
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        # flat_norm = flat/mean(flat) = 1.0 everywhere → pixel / 1.0 = pixel
+        assert np.allclose(pixels, 1000.0, atol=1.0)
+
+    def test_non_uniform_flat_corrects_vignetting(self) -> None:
+        flat = np.ones((_H, _W), dtype=np.float32) * 40000.0
+        flat[:, :_W // 2] = 20000.0  # left half darker
+        s = NumpyStacker()
+        s.set_calibration(flat=flat)
+        # raw signal is uniform at 1000 across the whole frame
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        flat_mean = float(np.mean(flat))
+        flat_norm = flat / flat_mean
+        expected = np.full((_H, _W), 1000.0) / flat_norm
+        assert np.allclose(pixels, expected, atol=1.0)
+
+    def test_zero_mean_flat_ignored(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(flat=np.zeros((_H, _W), dtype=np.float32))
+        result = s.add_frame(_frame(signal=1000.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        assert np.allclose(pixels, 1000.0, atol=1.0)
+
+
+class TestDarkAndFlat:
+    def test_dark_then_flat_applied_in_order(self) -> None:
+        dark_val = 200.0
+        flat_val = 40000.0
+        signal = 1200.0
+        s = NumpyStacker()
+        s.set_calibration(dark=_master(dark_val), flat=_master(flat_val))
+        result = s.add_frame(_frame(signal=signal), 1)
+        pixels = _parse_fits_pixels(result.data)
+        # flat is uniform so flat_norm = 1.0; net result = signal - dark
+        assert np.allclose(pixels, signal - dark_val, atol=1.0)
+
+    def test_calibrated_result_matches_manual_pipeline(self) -> None:
+        dark = _master(100.0)
+        flat = np.ones((_H, _W), dtype=np.float32) * 32000.0
+        flat[0, 0] = 16000.0  # introduce one non-uniform pixel
+        signal = 5000.0
+
+        s = NumpyStacker()
+        s.set_calibration(dark=dark, flat=flat)
+        s.add_frame(_frame(signal=signal), 1)
+        result = s.add_frame(_frame(signal=signal), 2)
+        pixels = _parse_fits_pixels(result.data)
+
+        flat_f = flat.astype(np.float32)
+        flat_norm = flat_f / float(np.mean(flat_f))
+        expected = (signal - 100.0) / flat_norm
+        assert np.allclose(pixels, expected, atol=1.0)
+
+    def test_calibrated_flag_true_with_full_pipeline(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(dark=_master(100.0), flat=_master(32000.0))
+        result = s.add_frame(_frame(signal=5000.0), 1)
+        assert result.calibrated is True
+
+
+class TestResetPreservesCalibration:
+    def test_calibration_persists_after_reset(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(dark=_master(200.0))
+        s.add_frame(_frame(signal=1200.0), 1)
+        s.reset()
+        result = s.add_frame(_frame(signal=1200.0), 1)
+        pixels = _parse_fits_pixels(result.data)
+        assert np.allclose(pixels, 1000.0, atol=1.0)
+
+    def test_calibrated_true_after_reset(self) -> None:
+        s = NumpyStacker()
+        s.set_calibration(dark=_master(200.0))
+        s.reset()
+        result = s.add_frame(_frame(signal=1200.0), 1)
+        assert result.calibrated is True

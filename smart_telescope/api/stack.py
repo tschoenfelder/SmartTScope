@@ -38,6 +38,7 @@ async def ws_stack(websocket: WebSocket) -> None:
                 await websocket.send_json({
                     "frames_integrated": current.frames_integrated,
                     "frames_rejected": current.frames_rejected,
+                    "calibrated": current.calibrated,
                 })
                 if current.data:
                     await websocket.send_bytes(_to_jpeg(current.data))

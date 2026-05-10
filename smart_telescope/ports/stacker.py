@@ -9,6 +9,7 @@ class StackedImage:
     data: bytes
     frames_integrated: int
     frames_rejected: int
+    calibrated: bool = False
 
 
 class StackerPort(ABC):

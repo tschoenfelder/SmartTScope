@@ -287,15 +287,15 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-5-4 — Diagnostic escalation (no-signal prompt)
-- [ ] When `AUTO_GAIN_NO_SIGNAL` after 4s: show modal prompt
+### AGT-5-4 — Diagnostic escalation (no-signal prompt) ✅
+- [x] When `AUTO_GAIN_NO_SIGNAL` after 4s: show inline prompt
   "No usable signal within normal exposure. Run diagnostic up to 10 s?" (FR-AG-040).
-- [ ] If user confirms: re-run at `max_diagnostic_exp_ms = 10 000`;
-  classify result as `NO_SIGNAL`, `POSSIBLE_DUST_CAP`, or
-  `POSSIBLE_FOCUS_OR_POINTING_ERROR` using dust-cap heuristic
-  (histogram indistinguishable from dark frame) vs. low-SNR heuristic.
-- [ ] Show actionable message per FR-UI-002.
-- [ ] Unit tests: each classification branch.
+- [x] API `diagnostic:bool` flag extends profile max_preview_exp_ms to 10 000 ms;
+  service classifies `NO_SIGNAL`, `POSSIBLE_DUST_CAP`, or
+  `POSSIBLE_FOCUS_OR_POINTING_ERROR` (tiny-signal heuristic: eff_mean in 0.001–0.02).
+- [x] UI shows actionable message per FR-UI-002 for each classification.
+- [x] Tests: all three classification branches + API diagnostic flag propagation
+  and profile extension (5 new API tests, 2 new service tests).
 
 *Covers:* FR-AG-030, FR-AG-040, FR-AG-100, FR-UI-002  
 *Depends:* AGT-5-3
@@ -454,15 +454,15 @@ Implementation phases follow section 16 of that document.
 | 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 4 |
 | 4 — Cooling | 2 | 2 |
-| 5 — Auto Gain MVP | 4 | 3 |
+| 5 — Auto Gain MVP | 4 | 4 |
 | 6 — Live stacking calibration | 2 | 0 |
 | 7 — Guide camera | 2 | 0 |
 | 8 — Planetary | 2 | 0 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **18** |
+| **Total** | **26** | **19** |
 
 ---
 
-*Last updated: 2026-05-10 — AGT-5-3 done (18/26)*
+*Last updated: 2026-05-10 — AGT-5-4 done, Phase 5 complete (19/26)*

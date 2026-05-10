@@ -218,15 +218,16 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-4-2 — Cooling REST endpoint and UI
-- [ ] `POST /api/cooling/set_target`, `GET /api/cooling/status` →
+### AGT-4-2 — Cooling REST endpoint and UI ✅
+- [x] `POST /api/cooling/set_target`, `GET /api/cooling/status` →
   `CoolingStatus` (current_temp_c, target_c, power_pct, stable, warning_msg).
-- [ ] Stage 1 ATR585M camera card: target-temperature selector
+- [x] Stage 1 ATR585M camera card: target-temperature selector
   (−10°C to +10°C in 1°C steps, no lower than −10°C); power gauge;
   stabilisation countdown badge; warning when target is relaxed (FR-UI-003).
-- [ ] Background task polling `CoolingController.tick()` every 30s while
+- [x] Background task polling `CoolingController.tick()` every 30s while
   cooling is enabled.
-- [ ] Unit tests for endpoint state machine.
+- [x] Unit tests for endpoint state machine.
+  20 new tests. Suite: 1419 passed, 85.00% coverage.
 
 *Covers:* FR-TEMP-001–007, FR-UI-003  
 *Depends:* AGT-4-1
@@ -450,7 +451,7 @@ Implementation phases follow section 16 of that document.
 | 1 — Storage | 2 | 2 |
 | 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 4 |
-| 4 — Cooling | 2 | 1 |
+| 4 — Cooling | 2 | 2 |
 | 5 — Auto Gain MVP | 4 | 0 |
 | 6 — Live stacking calibration | 2 | 0 |
 | 7 — Guide camera | 2 | 0 |
@@ -458,7 +459,7 @@ Implementation phases follow section 16 of that document.
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **14** |
+| **Total** | **26** | **15** |
 
 ---
 

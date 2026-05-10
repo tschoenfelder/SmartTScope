@@ -32,6 +32,7 @@ from .camera_capabilities import ConversionGain
 from .camera_profile import CameraProfile
 from .histogram import HistogramStats, analyze as _hist_analyze
 from .last_good_settings import LastGoodSettings
+from .planet_detection import DetectedObject, detect_planet
 
 _log = logging.getLogger(__name__)
 
@@ -51,6 +52,12 @@ _GUIDE_LO              = 0.20     # guide-star peak lower bound (FR-GUIDE-001)
 _GUIDE_HI              = 0.80     # guide-star peak upper bound (saturation risk)
 _GUIDE_TARGET          = 0.45     # midpoint
 _GUIDE_NO_SIGNAL_THR   = 0.02     # p99_9 below this → no guide star detected
+
+# Planetary-mode tuning — signal metric is detected planet's peak_frac
+_PLANET_LO             = 0.40     # planet peak lower bound (FR-PLANET-001)
+_PLANET_HI             = 0.80     # planet peak must not exceed this (FR-PLANET-003)
+_PLANET_TARGET         = 0.60     # midpoint
+_PLANET_NO_SIGNAL_THR  = 0.05     # peak below this → no planet detected
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -175,13 +182,19 @@ class AutoGainService:
                 cur_offset = suggested_offset
 
         last_stats: HistogramStats | None = None
+        last_detected: DetectedObject | None = None
 
-        # Mode-specific parameters (FR-GUIDE-001)
-        is_guiding = (mode == AutoGainMode.GUIDING)
+        # Mode-specific parameters (FR-GUIDE-001, FR-PLANET-001)
+        is_guiding   = (mode == AutoGainMode.GUIDING)
+        is_planetary = (mode == AutoGainMode.PLANETARY)
         if is_guiding:
             band_lo, band_hi, band_tgt = _GUIDE_LO, _GUIDE_HI, _GUIDE_TARGET
             ns_signal_thr = _GUIDE_NO_SIGNAL_THR
             ns_exp_ms     = exp_max_ms   # classify no-signal at profile ceiling
+        elif is_planetary:
+            band_lo, band_hi, band_tgt = _PLANET_LO, _PLANET_HI, _PLANET_TARGET
+            ns_signal_thr = _PLANET_NO_SIGNAL_THR
+            ns_exp_ms     = exp_max_ms
         else:
             band_lo, band_hi, band_tgt = _LO, _HI, _TARGET
             ns_signal_thr = _NO_SIGNAL_THRESHOLD
@@ -218,8 +231,17 @@ class AutoGainService:
             stats = _hist_analyze(frame.pixels, bit_depth=bit_depth)
             last_stats = stats
             eff_mean = _effective_mean(stats, cur_offset, adc_max)
-            # Guiding uses peak (p99_9) as signal — guide stars are point sources
-            signal = stats.p99_9 if is_guiding else eff_mean
+            # Signal metric depends on mode:
+            # - GUIDING: p99_9 (guide-star peak in dark field)
+            # - PLANETARY: detected planet peak_frac (FR-PLANET-001)
+            # - DSO/LUNAR: effective mean
+            if is_guiding:
+                signal = stats.p99_9
+            elif is_planetary:
+                last_detected = detect_planet(frame.pixels, bit_depth=bit_depth)
+                signal = last_detected.peak_frac if last_detected is not None else eff_mean
+            else:
+                signal = eff_mean
 
             _log.info(
                 "AutoGain iter %d/%d: exp=%.1fms gain=%d offset=%d "
@@ -247,8 +269,9 @@ class AutoGainService:
             # Proportional ratio toward target
             ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, band_tgt / max(signal, 1e-4)))
 
-            # Step 7: zero-clipping → raise offset first (DSO only — guiding targets peak)
+            # Step 7: zero-clipping → raise offset first (DSO only — guiding/planetary target peak)
             if (not is_guiding
+                    and not is_planetary
                     and stats.zero_clipped_pct > _CLIP_THRESHOLD_PCT
                     and cur_offset < _OFFSET_MAX_ADU):
                 new_offset = min(_OFFSET_MAX_ADU, cur_offset + _OFFSET_STEP_ADU)
@@ -275,7 +298,7 @@ class AutoGainService:
                                 histogram_stats=stats,
                                 warning_msg="Histogram consistent with dark frame — check dust cap",
                             )
-                        if not is_guiding and eff_mean > _FOCUS_ERROR_THRESHOLD:
+                        if not is_guiding and not is_planetary and eff_mean > _FOCUS_ERROR_THRESHOLD:
                             return AutoGainResult(
                                 status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
                                 exposure_ms=cur_exp_ms,
@@ -285,12 +308,18 @@ class AutoGainService:
                                 histogram_stats=stats,
                                 warning_msg="Faint signal detected — check focus and confirm mount is tracking",
                             )
-                        no_signal_msg = (
-                            "No guide star detected at maximum gain and exposure — "
-                            "check guide scope focus and target field"
-                            if is_guiding else
-                            "No signal at maximum gain and 4 s exposure"
-                        )
+                        if is_guiding:
+                            no_signal_msg = (
+                                "No guide star detected at maximum gain and exposure — "
+                                "check guide scope focus and target field"
+                            )
+                        elif is_planetary:
+                            no_signal_msg = (
+                                "No planet detected at maximum gain and exposure — "
+                                "ensure planet is in field of view"
+                            )
+                        else:
+                            no_signal_msg = "No signal at maximum gain and 4 s exposure"
                         return AutoGainResult(
                             status=AutoGainStatus.NO_SIGNAL,
                             exposure_ms=cur_exp_ms,
@@ -347,7 +376,12 @@ class AutoGainService:
         # Loop exhausted without success
         if last_stats is not None:
             eff_mean_final = _effective_mean(last_stats, cur_offset, adc_max)
-            signal_final   = last_stats.p99_9 if is_guiding else eff_mean_final
+            if is_guiding:
+                signal_final = last_stats.p99_9
+            elif is_planetary and last_detected is not None:
+                signal_final = last_detected.peak_frac
+            else:
+                signal_final = eff_mean_final
         else:
             signal_final = 0.0
         _log.warning(

@@ -1,4 +1,8 @@
+import logging
+
 from ...ports.mount import MountPort, MountPosition, MountState
+
+_log = logging.getLogger(__name__)
 
 
 class MockMount(MountPort):
@@ -10,6 +14,7 @@ class MockMount(MountPort):
         fail_goto: bool = False,
         at_limit: bool = False,
     ) -> None:
+        _log.warning("MockMount initialised — no real mount hardware; all operations are simulated")
         self._fail_connect = fail_connect
         self._state = MountState.AT_LIMIT if at_limit else initial_state
         self._fail_unpark = fail_unpark
@@ -17,7 +22,9 @@ class MockMount(MountPort):
         self._position = MountPosition(ra=0.0, dec=0.0)
 
     def connect(self) -> bool:
-        return not self._fail_connect
+        ok = not self._fail_connect
+        _log.warning("MockMount.connect(): returning %s (simulated)", ok)
+        return ok
 
     def get_state(self) -> MountState:
         return self._state

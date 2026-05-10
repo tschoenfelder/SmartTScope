@@ -6,9 +6,12 @@ resolves instantly, matching SimulatorCamera's speed=0.0 convention.
 """
 from __future__ import annotations
 
+import logging
 import threading
 
 from ...ports.mount import MountPort, MountPosition, MountState
+
+_log = logging.getLogger(__name__)
 
 
 class SimulatorMount(MountPort):
@@ -22,6 +25,7 @@ class SimulatorMount(MountPort):
     def __init__(self, slew_time_s: float = 0.0) -> None:
         if slew_time_s < 0.0:
             raise ValueError(f"slew_time_s must be >= 0, got {slew_time_s}")
+        _log.info("SimulatorMount initialised (slew_time_s=%.1f) — software simulation, no real hardware", slew_time_s)
         self._slew_time_s = slew_time_s
         self._state = MountState.PARKED
         self._position = MountPosition(ra=0.0, dec=0.0)
@@ -31,6 +35,7 @@ class SimulatorMount(MountPort):
     # ── MountPort ─────────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
+        _log.info("SimulatorMount.connect(): connected (simulated)")
         return True
 
     def get_state(self) -> MountState:

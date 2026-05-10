@@ -1,14 +1,21 @@
+import logging
+
 from ...ports.focuser import FocuserPort
+
+_log = logging.getLogger(__name__)
 
 
 class MockFocuser(FocuserPort):
     def __init__(self, fail_connect: bool = False, available: bool = True) -> None:
+        _log.warning("MockFocuser initialised — no real focuser hardware; all operations are simulated")
         self._fail_connect = fail_connect
         self._available = available
         self._position: int = 0
 
     def connect(self) -> bool:
-        return not self._fail_connect
+        ok = not self._fail_connect
+        _log.warning("MockFocuser.connect(): returning %s (simulated)", ok)
+        return ok
 
     def disconnect(self) -> None:
         pass

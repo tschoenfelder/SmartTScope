@@ -48,6 +48,9 @@ class CrossingAnalysisResult:
     crossing_error_max_px:      float
     focus_error_px:             float   # primary Bahtinov metric; 0 = in focus
     detection_confidence:       float   # 0–1, min confidence over 3 lines
+    # Fields added for overlay rendering — defaults keep existing call sites unchanged.
+    roi_size:                   int                = 400
+    roi_top_left_px:            tuple[int, int]    = (0, 0)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -74,6 +77,87 @@ class CrossingAnalysisResult:
             "crossing_error_max_px":  round(self.crossing_error_max_px, 2),
             "focus_error_px":         round(self.focus_error_px, 2),
             "detection_confidence":   round(self.detection_confidence, 3),
+            "roi_size":               self.roi_size,
+            "roi_top_left_px":        list(self.roi_top_left_px),
+        }
+
+    def overlay_data(self) -> dict[str, object]:
+        """Return all data needed to render the Bahtinov overlay in the UI.
+
+        All point/segment coordinates are in ROI-relative space (pixels from the
+        top-left of the cropped ROI).  Use ``roi_offset`` to translate them back
+        to full-frame coordinates for display.
+
+        Keys
+        ----
+        spike_lines     : list of 3 {x0,y0,x1,y1} — each spike clipped to ROI.
+        crossing_point  : {x, y} — common crossing point.
+        deviation_arrow : {x0, y0, dx, dy} — origin at P_outer, direction along
+                          the normal to the middle spike, magnitude = focus_error_px.
+        spread_triangle : [{x,y}, {x,y}, {x,y}] — P12, P13, P23 intersections.
+        roi_offset      : {row, col} — ROI top-left in full-frame coordinates.
+        """
+        ox, oy = self.roi_top_left_px
+        roi_w = roi_h = float(self.roi_size)
+
+        def _to_roi(x: float, y: float) -> tuple[float, float]:
+            return x - ox, y - oy
+
+        # -- spike lines -------------------------------------------------------
+        spike_lines: list[dict[str, float]] = []
+        for line in self.lines:
+            # Convert normal-form line to ROI coordinates:
+            # original: a*x_full + b*y_full + c = 0
+            # ROI:      a*x_roi  + b*y_roi  + c_roi = 0
+            #           where c_roi = a*ox + b*oy + c
+            c_roi = line.a * ox + line.b * oy + line.c
+            seg = _clip_line_to_rect(line.a, line.b, c_roi, 0.0, 0.0, roi_w, roi_h)
+            if seg:
+                spike_lines.append(
+                    {"x0": round(seg[0], 2), "y0": round(seg[1], 2),
+                     "x1": round(seg[2], 2), "y1": round(seg[3], 2)}
+                )
+            else:
+                # Line outside ROI — degenerate point at object centre
+                rx, ry = _to_roi(*self.object_center_px)
+                spike_lines.append({"x0": round(rx, 2), "y0": round(ry, 2),
+                                    "x1": round(rx, 2), "y1": round(ry, 2)})
+
+        # -- crossing point ----------------------------------------------------
+        ccp_r = _to_roi(*self.common_crossing_point_px)
+        crossing_point = {"x": round(ccp_r[0], 2), "y": round(ccp_r[1], 2)}
+
+        # -- deviation arrow ---------------------------------------------------
+        mid_i, out1_i, out2_i = _classify_bahtinov(self.lines)
+        p_outer = _intersect(self.lines[out1_i], self.lines[out2_i])
+        p_outer_r = _to_roi(*p_outer)
+        lm = self.lines[mid_i]
+        # (a, b) is the unit normal to the middle line (SpikeLine normalises it).
+        # focus_error_px is the signed distance of P_outer from that line, so:
+        dx = lm.a * self.focus_error_px
+        dy = lm.b * self.focus_error_px
+        deviation_arrow = {
+            "x0": round(p_outer_r[0], 2),
+            "y0": round(p_outer_r[1], 2),
+            "dx": round(dx, 3),
+            "dy": round(dy, 3),
+        }
+
+        # -- spread triangle ---------------------------------------------------
+        spread_triangle = [
+            {"x": round(_to_roi(*p)[0], 2), "y": round(_to_roi(*p)[1], 2)}
+            for p in self.pairwise_intersections_px
+        ]
+
+        # -- roi offset --------------------------------------------------------
+        roi_offset = {"row": oy, "col": ox}
+
+        return {
+            "spike_lines":      spike_lines,
+            "crossing_point":   crossing_point,
+            "deviation_arrow":  deviation_arrow,
+            "spread_triangle":  spread_triangle,
+            "roi_offset":       roi_offset,
         }
 
 
@@ -172,6 +256,8 @@ class BahtinovAnalyzer:
             crossing_error_max_px=mx,
             focus_error_px=focus_err,
             detection_confidence=confidence,
+            roi_size=self._roi_size,
+            roi_top_left_px=(r0x, r0y),
         )
 
     # ── private ──────────────────────────────────────────────────────────────
@@ -320,6 +406,40 @@ def _intersect(l1: SpikeLine, l2: SpikeLine) -> tuple[float, float]:
     x = (l1.b * l2.c - l2.b * l1.c) / d
     y = (l2.a * l1.c - l1.a * l2.c) / d
     return (x, y)
+
+
+def _clip_line_to_rect(
+    a: float, b: float, c: float,
+    x0: float, y0: float, x1: float, y1: float,
+) -> tuple[float, float, float, float] | None:
+    """Clip infinite line ax+by+c=0 to rectangle [x0,x1]×[y0,y1].
+
+    Returns (px0, py0, px1, py1) for the visible segment, or None if the
+    line does not intersect the rectangle.
+    """
+    EPS = 1e-9
+    candidates: list[tuple[float, float]] = []
+
+    if abs(b) > EPS:
+        for xi in (x0, x1):
+            y = -(a * xi + c) / b
+            if y0 - EPS <= y <= y1 + EPS:
+                candidates.append((xi, max(y0, min(y1, y))))
+    if abs(a) > EPS:
+        for yi in (y0, y1):
+            x = -(b * yi + c) / a
+            if x0 - EPS <= x <= x1 + EPS:
+                candidates.append((max(x0, min(x1, x)), yi))
+
+    # Deduplicate near-identical points
+    distinct: list[tuple[float, float]] = []
+    for p in candidates:
+        if not any(abs(p[0] - q[0]) < 0.5 and abs(p[1] - q[1]) < 0.5 for q in distinct):
+            distinct.append(p)
+
+    if len(distinct) < 2:
+        return None
+    return (distinct[0][0], distinct[0][1], distinct[1][0], distinct[1][1])
 
 
 def _classify_bahtinov(lines: list[SpikeLine]) -> tuple[int, int, int]:

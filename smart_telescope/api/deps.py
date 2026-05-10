@@ -77,18 +77,30 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     if onstep_port:
         from ..adapters.onstep.focuser import OnStepFocuser
         from ..adapters.onstep.mount import OnStepMount
+        _log.info("Adapter selected: OnStepMount+OnStepFocuser on port %s", onstep_port)
         mount = OnStepMount(onstep_port)
         if not mount.connect():
             _log.error("OnStepMount.connect() failed on port %s — mount will be unavailable", onstep_port)
+        else:
+            _log.info("OnStepMount: connected on %s — REAL HARDWARE", onstep_port)
         focuser = OnStepFocuser(mount)
         focuser.connect()
+        _log.info(
+            "OnStepFocuser: connected, available=%s — %s",
+            focuser.is_available,
+            "REAL HARDWARE" if focuser.is_available else "focuser not available (check wiring)",
+        )
         return camera, mount, focuser
     if sim_dir:
         from pathlib import Path
 
         from ..adapters.simulator.focuser import SimulatorFocuser
         from ..adapters.simulator.mount import SimulatorMount
+        _log.info("Adapter selected: SimulatorMount+SimulatorFocuser (SIMULATOR_FITS_DIR=%s)", sim_dir)
         return camera, SimulatorMount(), SimulatorFocuser()
+    _log.warning(
+        "Adapter selected: MockMount+MockFocuser — no ONSTEP_PORT or SIMULATOR_FITS_DIR set"
+    )
     return camera, MockMount(), MockFocuser()
 
 

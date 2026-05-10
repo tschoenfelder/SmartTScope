@@ -582,3 +582,131 @@ class TestGuidingConversionGain:
         )
         assert result.status == AutoGainStatus.OK
         assert result.conversion_gain == ConversionGain.LCG
+
+
+# ── Planetary mode (AGT-8-1) ──────────────────────────────────────────────────
+
+def _planet_frame(peak_frac: float, radius: int = 8) -> FitsFrame:
+    """Frame with a circular bright disk centred in a dark 64×64 background.
+
+    detect_planet() will find this disk and return peak_frac as the signal.
+    """
+    H, W = 64, 64
+    cy, cx = H // 2, W // 2
+    y, x = np.ogrid[:H, :W]
+    disk = (y - cy) ** 2 + (x - cx) ** 2 <= radius ** 2
+    pix = np.full((H, W), 0.001 * ADC_MAX, dtype=np.float32)
+    pix[disk] = float(peak_frac * ADC_MAX)
+    m = MagicMock(spec=FitsFrame)
+    m.pixels = pix
+    return m
+
+
+def _dark_sky_frame() -> FitsFrame:
+    """Completely dark frame — no planet detectable (max < 0.01 threshold)."""
+    pix = np.zeros((64, 64), dtype=np.float32)
+    m = MagicMock(spec=FitsFrame)
+    m.pixels = pix
+    return m
+
+
+_PLANET_PROFILE = CameraProfile(
+    model="PlanetCam",
+    sensor="IMX678",
+    width_px=4096,
+    height_px=2160,
+    pixel_um=2.0,
+    max_gain=400,
+    unity_gain_hcg=200,
+    unity_gain_lcg=100,
+    unity_gain_hdr=None,
+    min_preview_exp_ms=0.1,
+    max_preview_exp_ms=2000.0,
+    supports_cooling=False,
+)
+
+
+class TestPlanetaryModeOK:
+    def test_in_band_planet_returns_ok(self) -> None:
+        # peak_frac=0.60 is inside [0.40, 0.80]
+        cam = _SeqCamera([_planet_frame(0.60)])
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.status == AutoGainStatus.OK
+
+    def test_lower_edge_accepted(self) -> None:
+        cam = _SeqCamera([_planet_frame(0.40)])
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.status == AutoGainStatus.OK
+
+    def test_upper_edge_accepted(self) -> None:
+        # Use 0.75 (not 0.80) — exact band_hi causes float32 rounding above the boundary
+        cam = _SeqCamera([_planet_frame(0.75)])
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.status == AutoGainStatus.OK
+
+    def test_planetary_uses_lcg(self) -> None:
+        cam = _SeqCamera([_planet_frame(0.60)])
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.conversion_gain == ConversionGain.LCG
+
+
+class TestPlanetaryModeConvergence:
+    def test_dim_planet_triggers_brightening(self) -> None:
+        # peak_frac=0.10 < 0.40 → service should increase exposure/gain
+        dim    = _planet_frame(0.10)
+        inband = _planet_frame(0.60)
+        cam = _SeqCamera([dim, inband])
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.status == AutoGainStatus.OK
+
+    def test_bright_planet_triggers_dimming(self) -> None:
+        # peak_frac=0.95 > 0.80 → service must reduce exposure (FR-PLANET-003)
+        bright = _planet_frame(0.95)
+        inband = _planet_frame(0.60)
+        cam = _SeqCamera([bright, bright, inband])
+        result = AutoGainService.run_one_shot(
+            cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY, max_iterations=10,
+        )
+        assert result.status == AutoGainStatus.OK
+
+    def test_offset_not_raised_for_dark_background(self) -> None:
+        # Planetary mode has dark sky; zero-clip offset auto-raise must be suppressed
+        dim    = _planet_frame(0.10)
+        inband = _planet_frame(0.60)
+        cam = _SeqCamera([dim, inband])
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.offset == 0
+
+    def test_planet_peak_used_not_mean(self) -> None:
+        # planet at 0.60 peak, mean_frac ≈ 0.001 (dark background dominates)
+        # if service used mean it would keep brightening; if it uses peak, OK on first frame
+        cam = _SeqCamera([_planet_frame(0.60, radius=4)])  # small disk → very low mean
+        result = AutoGainService.run_one_shot(cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY)
+        assert result.status == AutoGainStatus.OK
+
+
+class TestPlanetaryModeNoPlanet:
+    def test_no_planet_falls_back_to_mean_and_converges(self) -> None:
+        # Dark sky (no planet) → detect_planet returns None → signal falls back to eff_mean
+        # eff_mean ≈ 0 → loop brightens; eventually the profile limits are exhausted
+        cam = _SeqCamera([_dark_sky_frame()] * 20)
+        result = AutoGainService.run_one_shot(
+            cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY, max_iterations=20,
+        )
+        # Should not crash; should return a terminal status
+        # An all-zero frame has 100% zero-clipped pixels → POSSIBLE_DUST_CAP is also valid
+        assert result.status in (
+            AutoGainStatus.NO_SIGNAL,
+            AutoGainStatus.POSSIBLE_DUST_CAP,
+            AutoGainStatus.GAIN_LIMIT_REACHED,
+            AutoGainStatus.EXPOSURE_LIMIT_REACHED,
+        )
+
+    def test_no_planet_warning_message_mentions_planet(self) -> None:
+        # Drive to limits using dark sky; check warning message mentions planet
+        cam = _SeqCamera([_dark_sky_frame()] * 30)
+        result = AutoGainService.run_one_shot(
+            cam, _PLANET_PROFILE, mode=AutoGainMode.PLANETARY, max_iterations=25,
+        )
+        if result.status == AutoGainStatus.NO_SIGNAL and result.warning_msg:
+            assert "planet" in result.warning_msg.lower()

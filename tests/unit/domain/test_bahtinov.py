@@ -12,6 +12,7 @@ from smart_telescope.domain.bahtinov import (
     CrossingAnalysisResult,
     SpikeLine,
     _classify_bahtinov,
+    _clip_line_to_rect,
     _gaussian_blur,
     _intersect,
 )
@@ -134,6 +135,188 @@ class TestCrossingAnalysisResult:
         r = self._make_result()
         with pytest.raises((AttributeError, TypeError)):
             r.focus_error_px = 0.0  # type: ignore[misc]
+
+
+# ── _clip_line_to_rect ───────────────────────────────────────────────────────
+
+
+class TestClipLineToRect:
+    def test_horizontal_line_clips(self) -> None:
+        # y = 50 → a=0, b=1, c=-50 in [0,200]×[0,200]
+        seg = _clip_line_to_rect(0.0, 1.0, -50.0, 0.0, 0.0, 200.0, 200.0)
+        assert seg is not None
+        x0, y0, x1, y1 = seg
+        assert y0 == pytest.approx(50.0, abs=1.0)
+        assert y1 == pytest.approx(50.0, abs=1.0)
+        assert min(x0, x1) == pytest.approx(0.0, abs=1.0)
+        assert max(x0, x1) == pytest.approx(200.0, abs=1.0)
+
+    def test_vertical_line_clips(self) -> None:
+        # x = 100 → a=1, b=0, c=-100 in [0,200]×[0,200]
+        seg = _clip_line_to_rect(1.0, 0.0, -100.0, 0.0, 0.0, 200.0, 200.0)
+        assert seg is not None
+        x0, y0, x1, y1 = seg
+        assert x0 == pytest.approx(100.0, abs=1.0)
+        assert x1 == pytest.approx(100.0, abs=1.0)
+        assert min(y0, y1) == pytest.approx(0.0, abs=1.0)
+        assert max(y0, y1) == pytest.approx(200.0, abs=1.0)
+
+    def test_line_outside_returns_none(self) -> None:
+        # y = 500 — far outside [0,200]×[0,200]
+        seg = _clip_line_to_rect(0.0, 1.0, -500.0, 0.0, 0.0, 200.0, 200.0)
+        assert seg is None
+
+    def test_diagonal_line_clips(self) -> None:
+        # y = x → a=1, b=-1, c=0  diagonal from (0,0) to (200,200)
+        sq2 = math.sqrt(2.0)
+        seg = _clip_line_to_rect(1.0 / sq2, -1.0 / sq2, 0.0, 0.0, 0.0, 200.0, 200.0)
+        assert seg is not None
+
+
+# ── CrossingAnalysisResult.overlay_data() ────────────────────────────────────
+
+
+class TestOverlayData:
+    """Tests for CrossingAnalysisResult.overlay_data()."""
+
+    def _make_result(
+        self,
+        focus_error_px: float = 3.0,
+        roi_size: int = 200,
+        roi_top_left_px: tuple[int, int] = (100, 50),
+    ) -> CrossingAnalysisResult:
+        # Three spike lines at 0°, 20°, 40° in full-image coordinates.
+        # The c term accounts for roi_top_left so the lines pass through the
+        # star located at (200, 150) in full-image space.
+        cx, cy = 200.0, 150.0  # full-image star centre
+        lines = [
+            _make_line(a=math.sin(math.radians(0)),   b=math.cos(math.radians(0)),
+                       c=-(math.sin(math.radians(0)) * cx + math.cos(math.radians(0)) * cy),
+                       angle_deg=0.0),
+            _make_line(a=math.sin(math.radians(20)),  b=math.cos(math.radians(20)),
+                       c=-(math.sin(math.radians(20)) * cx + math.cos(math.radians(20)) * cy),
+                       angle_deg=20.0),
+            _make_line(a=math.sin(math.radians(40)),  b=math.cos(math.radians(40)),
+                       c=-(math.sin(math.radians(40)) * cx + math.cos(math.radians(40)) * cy),
+                       angle_deg=40.0),
+        ]
+        P12 = _intersect(lines[0], lines[1])
+        P13 = _intersect(lines[0], lines[2])
+        P23 = _intersect(lines[1], lines[2])
+        pcx = (P12[0] + P13[0] + P23[0]) / 3.0
+        pcy = (P12[1] + P13[1] + P23[1]) / 3.0
+        return CrossingAnalysisResult(
+            object_center_px=(cx, cy),
+            lines=lines,
+            common_crossing_point_px=(pcx, pcy),
+            pairwise_intersections_px=[P12, P13, P23],
+            crossing_error_rms_px=1.0,
+            crossing_error_max_px=1.5,
+            focus_error_px=focus_error_px,
+            detection_confidence=0.95,
+            roi_size=roi_size,
+            roi_top_left_px=roi_top_left_px,
+        )
+
+    def test_all_required_keys_present(self) -> None:
+        d = self._make_result().overlay_data()
+        for key in ("spike_lines", "crossing_point", "deviation_arrow",
+                    "spread_triangle", "roi_offset"):
+            assert key in d, f"missing key: {key}"
+
+    def test_spike_lines_count(self) -> None:
+        d = self._make_result().overlay_data()
+        assert len(d["spike_lines"]) == 3
+
+    def test_spike_lines_have_required_sub_keys(self) -> None:
+        d = self._make_result().overlay_data()
+        for seg in d["spike_lines"]:
+            for k in ("x0", "y0", "x1", "y1"):
+                assert k in seg, f"spike_lines segment missing key {k}"
+
+    def test_spike_lines_endpoints_within_roi(self) -> None:
+        roi_size = 200
+        d = self._make_result(roi_size=roi_size).overlay_data()
+        for seg in d["spike_lines"]:
+            for coord in (seg["x0"], seg["x1"]):
+                assert -1.0 <= coord <= roi_size + 1.0, f"x coord {coord} outside ROI"
+            for coord in (seg["y0"], seg["y1"]):
+                assert -1.0 <= coord <= roi_size + 1.0, f"y coord {coord} outside ROI"
+
+    def test_crossing_point_has_x_y(self) -> None:
+        d = self._make_result().overlay_data()
+        cp = d["crossing_point"]
+        assert "x" in cp and "y" in cp
+
+    def test_crossing_point_in_roi_coords(self) -> None:
+        ox, oy = 100, 50
+        d = self._make_result(roi_top_left_px=(ox, oy)).overlay_data()
+        cp = d["crossing_point"]
+        # common_crossing_point is near (200, 150) in full-image → (100, 100) in ROI
+        assert cp["x"] == pytest.approx(200.0 - ox, abs=5.0)
+        assert cp["y"] == pytest.approx(150.0 - oy, abs=5.0)
+
+    def test_deviation_arrow_positive_sign(self) -> None:
+        d = self._make_result(focus_error_px=5.0).overlay_data()
+        arrow = d["deviation_arrow"]
+        # Middle line at 20°: a=sin(20°)≈0.342, b=cos(20°)≈0.940
+        # dx = a * 5.0 > 0
+        assert arrow["dx"] > 0.0, "dx should be positive for positive focus_error"
+
+    def test_deviation_arrow_negative_sign(self) -> None:
+        d = self._make_result(focus_error_px=-5.0).overlay_data()
+        arrow = d["deviation_arrow"]
+        assert arrow["dx"] < 0.0, "dx should be negative for negative focus_error"
+
+    def test_deviation_arrow_magnitude(self) -> None:
+        focus = 4.0
+        d = self._make_result(focus_error_px=focus).overlay_data()
+        arrow = d["deviation_arrow"]
+        mag = math.hypot(arrow["dx"], arrow["dy"])
+        assert mag == pytest.approx(focus, abs=0.05)
+
+    def test_deviation_arrow_opposite_signs_for_opposite_errors(self) -> None:
+        dp = self._make_result(focus_error_px=+3.0).overlay_data()["deviation_arrow"]
+        dn = self._make_result(focus_error_px=-3.0).overlay_data()["deviation_arrow"]
+        assert dp["dx"] == pytest.approx(-dn["dx"], abs=1e-3)
+        assert dp["dy"] == pytest.approx(-dn["dy"], abs=1e-3)
+
+    def test_spread_triangle_has_three_points(self) -> None:
+        d = self._make_result().overlay_data()
+        assert len(d["spread_triangle"]) == 3
+
+    def test_spread_triangle_points_have_x_y(self) -> None:
+        d = self._make_result().overlay_data()
+        for pt in d["spread_triangle"]:
+            assert "x" in pt and "y" in pt
+
+    def test_roi_offset_matches_roi_top_left(self) -> None:
+        ox, oy = 73, 120
+        d = self._make_result(roi_top_left_px=(ox, oy)).overlay_data()
+        roi = d["roi_offset"]
+        assert roi["col"] == ox
+        assert roi["row"] == oy
+
+    def test_zero_focus_error_gives_zero_arrow(self) -> None:
+        d = self._make_result(focus_error_px=0.0).overlay_data()
+        arrow = d["deviation_arrow"]
+        assert arrow["dx"] == pytest.approx(0.0, abs=1e-9)
+        assert arrow["dy"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_analyze_populates_roi_fields(self) -> None:
+        img = _spike_image(size=512)
+        result = BahtinovAnalyzer(roi_size=300).analyze(img)
+        assert result.roi_size == 300
+        assert isinstance(result.roi_top_left_px, tuple)
+        assert len(result.roi_top_left_px) == 2
+
+    def test_overlay_data_from_real_analyze(self) -> None:
+        img = _spike_image(size=512)
+        result = BahtinovAnalyzer().analyze(img)
+        d = result.overlay_data()
+        assert len(d["spike_lines"]) == 3
+        assert "x" in d["crossing_point"]
+        assert "dx" in d["deviation_arrow"]
 
 
 # ── _gaussian_blur ────────────────────────────────────────────────────────────

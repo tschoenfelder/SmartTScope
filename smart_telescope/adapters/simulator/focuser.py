@@ -6,9 +6,12 @@ resolves instantly.
 """
 from __future__ import annotations
 
+import logging
 import threading
 
 from ...ports.focuser import FocuserPort
+
+_log = logging.getLogger(__name__)
 
 
 class SimulatorFocuser(FocuserPort):
@@ -22,6 +25,7 @@ class SimulatorFocuser(FocuserPort):
     def __init__(self, move_time_s: float = 0.0) -> None:
         if move_time_s < 0.0:
             raise ValueError(f"move_time_s must be >= 0, got {move_time_s}")
+        _log.info("SimulatorFocuser initialised (move_time_s=%.1f) — software simulation, no real hardware", move_time_s)
         self._move_time_s = move_time_s
         self._position = 0
         self._target: int | None = None
@@ -35,6 +39,7 @@ class SimulatorFocuser(FocuserPort):
         return True
 
     def connect(self) -> bool:
+        _log.info("SimulatorFocuser.connect(): connected (simulated)")
         return True
 
     def disconnect(self) -> None:

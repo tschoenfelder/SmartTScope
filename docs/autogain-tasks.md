@@ -375,15 +375,22 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 8 — Planetary auto gain
 
-### AGT-8-1 — Planet detection and PLANET_PROTECTED mode
-- [ ] `domain/planet_detection.py`: detect brightest real object
-  (flux-weighted score = total_flux × √area, masks hot pixels);
+### AGT-8-1 — Planet detection and PLANET_PROTECTED mode ✅
+- [x] `domain/planet_detection.py`: detect brightest real object
+  (flux-weighted score = total_flux × √area, masks hot pixels via _MIN_AREA_PX=4);
   return `DetectedObject(center_px, radius_px, peak_frac, saturation_pct)`.
-- [ ] `AutoGainService` `AUTO_GAIN_PLANETARY` mode: use `DetectedObject`
-  saturation as brightness reference; ensure planet peak stays ≤ 80%
-  full-scale; reduce exposure first before gain (FR-PLANET-001,
-  FR-PLANET-003 `PLANET_PROTECTED`).
-- [ ] Unit tests with synthetic planet frame.
+  Pure-numpy BFS connected-component labeling; no scipy dependency.
+- [x] `AutoGainService` PLANETARY mode: signal = `DetectedObject.peak_frac`
+  (falls back to eff_mean if no planet detected); band [0.40, 0.80], target 0.60;
+  offset auto-raise suppressed (dark sky background expected);
+  FOCUS_OR_POINTING_ERROR path gated to DSO only; planet-specific NO_SIGNAL message.
+- [x] 13 unit tests in `test_planet_detection.py`: disk detection, center/radius,
+  hot-pixel rejection, saturation, scoring (disk beats stars), edge cases.
+- [x] 10 PLANETARY mode tests in `test_autogain_service.py`: OK path, lower/upper
+  band edges, LCG selection, brightening/dimming convergence, offset suppression,
+  peak-vs-mean discrimination, no-planet fallback.
+- [x] Enhanced logging added to `MockMount`, `MockFocuser`, `SimulatorMount`,
+  `SimulatorFocuser` (WARNING level for mocks, INFO for simulators).
 
 *Covers:* FR-PLANET-001, FR-PLANET-003, FR-PLANET-004  
 *Depends:* AGT-5-2, AGT-2-1
@@ -470,12 +477,12 @@ Implementation phases follow section 16 of that document.
 | 5 — Auto Gain MVP | 4 | 4 |
 | 6 — Live stacking calibration | 2 | 2 |
 | 7 — Guide camera | 2 | 2 |
-| 8 — Planetary | 2 | 0 |
+| 8 — Planetary | 2 | 1 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **19** |
+| **Total** | **26** | **20** |
 
 ---
 
-*Last updated: 2026-05-10 — AGT-7-2 done, Phase 7 complete (23/26)*
+*Last updated: 2026-05-10 — AGT-8-1 done (20/26); mock/simulator logging added*

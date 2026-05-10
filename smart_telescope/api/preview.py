@@ -59,7 +59,7 @@ async def ws_preview(
         await websocket.close(code=1011, reason=str(exc)[:123])
         return
 
-    ctrl: AutoGainController | None = AutoGainController(exposure, gain) if autogain else None
+    ctrl: AutoGainController | None = None  # created after bit_depth is known
     cur_exposure = exposure
     cur_gain     = gain
 
@@ -121,6 +121,9 @@ async def ws_preview(
         cur_bit_depth = camera.get_bit_depth()
     except Exception:
         pass
+
+    if autogain:
+        ctrl = AutoGainController(exposure, gain, bit_depth=cur_bit_depth)
 
     # Detect colour sensor once; derive Bayer pattern for all frames.
     bayer_pattern = ""
@@ -186,7 +189,7 @@ async def ws_preview(
                         stretch = bool(msg["stretch"])
                     if "autogain" in msg:
                         if msg["autogain"] and ctrl is None:
-                            ctrl = AutoGainController(cur_exposure, cur_gain)
+                            ctrl = AutoGainController(cur_exposure, cur_gain, bit_depth=cur_bit_depth)
                             _log.info("Autogain enabled via set_params (exp=%.4fs gain=%d)", cur_exposure, cur_gain)
                         elif not msg["autogain"] and ctrl is not None:
                             ctrl = None

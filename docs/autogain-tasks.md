@@ -254,8 +254,8 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-5-2 — AutoGainService one-shot flow and status classification
-- [ ] `domain/autogain_service.py`:
+### AGT-5-2 — AutoGainService one-shot flow and status classification ✅
+- [x] `domain/autogain_service.py`:
   - `AutoGainService.run_one_shot(camera, profile, mode, last_good,
     calibration_stats) → AutoGainResult`.
   - `AutoGainResult`: `status` (FR-AG-100 enum), `exposure_ms`, `gain`,
@@ -263,7 +263,9 @@ Implementation phases follow section 16 of that document.
   - Adjustment loop following §FR-AG-090 order (steps 5–13).
   - Dust-cap / no-signal detection: if mean < 2% at max gain and 4s
     → `AUTO_GAIN_NO_SIGNAL` / `AUTO_GAIN_POSSIBLE_DUST_CAP`.
-- [ ] Unit tests: OK path, no-signal path, over-bright path, gain-limit path.
+- [x] Unit tests: OK path, no-signal path, dust-cap path, over-bright path,
+  gain-limit path, cancellation, last-good, calibration stats, unsupported.
+  21 tests all green.
 
 *Covers:* FR-AG-010, FR-AG-030, FR-AG-090, FR-AG-100  
 *Depends:* AGT-5-1, AGT-1-2 (last-good), AGT-2-1
@@ -453,15 +455,15 @@ Implementation phases follow section 16 of that document.
 | 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 4 |
 | 4 — Cooling | 2 | 2 |
-| 5 — Auto Gain MVP | 4 | 1 |
+| 5 — Auto Gain MVP | 4 | 2 |
 | 6 — Live stacking calibration | 2 | 0 |
 | 7 — Guide camera | 2 | 0 |
 | 8 — Planetary | 2 | 0 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **16** |
+| **Total** | **26** | **17** |
 
 ---
 
-*Last updated: 2026-05-10*
+*Last updated: 2026-05-10 — AGT-5-2 done (17/26)*

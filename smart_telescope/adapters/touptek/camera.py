@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import time
 import threading
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 import numpy as np
 from astropy.io import fits
@@ -148,10 +151,12 @@ class ToupcamCamera(CameraPort):
     def capture(self, exposure_seconds: float) -> FitsFrame:
         if self._cam is None or self._buf is None:
             raise RuntimeError("Camera not connected")
+        _log.info("capture(%s index=%d): waiting for lock", self._logical_name or "?", self._index)
         if not self._capture_lock.acquire(blocking=True, timeout=12.0):
             raise RuntimeError("Camera busy — timed out after 12 s waiting for previous capture to finish")
         try:
             us = max(1, int(exposure_seconds * 1_000_000))
+            _log.info("capture(%s index=%d): put_ExpoTime(%d µs)", self._logical_name or "?", self._index, us)
             try:
                 self._cam.put_ExpoTime(us)
             except Exception as exc:
@@ -159,14 +164,19 @@ class ToupcamCamera(CameraPort):
 
             self._capture_error = None
             self._frame_ready.clear()
+            _log.info("capture(%s index=%d): Trigger(1)", self._logical_name or "?", self._index)
             try:
                 self._cam.Trigger(1)
             except Exception as exc:
                 raise RuntimeError(f"Trigger(1) failed: {exc}") from exc
 
             timeout = exposure_seconds + self._timeout_extra
-            if not self._frame_ready.wait(timeout=timeout):
+            _log.info("capture(%s index=%d): waiting for frame (timeout=%.1fs)", self._logical_name or "?", self._index, timeout)
+            got_frame = self._frame_ready.wait(timeout=timeout)
+            if not got_frame:
+                _log.error("capture(%s index=%d): TIMEOUT — no frame callback within %.1fs", self._logical_name or "?", self._index, timeout)
                 raise TimeoutError(f"No frame received within {timeout:.1f}s")
+            _log.info("capture(%s index=%d): frame_ready set (error=%s)", self._logical_name or "?", self._index, self._capture_error)
             if self._capture_error is not None:
                 raise self._capture_error
 
@@ -376,6 +386,7 @@ class ToupcamCamera(CameraPort):
 
 def _camera_event(event: int, ctx: ToupcamCamera) -> None:
     """SDK callback fired from a native thread; must be fast and non-blocking."""
+    _log.info("SDK event 0x%04X on %s index=%d", event, ctx._logical_name or "?", ctx._index)
     if event == _EVENT_IMAGE:
         ctx._frame_ready.set()
     elif event == _EVENT_TRIGGER_FAIL:

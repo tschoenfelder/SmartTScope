@@ -38,13 +38,19 @@ _log = logging.getLogger(__name__)
 # ── Tuning constants ──────────────────────────────────────────────────────────
 
 _GAIN_MIN              = 100      # minimum camera gain (1× = 100 for ToupTek)
-_NO_SIGNAL_EXP_MS      = 4_000.0  # exposure threshold for no-signal classification
+_NO_SIGNAL_EXP_MS      = 4_000.0  # exposure threshold for no-signal classification (DSO)
 _NO_SIGNAL_THRESHOLD   = 0.02     # effective mean_frac below which we declare no signal
 _FOCUS_ERROR_THRESHOLD = 0.001    # tiny-but-nonzero signal → focus/pointing issue
 _SAT_LIMIT_PCT         = 1.0      # saturation_pct above which we must dim
 _CLIP_THRESHOLD_PCT    = 1.0      # zero_clipped_pct above which offset needs raising
 _OFFSET_STEP_ADU       = 100      # ADU increment when zero clipping detected
 _OFFSET_MAX_ADU        = 2_000    # hard cap on offset
+
+# Guiding-mode tuning — signal metric is p99_9 (guide-star peak)
+_GUIDE_LO              = 0.20     # guide-star peak lower bound (FR-GUIDE-001)
+_GUIDE_HI              = 0.80     # guide-star peak upper bound (saturation risk)
+_GUIDE_TARGET          = 0.45     # midpoint
+_GUIDE_NO_SIGNAL_THR   = 0.02     # p99_9 below this → no guide star detected
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -170,6 +176,17 @@ class AutoGainService:
 
         last_stats: HistogramStats | None = None
 
+        # Mode-specific parameters (FR-GUIDE-001)
+        is_guiding = (mode == AutoGainMode.GUIDING)
+        if is_guiding:
+            band_lo, band_hi, band_tgt = _GUIDE_LO, _GUIDE_HI, _GUIDE_TARGET
+            ns_signal_thr = _GUIDE_NO_SIGNAL_THR
+            ns_exp_ms     = exp_max_ms   # classify no-signal at profile ceiling
+        else:
+            band_lo, band_hi, band_tgt = _LO, _HI, _TARGET
+            ns_signal_thr = _NO_SIGNAL_THRESHOLD
+            ns_exp_ms     = _NO_SIGNAL_EXP_MS
+
         # Steps 5–12: adjustment loop
         for iteration in range(max_iterations):
             # Cancellation check
@@ -201,17 +218,19 @@ class AutoGainService:
             stats = _hist_analyze(frame.pixels, bit_depth=bit_depth)
             last_stats = stats
             eff_mean = _effective_mean(stats, cur_offset, adc_max)
+            # Guiding uses peak (p99_9) as signal — guide stars are point sources
+            signal = stats.p99_9 if is_guiding else eff_mean
 
             _log.info(
                 "AutoGain iter %d/%d: exp=%.1fms gain=%d offset=%d "
-                "mean=%.3f eff=%.3f sat=%.1f%% clip=%.1f%%",
+                "mean=%.3f signal=%.3f sat=%.1f%% clip=%.1f%%",
                 iteration + 1, max_iterations,
                 cur_exp_ms, cur_gain, cur_offset,
-                stats.mean_frac, eff_mean, stats.saturation_pct, stats.zero_clipped_pct,
+                stats.mean_frac, signal, stats.saturation_pct, stats.zero_clipped_pct,
             )
 
             # Step 6: success check
-            if _LO <= eff_mean <= _HI and stats.saturation_pct < _SAT_LIMIT_PCT:
+            if band_lo <= signal <= band_hi and stats.saturation_pct < _SAT_LIMIT_PCT:
                 _log.info(
                     "AutoGain OK after %d iterations: exp=%.1fms gain=%d offset=%d cg=%s",
                     iteration + 1, cur_exp_ms, cur_gain, cur_offset, cg.name,
@@ -226,25 +245,26 @@ class AutoGainService:
                 )
 
             # Proportional ratio toward target
-            safe_mean = max(eff_mean, 1e-4)
-            ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, _TARGET / safe_mean))
+            ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, band_tgt / max(signal, 1e-4)))
 
-            # Step 7: zero-clipping → raise offset first
-            if stats.zero_clipped_pct > _CLIP_THRESHOLD_PCT and cur_offset < _OFFSET_MAX_ADU:
+            # Step 7: zero-clipping → raise offset first (DSO only — guiding targets peak)
+            if (not is_guiding
+                    and stats.zero_clipped_pct > _CLIP_THRESHOLD_PCT
+                    and cur_offset < _OFFSET_MAX_ADU):
                 new_offset = min(_OFFSET_MAX_ADU, cur_offset + _OFFSET_STEP_ADU)
                 _log.info("AutoGain: zero-clipping %.1f%% — offset %d → %d",
                           stats.zero_clipped_pct, cur_offset, new_offset)
                 cur_offset = new_offset
                 continue
 
-            if eff_mean < _LO:
+            if signal < band_lo:
                 # Too dark: brighten
                 at_exp_max  = cur_exp_ms >= exp_max_ms - 0.1
                 at_gain_max = cur_gain >= gain_max
 
                 if at_exp_max and at_gain_max:
                     # At all limits — classify no-signal
-                    if eff_mean < _NO_SIGNAL_THRESHOLD and cur_exp_ms >= _NO_SIGNAL_EXP_MS:
+                    if signal < ns_signal_thr and cur_exp_ms >= ns_exp_ms:
                         if stats.zero_clipped_pct > 50.0:
                             return AutoGainResult(
                                 status=AutoGainStatus.POSSIBLE_DUST_CAP,
@@ -255,7 +275,7 @@ class AutoGainService:
                                 histogram_stats=stats,
                                 warning_msg="Histogram consistent with dark frame — check dust cap",
                             )
-                        if eff_mean > _FOCUS_ERROR_THRESHOLD:
+                        if not is_guiding and eff_mean > _FOCUS_ERROR_THRESHOLD:
                             return AutoGainResult(
                                 status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
                                 exposure_ms=cur_exp_ms,
@@ -265,6 +285,12 @@ class AutoGainService:
                                 histogram_stats=stats,
                                 warning_msg="Faint signal detected — check focus and confirm mount is tracking",
                             )
+                        no_signal_msg = (
+                            "No guide star detected at maximum gain and exposure — "
+                            "check guide scope focus and target field"
+                            if is_guiding else
+                            "No signal at maximum gain and 4 s exposure"
+                        )
                         return AutoGainResult(
                             status=AutoGainStatus.NO_SIGNAL,
                             exposure_ms=cur_exp_ms,
@@ -272,7 +298,7 @@ class AutoGainService:
                             offset=cur_offset,
                             conversion_gain=cg,
                             histogram_stats=stats,
-                            warning_msg="No signal at maximum gain and 4 s exposure",
+                            warning_msg=no_signal_msg,
                         )
                     return AutoGainResult(
                         status=AutoGainStatus.GAIN_LIMIT_REACHED,
@@ -319,12 +345,16 @@ class AutoGainService:
                     cur_gain = new_gain
 
         # Loop exhausted without success
-        eff_mean_final = _effective_mean(last_stats, cur_offset, adc_max) if last_stats else 0.0
+        if last_stats is not None:
+            eff_mean_final = _effective_mean(last_stats, cur_offset, adc_max)
+            signal_final   = last_stats.p99_9 if is_guiding else eff_mean_final
+        else:
+            signal_final = 0.0
         _log.warning(
-            "AutoGain: loop exhausted (%d iterations), eff_mean=%.3f",
-            max_iterations, eff_mean_final,
+            "AutoGain: loop exhausted (%d iterations), signal=%.3f",
+            max_iterations, signal_final,
         )
-        if eff_mean_final > _HI:
+        if signal_final > band_hi:
             return AutoGainResult(
                 status=AutoGainStatus.CLIPPING_RISK,
                 exposure_ms=cur_exp_ms,

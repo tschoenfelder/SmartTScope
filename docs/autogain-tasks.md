@@ -336,14 +336,18 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 7 — Guide and OAG camera auto gain
 
-### AGT-7-1 — One-shot auto gain for guide / OAG cameras
-- [ ] Guide-camera profile (`GPCMOS02000KPA`, `OAG_678M`) in `camera_profile.py`.
-- [ ] `AutoGainService.run_one_shot()` with `AUTO_GAIN_GUIDING` mode:
-  targets guide-star detectability, not 75–80% target (FR-GUIDE-001).
-- [ ] Guide-camera panel: **Auto Gain** button; after success, lock settings
-  ("do not change during active guiding" flag); show last-good
-  settings with "Reuse" button for next session.
-- [ ] Unit tests.
+### AGT-7-1 — One-shot auto gain for guide / OAG cameras ✅
+- [x] `OAG_678M` camera profile added (`camera_profile.py`): IMX678, HCG+LCG,
+  max_preview_exp_ms = 5 000 ms (guide ceiling); `GPCMOS02000KPA` already existed.
+- [x] `AutoGainService.run_one_shot()` GUIDING mode: uses `p99_9` (guide-star
+  peak) instead of `mean_frac` as signal metric; target band 20–80 % vs 12–45 %;
+  offset auto-raise skipped (dark background is expected); custom NO_SIGNAL message.
+- [x] Guide Camera Auto Gain card in Stage 4 (Collimation): cam-idx + model
+  selector, Auto Gain / Cancel buttons, result row with "Locked" badge and
+  "Reuse" button after OK; JS: `guideAgRun()`, `guideAgCancel()`,
+  `_guideAgPoll()`, `_guideAgShowResult()`.
+- [x] 14 new unit tests: OK path, no-star, dust-cap, brightening/dimming
+  convergence, offset suppression, CG selection, profile constants.
 
 *Covers:* FR-GUIDE-001, AC-GUIDE-001  
 *Depends:* AGT-5-3, AGT-0-2
@@ -460,8 +464,8 @@ Implementation phases follow section 16 of that document.
 | 3 — Calibration masters | 4 | 4 |
 | 4 — Cooling | 2 | 2 |
 | 5 — Auto Gain MVP | 4 | 4 |
-| 6 — Live stacking calibration | 2 | 0 |
-| 7 — Guide camera | 2 | 0 |
+| 6 — Live stacking calibration | 2 | 2 |
+| 7 — Guide camera | 2 | 1 |
 | 8 — Planetary | 2 | 0 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
@@ -470,4 +474,4 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-*Last updated: 2026-05-10 — AGT-6-2 done, Phase 6 complete (21/26)*
+*Last updated: 2026-05-10 — AGT-7-1 done (22/26)*

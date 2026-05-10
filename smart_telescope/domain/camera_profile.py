@@ -75,9 +75,25 @@ GPCMOS02000KPA = CameraProfile(
     supports_cooling=False,
 )
 
+# OAG_678M — G3M678M used as OAG (off-axis guider), guide exposure ceiling 5 s
+OAG_678M = CameraProfile(
+    model="OAG_678M",
+    sensor="IMX678",
+    width_px=3840,
+    height_px=2160,
+    pixel_um=2.0,
+    max_gain=3200,
+    unity_gain_hcg=300,
+    unity_gain_lcg=200,
+    unity_gain_hdr=None,
+    min_preview_exp_ms=0.1,
+    max_preview_exp_ms=5_000.0,
+    supports_cooling=False,
+)
+
 # All known profiles indexed by model name
 ALL_PROFILES: dict[str, CameraProfile] = {
-    p.model: p for p in (ATR585M, G3M678M, GPCMOS02000KPA)
+    p.model: p for p in (ATR585M, G3M678M, GPCMOS02000KPA, OAG_678M)
 }
 
 

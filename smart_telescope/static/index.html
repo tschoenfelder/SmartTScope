@@ -1318,6 +1318,46 @@
           </div>
           <div id="s4-cal-match-detail" style="display:none;margin-top:0.3rem;font-size:0.78rem;color:var(--muted);line-height:1.4"></div>
         </div>
+
+        <!-- Guide Camera Auto Gain -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey" id="guide-ag-dot"></span>
+            Guide Camera Auto Gain
+          </div>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+            Optimises exposure and gain for guide-star detectability (FR-GUIDE-001).
+          </p>
+          <div class="controls" style="flex-wrap:wrap;gap:0.4rem 0.6rem;margin-bottom:0.5rem">
+            <label>Cam idx</label>
+            <input type="number" id="guide-ag-cam-idx" value="1" min="0" max="7"
+                   style="width:4ch" title="Camera SDK index for the guide camera">
+            <label style="margin-left:0.4rem">Model</label>
+            <select id="guide-ag-model" style="font-size:0.8rem">
+              <option value="GPCMOS02000KPA">GPCMOS02000KPA (IMX290)</option>
+              <option value="OAG_678M">OAG_678M (IMX678)</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button id="guide-ag-run-btn" onclick="guideAgRun()"
+                    style="padding:0.22rem 0.7rem;font-size:0.82rem">Auto Gain</button>
+            <button id="guide-ag-cancel-btn" onclick="guideAgCancel()"
+                    style="display:none;padding:0.22rem 0.7rem;font-size:0.82rem"
+                    class="secondary">Cancel</button>
+            <span id="guide-ag-status-badge" style="font-size:0.8rem;display:none"></span>
+          </div>
+          <div id="guide-ag-result" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
+               border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6">
+            <span id="guide-ag-result-text"></span>
+            <span id="guide-ag-locked-badge" style="display:none;margin-left:0.5rem;
+                  background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:0.76rem">
+              Locked
+            </span>
+            <button id="guide-ag-reuse-btn" onclick="guideAgRun()" style="display:none;
+                    margin-left:0.5rem;padding:0.15rem 0.55rem;font-size:0.78rem"
+                    title="Run again — last-good settings used as starting point">Reuse</button>
+          </div>
+        </div>
       </div>
 
       <!-- ── Right: Large preview ── -->
@@ -4200,6 +4240,111 @@
     previewSendParams();
     const applyBtn = document.getElementById('autogain-apply-btn');
     if (applyBtn) { applyBtn.textContent = 'Applied'; setTimeout(() => { applyBtn.textContent = 'Apply'; }, 1500); }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Guide Camera Auto Gain (Stage 4 — FR-GUIDE-001)
+  ══════════════════════════════════════════════════════════════════════ */
+
+  let _guideAgPollTimer = null;
+
+  function guideAgRun() {
+    const camIdx = parseInt(document.getElementById('guide-ag-cam-idx').value, 10) || 1;
+    const model  = document.getElementById('guide-ag-model').value;
+    const dot    = document.getElementById('guide-ag-dot');
+    document.getElementById('guide-ag-run-btn').disabled = true;
+    document.getElementById('guide-ag-cancel-btn').style.display = '';
+    const badge = document.getElementById('guide-ag-status-badge');
+    badge.style.display = '';
+    badge.textContent = 'Running…';
+    document.getElementById('guide-ag-result').style.display = 'none';
+    if (dot) dot.className = 'dot dot-yellow';
+
+    fetch('/api/autogain/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ camera_index: camIdx, camera_model: model, mode: 'GUIDING' }),
+    }).then(async r => {
+      if (r.status === 202) {
+        _guideAgStartPolling();
+      } else {
+        const d = await r.json().catch(() => ({}));
+        _guideAgSetIdle(r.status === 409
+          ? 'Another run is in progress'
+          : ('Error ' + r.status + (d.detail ? ': ' + d.detail : '')));
+      }
+    }).catch(e => _guideAgSetIdle('Network error: ' + e));
+  }
+
+  function guideAgCancel() {
+    fetch('/api/autogain/cancel', { method: 'POST' });
+  }
+
+  function _guideAgSetIdle(msg) {
+    const dot    = document.getElementById('guide-ag-dot');
+    const runBtn = document.getElementById('guide-ag-run-btn');
+    const cancelBtn = document.getElementById('guide-ag-cancel-btn');
+    const badge  = document.getElementById('guide-ag-status-badge');
+    runBtn.disabled = false;
+    cancelBtn.style.display = 'none';
+    if (msg) { badge.style.display = ''; badge.textContent = msg; }
+    else badge.style.display = 'none';
+    if (dot) dot.className = 'dot dot-grey';
+  }
+
+  function _guideAgStartPolling() {
+    if (_guideAgPollTimer) clearInterval(_guideAgPollTimer);
+    _guideAgPollTimer = setInterval(_guideAgPoll, 800);
+  }
+
+  async function _guideAgPoll() {
+    try {
+      const d = await fetch('/api/autogain/status').then(r => r.json());
+      if (!d.running) {
+        clearInterval(_guideAgPollTimer);
+        _guideAgPollTimer = null;
+        _guideAgShowResult(d);
+      }
+    } catch {}
+  }
+
+  function _guideAgShowResult(d) {
+    const dot        = document.getElementById('guide-ag-dot');
+    const resultDiv  = document.getElementById('guide-ag-result');
+    const resultTxt  = document.getElementById('guide-ag-result-text');
+    const lockedBadge = document.getElementById('guide-ag-locked-badge');
+    const reuseBtn   = document.getElementById('guide-ag-reuse-btn');
+    const badge      = document.getElementById('guide-ag-status-badge');
+
+    _guideAgSetIdle(null);
+
+    if (d.error) {
+      badge.style.display = '';
+      badge.textContent = 'Error: ' + d.error;
+      if (dot) dot.className = 'dot dot-red';
+      return;
+    }
+
+    const ok = d.status === 'AUTO_GAIN_OK';
+    const label = d.status ? d.status.replace('AUTO_GAIN_', '').replace(/_/g, ' ') : 'Unknown';
+    badge.style.display = '';
+    badge.textContent = label;
+    if (dot) dot.className = ok ? 'dot dot-green' : 'dot dot-red';
+
+    if (d.exposure_ms != null) {
+      resultDiv.style.display = '';
+      resultTxt.textContent = `Exp: ${d.exposure_ms.toFixed(0)} ms  Gain: ${d.gain ?? '—'}`;
+      if (ok) {
+        lockedBadge.style.display = '';
+        reuseBtn.style.display = '';
+      } else {
+        lockedBadge.style.display = 'none';
+        reuseBtn.style.display = 'none';
+      }
+      if (d.warning_msg) {
+        resultTxt.textContent += '  ⚠ ' + d.warning_msg;
+      }
+    }
   }
 
   /* ══════════════════════════════════════════════════════════════════════

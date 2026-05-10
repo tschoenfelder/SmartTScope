@@ -15,7 +15,8 @@ from smart_telescope.domain.autogain_service import (
     AutoGainStatus,
 )
 from smart_telescope.domain.camera_capabilities import ConversionGain
-from smart_telescope.domain.camera_profile import ATR585M, CameraProfile
+from smart_telescope.domain.camera_profile import ATR585M, GPCMOS02000KPA, OAG_678M as CAM_OAG_678M, CameraProfile
+from smart_telescope.domain.autogain import _select_conversion_gain
 from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.domain.histogram import HistogramStats
 from smart_telescope.domain.last_good_settings import LastGoodSettings
@@ -422,3 +423,162 @@ class TestOffsetRaise:
         result = AutoGainService.run_one_shot(cam, _PROFILE)
         # After raising offset the run should either complete OK or have offset > 0
         assert result.offset > 0 or result.status == AutoGainStatus.OK
+
+
+# ── Guiding mode (AGT-7-1) ────────────────────────────────────────────────────
+
+def _guide_frame(star_peak_frac: float) -> FitsFrame:
+    """Frame with a simulated guide star: 12 bright pixels (> 0.1% of 64×64) + dim background.
+
+    p99_9 of the resulting frame ≈ star_peak_frac.
+    Background is set to 0.001 (not zero) so zero_clipped_pct stays near 0.
+    """
+    total = 64 * 64  # 4096 pixels
+    pix = np.full(total, 0.001 * ADC_MAX, dtype=np.float32)  # dim sky, not zero
+    pix[:12] = float(star_peak_frac * ADC_MAX)
+    pix = pix.reshape((64, 64))
+    m = MagicMock(spec=FitsFrame)
+    m.pixels = pix
+    return m
+
+
+def _guide_no_star_frame(background_frac: float = 0.005) -> FitsFrame:
+    """Guide frame with uniform dim background — no star (p99_9 ≈ background_frac).
+
+    Unlike _guide_frame, there are no bright pixels, so zero_clipped_pct ≈ 0.
+    This exercises the NO_SIGNAL path rather than the POSSIBLE_DUST_CAP path.
+    """
+    pix = np.full((64, 64), background_frac * ADC_MAX, dtype=np.float32)
+    m = MagicMock(spec=FitsFrame)
+    m.pixels = pix
+    return m
+
+
+# Tiny guiding profile (max_exp short to make exhaustion tests fast)
+_GUIDE_PROFILE = CameraProfile(
+    model="GuideCam",
+    sensor="IMX290",
+    width_px=640,
+    height_px=480,
+    pixel_um=2.9,
+    max_gain=400,
+    unity_gain_hcg=None,
+    unity_gain_lcg=100,
+    unity_gain_hdr=None,
+    min_preview_exp_ms=0.1,
+    max_preview_exp_ms=2000.0,
+    supports_cooling=False,
+)
+
+
+class TestGuidingModeOK:
+    def test_in_band_peak_returns_ok(self) -> None:
+        # p99_9 ≈ 0.45 → inside [0.20, 0.80]
+        cam = _SeqCamera([_guide_frame(0.45)])
+        result = AutoGainService.run_one_shot(cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING)
+        assert result.status == AutoGainStatus.OK
+
+    def test_ok_result_has_positive_exposure(self) -> None:
+        cam = _SeqCamera([_guide_frame(0.45)])
+        result = AutoGainService.run_one_shot(cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING)
+        assert result.exposure_ms > 0
+
+    def test_lower_bound_accepted(self) -> None:
+        # p99_9 = 0.20 is exactly at the lower edge → OK
+        cam = _SeqCamera([_guide_frame(0.20)])
+        result = AutoGainService.run_one_shot(cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING)
+        assert result.status == AutoGainStatus.OK
+
+    def test_upper_bound_accepted(self) -> None:
+        # p99_9 = 0.80 is exactly at the upper edge → OK
+        cam = _SeqCamera([_guide_frame(0.80)])
+        result = AutoGainService.run_one_shot(cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING)
+        assert result.status == AutoGainStatus.OK
+
+
+class TestGuidingModeNoStar:
+    def test_no_star_at_limits_returns_no_signal(self) -> None:
+        # Uniform dim background — no guide star, zero_clipped_pct ≈ 0 (avoids POSSIBLE_DUST_CAP)
+        cam = _SeqCamera([_guide_no_star_frame(0.005)])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=20,
+        )
+        assert result.status in (
+            AutoGainStatus.NO_SIGNAL,
+            AutoGainStatus.GAIN_LIMIT_REACHED,
+            AutoGainStatus.EXPOSURE_LIMIT_REACHED,
+        )
+
+    def test_no_star_warning_message_mentions_guide(self) -> None:
+        cam = _SeqCamera([_guide_frame(0.001)])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=20,
+        )
+        if result.status == AutoGainStatus.NO_SIGNAL:
+            assert result.warning_msg is not None
+            assert "guide" in result.warning_msg.lower()
+
+    def test_dust_cap_still_detected_in_guiding(self) -> None:
+        # >50% zero-clipped → POSSIBLE_DUST_CAP even in GUIDING mode
+        dust_frame = _frame(0.001, zero_clipped_pct=80.0)
+        cam = _SeqCamera([dust_frame])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=20,
+        )
+        assert result.status in (
+            AutoGainStatus.POSSIBLE_DUST_CAP,
+            AutoGainStatus.GAIN_LIMIT_REACHED,
+            AutoGainStatus.EXPOSURE_LIMIT_REACHED,
+        )
+
+
+class TestGuidingModeConvergence:
+    def test_weak_star_triggers_brightening(self) -> None:
+        # Weak star (below band), then in-band after one gain-increase step
+        # _GUIDE_PROFILE starts at max_exp (2000 ms) so gain jumps immediately
+        weak   = _guide_frame(0.05)   # p99_9 = 0.05 < 0.20 → too dark
+        inband = _guide_frame(0.45)   # p99_9 = 0.45 → OK
+        cam = _SeqCamera([weak, inband])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=5,
+        )
+        assert result.status == AutoGainStatus.OK
+
+    def test_bright_star_triggers_dimming(self) -> None:
+        # First frame saturated, then in-band
+        bright = _guide_frame(0.95)  # p99_9 > 0.80 → too bright
+        inband = _guide_frame(0.45)
+        cam = _SeqCamera([bright, bright, inband])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=10,
+        )
+        assert result.status == AutoGainStatus.OK
+
+    def test_offset_not_raised_for_dark_background(self) -> None:
+        # Guide mode should NOT raise offset when p99_9 < band_lo (background is naturally dark)
+        weak = _guide_frame(0.10)    # p99_9 = 0.10, most pixels = 0
+        inband = _guide_frame(0.45)
+        cam = _SeqCamera([weak, inband])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=5,
+        )
+        # offset should remain 0 — guide mode doesn't apply zero-clip correction
+        assert result.offset == 0
+
+
+class TestGuidingConversionGain:
+    def test_gpcmos02000kpa_uses_lcg(self) -> None:
+        cg = _select_conversion_gain(GPCMOS02000KPA, AutoGainMode.GUIDING)
+        assert cg == ConversionGain.LCG
+
+    def test_oag_678m_uses_hcg(self) -> None:
+        cg = _select_conversion_gain(CAM_OAG_678M, AutoGainMode.GUIDING)
+        assert cg == ConversionGain.HCG
+
+    def test_guiding_run_with_gpcmos02000kpa_profile(self) -> None:
+        cam = _SeqCamera([_guide_frame(0.45)])
+        result = AutoGainService.run_one_shot(
+            cam, GPCMOS02000KPA, mode=AutoGainMode.GUIDING,
+        )
+        assert result.status == AutoGainStatus.OK
+        assert result.conversion_gain == ConversionGain.LCG

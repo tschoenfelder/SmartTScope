@@ -6,6 +6,7 @@ from smart_telescope.domain.camera_profile import (
     ATR585M,
     G3M678M,
     GPCMOS02000KPA,
+    OAG_678M as CAM_OAG_678M,
     get_profile,
 )
 from smart_telescope.domain.optical_train import (
@@ -84,9 +85,34 @@ class TestGPCMOS02000KPA:
         assert GPCMOS02000KPA.height_px == 1080
 
 
+class TestOAG678M:
+    def test_sensor(self) -> None:
+        assert CAM_OAG_678M.sensor == "IMX678"
+
+    def test_model_name(self) -> None:
+        assert CAM_OAG_678M.model == "OAG_678M"
+
+    def test_has_hcg_and_lcg(self) -> None:
+        assert CAM_OAG_678M.unity_gain_hcg is not None
+        assert CAM_OAG_678M.unity_gain_lcg is not None
+
+    def test_no_hdr(self) -> None:
+        assert CAM_OAG_678M.unity_gain_hdr is None
+
+    def test_max_exp_ms_for_guiding(self) -> None:
+        assert CAM_OAG_678M.max_preview_exp_ms == 5_000.0
+
+    def test_no_cooling(self) -> None:
+        assert CAM_OAG_678M.supports_cooling is False
+
+    def test_in_all_profiles(self) -> None:
+        assert "OAG_678M" in ALL_PROFILES
+        assert ALL_PROFILES["OAG_678M"] is CAM_OAG_678M
+
+
 class TestProfileRegistry:
-    def test_all_profiles_has_three_entries(self) -> None:
-        assert len(ALL_PROFILES) == 3
+    def test_all_profiles_has_four_entries(self) -> None:
+        assert len(ALL_PROFILES) == 4
 
     def test_get_profile_returns_known(self) -> None:
         assert get_profile("ATR585M") is ATR585M

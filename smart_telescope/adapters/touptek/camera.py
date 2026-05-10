@@ -62,6 +62,7 @@ class ToupcamCamera(CameraPort):
         self._logical_name: str = ""
         self._frame_ready = threading.Event()
         self._capture_error: Exception | None = None
+        self._capture_lock = threading.Lock()  # prevents concurrent captures on same handle
 
     # ------------------------------------------------------------------
     # CameraPort — lifecycle
@@ -147,57 +148,61 @@ class ToupcamCamera(CameraPort):
     def capture(self, exposure_seconds: float) -> FitsFrame:
         if self._cam is None or self._buf is None:
             raise RuntimeError("Camera not connected")
-
-        us = max(1, int(exposure_seconds * 1_000_000))
+        if not self._capture_lock.acquire(blocking=False):
+            raise RuntimeError("Camera busy — another capture is already in progress")
         try:
-            self._cam.put_ExpoTime(us)
-        except Exception as exc:
-            raise RuntimeError(f"put_ExpoTime({us} µs) failed: {exc}") from exc
-
-        self._capture_error = None
-        self._frame_ready.clear()
-        try:
-            self._cam.Trigger(1)
-        except Exception as exc:
-            raise RuntimeError(f"Trigger(1) failed: {exc}") from exc
-
-        timeout = exposure_seconds + self._timeout_extra
-        if not self._frame_ready.wait(timeout=timeout):
-            raise TimeoutError(f"No frame received within {timeout:.1f}s")
-        if self._capture_error is not None:
-            raise self._capture_error
-
-        # bits=16 → always request 16-bit output (matches TOUPCAM_OPTION_BITDEPTH=1)
-        # rowPitch=-1 → auto (width * 2 bytes per row for RAW-16)
-        # Retry on E_PENDING (-2147483638 / 0x8000000A): some camera models fire
-        # EVENT_IMAGE slightly before the buffer is fully populated.
-        _pull_exc: Exception | None = None
-        for _attempt in range(3):
+            us = max(1, int(exposure_seconds * 1_000_000))
             try:
-                self._cam.PullImageV4(self._buf, 0, 16, -1, None)
-                _pull_exc = None
-                break
+                self._cam.put_ExpoTime(us)
             except Exception as exc:
-                _pull_exc = exc
-                time.sleep(0.05)
-        if _pull_exc is not None:
-            raise RuntimeError(f"PullImageV4 failed after 3 attempts: {_pull_exc}") from _pull_exc
+                raise RuntimeError(f"put_ExpoTime({us} µs) failed: {exc}") from exc
 
-        pixels = (
-            np.frombuffer(self._buf, dtype=np.uint16)
-            .reshape(self._height, self._width)
-            .astype(np.float32)
-        )
+            self._capture_error = None
+            self._frame_ready.clear()
+            try:
+                self._cam.Trigger(1)
+            except Exception as exc:
+                raise RuntimeError(f"Trigger(1) failed: {exc}") from exc
 
-        hdr = fits.Header()
-        hdr["SIMPLE"] = True
-        hdr["BITPIX"] = -32
-        hdr["NAXIS"] = 2
-        hdr["NAXIS1"] = self._width
-        hdr["NAXIS2"] = self._height
-        hdr["EXPTIME"] = exposure_seconds
+            timeout = exposure_seconds + self._timeout_extra
+            if not self._frame_ready.wait(timeout=timeout):
+                raise TimeoutError(f"No frame received within {timeout:.1f}s")
+            if self._capture_error is not None:
+                raise self._capture_error
 
-        return FitsFrame(pixels=pixels, header=hdr, exposure_seconds=exposure_seconds)
+            # bits=16 → always request 16-bit output (matches TOUPCAM_OPTION_BITDEPTH=1)
+            # rowPitch=-1 → auto (width * 2 bytes per row for RAW-16)
+            # Retry on E_PENDING (-2147483638 / 0x8000000A): some camera models fire
+            # EVENT_IMAGE slightly before the buffer is fully populated.
+            _pull_exc: Exception | None = None
+            for _attempt in range(3):
+                try:
+                    self._cam.PullImageV4(self._buf, 0, 16, -1, None)
+                    _pull_exc = None
+                    break
+                except Exception as exc:
+                    _pull_exc = exc
+                    time.sleep(0.05)
+            if _pull_exc is not None:
+                raise RuntimeError(f"PullImageV4 failed after 3 attempts: {_pull_exc}") from _pull_exc
+
+            pixels = (
+                np.frombuffer(self._buf, dtype=np.uint16)
+                .reshape(self._height, self._width)
+                .astype(np.float32)
+            )
+
+            hdr = fits.Header()
+            hdr["SIMPLE"] = True
+            hdr["BITPIX"] = -32
+            hdr["NAXIS"] = 2
+            hdr["NAXIS1"] = self._width
+            hdr["NAXIS2"] = self._height
+            hdr["EXPTIME"] = exposure_seconds
+
+            return FitsFrame(pixels=pixels, header=hdr, exposure_seconds=exposure_seconds)
+        finally:
+            self._capture_lock.release()
 
     # ------------------------------------------------------------------
     # CameraPort — exposure / gain

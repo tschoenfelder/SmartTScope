@@ -47,6 +47,9 @@ async def analyze_histogram(
     camera.set_gain(gain)
     try:
         frame = await asyncio.to_thread(camera.capture, exposure)
+    except RuntimeError as exc:
+        status = 409 if "busy" in str(exc).lower() else 503
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Camera capture failed: {exc}") from exc
 

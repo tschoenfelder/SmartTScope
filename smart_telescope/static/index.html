@@ -1009,23 +1009,24 @@
                     onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
             <label style="margin-left:0.4rem">Exp</label>
             <input type="number" id="preview-exposure" value="2" min="0.0001" max="1000" step="any"
-                   style="width:10ch" onchange="previewReconnectIfRunning()">
+                   style="width:10ch" onchange="previewSendParams()">
             <label>s</label>
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="preview-gain" value="100" min="100" max="15000" step="100"
-                   style="width:8ch" onchange="previewReconnectIfRunning()">
+                   style="width:8ch" onchange="previewSendParams()">
             <label style="margin-left:0.4rem">Off</label>
             <input type="number" id="preview-offset" value="0" min="0" max="10000" step="1"
                    style="width:8ch" title="Camera black level / offset (0–10000)"
-                   onchange="previewReconnectIfRunning()">
+                   onchange="previewSendParams()">
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-stretch-chk" style="width:auto" checked
                      title="Auto-stretch: percentile clip to fill display range"
-                     onchange="previewReconnectIfRunning()">Str
+                     onchange="previewSendParams()">Str
             </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-autogain-chk" style="width:auto"
-                     title="Auto-adjust exposure (≤4 s) and gain (near min) for display">AG
+                     title="Auto-adjust exposure (≤4 s) and gain (near min) for display"
+                     onchange="previewSendParams()">AG
             </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-hist-chk" style="width:auto"
@@ -3377,6 +3378,19 @@
 
   function previewReconnectIfRunning() {
     if (_ws) _connectWs();
+  }
+
+  function previewSendParams() {
+    const exposure = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
+    const gain     = parseInt(document.getElementById('preview-gain')?.value, 10) || 100;
+    const offset   = parseInt(document.getElementById('preview-offset')?.value, 10) || 0;
+    const stretch  = document.getElementById('preview-stretch-chk')?.checked !== false;
+    const autogain = document.getElementById('preview-autogain-chk')?.checked === true;
+    if (_ws && _ws.readyState === WebSocket.OPEN) {
+      _ws.send(JSON.stringify({ type: 'set_params', exposure, gain, offset, stretch, autogain }));
+    } else if (_reconnect) {
+      _connectWs();  // not yet connected — reconnect with new params baked into URL
+    }
   }
 
   function previewStop() {

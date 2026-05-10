@@ -150,8 +150,50 @@ async def ws_preview(
     except Exception:
         pass
 
+    # Background task: listen for set_params messages from the client.
+    _params_q: asyncio.Queue[dict] = asyncio.Queue()
+
+    async def _settings_listener() -> None:
+        try:
+            while True:
+                text = await websocket.receive_text()
+                try:
+                    _params_q.put_nowait(json.loads(text))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    _listener = asyncio.create_task(_settings_listener())
+
     try:
         while True:
+            # --- apply any pending settings from the client ---
+            while not _params_q.empty():
+                try:
+                    msg = _params_q.get_nowait()
+                    if msg.get("type") != "set_params":
+                        continue
+                    if "exposure" in msg and ctrl is None:
+                        cur_exposure = float(msg["exposure"])
+                    if "gain" in msg and ctrl is None:
+                        cur_gain = int(msg["gain"])
+                        camera.set_gain(cur_gain)
+                    if "offset" in msg:
+                        eff_offset = int(msg["offset"])
+                        camera.set_black_level(eff_offset)
+                    if "stretch" in msg:
+                        stretch = bool(msg["stretch"])
+                    if "autogain" in msg:
+                        if msg["autogain"] and ctrl is None:
+                            ctrl = AutoGainController(cur_exposure, cur_gain)
+                            _log.info("Autogain enabled via set_params (exp=%.4fs gain=%d)", cur_exposure, cur_gain)
+                        elif not msg["autogain"] and ctrl is not None:
+                            ctrl = None
+                            _log.info("Autogain disabled via set_params")
+                except Exception:
+                    pass
+
             # --- capture frame ---
             _t_capture = time.monotonic()
             try:
@@ -250,6 +292,8 @@ async def ws_preview(
 
     except WebSocketDisconnect:
         pass
+    finally:
+        _listener.cancel()
 
 
 def _debayer(raw: np.ndarray, pattern: str) -> np.ndarray:

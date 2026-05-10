@@ -158,12 +158,9 @@ async def ws_preview(
                     pass
                 break
             _dt = time.monotonic() - _t_capture
-            _log.debug(
-                "Preview frame: camera_index=%d capture_time=%.3fs requested_exp=%.3fs",
-                camera_index, _dt, cur_exposure,
-            )
 
             # --- STS-ADDON-007: send histogram JSON before the JPEG ---
+            stats = None
             try:
                 stats = _hist_analyze(frame.pixels, bit_depth=cur_bit_depth)
                 counts, edges, adu_hi = _hist_bins(
@@ -180,6 +177,16 @@ async def ws_preview(
                 break
             except Exception:
                 pass  # histogram failure must never block frame delivery
+
+            _log.info(
+                "Preview frame: camera_index=%d adapter=%s capture=%.3fs "
+                "exp=%.3fs gain=%d mean_adu=%.0f p99_adu=%.0f sat=%.2f%%",
+                camera_index, type(camera).__name__, _dt,
+                cur_exposure, cur_gain,
+                (stats.mean_frac * stats.adc_max) if stats else 0.0,
+                (stats.p99 * stats.adc_max) if stats else 0.0,
+                stats.saturation_pct if stats else 0.0,
+            )
 
             # --- encode and send JPEG ---
             try:

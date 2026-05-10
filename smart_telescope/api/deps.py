@@ -58,15 +58,19 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     if touptek_index:
         from ..adapters.touptek.camera import ToupcamCamera
         camera = ToupcamCamera(index=int(touptek_index))
+        _log.warning("Adapter selected: ToupcamCamera(index=%s)  [TOUPTEK_INDEX=%s]", touptek_index, touptek_index)
     elif sim_dir:
         from pathlib import Path
 
         from ..adapters.simulator.camera import SimulatorCamera
         camera = SimulatorCamera(Path(sim_dir))
+        _log.warning("Adapter selected: SimulatorCamera(dir=%s)", sim_dir)
     elif replay_dir:
         from ..adapters.replay.camera import ReplayCamera
         camera = ReplayCamera.from_directory(replay_dir)
+        _log.warning("Adapter selected: ReplayCamera(dir=%s)", replay_dir)
     else:
+        _log.warning("Adapter selected: MockCamera  — no TOUPTEK_INDEX, SIMULATOR_FITS_DIR or REPLAY_FITS_DIR set")
         camera = MockCamera()
 
     # Mount + Focuser

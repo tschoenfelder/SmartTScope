@@ -180,7 +180,7 @@ async def ws_preview(
 
             _log.info(
                 "Preview frame: camera_index=%d adapter=%s capture=%.3fs "
-                "exp=%.3fs gain=%d mean_adu=%.0f p99_adu=%.0f sat=%.2f%%",
+                "exp=%.4fs gain=%d mean_adu=%.0f p99_adu=%.0f sat=%.2f%%",
                 camera_index, type(camera).__name__, _dt,
                 cur_exposure, cur_gain,
                 (stats.mean_frac * stats.adc_max) if stats else 0.0,
@@ -211,7 +211,7 @@ async def ws_preview(
                 cur_exposure = ctrl.exposure
                 if changed:
                     _log.info(
-                        "Autogain update: camera_index=%d exposure=%.3fs→%.3fs gain=%d→%d",
+                        "Autogain update: camera_index=%d exposure=%.4fs→%.4fs gain=%d→%d",
                         camera_index, prev_exp, cur_exposure, prev_gain, cur_gain,
                     )
                 try:

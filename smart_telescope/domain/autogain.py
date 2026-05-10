@@ -2,7 +2,8 @@
 
 Keeps frames well-exposed without affecting raw-capture settings.
 Target: mean signal in [_LO, _HI] fraction of the ADU range.
-Strategy: adjust exposure first (up to 4 s), then gain (up to _GAIN_MAX).
+Strategy: proportional control — scale exposure by (target/mean), capped
+at 8× per step.  Adjust exposure first (up to 4 s), then gain.
 """
 
 from __future__ import annotations
@@ -11,15 +12,22 @@ import numpy as np
 
 _LO      = 0.12   # target lower bound (fraction of ADU range)
 _HI      = 0.45   # target upper bound
-_STEP    = 1.4    # multiplicative step size for adjustments
-_EXP_MAX = 4.0    # seconds — hard cap (per requirements)
-_EXP_MIN = 0.001  # 1 ms — allows guide cameras that saturate at ms exposures to converge
+_TARGET  = (_LO + _HI) / 2.0   # 0.285 — aim for midpoint of band
+_MAX_RATIO = 8.0  # largest single-step change factor (either direction)
+_EXP_MAX = 4.0    # seconds — hard cap
+_EXP_MIN = 0.001  # 1 ms — minimum; allows guide cameras to converge
 _GAIN_MIN = 100
 _GAIN_MAX = 400
 
 
 class AutoGainController:
     """Stateful controller that suggests the next (exposure, gain) after each frame.
+
+    Uses a proportional control law: the exposure is scaled by
+    (target_mean / measured_mean), capped to 8× per step so a single
+    saturated or black frame causes a large but bounded correction.
+    This converges in 1–2 frames vs the old fixed-step approach that
+    needed 6+ frames and caused sustained oscillation.
 
     Usage::
 
@@ -45,15 +53,25 @@ class AutoGainController:
             adc_max = 1.0
         mean_frac = float(np.mean(pixels)) / adc_max
 
+        if _LO <= mean_frac <= _HI:
+            return  # already in target band — no change
+
+        # Proportional ratio: how much to scale exposure toward _TARGET.
+        # Capped to [1/_MAX_RATIO, _MAX_RATIO] to prevent wild single-step jumps.
+        safe_mean = max(mean_frac, 1e-4)
+        ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, _TARGET / safe_mean))
+
         if mean_frac < _LO:
-            # too dark — brighten
-            if self.exposure < _EXP_MAX:
-                self.exposure = min(_EXP_MAX, self.exposure * _STEP)
+            # too dark — brighten exposure first, then gain
+            new_exp = min(_EXP_MAX, self.exposure * ratio)
+            if new_exp > self.exposure:
+                self.exposure = new_exp
             elif self.gain < _GAIN_MAX:
-                self.gain = min(_GAIN_MAX, int(self.gain * _STEP))
-        elif mean_frac > _HI:
-            # too bright — dim (exposure first, then gain)
-            if self.exposure > _EXP_MIN:
-                self.exposure = max(_EXP_MIN, self.exposure / _STEP)
+                self.gain = min(_GAIN_MAX, int(self.gain * ratio))
+        else:
+            # too bright — dim exposure first, then gain
+            new_exp = max(_EXP_MIN, self.exposure * ratio)
+            if new_exp < self.exposure:
+                self.exposure = new_exp
             elif self.gain > _GAIN_MIN:
-                self.gain = max(_GAIN_MIN, int(self.gain / _STEP))
+                self.gain = max(_GAIN_MIN, int(self.gain * ratio))

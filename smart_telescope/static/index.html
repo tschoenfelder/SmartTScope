@@ -1043,6 +1043,10 @@
           <div id="s3-hist-panel" style="display:none;margin-top:0.5rem">
             <canvas id="s3-histogram" class="hist-canvas" width="400" height="100"></canvas>
             <div id="s3-hist-stats" class="hist-stats"></div>
+            <div id="s3-hist-low-wrap" style="display:none;margin-top:4px">
+              <div style="font-size:0.7rem;color:var(--muted);margin-bottom:2px">0 – 5 k ADU (pedestal detail)</div>
+              <canvas id="s3-histogram-low" class="hist-canvas" width="400" height="70"></canvas>
+            </div>
           </div>
 
           <div id="s3-focus-row" style="display:none;align-items:center;gap:0.3rem;margin-top:0.6rem">
@@ -3464,6 +3468,17 @@
               try {
                 showHistogram('s3-histogram', 's3-hist-stats', msg.stats, msg.bin_counts, msg.bin_edges, msg.hist_adu_hi);
               } catch (_) {}
+              // Low-range pedestal panel — show only when main range exceeds 5k ADU
+              const lowWrap = document.getElementById('s3-hist-low-wrap');
+              if (lowWrap) {
+                const showLow = msg.low_bin_counts && msg.hist_adu_hi > 5000;
+                lowWrap.style.display = showLow ? '' : 'none';
+                if (showLow) {
+                  try {
+                    showHistogram('s3-histogram-low', null, msg.stats, msg.low_bin_counts, msg.low_bin_edges, msg.low_adu_hi);
+                  } catch (_) {}
+                }
+              }
             }
           }
           return;

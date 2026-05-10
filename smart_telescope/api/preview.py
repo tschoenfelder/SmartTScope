@@ -179,12 +179,23 @@ async def ws_preview(
                 counts, edges, adu_hi = _hist_bins(
                     frame.pixels, bit_depth=cur_bit_depth, n_bins=256,
                 )
+                # Low-range histogram: fixed 0–5000 ADU, 256 bins (~20 ADU/bin)
+                # for pedestal / offset inspection regardless of signal level.
+                _LOW_ADU = 5000.0
+                _adc_max = float((1 << cur_bit_depth) - 1)
+                _low_norm = frame.pixels.astype(np.float64).ravel() / _adc_max
+                _low_c, _low_e = np.histogram(
+                    _low_norm, bins=256, range=(0.0, _LOW_ADU / _adc_max)
+                )
                 await websocket.send_text(json.dumps({
                     "type": "histogram",
                     "stats": dataclasses.asdict(stats),
                     "bin_counts": counts,
                     "bin_edges": edges,
                     "hist_adu_hi": adu_hi,
+                    "low_bin_counts": _low_c.tolist(),
+                    "low_bin_edges": _low_e.tolist(),
+                    "low_adu_hi": _LOW_ADU,
                 }))
             except (WebSocketDisconnect, RuntimeError):
                 break
@@ -193,9 +204,9 @@ async def ws_preview(
 
             _log.info(
                 "Preview frame: camera_index=%d adapter=%s capture=%.3fs "
-                "exp=%.4fs gain=%d mean_adu=%.0f p99_adu=%.0f sat=%.2f%%",
+                "exp=%.4fs gain=%d offset=%d mean_adu=%.0f p99_adu=%.0f sat=%.2f%%",
                 camera_index, type(camera).__name__, _dt,
-                cur_exposure, cur_gain,
+                cur_exposure, cur_gain, eff_offset,
                 (stats.mean_frac * stats.adc_max) if stats else 0.0,
                 (stats.p99 * stats.adc_max) if stats else 0.0,
                 stats.saturation_pct if stats else 0.0,

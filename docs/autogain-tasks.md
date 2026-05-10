@@ -354,15 +354,19 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-### AGT-7-2 — MVP+ 5-minute guide monitoring
-- [ ] Background task: every `guide_check_interval_s` (default 300, configurable)
-  inspect recent guide frames via `HistogramAnalyzer`.
-- [ ] Apply only small bounded adjustments (±10% gain, ±20% exposure max)
-  with hysteresis (no change if within ±15% of target).
-- [ ] Status values: `GUIDE_GAIN_OK / STAR_WEAK / STAR_SATURATED /
-  ADJUSTED / DAWN_WARNING` (FR-GUIDE-002).
-- [ ] Show last-check time + status badge in guide-camera panel.
-- [ ] Unit tests: weak-star path, saturation path, dawn-drift path.
+### AGT-7-2 — MVP+ 5-minute guide monitoring ✅
+- [x] `domain/guide_monitor.py`: `GuideMonitor` daemon thread; `_check_once()`
+  captures one frame, analyses p99_9, applies ±20 % exp / ±10 % gain bounded
+  adjustments when outside the ±15 % hysteresis band; dawn detection compares
+  current p50 to initial baseline.
+- [x] Status values: `GUIDE_GAIN_OK / STAR_WEAK / STAR_SATURATED / ADJUSTED /
+  DAWN_WARNING` (FR-GUIDE-002). Dawn coexists with ADJUSTED/GUIDE_GAIN_OK.
+- [x] `api/guide_monitor.py`: `POST /api/guide_monitor/start` (202 / 409 / 503),
+  `POST /api/guide_monitor/stop`, `GET /api/guide_monitor/status`.
+- [x] Stage 4 Guide Camera card extended: "5-min Monitor" Start / Stop buttons,
+  status badge, last-check time, settings line, dawn warning text.
+- [x] 24 unit tests: OK path (in-band, edge cases), weak-star, saturated,
+  dawn-warning, configuration (hysteresis width, custom interval).
 
 *Covers:* FR-GUIDE-002, AC-GUIDE-002  
 *Depends:* AGT-7-1
@@ -465,7 +469,7 @@ Implementation phases follow section 16 of that document.
 | 4 — Cooling | 2 | 2 |
 | 5 — Auto Gain MVP | 4 | 4 |
 | 6 — Live stacking calibration | 2 | 2 |
-| 7 — Guide camera | 2 | 1 |
+| 7 — Guide camera | 2 | 2 |
 | 8 — Planetary | 2 | 0 |
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
@@ -474,4 +478,4 @@ Implementation phases follow section 16 of that document.
 
 ---
 
-*Last updated: 2026-05-10 — AGT-7-1 done (22/26)*
+*Last updated: 2026-05-10 — AGT-7-2 done, Phase 7 complete (23/26)*

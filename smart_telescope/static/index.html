@@ -1357,6 +1357,27 @@
                     margin-left:0.5rem;padding:0.15rem 0.55rem;font-size:0.78rem"
                     title="Run again — last-good settings used as starting point">Reuse</button>
           </div>
+
+          <!-- Guide monitoring controls (FR-GUIDE-002) -->
+          <div style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.6rem">
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <span style="font-size:0.82rem;font-weight:500">5-min Monitor</span>
+              <button id="guide-mon-start-btn" onclick="guideMonStart()"
+                      style="padding:0.18rem 0.55rem;font-size:0.78rem">Start</button>
+              <button id="guide-mon-stop-btn" onclick="guideMonStop()"
+                      style="display:none;padding:0.18rem 0.55rem;font-size:0.78rem"
+                      class="secondary">Stop</button>
+              <span id="guide-mon-dot" class="dot dot-grey" style="margin-left:0.2rem"></span>
+            </div>
+            <div id="guide-mon-status-row" style="display:none;margin-top:0.4rem;font-size:0.8rem;line-height:1.5">
+              <span id="guide-mon-status-badge"
+                    style="border-radius:3px;padding:1px 5px;font-size:0.76rem;background:var(--muted);color:#fff"></span>
+              <span id="guide-mon-settings" style="color:var(--muted);margin-left:0.5rem"></span>
+              <span id="guide-mon-time" style="color:var(--muted);margin-left:0.5rem;font-size:0.74rem"></span>
+            </div>
+            <div id="guide-mon-warn" style="display:none;margin-top:0.25rem;font-size:0.78rem;
+                 color:var(--warn,#f5a623)"></div>
+          </div>
         </div>
       </div>
 
@@ -4344,6 +4365,104 @@
       if (d.warning_msg) {
         resultTxt.textContent += '  ⚠ ' + d.warning_msg;
       }
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Guide Monitor (Stage 4 — FR-GUIDE-002)
+  ══════════════════════════════════════════════════════════════════════ */
+
+  const _GM_STATUS_COLORS = {
+    GUIDE_GAIN_OK:  'var(--accent)',
+    STAR_WEAK:      'var(--warning,#e67e22)',
+    STAR_SATURATED: 'var(--warning,#e67e22)',
+    ADJUSTED:       '#5b8dd9',
+    DAWN_WARNING:   'var(--warn,#f5a623)',
+  };
+
+  let _gmPollTimer = null;
+
+  async function guideMonStart() {
+    const camIdx   = parseInt(document.getElementById('guide-ag-cam-idx').value, 10) || 1;
+    const model    = document.getElementById('guide-ag-model').value;
+    try {
+      const r = await fetch('/api/guide_monitor/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera_index: camIdx, camera_model: model }),
+      });
+      if (r.status === 202) {
+        _gmSetRunning(true);
+        _gmStartPolling();
+      } else {
+        const d = await r.json().catch(() => ({}));
+        setStatus('s4-status', 'Monitor start failed: ' + (d.detail || r.status), true);
+      }
+    } catch (e) {
+      setStatus('s4-status', 'Monitor start error: ' + e, true);
+    }
+  }
+
+  async function guideMonStop() {
+    await fetch('/api/guide_monitor/stop', { method: 'POST' }).catch(() => {});
+    _gmSetRunning(false);
+    if (_gmPollTimer) { clearInterval(_gmPollTimer); _gmPollTimer = null; }
+  }
+
+  function _gmSetRunning(running) {
+    document.getElementById('guide-mon-start-btn').style.display = running ? 'none' : '';
+    document.getElementById('guide-mon-stop-btn').style.display  = running ? '' : 'none';
+    const dot = document.getElementById('guide-mon-dot');
+    if (dot) dot.className = running ? 'dot dot-yellow' : 'dot dot-grey';
+  }
+
+  function _gmStartPolling() {
+    if (_gmPollTimer) clearInterval(_gmPollTimer);
+    _gmPollTimer = setInterval(_gmPoll, 3000);
+  }
+
+  async function _gmPoll() {
+    try {
+      const d = await fetch('/api/guide_monitor/status').then(r => r.json());
+      _gmUpdateUI(d);
+    } catch {}
+  }
+
+  function _gmUpdateUI(d) {
+    const dot     = document.getElementById('guide-mon-dot');
+    const row     = document.getElementById('guide-mon-status-row');
+    const badge   = document.getElementById('guide-mon-status-badge');
+    const settings = document.getElementById('guide-mon-settings');
+    const timeEl  = document.getElementById('guide-mon-time');
+    const warnEl  = document.getElementById('guide-mon-warn');
+
+    if (!d.running && d.status === null) {
+      _gmSetRunning(false);
+      if (_gmPollTimer) { clearInterval(_gmPollTimer); _gmPollTimer = null; }
+      return;
+    }
+
+    _gmSetRunning(d.running);
+    if (dot && d.status) dot.className = 'dot ' +
+      (d.status === 'GUIDE_GAIN_OK' || d.status === 'ADJUSTED' ? 'dot-green' : 'dot-yellow');
+    if (d.dawn_warning && dot) dot.className = 'dot dot-yellow';
+
+    if (d.status) {
+      row.style.display = '';
+      badge.textContent = d.status.replace(/_/g, ' ');
+      badge.style.background = _GM_STATUS_COLORS[d.status] || 'var(--muted)';
+
+      if (d.exposure_ms != null) {
+        settings.textContent = `Exp: ${d.exposure_ms.toFixed(0)} ms  Gain: ${d.gain ?? '—'}`;
+      }
+
+      if (d.checked_at) {
+        const dt = new Date(d.checked_at);
+        timeEl.textContent = 'Last check: ' + dt.toLocaleTimeString();
+      }
+
+      warnEl.style.display = d.warning_msg ? '' : 'none';
+      warnEl.textContent   = d.warning_msg || '';
     }
   }
 

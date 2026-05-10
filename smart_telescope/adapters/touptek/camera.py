@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import time
 import threading
 from typing import Any
 
@@ -168,10 +169,19 @@ class ToupcamCamera(CameraPort):
 
         # bits=16 → always request 16-bit output (matches TOUPCAM_OPTION_BITDEPTH=1)
         # rowPitch=-1 → auto (width * 2 bytes per row for RAW-16)
-        try:
-            self._cam.PullImageV4(self._buf, 0, 16, -1, None)
-        except Exception as exc:
-            raise RuntimeError(f"PullImageV4 failed: {exc}") from exc
+        # Retry on E_PENDING (-2147483638 / 0x8000000A): some camera models fire
+        # EVENT_IMAGE slightly before the buffer is fully populated.
+        _pull_exc: Exception | None = None
+        for _attempt in range(3):
+            try:
+                self._cam.PullImageV4(self._buf, 0, 16, -1, None)
+                _pull_exc = None
+                break
+            except Exception as exc:
+                _pull_exc = exc
+                time.sleep(0.05)
+        if _pull_exc is not None:
+            raise RuntimeError(f"PullImageV4 failed after 3 attempts: {_pull_exc}") from _pull_exc
 
         pixels = (
             np.frombuffer(self._buf, dtype=np.uint16)

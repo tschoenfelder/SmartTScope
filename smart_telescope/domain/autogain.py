@@ -13,7 +13,7 @@ _LO      = 0.12   # target lower bound (fraction of ADU range)
 _HI      = 0.45   # target upper bound
 _STEP    = 1.4    # multiplicative step size for adjustments
 _EXP_MAX = 4.0    # seconds — hard cap (per requirements)
-_EXP_MIN = 0.5
+_EXP_MIN = 0.001  # 1 ms — allows guide cameras that saturate at ms exposures to converge
 _GAIN_MIN = 100
 _GAIN_MAX = 400
 

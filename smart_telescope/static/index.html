@@ -1038,6 +1038,7 @@
                     style="padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Focuser not connected">AF</button>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
+            <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.5rem"></span>
           </div>
           <div id="s3-hist-panel" style="display:none;margin-top:0.5rem">
             <canvas id="s3-histogram" class="hist-canvas" width="400" height="100"></canvas>
@@ -3383,6 +3384,8 @@
     _updatePreviewBtns(false);
     _setWsStatus('stopped');
     setStatus('s3-status', '');
+    const adEl = document.getElementById('s3-cam-adapter');
+    if (adEl) { adEl.textContent = ''; adEl.style.color = ''; adEl.style.fontWeight = ''; }
   }
 
   function _connectWs() {
@@ -3413,6 +3416,18 @@
       if (typeof ev.data === 'string') {
         let msg = null;
         try { msg = JSON.parse(ev.data); } catch (_) {}
+        if (msg?.type === 'camera_info') {
+          const el = document.getElementById('s3-cam-adapter');
+          if (el) {
+            const isMock = msg.adapter === 'MockCamera';
+            el.textContent = isMock
+              ? 'MockCamera — no real camera (check config / SDK)'
+              : (msg.name || msg.adapter) + (msg.is_color ? ' · colour (' + msg.bayer_pattern + ')' : ' · mono');
+            el.style.color  = isMock ? 'orange' : 'var(--muted)';
+            el.style.fontWeight = isMock ? 'bold' : '';
+          }
+          return;
+        }
         if (msg?.type === 'histogram') {
           if (document.getElementById('preview-hist-chk')?.checked) {
             const panel = document.getElementById('s3-hist-panel');

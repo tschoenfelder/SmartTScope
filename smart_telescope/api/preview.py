@@ -124,6 +124,18 @@ async def ws_preview(
     except Exception:
         pass
 
+    # Send one-shot camera identity so the UI can warn if MockCamera is active.
+    try:
+        await websocket.send_text(json.dumps({
+            "type": "camera_info",
+            "adapter": type(camera).__name__,
+            "name": getattr(camera, "get_logical_name", lambda: "")(),
+            "is_color": bool(bayer_pattern),
+            "bayer_pattern": bayer_pattern,
+        }))
+    except Exception:
+        pass
+
     try:
         while True:
             # --- capture frame ---

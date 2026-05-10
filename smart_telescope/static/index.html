@@ -1130,9 +1130,23 @@
                     style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">+20</button>
             <span id="s3-focus-pos" style="font-size:0.78rem;color:var(--muted);margin-left:0.4rem"></span>
           </div>
-          <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;align-items:center">
             <button id="preview-start-btn" onclick="previewStart()">Start</button>
             <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+            <button id="autogain-run-btn" onclick="autoGainRun()"
+                    style="padding:0.22rem 0.7rem;font-size:0.82rem"
+                    title="Run one-shot auto-gain: find optimal exposure and gain for this camera">Auto Gain</button>
+            <button id="autogain-cancel-btn" onclick="autoGainCancel()"
+                    style="padding:0.22rem 0.7rem;font-size:0.82rem;display:none"
+                    class="secondary">Cancel</button>
+            <span id="autogain-status-badge" style="font-size:0.8rem;display:none"></span>
+          </div>
+          <div id="autogain-result-row" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
+               border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6">
+            <span id="autogain-result-text"></span>
+            <button id="autogain-apply-btn" onclick="autoGainApply()"
+                    style="margin-left:0.8rem;padding:0.15rem 0.55rem;font-size:0.78rem;display:none"
+                    title="Copy auto-gain settings to exposure/gain inputs">Apply</button>
           </div>
 
           <div id="solve-result" style="display:none;margin-top:0.75rem;padding:0.4rem 0.6rem;
@@ -3950,6 +3964,124 @@
       const d = await r.json();
       showHistogram('s3-histogram', 's3-hist-stats', d, d.bin_counts, d.bin_edges);
     } catch (_) { /* ignore network errors during preview */ }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     One-shot Auto Gain (Stage 3)
+  ══════════════════════════════════════════════════════════════════════ */
+
+  let _agPollTimer = null;
+  let _agLastResult = null;  // { exposure_ms, gain, offset } from last OK run
+
+  function _agSetBusy(busy) {
+    const runBtn    = document.getElementById('autogain-run-btn');
+    const cancelBtn = document.getElementById('autogain-cancel-btn');
+    const badge     = document.getElementById('autogain-status-badge');
+    if (!runBtn) return;
+    runBtn.disabled = busy;
+    cancelBtn.style.display = busy ? '' : 'none';
+    if (busy) {
+      badge.style.display = '';
+      badge.style.color = 'var(--muted)';
+      badge.innerHTML = '<span class="spin"></span> Running…';
+    }
+  }
+
+  function _agShowResult(d) {
+    const badge     = document.getElementById('autogain-status-badge');
+    const resultRow = document.getElementById('autogain-result-row');
+    const resultTxt = document.getElementById('autogain-result-text');
+    const applyBtn  = document.getElementById('autogain-apply-btn');
+    if (!badge) return;
+
+    badge.style.display = '';
+    const ok = d.status === 'AUTO_GAIN_OK';
+    badge.style.color = ok ? 'var(--green,#4caf50)' : 'var(--warn,#f5a623)';
+    badge.textContent = ok ? '✓ OK' : ('⚠ ' + (d.status || d.error || 'Error'));
+
+    resultRow.style.display = '';
+    if (d.error) {
+      resultTxt.textContent = 'Error: ' + d.error;
+      applyBtn.style.display = 'none';
+      return;
+    }
+    const expS = d.exposure_ms != null ? (d.exposure_ms / 1000).toFixed(3) + ' s' : '—';
+    const gain  = d.gain  != null ? d.gain  : '—';
+    const off   = d.offset != null ? d.offset : '—';
+    const warn  = d.warning_msg ? (' — ' + d.warning_msg) : '';
+    resultTxt.innerHTML = `Exp <b>${expS}</b> &nbsp; Gain <b>${gain}</b> &nbsp; Off <b>${off}</b>${warn}`;
+    if (ok) {
+      _agLastResult = { exposure_ms: d.exposure_ms, gain: d.gain, offset: d.offset };
+      applyBtn.style.display = '';
+    } else {
+      applyBtn.style.display = 'none';
+    }
+  }
+
+  async function _agPoll() {
+    try {
+      const r = await fetch('/api/autogain/status');
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!d.running) {
+        clearInterval(_agPollTimer);
+        _agPollTimer = null;
+        _agSetBusy(false);
+        _agShowResult(d);
+      }
+    } catch (_) { /* ignore transient network error */ }
+  }
+
+  async function autoGainRun() {
+    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const badge  = document.getElementById('autogain-status-badge');
+    const row    = document.getElementById('autogain-result-row');
+    if (badge) { badge.style.display = 'none'; }
+    if (row)   { row.style.display = 'none'; }
+    _agLastResult = null;
+
+    _agSetBusy(true);
+    try {
+      const r = await fetch('/api/autogain/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera_index: camIdx }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        _agSetBusy(false);
+        if (badge) { badge.style.display = ''; badge.style.color = 'var(--warn,#f5a623)'; badge.textContent = '⚠ ' + (d.detail || r.statusText); }
+        return;
+      }
+    } catch (err) {
+      _agSetBusy(false);
+      if (badge) { badge.style.display = ''; badge.style.color = 'var(--warn,#f5a623)'; badge.textContent = '⚠ Network error'; }
+      return;
+    }
+    // Poll until done
+    _agPollTimer = setInterval(_agPoll, 1500);
+  }
+
+  async function autoGainCancel() {
+    clearInterval(_agPollTimer);
+    _agPollTimer = null;
+    try { await fetch('/api/autogain/cancel', { method: 'POST' }); } catch (_) {}
+    _agSetBusy(false);
+    const badge = document.getElementById('autogain-status-badge');
+    if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.textContent = 'Cancelled'; }
+  }
+
+  function autoGainApply() {
+    if (!_agLastResult) return;
+    const expEl = document.getElementById('preview-exposure');
+    const gainEl = document.getElementById('preview-gain');
+    const offEl  = document.getElementById('preview-offset');
+    if (expEl)  expEl.value  = (_agLastResult.exposure_ms / 1000).toFixed(3);
+    if (gainEl) gainEl.value = _agLastResult.gain;
+    if (offEl)  offEl.value  = _agLastResult.offset;
+    previewSendParams();
+    const applyBtn = document.getElementById('autogain-apply-btn');
+    if (applyBtn) { applyBtn.textContent = 'Applied'; setTimeout(() => { applyBtn.textContent = 'Apply'; }, 1500); }
   }
 
   /* ══════════════════════════════════════════════════════════════════════

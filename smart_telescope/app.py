@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
+from .api.autogain import router as autogain_router
 from .api.bahtinov import router as bahtinov_router
 from .api.calibration import router as calibration_router
 from .api.cooling import router as cooling_router
@@ -25,6 +26,7 @@ from .api.stack import router as stack_router
 _STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="SmartTelescope", version="0.1.0")
+app.include_router(autogain_router)
 app.include_router(bahtinov_router)
 app.include_router(calibration_router)
 app.include_router(cooling_router)

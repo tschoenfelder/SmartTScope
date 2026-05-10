@@ -201,8 +201,8 @@ Implementation phases follow section 16 of that document.
 
 ## Phase 4 — ATR585M cooling controller
 
-### AGT-4-1 — CoolingController domain service
-- [ ] `domain/cooling.py`:
+### AGT-4-1 — CoolingController domain service ✅
+- [x] `domain/cooling.py`:
   - `CoolingConfig` dataclass: `target_c` (−10°C default, min clamp −10°C),
     `stable_power_limit_pct` (75), `warning_power_pct` (80),
     `stabilisation_timeout_s` (300), `relax_step_c` (1) (FR-TEMP-001–006).
@@ -210,7 +210,8 @@ Implementation phases follow section 16 of that document.
     `HOLD | RAISE_TARGET | WARN | STABLE`.
   - Stabilisation state machine: allow high power during cooldown; relax
     target step-wise after timeout if power remains above stable limit.
-- [ ] Unit tests: cooldown sequence, target-relaxation, clamp enforcement.
+- [x] Unit tests: cooldown sequence, target-relaxation, clamp enforcement.
+  27 new tests. Suite: 1399 passed, 85.39% coverage.
 
 *Covers:* FR-TEMP-001–006  
 *Depends:* AGT-0-1 (temperature capability)
@@ -449,7 +450,7 @@ Implementation phases follow section 16 of that document.
 | 1 — Storage | 2 | 2 |
 | 2 — Histogram | 2 | 2 |
 | 3 — Calibration masters | 4 | 4 |
-| 4 — Cooling | 2 | 0 |
+| 4 — Cooling | 2 | 1 |
 | 5 — Auto Gain MVP | 4 | 0 |
 | 6 — Live stacking calibration | 2 | 0 |
 | 7 — Guide camera | 2 | 0 |
@@ -457,8 +458,8 @@ Implementation phases follow section 16 of that document.
 | 9 — Guided DSO | 1 | 0 |
 | 10 — Continuous convergence | 1 | 0 |
 | 11 — SIRIL | 1 | 0 |
-| **Total** | **26** | **13** |
+| **Total** | **26** | **14** |
 
 ---
 
-*Last updated: 2026-05-07*
+*Last updated: 2026-05-10*

@@ -384,9 +384,12 @@ class ToupcamCamera(CameraPort):
         return "RGGB"
 
 
+_EVENT_EXPOSURE = 0x0001  # auto-exposure changed — fired on every put_ExpoTime, not useful
+
 def _camera_event(event: int, ctx: ToupcamCamera) -> None:
     """SDK callback fired from a native thread; must be fast and non-blocking."""
-    _log.info("SDK event 0x%04X on %s index=%d", event, ctx._logical_name or "?", ctx._index)
+    if event != _EVENT_EXPOSURE:
+        _log.info("SDK event 0x%04X on %s index=%d", event, ctx._logical_name or "?", ctx._index)
     if event == _EVENT_IMAGE:
         ctx._frame_ready.set()
     elif event == _EVENT_TRIGGER_FAIL:

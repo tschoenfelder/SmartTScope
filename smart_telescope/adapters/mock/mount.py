@@ -9,7 +9,7 @@ class MockMount(MountPort):
     def __init__(
         self,
         fail_connect: bool = False,
-        initial_state: MountState = MountState.PARKED,
+        initial_state: MountState = MountState.UNKNOWN,
         fail_unpark: bool = False,
         fail_goto: bool = False,
         at_limit: bool = False,

@@ -95,6 +95,13 @@ class TestMountHealth:
             body = client.get("/api/status").json()
         assert body["mount"]["state"] == "PARKED"
 
+    def test_ok_false_when_state_unknown(self) -> None:
+        _inject_mount(_mock_mount(MountState.UNKNOWN))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount"]["ok"] is False
+        assert body["mount"]["state"] == "UNKNOWN"
+
     def test_ok_false_when_get_state_raises(self) -> None:
         m = _mock_mount()
         m.get_state.side_effect = OSError("no device")
@@ -122,8 +129,16 @@ class TestDeviceHealth:
             body = client.get("/api/status").json()
         assert body["camera"]["ok"] is True
 
-    def test_focuser_ok_true(self) -> None:
+    def test_focuser_ok_false_with_mock(self) -> None:
         _inject_mount(_mock_mount())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["focuser"]["ok"] is False
+
+    def test_focuser_ok_true_when_available(self) -> None:
+        from smart_telescope.adapters.mock.focuser import MockFocuser
+        _inject_mount(_mock_mount())
+        app.dependency_overrides[deps.get_focuser] = lambda: MockFocuser(available=True)
         with _patch_solver_ok():
             body = client.get("/api/status").json()
         assert body["focuser"]["ok"] is True

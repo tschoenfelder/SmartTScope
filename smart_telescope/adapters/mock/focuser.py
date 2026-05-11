@@ -6,7 +6,7 @@ _log = logging.getLogger(__name__)
 
 
 class MockFocuser(FocuserPort):
-    def __init__(self, fail_connect: bool = False, available: bool = True) -> None:
+    def __init__(self, fail_connect: bool = False, available: bool = False) -> None:
         _log.warning("MockFocuser initialised — no real focuser hardware; all operations are simulated")
         self._fail_connect = fail_connect
         self._available = available

@@ -85,8 +85,9 @@ def system_status(
     """Return the health of every subsystem. Always 200."""
     # ── Mount ────────────────────────────────────────────────────────────────
     try:
+        from ..ports.mount import MountState as _MountState
         state = mount.get_state()
-        mount_health = MountHealth(ok=True, state=state.name)
+        mount_health = MountHealth(ok=state != _MountState.UNKNOWN, state=state.name)
     except Exception as exc:
         mount_health = MountHealth(ok=False, message=str(exc))
 

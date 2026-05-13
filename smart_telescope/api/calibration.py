@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..api import deps
+from ..domain.bad_pixel_map import BpmValidationError, BpmStats, generate_bpm
 from ..domain.calibration_capture import (
     BiasValidationError,
     DarkValidationError,
@@ -309,6 +310,70 @@ def get_job_status(job_id: str) -> JobStatusResponse:
             result_path=job.result_path,
             result_entry=job.result_entry,
         )
+
+
+# ── Bad pixel map endpoint (FR-CAL-BPM-001) ──────────────────────────────────
+
+
+class BpmRequest(BaseModel):
+    camera_index: int  = Field(default=0, ge=0, le=7)
+    n_frames: int      = Field(default=20, ge=5, le=200)
+    gain: int | None   = Field(default=None, ge=0, le=5000)
+    offset: int | None = Field(default=None, ge=0, le=255)
+    conversion_gain: str | None = Field(default=None, description="HCG | LCG | HDR")
+    hot_sigma: float   = Field(default=5.0, ge=1.0, le=20.0)
+    dead_sigma: float  = Field(default=5.0, ge=1.0, le=20.0)
+    noisy_factor: float = Field(default=3.0, ge=1.0, le=10.0)
+
+
+class BpmJobStatusResponse(JobStatusResponse):
+    bpm_stats: dict | None = None
+
+
+@router.post("/bpm", response_model=JobStartedResponse, status_code=202)
+def start_bpm(req: BpmRequest) -> JobStartedResponse:
+    """Start a bad pixel map generation job (async).
+
+    Captures *n_frames* bias frames at the camera's minimum exposure and
+    identifies hot, dead, and noisy pixels via per-pixel sigma thresholding.
+    Poll GET /api/calibration/status/{job_id} for progress and final stats.
+    """
+    image_root = _get_image_root()
+    camera = _get_camera(req.camera_index)
+    cg = _resolve_cg(req.conversion_gain)
+    job = _register_job(req.n_frames)
+    cal_index = CalibrationIndex.load(image_root)
+
+    def _run() -> None:
+        try:
+            entry, stats = generate_bpm(
+                camera, req.n_frames, image_root, cal_index,
+                gain=req.gain, offset=req.offset,
+                hot_sigma=req.hot_sigma,
+                dead_sigma=req.dead_sigma,
+                noisy_factor=req.noisy_factor,
+                progress=_progress_fn(job),
+            )
+            cal_index.save()
+            with _jobs_lock:
+                job.status = "done"
+                job.frames_done = req.n_frames
+                job.result_path = str(Path(image_root) / entry.relative_path)
+                job.result_entry = {**entry.to_dict(), **stats.to_dict()}
+            _log.info("BPM job %s done: %s (%d bad px)", job.job_id, job.result_path, stats.n_bad)
+        except BpmValidationError as exc:
+            with _jobs_lock:
+                job.status = "failed"
+                job.error = str(exc)
+            _log.warning("BPM job %s validation failed: %s", job.job_id, exc)
+        except Exception as exc:
+            with _jobs_lock:
+                job.status = "failed"
+                job.error = f"Unexpected error: {exc}"
+            _log.exception("BPM job %s failed", job.job_id)
+
+    threading.Thread(target=_run, daemon=True, name=f"bpm-{job.job_id[:8]}").start()
+    return JobStartedResponse(job_id=job.job_id)
 
 
 # ── Calibration match endpoint (FR-CAL-060, FR-CAL-070) ──────────────────────

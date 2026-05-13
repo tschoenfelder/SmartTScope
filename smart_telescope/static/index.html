@@ -1324,6 +1324,22 @@
           </p>
           <div id="s4-flat-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
 
+          <!-- Bad Pixel Map row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+            <label style="white-space:nowrap;min-width:6ch">BPM</label>
+            <input type="number" id="s4-bpm-nframes" value="20" min="5" max="200"
+                   style="width:5ch" title="Number of bias frames for bad pixel detection (≥ 5)">
+            <label>fr</label>
+            <label style="font-size:0.78rem;color:var(--muted);margin-left:0.2rem"
+                   title="Hot/dead threshold in sigma">σ</label>
+            <input type="number" id="s4-bpm-sigma" value="5" min="1" max="20" step="0.5"
+                   style="width:4ch" title="Hot / dead pixel sigma threshold (default 5)">
+            <button id="s4-bpm-btn" onclick="prepareBpm()" style="margin-left:auto"
+                    title="Capture bias frames at minimum exposure and flag bad pixels">Generate BPM</button>
+            <span id="s4-bpm-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="s4-bpm-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
           <!-- Calibration match status (FR-CAL-060 / FR-CAL-070) -->
           <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
             <span style="font-size:0.82rem;font-weight:500">Library status</span>
@@ -2588,7 +2604,7 @@
     };
   }
 
-  function _pollCalJob(jobId, btnId, progressId, statusId, label) {
+  function _pollCalJob(jobId, btnId, progressId, statusId, label, resultDetail = null) {
     const btn      = document.getElementById(btnId);
     const progress = document.getElementById(progressId);
     const poll = setInterval(async () => {
@@ -2600,9 +2616,10 @@
           btn.disabled = false;
           btn.innerHTML = label;
           progress.textContent = '';
-          const path = s.result_path || s.result_entry?.relative_path || '';
+          const path  = s.result_path || '';
           const warns = (s.warnings || []).join(' ');
-          setStatus(statusId, `Master saved: ${path}${warns ? ' — ' + warns : ''}`);
+          const extra = resultDetail ? (resultDetail(s.result_entry) || '') : '';
+          setStatus(statusId, `Saved: ${path}${extra}${warns ? ' — ' + warns : ''}`);
         } else if (s.status === 'failed') {
           clearInterval(poll);
           btn.disabled = false;
@@ -2681,6 +2698,31 @@
       setStatus('s4-dark-status', `Failed to start: ${err}`, true);
       btn.disabled = false;
       btn.innerHTML = 'Prepare';
+    }
+  }
+
+  async function prepareBpm() {
+    const btn = document.getElementById('s4-bpm-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span>…';
+    document.getElementById('s4-bpm-progress').textContent = '';
+    setStatus('s4-bpm-status', '');
+    const { camIdx, gain, offset } = _calSharedParams();
+    const nFrames = parseInt(document.getElementById('s4-bpm-nframes').value, 10) || 20;
+    const sigma   = parseFloat(document.getElementById('s4-bpm-sigma').value) || 5.0;
+    try {
+      const { job_id } = await apiPost('/api/calibration/bpm',
+        { camera_index: camIdx, n_frames: nFrames, gain, offset,
+          hot_sigma: sigma, dead_sigma: sigma });
+      _pollCalJob(job_id, 's4-bpm-btn', 's4-bpm-progress', 's4-bpm-status', 'Generate BPM',
+        (result) => {
+          if (!result?.n_bad) return '';
+          return ` — ${result.n_bad} bad px (${result.n_hot} hot · ${result.n_dead} dead · ${result.n_noisy} noisy, ${result.bad_pct?.toFixed(3)}%)`;
+        });
+    } catch (err) {
+      setStatus('s4-bpm-status', `Failed to start: ${err.message}`, true);
+      btn.disabled = false;
+      btn.innerHTML = 'Generate BPM';
     }
   }
 

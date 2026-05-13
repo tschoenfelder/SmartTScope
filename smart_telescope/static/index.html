@@ -1745,7 +1745,13 @@
     });
     if (!resp.ok) {
       const text = await resp.text();
-      throw new Error(text || `Server error ${resp.status}`);
+      const err = new Error(text || `Server error ${resp.status}`);
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed?.detail === 'string') err.message = parsed.detail;
+        else if (parsed?.detail !== undefined) err.message = JSON.stringify(parsed.detail);
+      } catch {}
+      throw err;
     }
     return resp.json();
   }
@@ -2013,7 +2019,7 @@
         unlockStage(2);
       }
     } catch (err) {
-      setStatus('s1-mount-status', `${action} failed: ${err}`, true);
+      setStatus('s1-mount-status', `${action} failed: ${err.message}`, true);
     }
   }
 
@@ -2033,9 +2039,9 @@
       setStatus('s3-status', `Slewing to RA ${ra.toFixed(3)} h  Dec ${dec.toFixed(2)}°…`);
       await watchSlew('s3-status', `RA ${ra.toFixed(3)} Dec ${dec.toFixed(2)}`);
     } catch (err) {
-      let msg = `GoTo failed: ${err}`;
+      let msg = `GoTo failed: ${err.message}`;
       try {
-        const d = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        const d = JSON.parse(err.message);
         if (d?.error === 'solar_exclusion')
           msg = `Solar exclusion — target is only ${d.sun_separation_deg}° from the Sun.`;
         else if (d?.error === 'mount_limit')
@@ -2055,7 +2061,7 @@
         `Slewing to pole — RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(1)}°`);
       await refreshMount();
     } catch (err) {
-      setStatus('s1-mount-status', `Home failed: ${err}`, true);
+      setStatus('s1-mount-status', `Home failed: ${err.message}`, true);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = 'Home'; }
     }
@@ -2540,7 +2546,7 @@
       setStatus('s4-status', `Slewing to ${name} — use guide pad to centre, then focus`);
       await refreshMount();
     } catch (err) {
-      setStatus('s4-status', `GoTo ${name} failed: ${err}`, true);
+      setStatus('s4-status', `GoTo ${name} failed: ${err.message}`, true);
     }
   }
 
@@ -2870,9 +2876,9 @@
       setStatus('s3-stars-status', `Slewing to ${name}…`);
       await watchSlew('s3-stars-status', name);
     } catch (err) {
-      let msg = `GoTo ${name} failed: ${err}`;
+      let msg = `GoTo ${name} failed: ${err.message}`;
       try {
-        const d = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        const d = JSON.parse(err.message);
         if (d?.error === 'solar_exclusion')
           msg = `${name} is too close to the Sun (${d.sun_separation_deg}° sep).`;
         else if (d?.error === 'mount_limit')
@@ -2902,9 +2908,9 @@
           `${name} centring failed — offset ${result.offset_arcmin.toFixed(2)} arcmin${result.error ? ': ' + result.error : ''}`, true);
       }
     } catch (err) {
-      let msg = `Center ${name} failed: ${err}`;
+      let msg = `Center ${name} failed: ${err.message}`;
       try {
-        const d = JSON.parse(err.message).detail ?? JSON.parse(err.message);
+        const d = JSON.parse(err.message);
         if (d?.error === 'solar_exclusion') msg = `${name} too close to the Sun.`;
         else if (d?.error === 'mount_limit') msg = `${name} outside mount limits (${d.reason}).`;
       } catch {}
@@ -3211,7 +3217,7 @@
       await refreshFocuser();
       _startFocuserPositionPoll();
     } catch (err) {
-      setStatus('s4-focuser-status', `Nudge failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Nudge failed: ${err.message}`, true);
     }
   }
 
@@ -3226,7 +3232,7 @@
       await refreshFocuser();
       _startFocuserPositionPoll();
     } catch (err) {
-      setStatus('s4-focuser-status', `Move failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Move failed: ${err.message}`, true);
     }
   }
 
@@ -3236,7 +3242,7 @@
       await apiPost('/api/focuser/stop');
       await refreshFocuser();
     } catch (err) {
-      setStatus('s4-focuser-status', `Stop failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Stop failed: ${err.message}`, true);
     }
   }
 
@@ -3258,7 +3264,7 @@
         `Best: ${d.best_position} steps  |  gain: ${gain}  |  ${method}  |  ${d.positions.length} samples`;
       await refreshFocuser();
     } catch (err) {
-      setStatus('s4-focuser-status', `Autofocus failed: ${err}`, true);
+      setStatus('s4-focuser-status', `Autofocus failed: ${err.message}`, true);
     } finally {
       btn.disabled = false;
       btn.innerHTML = 'Autofocus';
@@ -3283,7 +3289,7 @@
       setStatus('s3-status',
         `AF: pos ${d.best_position}  gain ${sign}${d.metric_gain.toFixed(1)}`);
     } catch (err) {
-      setStatus('s3-status', `AF failed: ${err}`, true);
+      setStatus('s3-status', `AF failed: ${err.message}`, true);
     } finally {
       btn.disabled = !_focuserOk;
       btn.innerHTML = 'AF';
@@ -3311,7 +3317,7 @@
       if (pos) pos.textContent = `→ ${result.target}`;
       _refreshS1FocuserPos();  // keep Stage 1 position display in sync
     } catch (err) {
-      setStatus('s3-status', `Focus failed: ${err}`, true);
+      setStatus('s3-status', `Focus failed: ${err.message}`, true);
     }
   }
 
@@ -4580,7 +4586,7 @@
       if (btn) btn.innerHTML = '✓ Synced';
       await refreshMount();
     } catch (err) {
-      setStatus('s3-status', `Sync failed: ${err}`, true);
+      setStatus('s3-status', `Sync failed: ${err.message}`, true);
       if (btn) { btn.disabled = false; btn.innerHTML = 'Sync Mount'; }
     }
   }

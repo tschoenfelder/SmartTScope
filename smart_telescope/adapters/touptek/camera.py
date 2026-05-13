@@ -91,7 +91,7 @@ class ToupcamCamera(CameraPort):
             raise RuntimeError(
                 f"ToupTek: no camera at index {self._index} — "
                 f"found {len(devices)}: [{listing}]. "
-                f"Check touptek_index in smart_telescope.toml or visit /api/cameras"
+                f"Check [cameras] in smart_telescope.toml or visit /api/cameras"
             )
 
         cam = _tc.Toupcam.Open(devices[self._index].id)

@@ -104,8 +104,12 @@ class OnStepMount(MountPort):
         if self._serial is None:
             return b""
         with self._lock:
-            self._serial.write(cmd.encode())
-            return bytes(self._serial.readline())
+            try:
+                self._serial.write(cmd.encode())
+                return bytes(self._serial.readline())
+            except Exception:
+                self._serial = None
+                raise
 
     def _send(self, cmd: str) -> str:
         return self._raw_send(cmd).decode(errors="replace").rstrip("#\r\n")

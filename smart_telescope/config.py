@@ -27,8 +27,12 @@ _SEARCH_PATHS = [
 _cfg: dict = {}
 for _p in _SEARCH_PATHS:
     if _p.exists():
-        with _p.open("rb") as _fh:
-            _cfg = tomllib.load(_fh)
+        try:
+            with _p.open("rb") as _fh:
+                _cfg = tomllib.load(_fh)
+        except tomllib.TOMLDecodeError as _e:
+            import sys
+            sys.exit(f"Config error in {_p}: {_e}")
         break
 
 
@@ -46,9 +50,26 @@ OBSERVER_LON: float = float(os.environ.get("OBSERVER_LON", _get("observer", "lon
 # ── hardware (TOML only — deps.py applies env-var override at runtime) ────────
 
 ONSTEP_PORT: str      = _get("hardware", "onstep_port",     "")
-TOUPTEK_INDEX: str    = _get("hardware", "touptek_index",   "")
 GPS_PORT: str         = _get("hardware", "gps_port",        "")
 DEW_CONTROL_PORT: str = _get("hardware", "dew_control_port", "")
+
+# ── cameras ───────────────────────────────────────────────────────────────────
+# Reads [cameras] section (role → SDK index).  Falls back to legacy
+# hardware.touptek_index mapped to the "main" role so existing installs keep
+# working without a config change.
+
+def _parse_cameras() -> dict[str, int]:
+    section = _cfg.get("cameras", {})
+    if section:
+        return {role: int(idx) for role, idx in section.items()}
+    legacy = _get("hardware", "touptek_index", "")
+    if legacy:
+        return {"main": int(legacy)}
+    return {}
+
+CAMERAS: dict[str, int] = _parse_cameras()
+# Backward-compat alias used by env-var override logic in deps.py.
+TOUPTEK_INDEX: str = str(CAMERAS["main"]) if "main" in CAMERAS else ""
 
 # ── ASTAP (TOML only — deps.py applies env-var override at runtime) ───────────
 

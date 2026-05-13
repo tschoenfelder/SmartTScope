@@ -59,9 +59,7 @@ class OnStepFocuser(FocuserPort):
 
     def move(self, steps: int) -> None:
         _log.info("OnStepFocuser.move(): steps=%d", steps)
-        reply = self._mount._send(f":FS{steps}#")
-        if reply:
-            _log.debug("OnStepFocuser.move(): reply=%r", reply)
+        self._mount._raw_send(f":FS{steps}#")
 
     def is_moving(self) -> bool:
         return self._mount._send(":FT#") == "M"

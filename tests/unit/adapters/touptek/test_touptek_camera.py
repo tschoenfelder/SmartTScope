@@ -176,7 +176,7 @@ class TestCapture:
         cam, tc = self._setup()
         cam.capture(0.001)
         tc.Toupcam.Open.return_value.PullImageV4.assert_called_once_with(
-            cam._buf, 0, 0, -1, None
+            cam._buf, 0, 16, -1, None
         )
 
     def test_raises_timeout_when_no_event(self) -> None:

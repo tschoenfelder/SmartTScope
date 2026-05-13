@@ -10,9 +10,23 @@ lon = 0.0    # decimal degrees, east-positive   (e.g. 8.533)
 # Use stable udev symlink names (won't shift like ttyUSB0/1/2 across reconnects).
 # Leave empty ("") to fall back to simulator/mock — useful without hardware attached.
 onstep_port      = ""   # e.g. "/dev/ttyUSB_ONSTEP0"
-touptek_index    = ""   # e.g. "0"
 gps_port         = ""   # e.g. "/dev/ttyUSB_GPS0"          (future use)
 dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
+
+[cameras]
+# Map camera roles to ToupTek SDK indices (0-based, order in which the OS
+# enumerates USB devices).  Only "main" is required; comment out unused roles.
+#
+# Typical two-camera setup (678M imaging + dedicated guide cam):
+#   main  = 0   # 678M at C8
+#   guide = 1   # guide cam on 180×50 guide scope
+#
+# Three-camera setup (ATR585M at C8, 678M as OAG alongside guide scope):
+#   main  = 0   # ATR585M at C8
+#   guide = 1   # guide cam on 180×50 guide scope
+#   atr   = 2   # 678M now used as OAG — override "main" profile accordingly
+#
+main  = 0   # primary imaging camera
 
 [astap]
 path        = ""   # empty = auto-detect via PATH

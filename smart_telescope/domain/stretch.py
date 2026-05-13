@@ -15,8 +15,6 @@ def auto_stretch(pixels: np.ndarray[Any, np.dtype[Any]]) -> np.ndarray[Any, np.d
     lo = float(np.percentile(pixels, 0.5))
     hi = float(np.percentile(pixels, 99.5))
     if hi <= lo:
-        # Uniform frame: white = saturated, black = empty (MockCamera / lens cap)
-        level = 255 if lo > 0.0 else 0
-        return np.full(pixels.shape, level, dtype=np.uint8)
+        return np.zeros(pixels.shape, dtype=np.uint8)
     scaled = (pixels.astype(np.float64) - lo) / (hi - lo) * 255.0
     return np.clip(scaled, 0.0, 255.0).astype(np.uint8)

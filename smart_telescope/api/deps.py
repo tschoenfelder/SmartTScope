@@ -3,10 +3,16 @@
 Adapter selection priority (highest first):
 
   Camera:
-    TOUPTEK_INDEX set  → ToupcamCamera(index=int(TOUPTEK_INDEX))
-    SIMULATOR_FITS_DIR → SimulatorCamera
-    REPLAY_FITS_DIR    → ReplayCamera.from_directory (deterministic test frames)
-    (neither)          → MockCamera (unit-test default)
+    [cameras] main configured  → ToupcamCamera(index=CAMERAS["main"])
+    TOUPTEK_INDEX env var       → ToupcamCamera(index=int(TOUPTEK_INDEX))  (legacy)
+    SIMULATOR_FITS_DIR          → SimulatorCamera
+    REPLAY_FITS_DIR             → ReplayCamera.from_directory
+    (none of the above)         → MockCamera (unit-test default)
+
+  Named camera roles (config [cameras] section):
+    main  — primary imaging camera at the C8
+    guide — guide camera on the 180×50 guide scope
+    atr   — ATR585M at the C8 (optional; when present, main/678M acts as OAG)
 
   Mount + Focuser:
     ONSTEP_PORT set    → OnStepMount + OnStepFocuser (real hardware)
@@ -47,18 +53,19 @@ _preview_cameras: dict[int, CameraPort] = {}
 
 def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     # env vars take priority over the TOML config file
-    touptek_index = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
-    onstep_port   = os.environ.get("ONSTEP_PORT")   or config.ONSTEP_PORT
-    sim_dir       = os.environ.get("SIMULATOR_FITS_DIR", "")
-
-    replay_dir = os.environ.get("REPLAY_FITS_DIR", "")
+    # TOUPTEK_INDEX env var is a legacy override for the "main" camera index.
+    main_index_str = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
+    onstep_port    = os.environ.get("ONSTEP_PORT")   or config.ONSTEP_PORT
+    sim_dir        = os.environ.get("SIMULATOR_FITS_DIR", "")
+    replay_dir     = os.environ.get("REPLAY_FITS_DIR", "")
 
     # Camera — selected independently of mount
     camera: CameraPort
-    if touptek_index:
+    if main_index_str:
         from ..adapters.touptek.camera import ToupcamCamera
-        camera = ToupcamCamera(index=int(touptek_index))
-        _log.warning("Adapter selected: ToupcamCamera(index=%s)  [TOUPTEK_INDEX=%s]", touptek_index, touptek_index)
+        camera = ToupcamCamera(index=int(main_index_str))
+        role_label = "TOUPTEK_INDEX env" if os.environ.get("TOUPTEK_INDEX") else "[cameras] main"
+        _log.warning("Adapter selected: ToupcamCamera(index=%s)  [%s]", main_index_str, role_label)
     elif sim_dir:
         from pathlib import Path
 
@@ -118,35 +125,29 @@ def get_camera() -> CameraPort:
 
 
 def get_preview_camera(index: int) -> CameraPort:
-    """Return a camera for live preview at the given SDK index.
+    """Return a camera for live preview/capture at the given SDK index.
 
-    When TOUPTEK_INDEX is configured, index == main_index returns the primary
-    singleton; other indices open a separate ToupcamCamera handle and cache it.
-
-    When TOUPTEK_INDEX is NOT configured (empty TOML / no env var), we still
-    try to open a real ToupcamCamera at *index* so that cameras connected on
-    the Pi are accessible even without an explicit config.  Falls back to the
-    primary singleton (MockCamera in dev) only if the SDK is unavailable or
-    no camera exists at that index.
+    If *index* matches the configured main camera it returns the primary
+    singleton.  All other indices open a dedicated ToupcamCamera handle and
+    cache it.  When no cameras are configured at all, auto-detect via SDK.
     """
     _ensure_adapters()
-    touptek_env = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
+    main_index_str = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
     _log.info(
-        "get_preview_camera(%d): touptek_env=%r cached=%s primary=%s",
+        "get_preview_camera(%d): main_index=%r cached=%s primary=%s",
         index,
-        touptek_env or None,
+        int(main_index_str) if main_index_str else None,
         list(_preview_cameras.keys()),
         type(_camera).__name__,
     )
 
-    if touptek_env:
-        # Explicit TOUPTEK_INDEX configured
-        main_index = int(touptek_env)
+    if main_index_str:
+        main_index = int(main_index_str)
         if index == main_index:
             _log.info("get_preview_camera(%d): returning primary camera (%s)", index, type(_camera).__name__)
             assert _camera is not None
             return _camera
-        # Secondary camera — open a dedicated handle
+        # Secondary camera (guide / atr / ...) — open a dedicated handle
         if index not in _preview_cameras:
             _log.info("get_preview_camera(%d): opening secondary ToupcamCamera", index)
             from ..adapters.touptek.camera import ToupcamCamera
@@ -157,23 +158,38 @@ def get_preview_camera(index: int) -> CameraPort:
             _log.info("get_preview_camera(%d): connected → %s", index, cam.get_logical_name())
         return _preview_cameras[index]
 
-    # TOUPTEK_INDEX not configured — attempt SDK auto-detection by index
+    # No cameras configured — attempt SDK auto-detection by index
     if index not in _preview_cameras:
-        _log.info("get_preview_camera(%d): no TOUPTEK_INDEX — trying SDK auto-detect", index)
+        _log.info("get_preview_camera(%d): no [cameras] config — trying SDK auto-detect", index)
         try:
             from ..adapters.touptek.camera import ToupcamCamera
-        except ImportError:
-            # toupcam SDK not installed (dev / test environment) — use primary adapter
-            _log.warning("get_preview_camera(%d): toupcam SDK not importable — falling back to %s",
-                         index, type(_camera).__name__)
+            cam = ToupcamCamera(index=index)
+            if not cam.connect():
+                raise RuntimeError(f"Camera {index}: connect() returned False")
+            _preview_cameras[index] = cam
+            _log.info("get_preview_camera(%d): auto-detect connected → %s", index, cam.get_logical_name())
+        except (ImportError, RuntimeError) as exc:
+            _log.warning("get_preview_camera(%d): SDK unavailable (%s) — falling back to %s",
+                         index, exc, type(_camera).__name__)
             assert _camera is not None
             return _camera
-        cam = ToupcamCamera(index=index)
-        if not cam.connect():
-            raise RuntimeError(f"Camera {index}: connect() returned False — is the camera plugged in?")
-        _preview_cameras[index] = cam
-        _log.info("get_preview_camera(%d): auto-detect connected → %s", index, cam.get_logical_name())
     return _preview_cameras[index]
+
+
+def get_camera_by_role(role: str) -> CameraPort:
+    """Return the camera configured under *role* in [cameras].
+
+    Raises RuntimeError if the role is not defined in config.
+    """
+    from fastapi import HTTPException
+    if role not in config.CAMERAS:
+        configured = list(config.CAMERAS.keys()) or ["(none)"]
+        raise HTTPException(
+            status_code=503,
+            detail=f"Camera role '{role}' not configured. Configured roles: {', '.join(configured)}. "
+                   f"Add it to [cameras] in smart_telescope.toml.",
+        )
+    return get_preview_camera(config.CAMERAS[role])
 
 
 def get_mount() -> MountPort:

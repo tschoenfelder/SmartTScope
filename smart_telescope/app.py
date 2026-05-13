@@ -1,8 +1,12 @@
 """FastAPI application factory."""
+import logging
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from serial import SerialException
+
+_log = logging.getLogger(__name__)
 
 from .api.autogain import router as autogain_router
 from .api.guide_monitor import router as guide_monitor_router
@@ -27,6 +31,12 @@ from .api.stack import router as stack_router
 _STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="SmartTelescope", version="0.1.0")
+
+
+@app.exception_handler(SerialException)
+async def serial_exception_handler(request: Request, exc: SerialException) -> JSONResponse:
+    _log.warning("Serial I/O error on %s: %s", request.url.path, exc)
+    return JSONResponse(status_code=503, content={"detail": "Mount serial connection lost — reconnect the USB cable and restart"})
 app.include_router(autogain_router)
 app.include_router(guide_monitor_router)
 app.include_router(bahtinov_router)

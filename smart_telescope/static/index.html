@@ -554,7 +554,22 @@
         Hardware Connection
       </div>
       <div id="connect-status-grid" class="params" style="min-height:1.5rem;margin-bottom:0.75rem"></div>
-      <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+        <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
+        <button id="setup-check-btn" onclick="runSetupCheck()" disabled class="secondary"
+                title="Verify hardware is responding — focuser nudge, mount RA slew, camera capture">Setup Check</button>
+      </div>
+    </div>
+
+    <!-- Setup Check Wizard -->
+    <div id="setup-check-panel" style="display:none;margin-top:0.75rem" class="card">
+      <div class="card-title">Setup Check</div>
+      <div id="setup-check-steps" style="font-size:0.85rem;line-height:1.9"></div>
+      <div style="margin-top:0.75rem">
+        <button id="setup-check-close" class="secondary"
+                onclick="document.getElementById('setup-check-panel').style.display='none'"
+                disabled>Close</button>
+      </div>
     </div>
 
     <!-- Camera Cooling (ATR585M and other TEC cameras) -->
@@ -3636,6 +3651,8 @@
       if (dot) dot.className = (mountOk && camOk) ? 'dot dot-green' : 'dot dot-yellow';
       if (mountOk) unlockStage(2);
       if (camOk)   unlockStage(5);
+      const scBtn = document.getElementById('setup-check-btn');
+      if (scBtn) scBtn.disabled = !(mountOk && camOk);
 
       // Probe focuser only when mount connected (focuser shares mount serial port)
       const focuserDot  = document.getElementById('s1-focuser-dot');
@@ -3684,6 +3701,182 @@
       btn.disabled  = false;
       btn.innerHTML = 'Connect All';
     }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Setup Check Wizard
+  ══════════════════════════════════════════════════════════════════════ */
+  let _scRunning = false;
+
+  function _scStep(icon, text) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:flex-start;gap:0.5rem;padding:0.2rem 0;border-bottom:1px solid var(--border)';
+    div.innerHTML = `<span style="min-width:1.3rem;text-align:center;line-height:1.9">${icon}</span><span>${escHtml(text)}</span>`;
+    document.getElementById('setup-check-steps').appendChild(div);
+    return div;
+  }
+
+  function _scUpdate(div, icon, text) {
+    div.innerHTML = `<span style="min-width:1.3rem;text-align:center;line-height:1.9">${icon}</span><span>${escHtml(text)}</span>`;
+  }
+
+  function _scConfirm(message) {
+    return new Promise(resolve => {
+      const div = document.createElement('div');
+      div.style.cssText = 'padding:0.3rem 0 0.3rem 1.8rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;background:var(--surface);border-radius:4px;margin:0.2rem 0';
+      div.innerHTML = `<span style="font-size:0.82rem;flex:1">${escHtml(message)}</span>
+        <button style="padding:0.18rem 0.6rem;font-size:0.8rem">Confirm</button>
+        <button class="secondary" style="padding:0.18rem 0.6rem;font-size:0.8rem">Skip</button>`;
+      document.getElementById('setup-check-steps').appendChild(div);
+      div.querySelector('button:not(.secondary)').onclick = () => { div.remove(); resolve(true); };
+      div.querySelector('button.secondary').onclick      = () => { div.remove(); resolve(false); };
+      div.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  async function _scWaitSlew(maxMs = 120000) {
+    const deadline = Date.now() + maxMs;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 1000));
+      try {
+        const ms = await (await fetch('/api/mount/status')).json();
+        if (ms.state !== 'slewing') return ms;
+      } catch {}
+    }
+    return null;
+  }
+
+  async function runSetupCheck() {
+    if (_scRunning) return;
+    _scRunning = true;
+    const panel    = document.getElementById('setup-check-panel');
+    const steps    = document.getElementById('setup-check-steps');
+    const closeBtn = document.getElementById('setup-check-close');
+    panel.style.display = 'block';
+    steps.innerHTML = '';
+    closeBtn.disabled = true;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    let pass = 0, fail = 0, warn = 0;
+    const mark = icon => { if (icon==='✓') pass++; else if (icon==='✗') fail++; else warn++; return icon; };
+
+    // ── 1. Focuser ──────────────────────────────────────────────────────────
+    try {
+      const fs = await (await fetch('/api/focuser/status')).json();
+      if (!fs.available) {
+        _scStep(mark('⚠'), 'Focuser: not connected — skipped');
+      } else {
+        const orig  = fs.position;
+        const maxP  = fs.max_position || 50000;
+        const delta = Math.min(500, Math.max(50, Math.round(maxP * 0.02)));
+        const d = _scStep('⏳', `Focuser: nudging ±${delta} steps from position ${orig}…`);
+        await apiPost('/api/focuser/nudge', { delta });
+        await new Promise(r => setTimeout(r, 2500));
+        const fs2 = await (await fetch('/api/focuser/status')).json();
+        if (Math.abs(fs2.position - orig) < 1) {
+          _scUpdate(d, mark('✗'), `Focuser: did not move (still at ${fs2.position})`);
+        } else {
+          await apiPost('/api/focuser/nudge', { delta: -delta });
+          await new Promise(r => setTimeout(r, 2500));
+          const fs3 = await (await fetch('/api/focuser/status')).json();
+          const ok  = Math.abs(fs3.position - orig) <= Math.max(5, delta * 0.05);
+          _scUpdate(d, mark(ok ? '✓' : '⚠'),
+            ok ? `Focuser: moved and returned ✓ (pos ${fs3.position})`
+               : `Focuser: returned to ${fs3.position} (expected ~${orig})`);
+        }
+      }
+    } catch (err) {
+      _scStep(mark('✗'), `Focuser: ${err.message}`);
+    }
+
+    // ── 2. Mount RA ─────────────────────────────────────────────────────────
+    try {
+      const ms = await (await fetch('/api/mount/status')).json();
+      if (!ms.ra || ms.state === 'unknown' || ms.state === 'parked') {
+        _scStep(mark('⚠'), `Mount RA: state is '${ms.state}' — skipped`);
+      } else {
+        const go = await _scConfirm(
+          'Mount RA test: will slew +40 arcmin east. Ensure telescope has clearance.');
+        if (!go) {
+          _scStep(mark('⚠'), 'Mount RA: skipped by user');
+        } else {
+          const origRA  = ms.ra;
+          const origDec = ms.dec;
+          const d = _scStep('⏳', 'Mount RA: slewing +40 arcmin…');
+          try {
+            await apiPost('/api/mount/goto', { ra: origRA + 40 / 60 / 15, dec: origDec });
+            await _scWaitSlew();
+            _scUpdate(d, '⏳', 'Mount RA: did the telescope move?');
+            const back = await _scConfirm('Did the mount move visibly? Confirm to slew back to start.');
+            if (!back) {
+              _scUpdate(d, mark('✗'), 'Mount RA: user reports no visible movement');
+            } else {
+              _scUpdate(d, '⏳', 'Mount RA: returning to original position…');
+              await apiPost('/api/mount/goto', { ra: origRA, dec: origDec });
+              await _scWaitSlew();
+              _scUpdate(d, mark('✓'), 'Mount RA: slewed and returned ✓');
+            }
+          } catch (gErr) {
+            _scUpdate(d, mark('✗'), `Mount RA: ${gErr.message}`);
+          }
+        }
+      }
+    } catch (err) {
+      _scStep(mark('✗'), `Mount: ${err.message}`);
+    }
+
+    // ── 3. Camera capture ────────────────────────────────────────────────────
+    try {
+      const solverSt = await (await fetch('/api/solver/status')).json();
+      const hasSolver = !!solverSt.ready;
+      const camData  = await (await fetch('/api/cameras')).json();
+      if (!camData.sdk_available || !camData.cameras?.length) {
+        _scStep(mark('⚠'), 'Cameras: none detected — skipped');
+      } else {
+        for (const cam of camData.cameras) {
+          const d = _scStep('⏳', `Camera ${cam.display_label}: capturing 2 s test frame…`);
+          try {
+            const r = await apiPost('/api/solver/solve',
+              { exposure: 2.0, gain: 200, camera_index: cam.sdk_index });
+            if (r.success) {
+              _scUpdate(d, mark('✓'),
+                `Camera ${cam.display_label}: captured + solved — RA ${r.ra.toFixed(2)} h  Dec ${r.dec.toFixed(1)}°`);
+            } else if (hasSolver) {
+              _scUpdate(d, mark('⚠'),
+                `Camera ${cam.display_label}: captured ✓ — plate solve failed (lens cap on?)`);
+            } else {
+              _scUpdate(d, mark('✓'),
+                `Camera ${cam.display_label}: captured ✓ (no solver installed — install ASTAP for plate solve)`);
+            }
+          } catch (cErr) {
+            _scUpdate(d, mark('✗'), `Camera ${cam.display_label}: ${cErr.message}`);
+          }
+        }
+      }
+    } catch (err) {
+      _scStep(mark('✗'), `Cameras: ${err.message}`);
+    }
+
+    // ── 4. Optional home ────────────────────────────────────────────────────
+    const goHome = await _scConfirm(
+      'Setup check complete. Move mount to home position (HA=0, Dec=89°)?');
+    if (goHome) {
+      const d = _scStep('⏳', 'Mount: slewing to home…');
+      try {
+        await apiPost('/api/mount/home');
+        await _scWaitSlew();
+        _scUpdate(d, mark('✓'), 'Mount: at home position ✓');
+      } catch (hErr) {
+        _scUpdate(d, mark('✗'), `Mount home: ${hErr.message}`);
+      }
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────────────
+    const icon = fail === 0 ? (warn === 0 ? '✓' : '⚠') : '✗';
+    _scStep(icon,
+      `Setup check done — ${pass} passed · ${fail} failed · ${warn} warning${warn !== 1 ? 's' : ''}`);
+    closeBtn.disabled = false;
+    _scRunning = false;
   }
 
   /* ══════════════════════════════════════════════════════════════════════

@@ -2991,14 +2991,15 @@
     return `
       <div class="card">
         <div class="card-title">
-          <span class="dot ${dotCls}"></span>
+          <span class="dot ${dotCls}" id="s4-focuser-dot"></span>
           OnStep Focuser
-          <span class="state-badge ${moving ? 'state-slewing' : 'state-tracking'}">${label}</span>
+          <span class="state-badge ${moving ? 'state-slewing' : 'state-tracking'}"
+                id="s4-focuser-badge">${label}</span>
         </div>
         <div class="params">
           <div class="param">
             <span class="param-label">Position (steps)</span>
-            <span class="param-value mono">${pos}${maxPos}</span>
+            <span class="param-value mono" id="s4-focuser-pos">${pos}${maxPos}</span>
           </div>
         </div>
         <div class="controls">
@@ -3163,6 +3164,8 @@
     document.getElementById('preview-exposure')?.addEventListener('keydown', _expArrowHandler);
   }
 
+  let _focuserMoveTimer = null;
+
   async function refreshFocuser() {
     try {
       const data = await (await fetch('/api/focuser/status')).json();
@@ -3172,10 +3175,39 @@
     }
   }
 
+  /* Lightweight position-only update — doesn't rebuild the whole card. */
+  async function _refreshFocuserPosition() {
+    try {
+      const data = await (await fetch('/api/focuser/status')).json();
+      const posEl   = document.getElementById('s4-focuser-pos');
+      const dotEl   = document.getElementById('s4-focuser-dot');
+      const badgeEl = document.getElementById('s4-focuser-badge');
+      if (posEl && data.available) {
+        const maxPos = data.max_position != null ? ` / ${data.max_position}` : '';
+        posEl.textContent = `${data.position ?? '—'}${maxPos}`;
+      }
+      if (dotEl)   dotEl.className   = `dot ${data.moving ? 'dot-yellow' : 'dot-green'}`;
+      if (badgeEl) {
+        badgeEl.textContent = data.moving ? 'Moving…' : 'Stopped';
+        badgeEl.className   = `state-badge ${data.moving ? 'state-slewing' : 'state-tracking'}`;
+      }
+      if (!data.moving) {
+        clearInterval(_focuserMoveTimer);
+        _focuserMoveTimer = null;
+      }
+    } catch (_) {}
+  }
+
+  function _startFocuserPositionPoll() {
+    if (_focuserMoveTimer) return;  // already polling
+    _focuserMoveTimer = setInterval(_refreshFocuserPosition, 500);
+  }
+
   async function nudge(delta) {
     try {
       await apiPost('/api/focuser/nudge', { delta });
       await refreshFocuser();
+      _startFocuserPositionPoll();
     } catch (err) {
       setStatus('s4-focuser-status', `Nudge failed: ${err}`, true);
     }
@@ -3190,12 +3222,14 @@
     try {
       await apiPost('/api/focuser/move', { position: pos });
       await refreshFocuser();
+      _startFocuserPositionPoll();
     } catch (err) {
       setStatus('s4-focuser-status', `Move failed: ${err}`, true);
     }
   }
 
   async function focuserStop() {
+    if (_focuserMoveTimer) { clearInterval(_focuserMoveTimer); _focuserMoveTimer = null; }
     try {
       await apiPost('/api/focuser/stop');
       await refreshFocuser();

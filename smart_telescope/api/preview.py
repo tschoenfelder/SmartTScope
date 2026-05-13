@@ -224,13 +224,13 @@ async def ws_preview(
                 counts, edges, adu_hi = _hist_bins(
                     frame.pixels, bit_depth=cur_bit_depth, n_bins=256,
                 )
-                # Low-range histogram: fixed 0–5000 ADU, 256 bins (~20 ADU/bin)
-                # for pedestal / offset inspection regardless of signal level.
-                _LOW_ADU = 5000.0
+                # Low-range histogram: fixed 0–1000 ADU, 100 bins (10 ADU/bin)
+                # Always shown for pedestal / offset inspection.
+                _LOW_ADU = 1000.0
                 _adc_max = float((1 << cur_bit_depth) - 1)
                 _low_norm = frame.pixels.astype(np.float64).ravel() / _adc_max
                 _low_c, _low_e = np.histogram(
-                    _low_norm, bins=256, range=(0.0, _LOW_ADU / _adc_max)
+                    _low_norm, bins=100, range=(0.0, _LOW_ADU / _adc_max)
                 )
                 await websocket.send_text(json.dumps({
                     "type": "histogram",

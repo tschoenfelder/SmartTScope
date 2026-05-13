@@ -1089,8 +1089,8 @@
             </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-autogain-chk" style="width:auto"
-                     title="Auto-adjust exposure (≤4 s) and gain (near min) for display"
-                     onchange="previewSendParams()">AG
+                     title="Live auto-gain: continuously adjust exposure (≤4 s) and gain for display"
+                     onchange="previewSendParams()">Live&nbsp;AG
             </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-hist-chk" style="width:auto"
@@ -1102,6 +1102,12 @@
             <button id="preview-af-btn" onclick="runPreviewAutofocus()" disabled
                     style="padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Focuser not connected">AF</button>
+            <button id="autogain-run-btn" onclick="autoGainRun()"
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="One-shot auto-gain: find optimal exposure and gain for this camera">Auto Gain</button>
+            <button id="autogain-cancel-btn" onclick="autoGainCancel()"
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem;display:none"
+                    class="secondary">Cancel</button>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
             <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.5rem"></span>
           </div>
@@ -1133,12 +1139,6 @@
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;align-items:center">
             <button id="preview-start-btn" onclick="previewStart()">Start</button>
             <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
-            <button id="autogain-run-btn" onclick="autoGainRun()"
-                    style="padding:0.22rem 0.7rem;font-size:0.82rem"
-                    title="Run one-shot auto-gain: find optimal exposure and gain for this camera">Auto Gain</button>
-            <button id="autogain-cancel-btn" onclick="autoGainCancel()"
-                    style="padding:0.22rem 0.7rem;font-size:0.82rem;display:none"
-                    class="secondary">Cancel</button>
             <span id="autogain-status-badge" style="font-size:0.8rem;display:none"></span>
           </div>
           <div id="autogain-result-row" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
@@ -3255,11 +3255,25 @@
     }
   }
 
+  async function _refreshS1FocuserPos() {
+    try {
+      const fs = await (await fetch('/api/focuser/status')).json();
+      if (!fs.available) return;
+      const posEl  = document.getElementById('s1-focuser-pos');
+      const posRow = document.getElementById('s1-focuser-pos-row');
+      if (posEl) posEl.textContent = fs.max_position
+        ? `${fs.position} / ${fs.max_position} steps`
+        : `${fs.position} steps`;
+      if (posRow) posRow.style.display = '';
+    } catch (_) {}
+  }
+
   async function previewNudge(delta) {
     try {
       const result = await apiPost('/api/focuser/nudge', { delta });
       const pos = document.getElementById('s3-focus-pos');
       if (pos) pos.textContent = `→ ${result.target}`;
+      _refreshS1FocuserPos();  // keep Stage 1 position display in sync
     } catch (err) {
       setStatus('s3-status', `Focus failed: ${err}`, true);
     }
@@ -3612,6 +3626,12 @@
           if (focuserText) focuserText.textContent = 'Focuser probe failed';
         }
         await loadFocuserCameras();
+        // Refresh all camera selects — cameras may become enumerable only after hardware is connected
+        _loadSelectFromCameras('s1-cooling-cam-select');
+        loadPreviewCameras();
+        _loadSelectFromCameras('pa-cam-select').then(sel => {
+          if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
+        });
       }
 
       await refreshMount();
@@ -4246,6 +4266,13 @@
     _agPollTimer = null;
     try { await fetch('/api/autogain/cancel', { method: 'POST' }); } catch (_) {}
     _agSetBusy(false);
+    // Clear any result or warning that may have appeared from a concurrent poll
+    const resultRow  = document.getElementById('autogain-result-row');
+    const diagPrompt = document.getElementById('autogain-diag-prompt');
+    const diagResult = document.getElementById('autogain-diag-result');
+    if (resultRow)  resultRow.style.display  = 'none';
+    if (diagPrompt) diagPrompt.style.display = 'none';
+    if (diagResult) diagResult.style.display = 'none';
     const badge = document.getElementById('autogain-status-badge');
     if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.textContent = 'Cancelled'; }
   }

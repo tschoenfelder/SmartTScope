@@ -228,6 +228,18 @@ class AutoGainService:
                     warning_msg=str(exc),
                 )
 
+            # Check cancellation immediately after the blocking capture returns,
+            # so we exit without processing this frame or starting another exposure.
+            if cancellation_flag is not None and cancellation_flag.is_set():
+                return AutoGainResult(
+                    status=AutoGainStatus.CANCELLED,
+                    exposure_ms=cur_exp_ms,
+                    gain=cur_gain,
+                    offset=cur_offset,
+                    conversion_gain=cg,
+                    histogram_stats=None,
+                )
+
             stats = _hist_analyze(frame.pixels, bit_depth=bit_depth)
             last_stats = stats
             eff_mean = _effective_mean(stats, cur_offset, adc_max)

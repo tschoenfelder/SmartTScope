@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import logging
 import math
+import threading
 
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
@@ -19,7 +21,14 @@ from ..ports.solver import SolverPort
 from ..workflow.goto_center import goto_and_center
 from . import deps
 
+_log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mount")
+
+# ── GoTo serialisation ────────────────────────────────────────────────────────
+# Prevents a new GoTo from being issued while the mount is already slewing
+# (FR-SAFE-MNT-001).  Stop and guide bypass the lock so they remain effective.
+
+_goto_lock = threading.Lock()
 
 
 @router.get("/config")
@@ -86,6 +95,27 @@ def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
                + math.cos(lat_r) * math.cos(dec_r) * math.cos(ha_r))
     alt_deg = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
     return round(ha, 4), round(alt_deg, 2)
+
+
+def _safe_goto(mount: MountPort, ra: float, dec: float) -> None:
+    """Issue a goto only when the mount is confirmed idle.
+
+    Rejects with 409 if another goto is already queued or the mount is slewing.
+    Unlike the focuser we do not wait for a long slew to finish — slews can
+    take minutes, so a new command while the mount moves is always an error.
+    Serialised via _goto_lock to prevent concurrent moves (FR-SAFE-MNT-001).
+    """
+    if not _goto_lock.acquire(blocking=True, timeout=5.0):
+        raise HTTPException(status_code=409, detail="Another mount GoTo is already queued — try again shortly")
+    try:
+        if mount.is_slewing():
+            raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before issuing a new GoTo")
+        ok = mount.goto(ra, dec)
+        if not ok:
+            raise HTTPException(status_code=500, detail="GoTo failed")
+        _log.info("Mount goto issued: ra=%.4fh dec=%.2f°", ra, dec)
+    finally:
+        _goto_lock.release()
 
 
 class GotoRequest(BaseModel):
@@ -171,9 +201,7 @@ def mount_goto(
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
     _check_mount_limits(body.ra, body.dec)
-    ok = mount.goto(body.ra, body.dec)
-    if not ok:
-        raise HTTPException(status_code=500, detail="GoTo failed")
+    _safe_goto(mount, body.ra, body.dec)
     return {"ok": True}
 
 
@@ -209,17 +237,23 @@ def mount_home(mount: MountPort = Depends(deps.get_mount)) -> dict:
     lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
     ra_hours: float = lst_hours      # HA = 0 → on meridian
     dec_deg: float  = 89.0           # near celestial pole
-    ok = mount.goto(ra_hours, dec_deg)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Home slew failed")
+    _safe_goto(mount, ra_hours, dec_deg)
     return {"ok": True, "ra": ra_hours, "dec": dec_deg}
 
 
 @router.post("/park")
 def mount_park(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
-    ok = mount.park()
-    if not ok:
-        raise HTTPException(status_code=500, detail="Park failed")
+    if not _goto_lock.acquire(blocking=True, timeout=5.0):
+        raise HTTPException(status_code=409, detail="Another mount GoTo is in progress — stop it before parking")
+    try:
+        if mount.is_slewing():
+            raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before parking")
+        ok = mount.park()
+        if not ok:
+            raise HTTPException(status_code=500, detail="Park failed")
+        _log.info("Mount park issued")
+    finally:
+        _goto_lock.release()
     return {"ok": True}
 
 
@@ -324,16 +358,24 @@ async def mount_goto_and_center(
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
     _check_mount_limits(body.ra, body.dec)
-    camera = deps.get_preview_camera(body.camera_index)
-    scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
-    result = await goto_and_center(
-        mount, camera, solver,
-        body.ra, body.dec,
-        pixel_scale=scale,
-        exposure=body.exposure,
-        tolerance_arcmin=body.tolerance_arcmin,
-        max_iterations=body.max_iterations,
-    )
+
+    if not _goto_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Another mount GoTo is in progress — try again after it completes")
+    try:
+        if mount.is_slewing():
+            raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before centering")
+        camera = deps.get_preview_camera(body.camera_index)
+        scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
+        result = await goto_and_center(
+            mount, camera, solver,
+            body.ra, body.dec,
+            pixel_scale=scale,
+            exposure=body.exposure,
+            tolerance_arcmin=body.tolerance_arcmin,
+            max_iterations=body.max_iterations,
+        )
+    finally:
+        _goto_lock.release()
     return GotoAndCenterResponse(**dataclasses.asdict(result))
 
 
@@ -364,7 +406,5 @@ def mount_goto_sky(
             detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
         )
 
-    ok = mount.goto(ra_hours, dec_deg)
-    if not ok:
-        raise HTTPException(status_code=500, detail="GoTo sky failed")
+    _safe_goto(mount, ra_hours, dec_deg)
     return SkyPosition(ra=ra_hours, dec=dec_deg, elevation_deg=elevation, lst_hours=lst_hours)

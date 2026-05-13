@@ -22,6 +22,7 @@ def _mock_mount(
     goto_ok: bool = True,
     park_ok: bool = True,
     disable_tracking_ok: bool = True,
+    slewing: bool = False,
 ) -> MagicMock:
     m = MagicMock(spec=MountPort)
     m.get_state.return_value = state
@@ -31,6 +32,7 @@ def _mock_mount(
     m.goto.return_value = goto_ok
     m.park.return_value = park_ok
     m.disable_tracking.return_value = disable_tracking_ok
+    m.is_slewing.return_value = slewing
     return m
 
 
@@ -208,6 +210,10 @@ class TestMountGoto:
     def test_returns_422_when_body_missing(self) -> None:
         _inject(_mock_mount())
         assert client.post("/api/mount/goto", json={}).status_code == 422
+
+    def test_returns_409_when_already_slewing(self) -> None:
+        _inject(_mock_mount(slewing=True))
+        assert client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39}).status_code == 409
 
 
 # ── Solar gate tests ───────────────────────────────────────────────────────────

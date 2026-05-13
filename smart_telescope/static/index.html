@@ -1088,11 +1088,6 @@
                      onchange="previewSendParams()">Str
             </label>
             <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
-              <input type="checkbox" id="preview-autogain-chk" style="width:auto"
-                     title="Live auto-gain: continuously adjust exposure (≤4 s) and gain for display"
-                     onchange="previewSendParams()">Live&nbsp;AG
-            </label>
-            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
               <input type="checkbox" id="preview-hist-chk" style="width:auto"
                      onchange="previewHistToggle(this.checked)">Hist
             </label>
@@ -1102,9 +1097,16 @@
             <button id="preview-af-btn" onclick="runPreviewAutofocus()" disabled
                     style="padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Focuser not connected">AF</button>
+            <span style="margin-left:0.6rem;font-size:0.78rem;color:var(--muted);
+                         border-left:1px solid var(--muted);padding-left:0.6rem">AG:</span>
+            <label style="margin-left:0.3rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer"
+                   title="Live: server adjusts exposure (≤4 s) and gain after every frame while streaming — display only, does not change capture settings">
+              <input type="checkbox" id="preview-autogain-chk" style="width:auto"
+                     onchange="previewSendParams()">Live
+            </label>
             <button id="autogain-run-btn" onclick="autoGainRun()"
-                    style="padding:0.15rem 0.5rem;font-size:0.78rem"
-                    title="One-shot auto-gain: find optimal exposure and gain for this camera">Auto Gain</button>
+                    style="margin-left:0.3rem;padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="One-shot: run several test exposures and suggest optimal exposure and gain settings">Find Best</button>
             <button id="autogain-cancel-btn" onclick="autoGainCancel()"
                     style="padding:0.15rem 0.5rem;font-size:0.78rem;display:none"
                     class="secondary">Cancel</button>

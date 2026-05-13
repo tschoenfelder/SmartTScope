@@ -4166,13 +4166,16 @@
     diagResult.style.display = '';
   }
 
-  let _agIsDiag = false;  // true while polling a diagnostic run
+  let _agIsDiag     = false;  // true while polling a diagnostic run
+  let _agCancelled  = false;  // race-guard: suppress stale poll callbacks after cancel
 
   async function _agPoll() {
+    if (_agCancelled) return;
     try {
       const r = await fetch('/api/autogain/status');
       if (!r.ok) return;
       const d = await r.json();
+      if (_agCancelled) return;  // check again — cancel may have fired while awaiting
       if (!d.running) {
         clearInterval(_agPollTimer);
         _agPollTimer = null;
@@ -4194,7 +4197,8 @@
     if (diagPrompt) diagPrompt.style.display = 'none';
     if (diagResult) diagResult.style.display = 'none';
 
-    _agIsDiag = true;
+    _agIsDiag    = true;
+    _agCancelled = false;
     _agSetBusy(true);
     const badge = document.getElementById('autogain-status-badge');
     if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.innerHTML = '<span class="spin"></span> Diagnostic…'; }
@@ -4237,7 +4241,8 @@
     if (diagPrompt) diagPrompt.style.display = 'none';
     if (diagResult) diagResult.style.display = 'none';
     _agLastResult = null;
-    _agIsDiag = false;
+    _agIsDiag    = false;
+    _agCancelled = false;
 
     _agSetBusy(true);
     try {
@@ -4261,12 +4266,12 @@
     _agPollTimer = setInterval(_agPoll, 1500);
   }
 
-  async function autoGainCancel() {
+  function autoGainCancel() {
+    // Stop polling immediately — do not await network to keep the UI responsive
     clearInterval(_agPollTimer);
     _agPollTimer = null;
-    try { await fetch('/api/autogain/cancel', { method: 'POST' }); } catch (_) {}
+    _agCancelled = true;
     _agSetBusy(false);
-    // Clear any result or warning that may have appeared from a concurrent poll
     const resultRow  = document.getElementById('autogain-result-row');
     const diagPrompt = document.getElementById('autogain-diag-prompt');
     const diagResult = document.getElementById('autogain-diag-result');
@@ -4275,6 +4280,8 @@
     if (diagResult) diagResult.style.display = 'none';
     const badge = document.getElementById('autogain-status-badge');
     if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.textContent = 'Cancelled'; }
+    // Fire-and-forget — tell the server to stop the background thread
+    fetch('/api/autogain/cancel', { method: 'POST' }).catch(() => {});
   }
 
   function autoGainApply() {

@@ -341,8 +341,7 @@ def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
         if hi > lo:
             scaled = (ch - lo) / (hi - lo) * 255.0
         else:
-            # Uniform channel: white = saturated, black = empty
-            scaled = np.full_like(ch, 255.0 if lo > 0.0 else 0.0)
+            scaled = np.zeros_like(ch)
         out[:, :, c] = np.clip(scaled, 0.0, 255.0).astype(np.uint8)
     return out
 

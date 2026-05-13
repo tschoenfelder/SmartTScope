@@ -152,6 +152,8 @@ def session_connect(
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
 ) -> ConnectResult:
+    from .cameras import invalidate_camera_scan
+    invalidate_camera_scan()  # force re-enumeration after hardware may have been plugged in
     return ConnectResult(
         camera=_try_connect("camera", camera.connect),
         mount=_try_connect("mount", mount.connect),

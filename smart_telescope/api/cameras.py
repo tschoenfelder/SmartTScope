@@ -1,10 +1,18 @@
 """Camera scan API — enumerates connected Touptek cameras via the toupcam SDK."""
 from __future__ import annotations
 
+import threading
+import time
+
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel
 
 from . import deps
+
+_scan_lock  = threading.Lock()
+_scan_cache: "CameraScanResult | None" = None
+_scan_ts    = 0.0
+_SCAN_TTL   = 5.0  # seconds — all startup calls share the same result
 
 router = APIRouter(prefix="/api")
 
@@ -53,6 +61,24 @@ class CameraCapabilitiesResponse(BaseModel):
 
 @router.get("/cameras", response_model=CameraScanResult)
 def scan_cameras() -> CameraScanResult:
+    global _scan_cache, _scan_ts
+    with _scan_lock:
+        if _scan_cache is not None and (time.monotonic() - _scan_ts) < _SCAN_TTL:
+            return _scan_cache
+        result = _do_scan()
+        _scan_cache = result
+        _scan_ts    = time.monotonic()
+        return result
+
+
+def invalidate_camera_scan() -> None:
+    """Force next scan_cameras() call to re-enumerate the SDK."""
+    global _scan_cache
+    with _scan_lock:
+        _scan_cache = None
+
+
+def _do_scan() -> CameraScanResult:
     try:
         import toupcam
     except ImportError:

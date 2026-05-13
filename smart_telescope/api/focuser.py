@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import threading
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -10,7 +14,15 @@ from ..ports.focuser import FocuserPort
 from ..workflow.autofocus import run_autofocus
 from . import deps
 
+_log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/focuser")
+
+# ── Move serialisation ────────────────────────────────────────────────────────
+# Prevents concurrent move commands from being sent before the focuser
+# confirms the previous movement is complete (FR-SAFE-FOC-001).
+
+_move_lock      = threading.Lock()
+_MOVE_TIMEOUT_S = 120.0  # max seconds to wait for the focuser to start/stop moving
 
 
 class FocuserStatus(BaseModel):
@@ -45,6 +57,32 @@ def focuser_status(focuser: FocuserPort = Depends(deps.get_focuser)) -> FocuserS
     )
 
 
+def _safe_move(focuser: FocuserPort, target: int) -> None:
+    """Issue a move command only when the focuser is confirmed idle.
+
+    Blocks until any in-progress movement stops (up to _MOVE_TIMEOUT_S).
+    Logs a warning and proceeds if the timeout expires so the Stop button
+    remains effective.  Serialised via _move_lock to prevent concurrent moves.
+    """
+    if not _move_lock.acquire(blocking=True, timeout=5.0):
+        raise HTTPException(status_code=409, detail="Another focuser move is already queued — try again shortly")
+
+    try:
+        deadline = time.monotonic() + _MOVE_TIMEOUT_S
+        while focuser.is_moving():
+            if time.monotonic() > deadline:
+                _log.warning(
+                    "Focuser still moving after %.0f s — issuing new move anyway (target=%d)",
+                    _MOVE_TIMEOUT_S, target,
+                )
+                break
+            time.sleep(0.2)
+        focuser.move(target)
+        _log.info("Focuser move issued: target=%d", target)
+    finally:
+        _move_lock.release()
+
+
 @router.post("/move")
 def focuser_move(
     body: MoveRequest, focuser: FocuserPort = Depends(deps.get_focuser)
@@ -53,7 +91,7 @@ def focuser_move(
         raise HTTPException(status_code=503, detail="Focuser not available")
     max_pos = focuser.get_max_position()
     target = max(0, min(max_pos, body.position)) if max_pos else body.position
-    focuser.move(target)
+    _safe_move(focuser, target)
     return {"ok": True}
 
 
@@ -68,7 +106,7 @@ def focuser_nudge(
     target = current + body.delta
     if max_pos:
         target = max(0, min(max_pos, target))
-    focuser.move(target)
+    _safe_move(focuser, target)
     return {"target": target}
 
 

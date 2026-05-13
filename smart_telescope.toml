@@ -27,5 +27,5 @@ ha_west_limit_h = 0.333
 
 [session]
 storage_dir        = ""
-stars_cfg          = "stars.cfg"
+stars_cfg          = ""
 pixel_scale_arcsec = 0.38   # C8 at native focal length

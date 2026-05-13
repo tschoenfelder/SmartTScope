@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_CAL_TYPES = frozenset({"bias", "dark", "flat"})
+_CAL_TYPES = frozenset({"bias", "dark", "flat", "bpm"})
 _INDEX_NAME = "calibration_index.json"
 
 
@@ -65,7 +65,7 @@ def master_dir(image_root: str | Path, camera_model: str, camera_serial: str, ca
     """Return the directory for masters of the given type (not created here)."""
     if cal_type not in _CAL_TYPES:
         raise ValueError(f"cal_type must be one of {_CAL_TYPES}, got {cal_type!r}")
-    folder_map = {"bias": "biases", "dark": "darks", "flat": "flats"}
+    folder_map = {"bias": "biases", "dark": "darks", "flat": "flats", "bpm": "bpms"}
     key = f"{camera_model}_{camera_serial}".replace(" ", "_")
     return Path(image_root) / "masters" / key / folder_map[cal_type]
 

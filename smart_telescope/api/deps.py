@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 _log = logging.getLogger(__name__)
+_adapters_lock = threading.Lock()
 
 from .. import config
 from ..adapters.mock.camera import MockCamera
@@ -84,12 +86,23 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
     if onstep_port:
         from ..adapters.onstep.focuser import OnStepFocuser
         from ..adapters.onstep.mount import OnStepMount
+        from ..ports.mount import MountState
         _log.info("Adapter selected: OnStepMount+OnStepFocuser on port %s", onstep_port)
         mount = OnStepMount(onstep_port)
-        if not mount.connect():
+        mount_connected = mount.connect()
+        if not mount_connected:
             _log.error("OnStepMount.connect() failed on port %s — mount will be unavailable", onstep_port)
         else:
             _log.info("OnStepMount: connected on %s — REAL HARDWARE", onstep_port)
+            # Requirement: ensure mount is parked after every (re)connect.
+            current_state = mount.get_state()
+            if current_state == MountState.UNKNOWN:
+                _log.info("Mount state unknown after connect — skipping auto-park")
+            elif current_state != MountState.PARKED:
+                _log.info("Auto-parking mount after connect (state was %s)", current_state.name)
+                mount.park()
+            else:
+                _log.info("Mount already parked after connect")
         focuser = OnStepFocuser(mount)
         focuser.connect()
         _log.info(
@@ -113,9 +126,12 @@ def _build_adapters() -> tuple[CameraPort, MountPort, FocuserPort]:
 
 def _ensure_adapters() -> None:
     global _camera, _mount, _focuser, _adapters_built
-    if not _adapters_built:
-        _camera, _mount, _focuser = _build_adapters()
-        _adapters_built = True
+    if _adapters_built:
+        return
+    with _adapters_lock:
+        if not _adapters_built:
+            _camera, _mount, _focuser = _build_adapters()
+            _adapters_built = True
 
 
 def get_camera() -> CameraPort:

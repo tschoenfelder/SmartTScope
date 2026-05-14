@@ -91,12 +91,14 @@ def _worker(
         return
 
     try:
+        focuser_available = deps.get_focuser().is_available
         result = AutoGainService.run_one_shot(
             camera=camera,
             profile=profile,
             mode=mode,
             cancellation_flag=job.cancel,
             max_iterations=max_iterations,
+            has_focuser=focuser_available,
         )
     except Exception as exc:
         _log.error("AutoGain worker error: %s", exc)

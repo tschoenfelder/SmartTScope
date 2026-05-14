@@ -1,5 +1,7 @@
 """FastAPI application factory."""
+import contextlib
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -7,6 +9,22 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from serial import SerialException
 
 _log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    # Graceful shutdown: close OnStep serial so focuser stops moving
+    from .api import deps
+    if deps._mount is not None:
+        with contextlib.suppress(Exception):
+            deps._mount.disconnect()
+        _log.info("Shutdown: mount serial closed")
+    for cam in list(deps._preview_cameras.values()):
+        with contextlib.suppress(Exception):
+            cam.disconnect()
+    if deps._preview_cameras:
+        _log.info("Shutdown: %d secondary camera handle(s) closed", len(deps._preview_cameras))
 
 from .api.autogain import router as autogain_router
 from .api.guide_monitor import router as guide_monitor_router
@@ -30,7 +48,7 @@ from .api.stack import router as stack_router
 
 _STATIC = Path(__file__).parent / "static"
 
-app = FastAPI(title="SmartTelescope", version="0.1.0")
+app = FastAPI(title="SmartTelescope", version="0.1.0", lifespan=_lifespan)
 
 
 @app.exception_handler(SerialException)

@@ -112,6 +112,7 @@ def _safe_goto(mount: MountPort, ra: float, dec: float) -> None:
             raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before issuing a new GoTo")
         ok = mount.goto(ra, dec)
         if not ok:
+            _log.error("mount.goto(ra=%.4fh dec=%.2f°) rejected — :MS# did not return '0'", ra, dec)
             raise HTTPException(status_code=500, detail="GoTo failed")
         _log.info("Mount goto issued: ra=%.4fh dec=%.2f°", ra, dec)
     finally:
@@ -167,6 +168,7 @@ def mount_unpark(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
     ok = mount.unpark()
     if not ok:
         raise HTTPException(status_code=500, detail="Unpark failed")
+    _log.info("Mount unpark issued")
     return {"ok": True}
 
 

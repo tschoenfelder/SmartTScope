@@ -572,8 +572,8 @@
       </div>
     </div>
 
-    <!-- Camera Cooling (ATR585M and other TEC cameras) -->
-    <div class="card" style="margin-top:0.75rem" id="s1-cooling-card">
+    <!-- Camera Cooling (ATR585M and other TEC cameras) — hidden until TEC camera detected -->
+    <div class="card" style="margin-top:0.75rem;display:none" id="s1-cooling-card">
       <div class="card-title">
         <span class="dot dot-grey" id="s1-cooling-dot"></span>
         Camera Cooling
@@ -2000,15 +2000,18 @@
           </div>
         </div>
         <div class="controls">
-          <button class="secondary" onclick="mountAction('unpark')">Unpark</button>
           ${state === 'tracking'
             ? `<button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>`
             : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
           <span class="controls-spacer"></span>
           <button class="secondary" onclick="mountHome()"
                   title="Slew to celestial pole (Dec 89°, HA 0)">Home</button>
-          <button class="secondary" onclick="mountAction('park')">Park</button>
-          <button class="danger" onclick="mountAction('stop')">Stop</button>
+          <button class="secondary" onclick="mountAction('unpark')"
+                  title="Unpark mount">Unpark</button>
+          <button class="secondary" onclick="mountAction('park')"
+                  title="Park mount">Park</button>
+          <button class="danger"    onclick="mountAction('stop')"
+                  title="Emergency stop">Stop</button>
         </div>
       </div>`;
   }
@@ -2045,7 +2048,23 @@
     setStatus('s1-mount-status', '');
     try {
       await apiPost(`/api/mount/${action}`);
-      await refreshMount();
+      const expectParked   = action === 'park';
+      const expectUnparked = action === 'unpark';
+      if (expectParked || expectUnparked) {
+        // Poll until OnStep state register reflects the command (typically 1-3 s)
+        for (let i = 0; i < 8; i++) {
+          await new Promise(r => setTimeout(r, i === 0 ? 300 : 700));
+          const data = await (await fetch('/api/mount/status')).json();
+          document.getElementById('s1-mount-card').innerHTML = mountCard(data);
+          _updateMountStrip(data);
+          const st = data.state;
+          if (expectParked   && st === 'parked')  break;
+          if (expectUnparked && st !== 'parked')  break;
+        }
+      } else {
+        await new Promise(r => setTimeout(r, 450));
+        await refreshMount();
+      }
       if (action === 'unpark' || action === 'track') {
         unlockStage(2);
       }
@@ -3116,10 +3135,17 @@
         sel.innerHTML = '<option value="0" disabled>No cameras found</option>';
         return;
       }
-      sel.innerHTML = scan.cameras.map((c, i) => {
-        const label = c.display_label || c.model_name || `Cam ${i}`;
-        return `<option value="${i}">${escHtml(label)}</option>`;
+      // Use sdk_index (not loop index) so the correct physical camera is addressed
+      sel.innerHTML = scan.cameras.map(c => {
+        const label = (c.display_label || c.model_name || `Cam ${c.sdk_index}`)
+          + (c.role ? ` [${c.role}]` : '');
+        return `<option value="${c.sdk_index}">${escHtml(label)}</option>`;
       }).join('');
+      // Default to the camera configured as "main"; fall back to sdk_index 0
+      const mainCam = scan.cameras.find(c => c.role === 'main');
+      const defaultIdx = mainCam ? mainCam.sdk_index : 0;
+      const defaultOpt = sel.querySelector(`option[value="${defaultIdx}"]`);
+      if (defaultOpt) sel.value = String(defaultIdx);
       _focusCamIdx = +sel.value;
     } catch (_) {}
   }
@@ -3135,9 +3161,9 @@
         sel.innerHTML = '<option value="0">Cam 0</option>';
         return sel;
       }
-      sel.innerHTML = scan.cameras.map((c, i) => {
-        const label = c.display_label || c.model_name || `Cam ${i}`;
-        return `<option value="${i}">${escHtml(label)}</option>`;
+      sel.innerHTML = scan.cameras.map(c => {
+        const label = c.display_label || c.model_name || `Cam ${c.sdk_index}`;
+        return `<option value="${c.sdk_index}">${escHtml(label)}</option>`;
       }).join('');
     } catch (_) {
       sel.innerHTML = '<option value="0">Cam 0</option>';
@@ -3373,8 +3399,14 @@
       const pos = document.getElementById('s3-focus-pos');
       if (pos) pos.textContent = `→ ${result.target}`;
       _refreshS1FocuserPos();  // keep Stage 1 position display in sync
+      setStatus('s3-status', '');  // clear any previous nudge error
     } catch (err) {
       setStatus('s3-status', `Focus failed: ${err.message}`, true);
+      // Auto-clear "try again shortly" message after 3 s so it doesn't linger
+      setTimeout(() => {
+        const el = document.getElementById('s3-status');
+        if (el && el.textContent.includes('try again shortly')) setStatus('s3-status', '');
+      }, 3000);
     }
   }
 
@@ -3729,6 +3761,13 @@
         await loadFocuserCameras();
         // Refresh all camera selects — cameras may become enumerable only after hardware is connected
         _loadSelectFromCameras('s1-cooling-cam-select');
+        // Hide cooling card when no camera supports TEC
+        try {
+          const camScan = await (await fetch('/api/cameras')).json();
+          const hasTec = camScan.cameras?.some(c => c.has_tec) ?? false;
+          const coolingCard = document.getElementById('s1-cooling-card');
+          if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
+        } catch (_) {}
         loadPreviewCameras();
         _loadSelectFromCameras('pa-cam-select').then(sel => {
           if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
@@ -3833,33 +3872,55 @@
 
     // ── 2. Mount RA ─────────────────────────────────────────────────────────
     try {
-      const ms = await (await fetch('/api/mount/status')).json();
-      if (!ms.ra || ms.state === 'unknown' || ms.state === 'parked') {
+      let ms = await (await fetch('/api/mount/status')).json();
+      if (!ms.ra || ms.state === 'unknown') {
         _scStep(mark('⚠'), `Mount RA: state is '${ms.state}' — skipped`);
       } else {
-        const go = await _scConfirm(
-          'Mount RA test: will slew +40 arcmin east. Ensure telescope has clearance.');
-        if (!go) {
-          _scStep(mark('⚠'), 'Mount RA: skipped by user');
-        } else {
-          const origRA  = ms.ra;
-          const origDec = ms.dec;
-          const d = _scStep('⏳', 'Mount RA: slewing +40 arcmin…');
-          try {
-            await apiPost('/api/mount/goto', { ra: origRA + 40 / 60 / 15, dec: origDec });
-            await _scWaitSlew();
-            _scUpdate(d, '⏳', 'Mount RA: did the telescope move?');
-            const back = await _scConfirm('Did the mount move visibly? Confirm to slew back to start.');
-            if (!back) {
-              _scUpdate(d, mark('✗'), 'Mount RA: user reports no visible movement');
-            } else {
-              _scUpdate(d, '⏳', 'Mount RA: returning to original position…');
-              await apiPost('/api/mount/goto', { ra: origRA, dec: origDec });
-              await _scWaitSlew();
-              _scUpdate(d, mark('✓'), 'Mount RA: slewed and returned ✓');
+        if (ms.state === 'parked') {
+          const doUnpark = await _scConfirm('Mount is parked. Unpark to test RA movement?');
+          if (!doUnpark) {
+            _scStep(mark('⚠'), 'Mount RA: mount is parked — skipped by user');
+            ms = null;
+          } else {
+            try {
+              await apiPost('/api/mount/unpark');
+              await new Promise(r => setTimeout(r, 600));
+              ms = await (await fetch('/api/mount/status')).json();
+            } catch (uErr) {
+              _scStep(mark('✗'), `Mount RA: unpark failed — ${uErr.message}`);
+              ms = null;
             }
-          } catch (gErr) {
-            _scUpdate(d, mark('✗'), `Mount RA: ${gErr.message}`);
+            if (ms && ms.state === 'parked') {
+              _scStep(mark('✗'), 'Mount RA: still parked after unpark — skipped');
+              ms = null;
+            }
+          }
+        }
+        if (ms != null) {
+          const go = await _scConfirm(
+            'Mount RA test: will slew +40 arcmin east. Ensure telescope has clearance.');
+          if (!go) {
+            _scStep(mark('⚠'), 'Mount RA: skipped by user');
+          } else {
+            const origRA  = ms.ra;
+            const origDec = ms.dec;
+            const d = _scStep('⏳', 'Mount RA: slewing +40 arcmin…');
+            try {
+              await apiPost('/api/mount/goto', { ra: origRA + 40 / 60 / 15, dec: origDec });
+              await _scWaitSlew();
+              _scUpdate(d, '⏳', 'Mount RA: did the telescope move?');
+              const back = await _scConfirm('Did the mount move visibly? Confirm to slew back to start.');
+              if (!back) {
+                _scUpdate(d, mark('✗'), 'Mount RA: user reports no visible movement');
+              } else {
+                _scUpdate(d, '⏳', 'Mount RA: returning to original position…');
+                await apiPost('/api/mount/goto', { ra: origRA, dec: origDec });
+                await _scWaitSlew();
+                _scUpdate(d, mark('✓'), 'Mount RA: slewed and returned ✓');
+              }
+            } catch (gErr) {
+              _scUpdate(d, mark('✗'), `Mount RA: ${gErr.message}`);
+            }
           }
         }
       }
@@ -4349,7 +4410,7 @@
       const r = await fetch(`/api/histogram/analyze?${params}`, { method: 'POST' });
       if (!r.ok) return;
       const d = await r.json();
-      showHistogram('s3-histogram', 's3-hist-stats', d, d.bin_counts, d.bin_edges);
+      showHistogram('s3-histogram', 's3-hist-stats', d, d.bin_counts, d.bin_edges, d.hist_adu_hi);
     } catch (_) { /* ignore network errors during preview */ }
   }
 
@@ -4359,6 +4420,7 @@
 
   let _agPollTimer = null;
   let _agLastResult = null;  // { exposure_ms, gain, offset } from last OK run
+  let _agPreviewWasRunning = false;
 
   function _agSetBusy(busy) {
     const runBtn    = document.getElementById('autogain-run-btn');
@@ -4465,6 +4527,7 @@
         } else {
           _agShowResult(d);
         }
+        if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
       }
     } catch (_) { /* ignore transient network error */ }
   }
@@ -4478,6 +4541,8 @@
 
     _agIsDiag    = true;
     _agCancelled = false;
+    _agPreviewWasRunning = _reconnect && _ws !== null;
+    if (_agPreviewWasRunning) previewStop();
     _agSetBusy(true);
     const badge = document.getElementById('autogain-status-badge');
     if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.innerHTML = '<span class="spin"></span> Diagnostic…'; }
@@ -4491,6 +4556,7 @@
       if (!r.ok) {
         _agIsDiag = false;
         _agSetBusy(false);
+        if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
         const d = await r.json().catch(() => ({}));
         if (badge) { badge.textContent = '⚠ ' + (d.detail || r.statusText); }
         return;
@@ -4498,6 +4564,7 @@
     } catch (err) {
       _agIsDiag = false;
       _agSetBusy(false);
+      if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
       if (badge) { badge.textContent = '⚠ Network error'; }
       return;
     }
@@ -4523,6 +4590,8 @@
     _agIsDiag    = false;
     _agCancelled = false;
 
+    _agPreviewWasRunning = _reconnect && _ws !== null;
+    if (_agPreviewWasRunning) previewStop();
     _agSetBusy(true);
     try {
       const r = await fetch('/api/autogain/run', {
@@ -4533,11 +4602,13 @@
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
         _agSetBusy(false);
+        if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
         if (badge) { badge.style.display = ''; badge.style.color = 'var(--warn,#f5a623)'; badge.textContent = '⚠ ' + (d.detail || r.statusText); }
         return;
       }
     } catch (err) {
       _agSetBusy(false);
+      if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
       if (badge) { badge.style.display = ''; badge.style.color = 'var(--warn,#f5a623)'; badge.textContent = '⚠ Network error'; }
       return;
     }
@@ -4559,6 +4630,7 @@
     if (diagResult) diagResult.style.display = 'none';
     const badge = document.getElementById('autogain-status-badge');
     if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.textContent = 'Cancelled'; }
+    if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
     // Fire-and-forget — tell the server to stop the background thread
     fetch('/api/autogain/cancel', { method: 'POST' }).catch(() => {});
   }
@@ -5267,7 +5339,14 @@
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
   loadPreviewCameras();
-  _loadSelectFromCameras('s1-cooling-cam-select');
+  _loadSelectFromCameras('s1-cooling-cam-select').then(async () => {
+    try {
+      const scan = await (await fetch('/api/cameras')).json();
+      const hasTec = scan.cameras?.some(c => c.has_tec) ?? false;
+      const coolingCard = document.getElementById('s1-cooling-card');
+      if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
+    } catch (_) {}
+  });
   _loadSelectFromCameras('pa-cam-select').then(sel => {
     if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
   });

@@ -242,7 +242,7 @@ async def ws_preview(
                     "low_bin_edges": _low_e.tolist(),
                     "low_adu_hi": _LOW_ADU,
                 }))
-            except (WebSocketDisconnect, RuntimeError):
+            except (WebSocketDisconnect, RuntimeError, AssertionError):
                 break
             except Exception:
                 pass  # histogram failure must never block frame delivery
@@ -262,7 +262,7 @@ async def ws_preview(
                 await websocket.send_bytes(
                     _to_jpeg(frame, stretch=stretch, bayer_pattern=bayer_pattern)
                 )
-            except (WebSocketDisconnect, RuntimeError):
+            except (WebSocketDisconnect, RuntimeError, AssertionError):
                 # Client disconnected or Starlette transport error mid-send
                 break
 

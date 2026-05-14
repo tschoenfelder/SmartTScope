@@ -78,6 +78,7 @@ class OnStepMount(MountPort):
         # readline) pass through unaffected; non-bytes mock return values are
         # treated as "no response" and accepted as inconclusive.
         # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
+        self._serial.reset_input_buffer()
         self._serial.write(b":GVP#")
         raw = self._serial.read(32)
         product = ""
@@ -152,7 +153,11 @@ class OnStepMount(MountPort):
     def goto(self, ra: float, dec: float) -> bool:
         self._send(f":Sr{_format_ra(ra)}#")
         self._send(f":Sd{_format_dec(dec)}#")
-        return self._send(":MS#") == "0"
+        resp = self._send(":MS#")
+        if resp != "0":
+            _log.error("OnStepMount.goto(): :MS# returned %r (expected '0') — RA=%s Dec=%s",
+                       resp, _format_ra(ra), _format_dec(dec))
+        return resp == "0"
 
     def is_slewing(self) -> bool:
         return "|" in self._send(":D#")

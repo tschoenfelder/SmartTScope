@@ -129,6 +129,7 @@ class AutoGainService:
         calibration_stats: HistogramStats | None = None,
         cancellation_flag: threading.Event | None = None,
         max_iterations: int = 12,
+        has_focuser: bool = True,
     ) -> AutoGainResult:
         """Capture and adjust until histogram is in target band or limits are reached.
 
@@ -311,14 +312,26 @@ class AutoGainService:
                                 warning_msg="Histogram consistent with dark frame — check dust cap",
                             )
                         if not is_guiding and not is_planetary and eff_mean > _FOCUS_ERROR_THRESHOLD:
+                            if has_focuser:
+                                return AutoGainResult(
+                                    status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
+                                    exposure_ms=cur_exp_ms,
+                                    gain=cur_gain,
+                                    offset=cur_offset,
+                                    conversion_gain=cg,
+                                    histogram_stats=stats,
+                                    warning_msg="Faint signal detected — check focus and confirm mount is tracking",
+                                )
+                            # No focuser connected — demote to NO_SIGNAL rather than
+                            # suggesting focus adjustment the user cannot make.
                             return AutoGainResult(
-                                status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
+                                status=AutoGainStatus.NO_SIGNAL,
                                 exposure_ms=cur_exp_ms,
                                 gain=cur_gain,
                                 offset=cur_offset,
                                 conversion_gain=cg,
                                 histogram_stats=stats,
-                                warning_msg="Faint signal detected — check focus and confirm mount is tracking",
+                                warning_msg="Faint signal — confirm mount is tracking and target is centred",
                             )
                         if is_guiding:
                             no_signal_msg = (

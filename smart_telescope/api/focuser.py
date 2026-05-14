@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/focuser")
 # confirms the previous movement is complete (FR-SAFE-FOC-001).
 
 _move_lock      = threading.Lock()
-_MOVE_TIMEOUT_S = 120.0  # max seconds to wait for the focuser to start/stop moving
+_MOVE_TIMEOUT_S = 15.0   # max seconds to wait for focuser to stop before issuing a new move
 
 
 class FocuserStatus(BaseModel):
@@ -60,23 +60,22 @@ def focuser_status(focuser: FocuserPort = Depends(deps.get_focuser)) -> FocuserS
 def _safe_move(focuser: FocuserPort, target: int) -> None:
     """Issue a move command only when the focuser is confirmed idle.
 
-    Blocks until any in-progress movement stops (up to _MOVE_TIMEOUT_S).
-    Logs a warning and proceeds if the timeout expires so the Stop button
-    remains effective.  Serialised via _move_lock to prevent concurrent moves.
+    Returns 409 immediately if the focuser is currently moving or if another
+    move command is already serialised via _move_lock.  Does not block waiting
+    for a long in-progress move to finish — the caller (UI nudge) should retry.
+    Falls back to a best-effort move after _MOVE_TIMEOUT_S if the focuser
+    reports moving for an unusually long time (stop-button safety).
     """
-    if not _move_lock.acquire(blocking=True, timeout=5.0):
+    # Timeout is 3 s (> serial read timeout of 2 s) so that a concurrent mount
+    # status poll holding the serial lock doesn't cause a spurious 409.
+    if not _move_lock.acquire(blocking=True, timeout=3.0):
+        _log.warning("Focuser nudge: lock timeout — another request is already queued (target=%d)", target)
         raise HTTPException(status_code=409, detail="Another focuser move is already queued — try again shortly")
 
     try:
-        deadline = time.monotonic() + _MOVE_TIMEOUT_S
-        while focuser.is_moving():
-            if time.monotonic() > deadline:
-                _log.warning(
-                    "Focuser still moving after %.0f s — issuing new move anyway (target=%d)",
-                    _MOVE_TIMEOUT_S, target,
-                )
-                break
-            time.sleep(0.2)
+        if focuser.is_moving():
+            _log.info("Focuser nudge rejected: focuser is moving (target=%d)", target)
+            raise HTTPException(status_code=409, detail="Focuser is moving — try again shortly")
         focuser.move(target)
         _log.info("Focuser move issued: target=%d", target)
     finally:

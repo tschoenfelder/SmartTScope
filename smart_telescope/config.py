@@ -85,12 +85,16 @@ MOUNT_HA_WEST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_WEST_LIMIT_H", _ge
 
 # ── session ───────────────────────────────────────────────────────────────────
 
-STORAGE_DIR: str           = os.environ.get("STORAGE_DIR",         _get("session", "storage_dir",        ""))
-IMAGE_ROOT: str            = os.environ.get("IMAGE_ROOT",           _get("session", "image_root",         ""))
-APP_STATE_DIR: str         = os.environ.get("APP_STATE_DIR",        _get("session", "app_state_dir",      ""))
-_stars_cfg_raw: str        = os.environ.get("STARS_CFG",           _get("session", "stars_cfg",          ""))
+def _expand(p: str) -> str:
+    """Expand ~ / ~user in a path string; no-op for empty strings."""
+    return str(Path(p).expanduser()) if p else p
+
+STORAGE_DIR: str           = _expand(os.environ.get("STORAGE_DIR",  _get("session", "storage_dir",   "")))
+IMAGE_ROOT: str            = _expand(os.environ.get("IMAGE_ROOT",    _get("session", "image_root",    "")))
+APP_STATE_DIR: str         = _expand(os.environ.get("APP_STATE_DIR", _get("session", "app_state_dir", "")))
+_stars_cfg_raw: str        = _expand(os.environ.get("STARS_CFG",     _get("session", "stars_cfg",     "")))
 STARS_CFG: str             = _stars_cfg_raw or str(_USER_DIR / "stars.cfg")
-_horizon_raw: str          = os.environ.get("HORIZON_DAT",          _get("session", "horizon_dat",         ""))
+_horizon_raw: str          = _expand(os.environ.get("HORIZON_DAT",   _get("session", "horizon_dat",   "")))
 HORIZON_DAT: str           = _horizon_raw  or str(_USER_DIR / "horizon.dat")
 PIXEL_SCALE_ARCSEC: float  = float(os.environ.get("PIXEL_SCALE_ARCSEC", _get("session", "pixel_scale_arcsec", "0.38")))
 

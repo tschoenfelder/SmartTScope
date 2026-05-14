@@ -6,7 +6,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..domain.histogram import HistogramStats, analyze, histogram_bins
+from ..domain.histogram import HistogramStats, analyze, histogram_bins_focused
 from . import deps
 
 router = APIRouter(prefix="/api/histogram")
@@ -25,9 +25,10 @@ class HistogramResponse(BaseModel):
     black_level: float
     effective_bit_depth: int
     adc_max: float
-    # Bin data for the UI histogram widget
+    # Bin data for the UI histogram widget (focused range — right edge is hist_adu_hi)
     bin_counts: list[int]
     bin_edges: list[float]   # length = len(bin_counts) + 1
+    hist_adu_hi: float       # ADU value at the right edge of the displayed histogram
 
 
 @router.post("/analyze", response_model=HistogramResponse)
@@ -54,7 +55,7 @@ async def analyze_histogram(
         raise HTTPException(status_code=503, detail=f"Camera capture failed: {exc}") from exc
 
     stats: HistogramStats = analyze(frame.pixels, bit_depth=bit_depth)
-    counts, edges = histogram_bins(frame.pixels, bit_depth=bit_depth, n_bins=n_bins)
+    counts, edges, adu_hi = histogram_bins_focused(frame.pixels, bit_depth=bit_depth, n_bins=n_bins)
 
     return HistogramResponse(
         p50=stats.p50,
@@ -70,4 +71,5 @@ async def analyze_histogram(
         adc_max=stats.adc_max,
         bin_counts=counts,
         bin_edges=edges,
+        hist_adu_hi=adu_hi,
     )

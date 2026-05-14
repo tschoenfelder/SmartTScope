@@ -7,6 +7,7 @@ import time
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel
 
+from .. import config
 from . import deps
 
 _scan_lock  = threading.Lock()
@@ -41,6 +42,7 @@ class CameraInfo(BaseModel):
     usb3: bool
     has_raw16: bool
     has_mono: bool
+    role: str | None = None     # "main", "guide", etc. from [cameras] config section
 
 
 class CameraScanResult(BaseModel):
@@ -91,6 +93,9 @@ def _do_scan() -> CameraScanResult:
     model_counts: Counter[str] = Counter(str(dev.model.name) for _, dev in raw)
     model_seen: dict[str, int] = {}
 
+    # Reverse lookup: sdk_index → role from [cameras] config section
+    _index_to_role: dict[int, str] = {idx: role for role, idx in config.CAMERAS.items()}
+
     cameras: list[CameraInfo] = []
     for i, dev in raw:
         model = dev.model
@@ -121,6 +126,7 @@ def _do_scan() -> CameraScanResult:
                 usb3=bool(flag & _FLAG_USB30),
                 has_raw16=bool(flag & _FLAG_RAW16),
                 has_mono=bool(flag & _FLAG_MONO),
+                role=_index_to_role.get(i),
             )
         )
 

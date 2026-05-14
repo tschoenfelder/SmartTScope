@@ -557,7 +557,7 @@
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
         <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
         <button id="setup-check-btn" onclick="runSetupCheck()" disabled class="secondary"
-                title="Verify hardware is responding — focuser nudge, mount RA slew, camera capture">Setup Check</button>
+                title="Verify hardware is responding — focuser nudge, mount RA+DEC slew, camera capture + plate solve">Setup Check</button>
       </div>
     </div>
 
@@ -3938,7 +3938,43 @@
       _scStep(mark('✗'), `Mount: ${err.message}`);
     }
 
-    // ── 3. Camera capture ────────────────────────────────────────────────────
+    // ── 3. Mount DEC ────────────────────────────────────────────────────────
+    try {
+      let ms3 = await (await fetch('/api/mount/status')).json();
+      if (!ms3.dec || ms3.state === 'unknown' || ms3.state === 'parked') {
+        _scStep(mark('⚠'), `Mount DEC: state is '${ms3.state}' — skipped`);
+      } else {
+        const go3 = await _scConfirm(
+          'Mount DEC test: will slew +40 arcmin north. Ensure telescope has clearance.');
+        if (!go3) {
+          _scStep(mark('⚠'), 'Mount DEC: skipped by user');
+        } else {
+          const origRA3  = ms3.ra;
+          const origDec3 = ms3.dec;
+          const d3 = _scStep('⏳', 'Mount DEC: slewing +40 arcmin north…');
+          try {
+            await apiPost('/api/mount/goto', { ra: origRA3, dec: origDec3 + 40 / 60 });
+            await _scWaitSlew();
+            _scUpdate(d3, '⏳', 'Mount DEC: did the telescope move?');
+            const back3 = await _scConfirm('Did the mount move visibly in DEC? Confirm to slew back to start.');
+            if (!back3) {
+              _scUpdate(d3, mark('✗'), 'Mount DEC: user reports no visible movement');
+            } else {
+              _scUpdate(d3, '⏳', 'Mount DEC: returning to original position…');
+              await apiPost('/api/mount/goto', { ra: origRA3, dec: origDec3 });
+              await _scWaitSlew();
+              _scUpdate(d3, mark('✓'), 'Mount DEC: slewed and returned ✓');
+            }
+          } catch (gErr3) {
+            _scUpdate(d3, mark('✗'), `Mount DEC: ${gErr3.message}`);
+          }
+        }
+      }
+    } catch (err) {
+      _scStep(mark('✗'), `Mount DEC: ${err.message}`);
+    }
+
+    // ── 4. Camera capture + plate solve ──────────────────────────────────────
     try {
       const solverSt = await (await fetch('/api/solver/status')).json();
       const hasSolver = !!solverSt.ready;
@@ -3946,12 +3982,14 @@
       if (!camData.sdk_available || !camData.cameras?.length) {
         _scStep(mark('⚠'), 'Cameras: none detected — skipped');
       } else {
+        const solvedPositions = [];  // { label, ra, dec }
         for (const cam of camData.cameras) {
           const d = _scStep('⏳', `Camera ${cam.display_label}: capturing 2 s test frame…`);
           try {
             const r = await apiPost('/api/solver/solve',
               { exposure: 2.0, gain: 200, camera_index: cam.sdk_index });
             if (r.success) {
+              solvedPositions.push({ label: cam.display_label, ra: r.ra, dec: r.dec });
               _scUpdate(d, mark('✓'),
                 `Camera ${cam.display_label}: captured + solved — RA ${r.ra.toFixed(2)} h  Dec ${r.dec.toFixed(1)}°`);
             } else if (hasSolver) {
@@ -3965,14 +4003,33 @@
             _scUpdate(d, mark('✗'), `Camera ${cam.display_label}: ${cErr.message}`);
           }
         }
+        // Cross-camera pointing consistency: if ≥2 cameras solved, check they agree within 5°
+        if (solvedPositions.length >= 2) {
+          const ref = solvedPositions[0];
+          let allAgree = true;
+          for (let i = 1; i < solvedPositions.length; i++) {
+            const other = solvedPositions[i];
+            const dRa  = Math.abs(ref.ra  - other.ra)  * 15;  // deg
+            const dDec = Math.abs(ref.dec - other.dec);
+            const sep  = Math.sqrt(dRa * dRa + dDec * dDec);
+            if (sep > 5.0) {
+              _scStep(mark('⚠'),
+                `Camera pointing mismatch: ${ref.label} vs ${other.label} — separation ${sep.toFixed(1)}° (should be < 5°)`);
+              allAgree = false;
+            }
+          }
+          if (allAgree) {
+            _scStep(mark('✓'), `Camera pointing consistent: all ${solvedPositions.length} cameras agree within 5°`);
+          }
+        }
       }
     } catch (err) {
       _scStep(mark('✗'), `Cameras: ${err.message}`);
     }
 
-    // ── 4. Optional home ────────────────────────────────────────────────────
+    // ── 5. Optional home ────────────────────────────────────────────────────
     const goHome = await _scConfirm(
-      'Setup check complete. Move mount to home position (HA=0, Dec=89°)?');
+      'Setup check complete. Move mount to home position (HA=0, Dec=85°)?');
     if (goHome) {
       const d = _scStep('⏳', 'Mount: slewing to home…');
       try {

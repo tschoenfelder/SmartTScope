@@ -57,6 +57,23 @@ def focuser_status(focuser: FocuserPort = Depends(deps.get_focuser)) -> FocuserS
     )
 
 
+def _check_focuser_started(focuser: FocuserPort, start_pos: int, target: int) -> None:
+    """Log a warning if the focuser hasn't moved 2 s after a command was sent."""
+    time.sleep(2.0)
+    try:
+        current = focuser.get_position()
+        if current == start_pos and not focuser.is_moving():
+            _log.warning(
+                "Focuser move may not have started: position unchanged after 2 s "
+                "(start=%d target=%d current=%d) — check OnStep focuser wiring",
+                start_pos, target, current,
+            )
+        else:
+            _log.debug("Focuser moving OK: start=%d current=%d target=%d", start_pos, current, target)
+    except Exception:
+        pass
+
+
 def _safe_move(focuser: FocuserPort, target: int) -> None:
     """Issue a move command only when the focuser is confirmed idle.
 
@@ -76,8 +93,15 @@ def _safe_move(focuser: FocuserPort, target: int) -> None:
         if focuser.is_moving():
             _log.info("Focuser nudge rejected: focuser is moving (target=%d)", target)
             raise HTTPException(status_code=409, detail="Focuser is moving — try again shortly")
+        start_pos = focuser.get_position()
         focuser.move(target)
-        _log.info("Focuser move issued: target=%d", target)
+        _log.info("Focuser move issued: start=%d target=%d", start_pos, target)
+        threading.Thread(
+            target=_check_focuser_started,
+            args=(focuser, start_pos, target),
+            daemon=True,
+            name="focuser-move-check",
+        ).start()
     finally:
         _move_lock.release()
 

@@ -65,7 +65,13 @@ class OnStepFocuser(FocuserPort):
         return self._mount._send(":FT#") == "M"
 
     def stop(self) -> None:
-        self._mount._raw_send(":FQ#")
+        # Bypass the serial lock — stop must be immediate even when another
+        # command is in progress.  Write-only: no response expected from :FQ#.
+        s = self._mount._serial
+        if s is not None:
+            import contextlib
+            with contextlib.suppress(Exception):
+                s.write(b":FQ#")
 
     # ── private ───────────────────────────────────────────────────────────────
 

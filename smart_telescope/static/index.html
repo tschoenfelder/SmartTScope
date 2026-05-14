@@ -1933,7 +1933,11 @@
   }
 
   function mountEmergencyStop() {
-    apiPost('/api/mount/stop').then(() => refreshMount()).catch(() => {});
+    // Stop both mount and focuser; bypass all API-level locks
+    apiPost('/api/emergency_stop').then(() => refreshMount()).catch(() => {
+      // Fallback: try individual stop if emergency endpoint fails
+      apiPost('/api/mount/stop').catch(() => {});
+    });
   }
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -2005,13 +2009,13 @@
             : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
           <span class="controls-spacer"></span>
           <button class="secondary" onclick="mountHome()"
-                  title="Slew to celestial pole (Dec 89°, HA 0)">Home</button>
+                  title="Slew to celestial pole (Dec 85°, HA 0)">Home</button>
           <button class="secondary" onclick="mountAction('unpark')"
                   title="Unpark mount">Unpark</button>
           <button class="secondary" onclick="mountAction('park')"
                   title="Park mount">Park</button>
-          <button class="danger"    onclick="mountAction('stop')"
-                  title="Emergency stop">Stop</button>
+          <button class="danger"    onclick="mountEmergencyStop()"
+                  title="Emergency stop — halts mount and focuser immediately">Stop</button>
         </div>
       </div>`;
   }

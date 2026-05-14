@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -10,6 +11,9 @@ from ..domain.histogram import HistogramStats, analyze, histogram_bins_focused
 from . import deps
 
 router = APIRouter(prefix="/api/histogram")
+
+
+_LOW_ADU = 1000.0   # upper bound of the low-range pedestal histogram
 
 
 class HistogramResponse(BaseModel):
@@ -29,6 +33,10 @@ class HistogramResponse(BaseModel):
     bin_counts: list[int]
     bin_edges: list[float]   # length = len(bin_counts) + 1
     hist_adu_hi: float       # ADU value at the right edge of the displayed histogram
+    # Low-range pedestal histogram (0–1000 ADU, 100 bins, 10 ADU/bin)
+    low_bin_counts: list[int]
+    low_bin_edges: list[float]
+    low_adu_hi: float
 
 
 @router.post("/analyze", response_model=HistogramResponse)
@@ -57,6 +65,10 @@ async def analyze_histogram(
     stats: HistogramStats = analyze(frame.pixels, bit_depth=bit_depth)
     counts, edges, adu_hi = histogram_bins_focused(frame.pixels, bit_depth=bit_depth, n_bins=n_bins)
 
+    adc_max = float((1 << bit_depth) - 1)
+    normed = frame.pixels.astype(np.float64).ravel() / adc_max
+    low_c, low_e = np.histogram(normed, bins=100, range=(0.0, _LOW_ADU / adc_max))
+
     return HistogramResponse(
         p50=stats.p50,
         p95=stats.p95,
@@ -72,4 +84,7 @@ async def analyze_histogram(
         bin_counts=counts,
         bin_edges=edges,
         hist_adu_hi=adu_hi,
+        low_bin_counts=low_c.tolist(),
+        low_bin_edges=low_e.tolist(),
+        low_adu_hi=_LOW_ADU,
     )

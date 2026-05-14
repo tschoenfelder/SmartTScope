@@ -14,9 +14,18 @@ _log = logging.getLogger(__name__)
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     yield
-    # Graceful shutdown: close OnStep serial so focuser stops moving
+    # Graceful shutdown: stop moving parts before closing serial.
+    # OnStep is autonomous — it keeps executing a move command even after the
+    # serial port closes.  Send stop commands first so hardware halts cleanly.
     from .api import deps
+    if deps._focuser is not None:
+        with contextlib.suppress(Exception):
+            deps._focuser.stop()
+        _log.info("Shutdown: focuser stop sent")
     if deps._mount is not None:
+        with contextlib.suppress(Exception):
+            deps._mount.stop()
+        _log.info("Shutdown: mount stop sent")
         with contextlib.suppress(Exception):
             deps._mount.disconnect()
         _log.info("Shutdown: mount serial closed")

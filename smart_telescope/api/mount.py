@@ -7,6 +7,7 @@ import dataclasses
 import logging
 import math
 import threading
+import time
 
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
@@ -110,10 +111,10 @@ def _safe_goto(mount: MountPort, ra: float, dec: float) -> None:
     try:
         if mount.is_slewing():
             raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before issuing a new GoTo")
-        ok = mount.goto(ra, dec)
-        if not ok:
-            _log.error("mount.goto(ra=%.4fh dec=%.2f°) rejected — :MS# did not return '0'", ra, dec)
-            raise HTTPException(status_code=500, detail="GoTo failed")
+        try:
+            mount.goto(ra, dec)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         _log.info("Mount goto issued: ra=%.4fh dec=%.2f°", ra, dec)
     finally:
         _goto_lock.release()
@@ -168,7 +169,7 @@ def mount_unpark(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
     ok = mount.unpark()
     if not ok:
         raise HTTPException(status_code=500, detail="Unpark failed")
-    _log.info("Mount unpark issued")
+    _log.info("Mount unpark issued — state will propagate within ~1 s")
     return {"ok": True}
 
 
@@ -226,19 +227,23 @@ def mount_sync(
 
 @router.post("/home")
 def mount_home(mount: MountPort = Depends(deps.get_mount)) -> dict:
-    """Slew to the celestial pole (RA = current LST, Dec = 89°, HA = 0).
+    """Slew to the celestial pole (RA = current LST, Dec = 85°, HA = 0).
 
     Sets the mount to its starting position pointing at the polar region.
     Auto-unparks if necessary.  Bypasses position limits — the pole is
     always at altitude ≈ observer latitude, well within any sane limit set.
+    Uses Dec=85° (not 89°) to stay within OnStep's zenith exclusion zone.
     """
     if mount.get_state() == MountState.PARKED:
         if not mount.unpark():
             raise HTTPException(status_code=500, detail="Auto-unpark before home failed")
+        _log.info("Mount home: unparked — waiting for state to propagate")
+        time.sleep(1.0)
     loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
     lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
     ra_hours: float = lst_hours      # HA = 0 → on meridian
-    dec_deg: float  = 89.0           # near celestial pole
+    dec_deg: float  = 85.0           # near celestial pole, below OnStep zenith exclusion (87°)
+    _log.info("Mount home: slewing to RA=%.4fh Dec=%.1f°", ra_hours, dec_deg)
     _safe_goto(mount, ra_hours, dec_deg)
     return {"ok": True, "ra": ra_hours, "dec": dec_deg}
 

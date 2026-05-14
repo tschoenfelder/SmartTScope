@@ -45,6 +45,7 @@ class RunRequest(BaseModel):
 class AutoGainStatusResponse(BaseModel):
     running: bool
     diagnostic: bool = False
+    cancelling: bool = False   # True after cancel requested, before thread exits
     status: str | None = None
     exposure_ms: float | None = None
     gain: int | None = None
@@ -60,6 +61,7 @@ class AutoGainStatusResponse(BaseModel):
 class _Job:
     running: bool
     diagnostic: bool = False
+    cancelling: bool = False
     result: AutoGainResult | None = None
     error: str | None = None
     cancel: threading.Event = None  # type: ignore[assignment]
@@ -218,7 +220,7 @@ def get_status() -> AutoGainStatusResponse:
         return AutoGainStatusResponse(running=False)
 
     if j.running:
-        return AutoGainStatusResponse(running=True, diagnostic=j.diagnostic)
+        return AutoGainStatusResponse(running=True, diagnostic=j.diagnostic, cancelling=j.cancelling)
 
     if j.error:
         return AutoGainStatusResponse(running=False, diagnostic=j.diagnostic, error=j.error)
@@ -246,6 +248,8 @@ def cancel_autogain() -> dict:
         j = _job
     if j is not None and j.running:
         j.cancel.set()
+        with _lock:
+            j.cancelling = True
         _log.info("AutoGain cancellation requested")
     return {"cancelled": True}
 

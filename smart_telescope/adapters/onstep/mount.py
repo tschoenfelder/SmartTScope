@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
+import time
 
 import serial
 
@@ -78,13 +79,28 @@ class OnStepMount(MountPort):
         # readline) pass through unaffected; non-bytes mock return values are
         # treated as "no response" and accepted as inconclusive.
         # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
+        # On reconnect the input buffer may contain a stale command ACK ('0' or '1').
+        # If we get a short numeric response, flush and retry once before rejecting.
         self._serial.reset_input_buffer()
         self._serial.write(b":GVP#")
         raw = self._serial.read(32)
         product = ""
         if isinstance(raw, bytes):
-            product = raw.decode(errors="replace").rstrip("#\r\n")
+            product = raw.decode(errors="replace").rstrip("#\r\n").strip()
             _log.info("OnStepMount.connect(): :GVP# response = %r", product)
+            if product and len(product) <= 2 and all(c in "0123456789" for c in product):
+                # Looks like a stale command ACK — flush and retry once
+                _log.warning(
+                    "OnStepMount.connect(): :GVP# returned short numeric %r (stale ACK?) — flushing and retrying",
+                    product,
+                )
+                time.sleep(0.3)
+                self._serial.reset_input_buffer()
+                self._serial.write(b":GVP#")
+                raw2 = self._serial.read(32)
+                if isinstance(raw2, bytes):
+                    product = raw2.decode(errors="replace").rstrip("#\r\n").strip()
+                    _log.info("OnStepMount.connect(): :GVP# retry response = %r", product)
             if product and "on" not in product.lower() and "step" not in product.lower():
                 _log.error("OnStepMount.connect(): unexpected product %r — not OnStep, closing", product)
                 self._serial.close()
@@ -155,9 +171,15 @@ class OnStepMount(MountPort):
         self._send(f":Sd{_format_dec(dec)}#")
         resp = self._send(":MS#")
         if resp != "0":
-            _log.error("OnStepMount.goto(): :MS# returned %r (expected '0') — RA=%s Dec=%s",
-                       resp, _format_ra(ra), _format_dec(dec))
-        return resp == "0"
+            _MS_CODES = {"1": "below horizon", "2": "above max altitude", "3": "above 87°",
+                         "4": "outside limits", "5": "tracking off"}
+            reason = _MS_CODES.get(resp, f"code {resp!r}")
+            _log.error(
+                "OnStepMount.goto(): :MS# returned %r (%s) — RA=%s Dec=%s",
+                resp, reason, _format_ra(ra), _format_dec(dec),
+            )
+            raise RuntimeError(f"GoTo rejected by OnStep: {reason} (:MS# = {resp!r})")
+        return True
 
     def is_slewing(self) -> bool:
         return "|" in self._send(":D#")

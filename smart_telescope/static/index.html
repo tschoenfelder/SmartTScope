@@ -1125,6 +1125,7 @@
             <button id="autogain-cancel-btn" onclick="autoGainCancel()"
                     style="padding:0.15rem 0.5rem;font-size:0.78rem;display:none"
                     class="secondary">Cancel</button>
+            <span id="autogain-status-badge" style="font-size:0.78rem;margin-left:0.3rem"></span>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
             <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.5rem"></span>
           </div>
@@ -1156,7 +1157,6 @@
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;align-items:center">
             <button id="preview-start-btn" onclick="previewStart()">Start</button>
             <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
-            <span id="autogain-status-badge" style="font-size:0.8rem;display:none"></span>
           </div>
           <div id="autogain-result-row" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
                border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6">
@@ -3398,7 +3398,11 @@
       const result = await apiPost('/api/focuser/nudge', { delta });
       const pos = document.getElementById('s3-focus-pos');
       if (pos) pos.textContent = `→ ${result.target}`;
-      _refreshS1FocuserPos();  // keep Stage 1 position display in sync
+      // Optimistic update: show target immediately in Stage 1 while focuser moves
+      const s1posEl = document.getElementById('s1-focuser-pos');
+      if (s1posEl) s1posEl.textContent = `${result.target} steps (→)`;
+      // Poll actual position after focuser has had time to complete the move
+      setTimeout(_refreshS1FocuserPos, 1500);
       setStatus('s3-status', '');  // clear any previous nudge error
     } catch (err) {
       setStatus('s3-status', `Focus failed: ${err.message}`, true);
@@ -3759,20 +3763,22 @@
           if (focuserText) focuserText.textContent = 'Focuser probe failed';
         }
         await loadFocuserCameras();
-        // Refresh all camera selects — cameras may become enumerable only after hardware is connected
-        _loadSelectFromCameras('s1-cooling-cam-select');
-        // Hide cooling card when no camera supports TEC
-        try {
-          const camScan = await (await fetch('/api/cameras')).json();
-          const hasTec = camScan.cameras?.some(c => c.has_tec) ?? false;
-          const coolingCard = document.getElementById('s1-cooling-card');
-          if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
-        } catch (_) {}
-        loadPreviewCameras();
-        _loadSelectFromCameras('pa-cam-select').then(sel => {
-          if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
-        });
       }
+
+      // Refresh all camera selects regardless of mount state — cameras are
+      // independent of the mount and may enumerate correctly even without it.
+      _loadSelectFromCameras('s1-cooling-cam-select');
+      // Hide cooling card when no camera supports TEC
+      try {
+        const camScan = await (await fetch('/api/cameras')).json();
+        const hasTec = camScan.cameras?.some(c => c.has_tec) ?? false;
+        const coolingCard = document.getElementById('s1-cooling-card');
+        if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
+      } catch (_) {}
+      loadPreviewCameras();
+      _loadSelectFromCameras('pa-cam-select').then(sel => {
+        if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
+      });
 
       await refreshMount();
     } catch (err) {
@@ -4411,6 +4417,13 @@
       if (!r.ok) return;
       const d = await r.json();
       showHistogram('s3-histogram', 's3-hist-stats', d, d.bin_counts, d.bin_edges, d.hist_adu_hi);
+      const lowWrap = document.getElementById('s3-hist-low-wrap');
+      if (lowWrap && d.low_bin_counts?.length) {
+        lowWrap.style.display = '';
+        try {
+          showHistogram('s3-histogram-low', null, d, d.low_bin_counts, d.low_bin_edges, d.low_adu_hi);
+        } catch (_) {}
+      }
     } catch (_) { /* ignore network errors during preview */ }
   }
 
@@ -4447,8 +4460,9 @@
       msg: 'The histogram is indistinguishable from a dark frame. Remove the dust cap (or lens cap) and try again.',
     },
     'AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR': {
-      title: 'Faint signal detected — focus or pointing issue',
-      msg: 'A very faint signal was found at 10 s. The target may be defocused, slightly out of frame, or the mount may have lost tracking. Check focus, confirm the mount is tracking, and re-center the target.',
+      title: 'Faint signal detected — pointing issue',
+      msg: 'A very faint signal was found at 10 s. The target may be slightly out of frame or the mount may have lost tracking. Confirm the mount is tracking and re-center the target.',
+      msgWithFocuser: 'A very faint signal was found at 10 s. The target may be defocused, slightly out of frame, or the mount may have lost tracking. Check focus, confirm the mount is tracking, and re-center the target.',
     },
   };
 
@@ -4503,7 +4517,7 @@
     if (diagPrompt) diagPrompt.style.display = 'none';
     const info = _AG_DIAG_MESSAGES[d.status] || { title: d.status || 'Unknown', msg: d.warning_msg || '' };
     diagTitle.textContent = info.title;
-    diagMsg.textContent   = info.msg;
+    diagMsg.textContent   = (_focuserOk && info.msgWithFocuser) ? info.msgWithFocuser : info.msg;
     diagResult.style.display = '';
   }
 
@@ -4517,18 +4531,28 @@
       if (!r.ok) return;
       const d = await r.json();
       if (_agCancelled) return;  // check again — cancel may have fired while awaiting
-      if (!d.running) {
-        clearInterval(_agPollTimer);
-        _agPollTimer = null;
-        _agSetBusy(false);
-        if (_agIsDiag) {
-          _agIsDiag = false;
-          _agShowDiagResult(d);
-        } else {
-          _agShowResult(d);
+      if (d.running) {
+        // Show "Cancelling…" once the server acknowledges the cancel request
+        if (d.cancelling) {
+          const badge = document.getElementById('autogain-status-badge');
+          if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.innerHTML = '<span class="spin"></span> Cancelling…'; }
         }
-        if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
+        return;
       }
+      clearInterval(_agPollTimer);
+      _agPollTimer = null;
+      _agSetBusy(false);
+      // Treat a CANCELLED result the same as a user-initiated cancel — don't show error badge
+      if (d.status === 'AUTO_GAIN_CANCELLED') {
+        const badge = document.getElementById('autogain-status-badge');
+        if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.textContent = 'Cancelled'; }
+      } else if (_agIsDiag) {
+        _agIsDiag = false;
+        _agShowDiagResult(d);
+      } else {
+        _agShowResult(d);
+      }
+      if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
     } catch (_) { /* ignore transient network error */ }
   }
 

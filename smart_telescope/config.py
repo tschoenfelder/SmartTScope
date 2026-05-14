@@ -99,3 +99,16 @@ HORIZON_DAT: str           = _horizon_raw  or str(_USER_DIR / "horizon.dat")
 PIXEL_SCALE_ARCSEC: float  = float(os.environ.get("PIXEL_SCALE_ARCSEC", _get("session", "pixel_scale_arcsec", "0.38")))
 
 # STORAGE_DIR keeps env-var override because health.py checks it at module level.
+
+# ── collimation ───────────────────────────────────────────────────────────────
+
+def get_collimation_config() -> "CollimationConfig":
+    """Load and validate the [collimation] config section.
+
+    Returns a CollimationConfig with all defaults when the section is absent.
+    Raises ValueError (via CollimationConfig.validate) on invalid values.
+    """
+    from .domain.collimation.config import CollimationConfig
+    cfg = CollimationConfig.from_dict(_cfg.get("collimation", {}))
+    cfg.validate()
+    return cfg

@@ -43,3 +43,63 @@ storage_dir        = ""      # where captured frames are saved; empty = system t
 stars_cfg          = ""      # path to custom target list; empty = ~/.SmartTScope/stars.cfg
 horizon_dat        = ""      # path to KStars horizon export; empty = ~/.SmartTScope/horizon.dat
 pixel_scale_arcsec = 0.38   # arcsec per pixel at your focal length (C8 native = 0.38)
+
+# ── Collimation assistant ─────────────────────────────────────────────────────
+# All values below show the defaults.  Uncomment and edit only what you need.
+
+[collimation]
+telescope_profile = "c8_f10"   # c8_f10 | c8_f10_atr585m | c8_f6_3 | c8_f20_barlow2x
+camera_id         = "main"     # camera role from [cameras] section
+mount_adapter     = "onstep"
+focuser_adapter   = "onstep"
+
+# Reference center: where the optical axis is in the image.
+# Default (frame_center): uses the geometric frame center.
+# Set source = "calibrated" and supply offsets once you have measured them.
+[collimation.reference_center]
+offset_x_px = 0.0           # positive = right of frame center
+offset_y_px = 0.0           # positive = below frame center
+source      = "frame_center" # "frame_center" | "calibrated"
+
+[collimation.contradiction_detection]
+enabled                               = true
+stop_on_conflicting_indicators        = true
+require_recenter_before_next_screw_hint = true
+require_refocus_before_final_fine_hint  = true
+
+# Daylight / mechanical alignment — disabled for MVP
+[collimation.daylight_mechanical_alignment]
+enabled = false
+
+# Focuser settings for the collimation assistant
+[collimation.focuser]
+min_position               = 0
+max_position               = 50000
+increasing_value_direction = "clockwise"
+final_approach_direction   = "clockwise"
+defocus_direction          = "clockwise"
+max_single_step            = 500
+fine_step                  = 25
+coarse_step                = 250
+
+# Mount centering during collimation
+[collimation.mount_centering]
+method               = "pulse_guide"
+max_pulse_ms         = 500
+settle_ms            = 750
+initial_tolerance_px = 50.0
+rough_tolerance_px   = 20.0
+fine_tolerance_px    = 5.0
+
+# Rough collimation (defocused donut)
+[collimation.rough_collimation]
+target_donut_diameter_ratio_min = 0.25
+target_donut_diameter_ratio_max = 0.50
+good_error_ratio                = 0.02
+fallback_error_ratio            = 0.05
+
+# Fine collimation (Tri-Bahtinov)
+[collimation.fine_collimation]
+moving_window_frames   = 7
+target_residual_px     = 2.0
+poor_seeing_residual_px = 3.0

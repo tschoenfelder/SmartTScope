@@ -407,14 +407,16 @@ class TestGoto:
         mount.connect()
         assert mount.goto(ra=5.5881, dec=-5.391) is True
 
-    def test_goto_returns_false_when_slew_rejected(self, mocker):
+    def test_goto_raises_when_slew_rejected(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
         # "1" = slew not possible (object below horizon etc.)
         instance.readline.return_value = b"1"
         mount = _make_mount()
         mount.connect()
-        assert mount.goto(ra=5.5881, dec=-5.391) is False
+        import pytest
+        with pytest.raises(RuntimeError, match="below horizon"):
+            mount.goto(ra=5.5881, dec=-5.391)
 
 
 # ── is_slewing ────────────────────────────────────────────────────────────────

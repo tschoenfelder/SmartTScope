@@ -180,12 +180,16 @@ class TestIsMoving:
 
 
 class TestStop:
-    def test_stop_sends_FQ_command_via_raw_send(self) -> None:
+    def test_stop_writes_FQ_directly_to_serial(self) -> None:
+        # stop() bypasses _raw_send (and the serial lock) so it is never
+        # blocked by an in-progress move command.
         foc, mount = _make_focuser()
+        mock_serial = MagicMock()
+        mount._serial = mock_serial
         foc.stop()
-        calls = [c[0][0] for c in mount._raw_send.call_args_list]
-        assert ":FQ#" in calls
+        mock_serial.write.assert_called_once_with(b":FQ#")
 
     def test_stop_returns_none(self) -> None:
-        foc, _ = _make_focuser()
+        foc, mount = _make_focuser()
+        mount._serial = MagicMock()
         assert foc.stop() is None

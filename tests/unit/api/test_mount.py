@@ -29,7 +29,10 @@ def _mock_mount(
     m.get_position.return_value = MountPosition(ra=ra, dec=dec)
     m.unpark.return_value = unpark_ok
     m.enable_tracking.return_value = track_ok
-    m.goto.return_value = goto_ok
+    if goto_ok:
+        m.goto.return_value = True
+    else:
+        m.goto.side_effect = RuntimeError("GoTo rejected by OnStep: below horizon (:MS# = '1')")
     m.park.return_value = park_ok
     m.disable_tracking.return_value = disable_tracking_ok
     m.is_slewing.return_value = slewing

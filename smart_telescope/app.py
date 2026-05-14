@@ -36,6 +36,7 @@ async def _lifespan(app: FastAPI):
         _log.info("Shutdown: %d secondary camera handle(s) closed", len(deps._preview_cameras))
 
 from .api.autogain import router as autogain_router
+from .api.collimation import router as collimation_router
 from .api.guide_monitor import router as guide_monitor_router
 from .api.bahtinov import router as bahtinov_router
 from .api.calibration import router as calibration_router
@@ -65,6 +66,7 @@ async def serial_exception_handler(request: Request, exc: SerialException) -> JS
     _log.warning("Serial I/O error on %s: %s", request.url.path, exc)
     return JSONResponse(status_code=503, content={"detail": "Mount serial connection lost — reconnect the USB cable and restart"})
 app.include_router(autogain_router)
+app.include_router(collimation_router)
 app.include_router(guide_monitor_router)
 app.include_router(bahtinov_router)
 app.include_router(calibration_router)

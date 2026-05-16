@@ -1,4 +1,4 @@
-"""Tests for DeviceStateService — R2-008."""
+"""Tests for DeviceStateService — R2-003, R2-005, R2-008."""
 
 from __future__ import annotations
 
@@ -177,6 +177,111 @@ def test_position_error_does_not_crash_poll():
     assert obs.state == MountState.TRACKING
     assert obs.ra is None
     assert obs.dec is None
+
+
+# ── R2-003: command tracking ──────────────────────────────────────────────────
+
+def test_initial_last_command_is_none():
+    svc = DeviceStateService()
+    cmd, at, err = svc.get_last_command()
+    assert cmd is None
+    assert at is None
+    assert err is None
+
+
+def test_record_command_stores_name_and_clears_error():
+    svc = DeviceStateService()
+    svc.record_command_error("previous error")
+    svc.record_command("park")
+    cmd, at, err = svc.get_last_command()
+    assert cmd == "park"
+    assert at is not None
+    assert err is None
+
+
+def test_record_command_error_stores_error():
+    svc = DeviceStateService()
+    svc.record_command("unpark")
+    svc.record_command_error("Unpark rejected by OnStep")
+    cmd, at, err = svc.get_last_command()
+    assert cmd == "unpark"       # command name is kept
+    assert "rejected" in err
+
+
+def test_successive_commands_overwrite_previous():
+    svc = DeviceStateService()
+    svc.record_command("park")
+    svc.record_command("goto ra=5.0h dec=45.0°")
+    cmd, _, _ = svc.get_last_command()
+    assert cmd == "goto ra=5.0h dec=45.0°"
+
+
+# ── R2-005: state convergence helpers ─────────────────────────────────────────
+
+def _svc_with_state(state: MountState) -> DeviceStateService:
+    """Return a DeviceStateService whose cached state is pre-loaded (no background thread)."""
+    svc = DeviceStateService()
+    with svc._lock:
+        svc._mount_state = MountObservedState(
+            state=state, ra=None, dec=None, polled_at=time.monotonic()
+        )
+    return svc
+
+
+def test_wait_for_mount_state_immediate_match():
+    svc = _svc_with_state(MountState.PARKED)
+    converged = svc.wait_for_mount_state(MountState.PARKED, timeout_s=0.1)
+    assert converged is True
+
+
+def test_wait_for_mount_state_timeout():
+    svc = _svc_with_state(MountState.TRACKING)
+    converged = svc.wait_for_mount_state(MountState.PARKED, timeout_s=0.1)
+    assert converged is False
+
+
+def test_wait_for_mount_state_detects_transition():
+    svc = DeviceStateService()
+    import threading
+
+    def _transition():
+        time.sleep(0.1)
+        with svc._lock:
+            svc._mount_state = MountObservedState(
+                state=MountState.PARKED, ra=None, dec=None, polled_at=time.monotonic()
+            )
+
+    threading.Thread(target=_transition, daemon=True).start()
+    converged = svc.wait_for_mount_state(MountState.PARKED, timeout_s=1.0)
+    assert converged is True
+
+
+def test_wait_while_mount_state_immediate_change():
+    svc = _svc_with_state(MountState.TRACKING)   # not PARKED → changed immediately
+    changed = svc.wait_while_mount_state(MountState.PARKED, timeout_s=0.1)
+    assert changed is True
+
+
+def test_wait_while_mount_state_timeout():
+    svc = _svc_with_state(MountState.PARKED)
+    changed = svc.wait_while_mount_state(MountState.PARKED, timeout_s=0.1)
+    assert changed is False
+
+
+def test_wait_while_mount_state_detects_transition():
+    svc = _svc_with_state(MountState.PARKED)
+    import threading
+
+    def _transition():
+        time.sleep(0.1)
+        with svc._lock:
+            svc._mount_state = MountObservedState(
+                state=MountState.TRACKING, ra=None, dec=None, polled_at=time.monotonic()
+            )
+
+    threading.Thread(target=_transition, daemon=True).start()
+    changed = svc.wait_while_mount_state(MountState.PARKED, timeout_s=1.0)
+    assert changed is True
 
 
 # ── thread safety ─────────────────────────────────────────────────────────────

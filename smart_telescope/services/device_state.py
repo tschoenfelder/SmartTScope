@@ -55,6 +55,10 @@ class DeviceStateService:
         self._lock         = threading.Lock()
         self._stop_event   = threading.Event()
         self._thread: threading.Thread | None = None
+        # R2-003: last command tracking
+        self._last_command:       str   | None = None
+        self._last_command_at:    float | None = None  # time.monotonic()
+        self._last_command_error: str   | None = None
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -86,6 +90,64 @@ class DeviceStateService:
         """Return the last observed mount state, or None if no poll has run yet."""
         with self._lock:
             return self._mount_state
+
+    # ── R2-003: command tracking ──────────────────────────────────────────────
+
+    def record_command(self, command: str) -> None:
+        """Record that a mount command was issued (park, unpark, goto, etc.)."""
+        with self._lock:
+            self._last_command       = command
+            self._last_command_at    = time.monotonic()
+            self._last_command_error = None
+
+    def record_command_error(self, error: str) -> None:
+        """Record the error string from the most recent command."""
+        with self._lock:
+            self._last_command_error = error
+
+    def get_last_command(self) -> tuple[str | None, float | None, str | None]:
+        """Return (command_name, monotonic_timestamp, error_or_None)."""
+        with self._lock:
+            return self._last_command, self._last_command_at, self._last_command_error
+
+    # ── R2-005: state convergence helpers ────────────────────────────────────
+
+    def wait_for_mount_state(
+        self,
+        target_state: MountState,
+        timeout_s: float = 5.0,
+        poll_s: float = 0.2,
+    ) -> bool:
+        """Poll the cached state until it equals *target_state* or times out.
+
+        Returns True when the target was observed; False on timeout.
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            obs = self.get_mount_state()
+            if obs is not None and obs.state == target_state:
+                return True
+            time.sleep(poll_s)
+        return False
+
+    def wait_while_mount_state(
+        self,
+        current_state: MountState,
+        timeout_s: float = 5.0,
+        poll_s: float = 0.2,
+    ) -> bool:
+        """Poll the cached state until it differs from *current_state* or times out.
+
+        Returns True when the state changed; False if it stayed the same until
+        the timeout.  Useful after park/unpark to confirm state transition.
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            obs = self.get_mount_state()
+            if obs is not None and obs.state != current_state:
+                return True
+            time.sleep(poll_s)
+        return False
 
     # ── internal ──────────────────────────────────────────────────────────────
 

@@ -77,6 +77,10 @@ class MountStatus(BaseModel):
     home_ra: float | None = None   # home RA = LST (HA=0, Dec 89°)
     home_dec: float | None = None  # always 89.0°
     stale: bool = False            # True if the cached state may be outdated
+    # R2-003: last command tracking
+    last_command: str | None = None
+    last_command_age_s: float | None = None
+    last_command_error: str | None = None
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -173,6 +177,9 @@ def mount_status(
 
     lst = _get_lst()
 
+    cmd, cmd_at, cmd_err = device_state.get_last_command()
+    cmd_age = round(time.monotonic() - cmd_at, 1) if cmd_at is not None else None
+
     return MountStatus(
         state=state.name.lower(),
         ra=ra,
@@ -184,48 +191,64 @@ def mount_status(
         home_ra=lst,
         home_dec=89.0 if lst is not None else None,
         stale=stale,
+        last_command=cmd,
+        last_command_age_s=cmd_age,
+        last_command_error=cmd_err,
     )
 
 
 @router.post("/unpark")
-def mount_unpark(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+def mount_unpark(
+    mount:        MountPort          = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("unpark")
     ok = mount.unpark()
     if not ok:
+        device_state.record_command_error("Unpark rejected by OnStep")
         raise HTTPException(status_code=500, detail="Unpark failed")
-    deadline = time.monotonic() + 3.0
-    while time.monotonic() < deadline:
-        state = mount.get_state()
-        if state != MountState.PARKED:
-            _log.info("Mount unparked — state is now %s", state.name)
-            break
-        time.sleep(0.25)
+    changed = device_state.wait_while_mount_state(MountState.PARKED, timeout_s=3.0)
+    if changed:
+        obs = device_state.get_mount_state()
+        _log.info("Mount unparked — state is now %s", obs.state.name if obs else "?")
     else:
         _log.warning("Mount unpark: state still PARKED after 3 s — check OnStep")
     return {"ok": True}
 
 
 @router.post("/track")
-def mount_track(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+def mount_track(
+    mount:        MountPort          = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("track")
     if mount.get_state() == MountState.PARKED:
         if not mount.unpark():
+            device_state.record_command_error("Auto-unpark before tracking failed")
             raise HTTPException(status_code=500, detail="Auto-unpark before tracking failed")
     ok = mount.enable_tracking()
     if not ok:
+        device_state.record_command_error("Enable tracking failed")
         raise HTTPException(status_code=500, detail="Enable tracking failed")
     return {"ok": True}
 
 
 @router.post("/stop")
-def mount_stop(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+def mount_stop(
+    mount:        MountPort          = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("stop")
     mount.stop()
     return {"ok": True}
 
 
 @router.post("/goto")
 def mount_goto(
-    body: GotoRequest,
-    mount: MountPort = Depends(deps.get_mount),
-    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    body:         GotoRequest,
+    mount:        MountPort          = Depends(deps.get_mount),
+    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
     confirm_solar: bool = Query(default=False),
 ) -> dict[str, bool]:
     if not confirm_solar:
@@ -236,6 +259,7 @@ def mount_goto(
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
     _check_mount_limits(body.ra, body.dec)
+    device_state.record_command(f"goto ra={body.ra:.4f}h dec={body.dec:.2f}°")
     _safe_goto(mount, coordinator, body.ra, body.dec)
     return {"ok": True}
 
@@ -259,8 +283,9 @@ def mount_sync(
 
 @router.post("/home")
 def mount_home(
-    mount: MountPort = Depends(deps.get_mount),
-    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    mount:        MountPort          = Depends(deps.get_mount),
+    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict:
     """Slew to the celestial pole (RA = current LST, Dec = 85°, HA = 0).
 
@@ -269,8 +294,10 @@ def mount_home(
     always at altitude ≈ observer latitude, well within any sane limit set.
     Uses Dec=85° (not 89°) to stay within OnStep's zenith exclusion zone.
     """
+    device_state.record_command("home")
     if mount.get_state() == MountState.PARKED:
         if not mount.unpark():
+            device_state.record_command_error("Auto-unpark before home failed")
             raise HTTPException(status_code=500, detail="Auto-unpark before home failed")
         _log.info("Mount home: unparked — waiting for state to propagate")
         time.sleep(1.0)
@@ -282,6 +309,7 @@ def mount_home(
     try:
         with coordinator.mount_command():
             if mount.is_slewing():
+                device_state.record_command_error("Rejected — mount is slewing")
                 raise HTTPException(
                     status_code=409,
                     detail="Mount is slewing — stop it before homing",
@@ -289,33 +317,44 @@ def mount_home(
             try:
                 mount.goto(ra_hours, dec_deg)
             except RuntimeError as exc:
+                device_state.record_command_error(str(exc))
                 raise HTTPException(
                     status_code=500,
                     detail=f"Home slew failed — check mount is tracking and powered ({exc})",
                 ) from exc
     except CommandConflictError as exc:
+        device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True, "ra": ra_hours, "dec": dec_deg}
 
 
 @router.post("/park")
 def mount_park(
-    mount: MountPort = Depends(deps.get_mount),
-    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    mount:        MountPort          = Depends(deps.get_mount),
+    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
+    device_state.record_command("park")
     try:
         with coordinator.mount_command():
             if mount.is_slewing():
+                device_state.record_command_error("Rejected — mount is slewing")
                 raise HTTPException(
                     status_code=409,
                     detail="Mount is currently slewing — stop it before parking",
                 )
             ok = mount.park()
             if not ok:
+                device_state.record_command_error("Park command rejected by OnStep")
                 raise HTTPException(status_code=500, detail="Park failed")
             _log.info("Mount park issued")
     except CommandConflictError as exc:
+        device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Wait up to 5 s for the background poller to confirm PARKED state
+    converged = device_state.wait_for_mount_state(MountState.PARKED, timeout_s=5.0)
+    if not converged:
+        _log.warning("Mount park: state not confirmed PARKED within 5 s — mount may still be slewing")
     return {"ok": True}
 
 

@@ -1255,3 +1255,34 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
   expanded at module load time, never stored with `~`.
 
 **todo.md:** R5-001..003, BUG-008, M3-002 marked complete.
+
+---
+
+## 2026-05-17 — R2-003, R2-005, M3 milestone cleanup
+
+**What changed:**
+
+- `services/device_state.py` (R2-003): Added `record_command(name)`,
+  `record_command_error(msg)`, `get_last_command() → (name, at, err)` to
+  `DeviceStateService`.
+
+- `services/device_state.py` (R2-005): Added `wait_for_mount_state(target, timeout_s)`
+  (polls until state equals target) and `wait_while_mount_state(current, timeout_s)`
+  (polls until state differs from current).  Both use the background-poll cache for
+  consistency with what the UI sees.
+
+- `api/mount.py` (R2-003): All command endpoints — park, unpark, goto, home, track,
+  stop — now call `device_state.record_command(name)` before issuing and
+  `record_command_error(msg)` on failure.  `MountStatus` extended with
+  `last_command`, `last_command_age_s`, `last_command_error`.
+
+- `api/mount.py` (R2-005): `mount_unpark` now uses `wait_while_mount_state(PARKED)`
+  (uses cached state, consistent with UI) instead of a direct hardware poll loop.
+  `mount_park` waits up to 5 s for PARKED confirmation after issuing the command.
+
+- `tests/unit/services/test_device_state.py`: 10 new tests — R2-003 command tracking
+  (initial None, record clears error, error keeps name, overwrite), R2-005 convergence
+  helpers (immediate match, timeout, transition detection for both helpers).
+
+- `docs/todo.md`: M3-001, M3-003, M3-005, BUG-003, BUG-017 marked complete.
+  R2-003, R2-005 marked complete.

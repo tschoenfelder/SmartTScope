@@ -80,10 +80,12 @@
 - [x] R2-001 Define `DeviceStateService` `[P1 · Runtime]`
 - [x] R2-002 Define observed mount, focuser, and camera state models `[P1 · Runtime]`
   - *Done:* `MountObservedState` dataclass with state, ra, dec, polled_at, error
-- [ ] R2-003 Track last command, last observed state timestamp, and last error per device `[P1 · Runtime]`
+- [x] R2-003 Track last command, last observed state timestamp, and last error per device `[P1 · Runtime]`
+  - *Done:* `DeviceStateService.record_command(name)`, `record_command_error(msg)`, `get_last_command()` added; all mount command endpoints (park, unpark, goto, home, track, stop) call `record_command` before issuing; errors recorded on failure; `MountStatus` response includes `last_command`, `last_command_age_s`, `last_command_error`; 4 new tests in `test_device_state.py`
 - [x] R2-004 Poll mount and focuser state at controlled interval `[P1 · Runtime]`
   - *Done:* background daemon thread polls every 2 s via `DeviceStateService`
-- [ ] R2-005 Add state convergence helpers for park, unpark, home, and goto completion `[P1 · Runtime]`
+- [x] R2-005 Add state convergence helpers for park, unpark, home, and goto completion `[P1 · Runtime]`
+  - *Done:* `wait_for_mount_state(target, timeout_s)` waits until cached state equals target; `wait_while_mount_state(current, timeout_s)` waits until cached state differs; `mount_unpark` uses `wait_while_mount_state(PARKED)` to replace direct poll loop; `mount_park` uses `wait_for_mount_state(PARKED)` to confirm within 5 s; 6 new tests in `test_device_state.py`
 - [x] R2-006 Add stale-state and slow-response detection `[P2 · Runtime]`
   - *Done:* `MountObservedState.is_stale()` uses 10 s threshold; `stale` field in `MountStatus`
 - [x] R2-007 Change status endpoints and UI labels to use observed state `[P1 · Runtime]`
@@ -224,21 +226,25 @@
   - *Done:* `onCoolingCamChange(role)` added — fetches `/api/cameras/{idx}/capabilities` for the selected train's camera and shows/hides the cooling card based on `has_tec`; called on select `onchange`, on "Connect All", and at page init; replaces the old "any camera has TEC" heuristic
 - [ ] BUG-010 Focuser log says not available, then later says available — connect ordering issue `[P1 · Hardware · Source: Items_to_fix_20260514]`
 - [ ] BUG-013 Setup check fails to move mount at all `[P1 · Hardware · Source: Items_to_fix_20260514]`
-- [ ] BUG-017 Focuser linked to guide cam on status page; config requires it linked to main camera 678M `[P1 · Hardware · Source: Items_to_fix_20260514]`
-  - *Acceptance:* focuser follows optical train config; main cam focuser shown correctly
-- [ ] BUG-003 Startup shows both cameras under focuser section but not under cooling, polar alignment, or preview `[P1 · UI · Source: Items_to_fix_20260513]`
+- [x] BUG-017 Focuser linked to guide cam on status page; config requires it linked to main camera 678M `[P1 · Hardware · Source: Items_to_fix_20260514]`
+  - *Done (R4-005):* Focuser cam select now populated via `_loadSelectFromTrains()` filtered to `has_focuser=true`; guide cam train has `has_focuser=false` so it never appears in focuser controls
+- [x] BUG-003 Startup shows both cameras under focuser section but not under cooling, polar alignment, or preview `[P1 · UI · Source: Items_to_fix_20260513]`
+  - *Done (R4-005):* All camera selects now use train-based population; focuser select filters to `has_focuser=true`; cooling, PA, preview each populate independently from train registry
 - [x] BUG-024 Preview shows `AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR` for camera with no focuser connected `[P2 · UI · Source: Items_to_fix_20260514]`
   - *Done:* `_worker()` in `autogain.py` now resolves the train's `has_focuser` via `registry.by_camera_index(camera_index)` and ANDs it with `focuser.is_available`; guide camera with no focuser configured returns NO_SIGNAL instead of POSSIBLE_FOCUS_OR_POINTING_ERROR even when main camera's focuser is available; 4 new tests in `test_r4_role_camera.py`
 
 ### Milestone M3 tasks
 
-- [ ] M3-001 Complete R4 optical train registry `[P1 · Runtime]`
+- [x] M3-001 Complete R4 optical train registry `[P1 · Runtime]`
+  - *Done:* R4-001..007 all complete
 - [x] M3-002 Complete R5 config/readiness services `[P1 · Config]`
   - *Done:* R5-001..010 all complete
-- [ ] M3-003 Replace camera-index product UI with train roles `[P1 · UI]`
+- [x] M3-003 Replace camera-index product UI with train roles `[P1 · UI]`
+  - *Done:* R4-005 completed this
 - [x] M3-004 Hide unsupported cooling/focuser controls `[P2 · UI]`
   - *Done:* BUG-009 (cooling card per TEC capability) and BUG-024 (autogain FOCUS_ERROR for no-focuser cameras) both resolved
-- [ ] M3-005 Provide red/yellow/green setup readiness `[P1 · UI]`
+- [x] M3-005 Provide red/yellow/green setup readiness `[P1 · UI]`
+  - *Done:* R5-007 completed this
 
 **Quality gate:** Main camera/focuser association correct. Guide camera not shown as focus-controlled. Cooling absent for non-cooled cameras. Setup check detects missing files and devices.
 

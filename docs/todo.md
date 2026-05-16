@@ -64,7 +64,8 @@
 - [x] R1-003 Define command priority rules `[P1 · Runtime]`
 - [x] R1-004 Make STOP priority higher than all normal commands `[P0 · Runtime]`
   - *Done:* STOP endpoints call mount/focuser directly, never through coordinator
-- [ ] R1-005 Define command lifecycle states `[P1 · Runtime]`
+- [x] R1-005 Define command lifecycle states `[P1 · Runtime]`
+  - *Done (R2-003+R2-005):* Lifecycle is: command issued (record_command) → hardware executing (convergence helpers poll cached state) → done or error (record_command_error + observed state change); exposed in MountStatus.last_command/last_command_error
 - [ ] R1-006 Add command IDs and structured command logs `[P2 · Runtime]`
 - [x] R1-007 Move mount/focuser endpoint-local locks into coordinator `[P1 · Runtime]`
   - *Done:* `_goto_lock` removed from `mount.py`, `_move_lock` removed from `focuser.py`; all commands use `coordinator.mount_command()` / `coordinator.focuser_command()`
@@ -270,8 +271,10 @@
 
 ### UX3 — Hide Camera Index Thinking
 
-- [ ] UX3-001 Show main telescope camera by role name, not index `[P1 · UI]`
-- [ ] UX3-002 Show guide/OAG/wide-field camera only as configured roles `[P1 · UI]`
+- [x] UX3-001 Show main telescope camera by role name, not index `[P1 · UI]`
+  - *Done (R4-005):* All camera selects show train names ("main — c8", "guide — guide_scope")
+- [x] UX3-002 Show guide/OAG/wide-field camera only as configured roles `[P1 · UI]`
+  - *Done (R4-005):* Trains appear only when configured; focuser select filters to has_focuser=true
 - [ ] UX3-003 Show serial/logical name only in diagnostics `[P2 · UI]`
 - [ ] UX3-004 Hide unsupported controls (e.g. cooling for non-cooled cameras) `[P2 · UI]`
 

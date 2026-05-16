@@ -15,7 +15,11 @@ from fastapi.testclient import TestClient
 
 from smart_telescope.api import autogain as ag_mod
 from smart_telescope.api import deps
+from smart_telescope.api.autogain import _Job, _worker
 from smart_telescope.app import app
+from smart_telescope.domain.autogain import AutoGainMode
+from smart_telescope.domain.autogain_service import AutoGainResult, AutoGainService, AutoGainStatus
+from smart_telescope.domain.camera_profile import ATR585M
 from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
@@ -263,6 +267,76 @@ class TestPreviewWsCameraRole:
                 ws.receive_bytes()
 
         assert captured and captured[0] == 2
+
+
+# ── BUG-024: per-train has_focuser in autogain worker ─────────────────────────
+
+class TestAutogainHasFocuserPerTrain:
+    """BUG-024: guide camera (no focuser) must not receive POSSIBLE_FOCUS_OR_POINTING_ERROR
+    even when the mount focuser (wired to the main camera) is available.
+
+    Tests call _worker() directly to inspect has_focuser passed to run_one_shot.
+    """
+
+    def _make_job(self) -> _Job:
+        return _Job(running=True)
+
+    def _mock_focuser(self, available: bool) -> MagicMock:
+        f = MagicMock(spec=FocuserPort)
+        type(f).is_available = PropertyMock(return_value=available)
+        return f
+
+    def _run_worker(self, camera_index: int, registry, focuser_available: bool) -> dict:
+        """Run _worker synchronously and return the has_focuser kwarg captured."""
+        captured: dict = {}
+
+        def _mock_run_one_shot(**kwargs):
+            captured["has_focuser"] = kwargs.get("has_focuser")
+            return AutoGainResult(
+                status=AutoGainStatus.OK,
+                exposure_ms=2000.0,
+                gain=100,
+                offset=10,
+                conversion_gain=None,
+                histogram_stats=None,
+            )
+
+        job = self._make_job()
+        cam_mock = MagicMock(spec=CameraPort)
+        cam_mock.capture.return_value = _small_frame()
+
+        with patch.object(deps, "get_preview_camera", return_value=cam_mock):
+            with patch.object(deps, "get_focuser", return_value=self._mock_focuser(focuser_available)):
+                with patch.object(deps, "get_optical_train_registry", return_value=registry):
+                    with patch.object(AutoGainService, "run_one_shot", side_effect=_mock_run_one_shot):
+                        _worker(job, camera_index, ATR585M, AutoGainMode.DSO, 1)
+
+        return captured
+
+    def test_guide_cam_no_focuser_when_main_focuser_available(self) -> None:
+        """Camera 1 (guide, no focuser) should pass has_focuser=False even though
+        the global onstep focuser is available (it belongs to camera 0, not camera 1)."""
+        registry = _registry_2cam()  # main→0 has focuser, guide→1 does not
+        captured = self._run_worker(camera_index=1, registry=registry, focuser_available=True)
+        assert captured.get("has_focuser") is False
+
+    def test_main_cam_with_focuser_passes_has_focuser_true(self) -> None:
+        """Camera 0 (main, has focuser) + global focuser available → has_focuser=True."""
+        registry = _registry_2cam()
+        captured = self._run_worker(camera_index=0, registry=registry, focuser_available=True)
+        assert captured.get("has_focuser") is True
+
+    def test_main_cam_focuser_unavailable_passes_has_focuser_false(self) -> None:
+        """Train says has_focuser=True but hardware unavailable → has_focuser=False."""
+        registry = _registry_2cam()
+        captured = self._run_worker(camera_index=0, registry=registry, focuser_available=False)
+        assert captured.get("has_focuser") is False
+
+    def test_unknown_camera_falls_back_to_global_availability(self) -> None:
+        """Camera index not in any train → fall back to global focuser.is_available."""
+        registry = _registry_2cam()  # only has index 0 and 1
+        captured = self._run_worker(camera_index=9, registry=registry, focuser_available=True)
+        assert captured.get("has_focuser") is True
 
 
 # ── OpticalTrainRegistry multi-train query consistency ────────────────────────

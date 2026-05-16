@@ -105,13 +105,24 @@ def _worker(
 
     try:
         focuser_available = deps.get_focuser().is_available
+        # Per-train focuser capability (BUG-024): a guide camera with no focuser
+        # configured should never receive POSSIBLE_FOCUS_OR_POINTING_ERROR even
+        # when the mount's focuser (for the main train) is available.
+        has_focuser = focuser_available
+        try:
+            registry = deps.get_optical_train_registry()
+            train = registry.by_camera_index(camera_index)
+            if train is not None:
+                has_focuser = train.has_focuser and focuser_available
+        except Exception:
+            pass
         result = AutoGainService.run_one_shot(
             camera=camera,
             profile=profile,
             mode=mode,
             cancellation_flag=job.cancel,
             max_iterations=max_iterations,
-            has_focuser=focuser_available,
+            has_focuser=has_focuser,
         )
     except Exception as exc:
         _log.error("AutoGain worker error: %s", exc)

@@ -1201,3 +1201,29 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
 - `requirements.md` — full MVP/MVP+/Full requirement set for the C8 build
 - `index.md` — initial table of contents
 - `log.md` — this file
+
+---
+
+## 2026-05-17 — BUG-009, BUG-024, M3-004
+
+**What changed:**
+
+- `api/autogain.py` (BUG-024): `_worker()` now resolves the optical train for the
+  camera being processed and ANDs `train.has_focuser` with the global
+  `focuser.is_available`.  Guide cameras configured without a focuser no longer
+  receive `POSSIBLE_FOCUS_OR_POINTING_ERROR` from autogain when the main camera's
+  OnStep focuser is connected.  Falls back to global availability when the camera
+  index is not found in any train.
+
+- `static/index.html` (BUG-009): Replaced the "any camera has TEC" heuristic for
+  cooling card visibility with a per-selected-camera check.  New
+  `onCoolingCamChange(role)` function fetches `/api/cameras/{idx}/capabilities` and
+  shows or hides the cooling card based on `caps.has_tec`.  Called on
+  `s1-cooling-cam-select` `onchange`, on "Connect All", and at page init.
+
+- `tests/unit/api/test_r4_role_camera.py`: Four new tests in
+  `TestAutogainHasFocuserPerTrain` covering: guide cam no focuser (even when global
+  focuser available), main cam focuser present and available, main cam focuser
+  configured but hardware unavailable, unknown camera index falls back to global.
+
+**todo.md:** BUG-009, BUG-024, M3-004 marked complete.

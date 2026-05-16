@@ -606,6 +606,7 @@
           <span class="param-label">Camera</span>
           <span class="param-value">
             <select id="s1-cooling-cam-select"
+                    onchange="onCoolingCamChange(this.value)"
                     style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);
                            border-radius:3px;padding:0 4px;font-size:0.78rem">
               <option value="0">CAM0</option>
@@ -3776,6 +3777,15 @@
     if (disableBtn) disableBtn.style.display = '';
   }
 
+  async function onCoolingCamChange(role) {
+    const idx = _trainCamIdx(role);
+    try {
+      const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
+      const coolingCard = document.getElementById('s1-cooling-card');
+      if (coolingCard) coolingCard.style.display = caps.has_tec ? '' : 'none';
+    } catch (_) {}
+  }
+
   async function coolingRefreshStatus() {
     try {
       const d = await (await fetch('/api/cooling/status')).json();
@@ -3894,14 +3904,9 @@
 
       // Refresh all camera selects regardless of mount state — cameras are
       // independent of the mount and may enumerate correctly even without it.
-      _loadSelectFromTrains('s1-cooling-cam-select');
-      // Hide cooling card when no camera supports TEC
-      try {
-        const camScan = await (await fetch('/api/cameras')).json();
-        const hasTec = camScan.cameras?.some(c => c.has_tec) ?? false;
-        const coolingCard = document.getElementById('s1-cooling-card');
-        if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
-      } catch (_) {}
+      _loadSelectFromTrains('s1-cooling-cam-select').then(async sel => {
+        if (sel) await onCoolingCamChange(sel.value || 'main');
+      });
       loadPreviewCameras();
       _loadSelectFromTrains('pa-cam-select').then(sel => {
         if (sel) onPaCamChange(sel.value || 'main');
@@ -5557,13 +5562,8 @@
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
   loadPreviewCameras();
-  _loadSelectFromTrains('s1-cooling-cam-select').then(async () => {
-    try {
-      const scan = await (await fetch('/api/cameras')).json();
-      const hasTec = scan.cameras?.some(c => c.has_tec) ?? false;
-      const coolingCard = document.getElementById('s1-cooling-card');
-      if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
-    } catch (_) {}
+  _loadSelectFromTrains('s1-cooling-cam-select').then(async sel => {
+    if (sel) await onCoolingCamChange(sel.value || 'main');
   });
   _loadSelectFromTrains('pa-cam-select').then(sel => {
     if (sel) onPaCamChange(sel.value || 'main');

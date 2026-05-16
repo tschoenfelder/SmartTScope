@@ -16,6 +16,11 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+
+class ConfigError(Exception):
+    """Raised when config.toml contains a TOML syntax error."""
+
+
 # ── locate and load config file ───────────────────────────────────────────────
 
 _USER_DIR = Path.home() / ".SmartTScope"
@@ -25,16 +30,30 @@ _SEARCH_PATHS = [
     Path(__file__).parent.parent / "smart_telescope.toml",
 ]
 
-_cfg: dict = {}
-for _p in _SEARCH_PATHS:
-    if _p.exists():
-        try:
-            with _p.open("rb") as _fh:
-                _cfg = tomllib.load(_fh)
-        except tomllib.TOMLDecodeError as _e:
-            import sys
-            sys.exit(f"Config error in {_p}: {_e}")
-        break
+
+def _load_config_from_disk() -> tuple[dict, ConfigError | None]:
+    """Load the first found config file. Returns (cfg_dict, error_or_None)."""
+    for path in _SEARCH_PATHS:
+        if path.exists():
+            try:
+                with path.open("rb") as fh:
+                    return tomllib.load(fh), None
+            except tomllib.TOMLDecodeError as e:
+                return {}, ConfigError(f"Config parse error in {path}: {e}")
+    return {}, None
+
+
+_cfg, _load_error = _load_config_from_disk()
+
+
+def check_load_error() -> None:
+    """Raise ConfigError if the config file failed to parse.
+
+    Call this at startup (RuntimeContext.connect_devices) so parse errors
+    surface as a structured exception rather than a silent sys.exit.
+    """
+    if _load_error:
+        raise _load_error
 
 
 def _get(section: str, key: str, default: str) -> str:

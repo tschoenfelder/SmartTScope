@@ -1227,3 +1227,31 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
   configured but hardware unavailable, unknown camera index falls back to global.
 
 **todo.md:** BUG-009, BUG-024, M3-004 marked complete.
+
+---
+
+## 2026-05-17 — R5-001..003, BUG-008
+
+**What changed:**
+
+- `config.py` (R5-001..003): Replaced bare module-level TOML loading + `sys.exit`
+  with:
+  - `ConfigError` exception class — structured parse failure type
+  - `_load_config_from_disk()` — encapsulates all file reading logic (explicit load)
+  - `_load_error` module variable — stores parse error without killing the process
+  - `check_load_error()` — raises `ConfigError` if load failed; called from
+    `RuntimeContext.connect_devices()` so bad configs surface at Connect All time
+
+- `services/readiness.py`: `_check_config_file()` now checks `_load_error` first
+  and returns a RED item with the parse error message and repair guidance.
+
+- `tests/unit/api/test_readiness.py`: 8 new tests:
+  - `TestConfigError`: check_load_error() no-op on no error, raises on error,
+    readiness RED on parse error, overall RED on parse error
+  - `TestExpandPath`: tilde expansion, empty string, absolute path, and verifies
+    that `config.STARS_CFG` contains no literal `~` (BUG-008 regression guard)
+
+- BUG-008 confirmed resolved by R5-004's `_expand()` — `STARS_CFG` is always
+  expanded at module load time, never stored with `~`.
+
+**todo.md:** R5-001..003, BUG-008, M3-002 marked complete.

@@ -6,7 +6,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+import smart_telescope.config as _config_mod
 from smart_telescope.app import app
+from smart_telescope.config import ConfigError, _expand, check_load_error
 from smart_telescope.services.readiness import Level, ReadinessService
 
 client = TestClient(app)
@@ -186,6 +188,63 @@ class TestMountFocuserCheck:
         assert len(items) == 2
         assert all(i.level == Level.YELLOW for i in items)
 
+
+# ── R5-003: ConfigError replaces sys.exit ─────────────────────────────────────
+
+class TestConfigError:
+    """R5-001..003: ConfigError is raised by check_load_error; not sys.exit."""
+
+    def test_check_load_error_is_noop_when_no_error(self) -> None:
+        with patch.object(_config_mod, "_load_error", None):
+            check_load_error()  # must not raise
+
+    def test_check_load_error_raises_config_error(self) -> None:
+        err = ConfigError("Config parse error in /path/config.toml: ...")
+        with patch.object(_config_mod, "_load_error", err):
+            with pytest.raises(ConfigError, match="parse error"):
+                check_load_error()
+
+    def test_readiness_shows_red_on_parse_error(self) -> None:
+        err = ConfigError("Config parse error in /some/config.toml: invalid TOML")
+        with patch.object(_config_mod, "_load_error", err):
+            item = ReadinessService()._check_config_file()
+        assert item.level == Level.RED
+        assert "parse error" in item.message.lower()
+        assert item.repair is not None
+
+    def test_readiness_overall_red_on_config_parse_error(self) -> None:
+        err = ConfigError("Config parse error in /some/config.toml: invalid TOML")
+        with patch.object(_config_mod, "_load_error", err):
+            report = ReadinessService().check()
+        assert report.overall == Level.RED
+        assert report.can_observe is False
+        config_item = next(i for i in report.items if i.key == "config_file")
+        assert config_item.level == Level.RED
+
+
+# ── BUG-008: tilde path expansion in config ───────────────────────────────────
+
+class TestExpandPath:
+    """BUG-008: _expand() correctly resolves tilde paths (fixed by R5-004)."""
+
+    def test_tilde_expanded_to_home(self) -> None:
+        result = _expand("~/stars.cfg")
+        assert "~" not in result
+        assert result.endswith("stars.cfg")
+        assert Path(result).is_absolute()
+
+    def test_empty_string_returns_empty(self) -> None:
+        assert _expand("") == ""
+
+    def test_absolute_path_unchanged(self, tmp_path: Path) -> None:
+        p = str(tmp_path / "stars.cfg")
+        assert _expand(p) == p
+
+    def test_stars_cfg_config_value_is_already_expanded(self) -> None:
+        assert "~" not in _config_mod.STARS_CFG
+
+
+# ── Overall level tests ───────────────────────────────────────────────────────
 
 class TestOverallLevel:
     def test_red_overall_if_any_red_item(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

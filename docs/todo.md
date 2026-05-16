@@ -202,9 +202,12 @@
 
 ### R5 — Config and Readiness Services
 
-- [ ] R5-001 Define `ConfigService` `[P1 · Config]`
-- [ ] R5-002 Replace import-time config loading with explicit load `[P1 · Config]`
-- [ ] R5-003 Replace config `sys.exit` with structured startup error `[P1 · Config]`
+- [x] R5-001 Define `ConfigService` `[P1 · Config]`
+  - *Done:* `ConfigError` exception class + `check_load_error()` function form the config service boundary; `_load_config_from_disk()` encapsulates all file loading logic
+- [x] R5-002 Replace import-time config loading with explicit load `[P1 · Config]`
+  - *Done:* TOML loading moved into `_load_config_from_disk()` function; module globals still populated at import time for backward compat; `check_load_error()` is the explicit check point called by `RuntimeContext.connect_devices()`
+- [x] R5-003 Replace config `sys.exit` with structured startup error `[P1 · Config]`
+  - *Done:* `sys.exit(...)` replaced by `_load_error = ConfigError(...)` stored on parse failure; `check_load_error()` raises it at startup (`RuntimeContext.connect_devices`); `ReadinessService._check_config_file()` surfaces it as a RED item; 4 new tests in `test_readiness.py`
 - [x] R5-004 Add resolved path model (expand `~/`) — already in config.py `_expand()` `[P1 · Config]`
 - [x] R5-005 Validate stars.cfg, horizon file, storage, ASTAP executable, ASTAP catalog, camera roles — in `ReadinessService` `[P1 · Config]`
 - [x] R5-006 Define `ReadinessService` → `smart_telescope/services/readiness.py` `[P1 · Runtime]`
@@ -215,8 +218,8 @@
 
 ### Field bugs — Config and optical train
 
-- [ ] BUG-008 `stars.cfg` not found on Pi even though file exists — tilde path not expanded `[P1 · Config · Source: Items_to_fix_20260514]`
-  - *Acceptance:* `~/` paths in config.toml resolve correctly on Pi
+- [x] BUG-008 `stars.cfg` not found on Pi even though file exists — tilde path not expanded `[P1 · Config · Source: Items_to_fix_20260514]`
+  - *Done (R5-004):* `_expand()` using `Path.expanduser()` was added for all path globals (`STARS_CFG`, `HORIZON_DAT`, `STORAGE_DIR`, `IMAGE_ROOT`, `APP_STATE_DIR`); `STARS_CFG` default also constructed via `Path.home()` so tilde is never stored literally; verified by 4 new `TestExpandPath` tests in `test_readiness.py`
 - [x] BUG-009 Cooling controls offered in setup page for cameras that don't support cooling `[P2 · UI · Source: Items_to_fix_20260514]`
   - *Done:* `onCoolingCamChange(role)` added — fetches `/api/cameras/{idx}/capabilities` for the selected train's camera and shows/hides the cooling card based on `has_tec`; called on select `onchange`, on "Connect All", and at page init; replaces the old "any camera has TEC" heuristic
 - [ ] BUG-010 Focuser log says not available, then later says available — connect ordering issue `[P1 · Hardware · Source: Items_to_fix_20260514]`
@@ -230,7 +233,8 @@
 ### Milestone M3 tasks
 
 - [ ] M3-001 Complete R4 optical train registry `[P1 · Runtime]`
-- [ ] M3-002 Complete R5 config/readiness services `[P1 · Config]`
+- [x] M3-002 Complete R5 config/readiness services `[P1 · Config]`
+  - *Done:* R5-001..010 all complete
 - [ ] M3-003 Replace camera-index product UI with train roles `[P1 · UI]`
 - [x] M3-004 Hide unsupported cooling/focuser controls `[P2 · UI]`
   - *Done:* BUG-009 (cooling card per TEC capability) and BUG-024 (autogain FOCUS_ERROR for no-focuser cameras) both resolved

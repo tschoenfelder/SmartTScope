@@ -140,7 +140,13 @@ class RuntimeContext:
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     def connect_devices(self) -> None:
-        """Build and connect adapters (idempotent, thread-safe)."""
+        """Build and connect adapters (idempotent, thread-safe).
+
+        Raises ConfigError immediately if the config file had a parse error,
+        preventing further device connection on a broken installation.
+        """
+        from . import config as _config
+        _config.check_load_error()
         if self._adapters_built:
             return
         with self._adapters_lock:

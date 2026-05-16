@@ -75,6 +75,14 @@ class ReadinessService:
     # ── individual checks ─────────────────────────────────────────────────────
 
     def _check_config_file(self) -> ReadinessItem:
+        from .. import config
+        if config._load_error is not None:
+            return ReadinessItem(
+                key="config_file", label="Configuration file",
+                level=Level.RED,
+                message=str(config._load_error),
+                repair="Fix the TOML syntax error in your config.toml and restart the server.",
+            )
         user_cfg = Path.home() / ".SmartTScope" / "config.toml"
         if user_cfg.exists():
             return ReadinessItem(

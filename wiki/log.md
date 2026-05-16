@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-16 — Collimation Phase 9 — Rough Collimation Guidance
+
+**What changed:**
+
+- `smart_telescope/services/collimation/collimation_advisor.py` (NEW): `CollimationAdvisor` takes a list of `ScrewCalibration` and a `DonutMeasurement`; projects the desired correction vector (–error) onto each screw's response vector; picks the screw with the largest dot product; determines CW/CCW direction; caps size at MEDIUM (never LARGE); halves confidence when screw calibration is below threshold. Returns `CollimationRecommendation` or None when already collimated or no calibration available.
+- `smart_telescope/services/collimation/live_guidance.py` (NEW): `LiveGuidanceMonitor` polls a `get_measurement()` callable each settle interval while the user turns a screw. Tracks best error seen; declares "converged" when error < green_fraction × outer_radius, "worsened" after N consecutive non-improvements, "star_lost", "cancelled", or "max_frames". Returns `LiveGuidanceResult(reason, initial_error_px, final_error_px, improvement_px, frame_count)`.
+- `tests/unit/services/test_collimation_advisor.py` (NEW): 18 tests — no calibration, already collimated, screw selection (x/y/three-screw), turn direction (CW/CCW), adjustment size (small/medium/never-large), confidence, reason string, custom outer_radius.
+- `tests/unit/services/test_live_guidance.py` (NEW): 15 tests — result fields, convergence (threshold/improvement/frame count), worsening (consecutive non-improvement/single bad frame), star lost, cancellation, max frames, initial error propagation.
+- `docs/todo.md`: COL-090, COL-091 marked done.
+- Test suite: 2085 tests, all pass, 83.66% coverage.
+
+---
+
 ## 2026-05-16 — Collimation Phase 8 — Screw Identification and Response Learning
 
 **What changed:**

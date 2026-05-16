@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-16 (Collimation Phase 8 screw identification + response learning — 37 new tests, all 2052 pass, 83% coverage)
+**Last updated:** 2026-05-16 (Collimation Phase 9 rough collimation guidance — 33 new tests, all 2085 pass, 84% coverage)
 
 ## Priority legend
 
@@ -373,8 +373,10 @@
 
 ### Phase 9 — Rough Collimation Guidance
 
-- [ ] COL-090 Generate safe screw recommendations (tiny/slight/very slight) `[P1 · Collimation]`
-- [ ] COL-091 Live "turn until OK" — detect improvement and tell user when to stop `[P1 · Collimation]`
+- [x] COL-090 Generate safe screw recommendations (tiny/slight/very slight) `[P1 · Collimation]`
+  - *Done:* `services/collimation/collimation_advisor.py` — `CollimationAdvisor` projects error vector onto each screw's response vector (cosine similarity), selects best screw and CW/CCW direction; size: MEDIUM (>15% of ring) or SMALL (≤15%); never LARGE; low-calibration-confidence halves recommendation confidence; 18 tests
+- [x] COL-091 Live "turn until OK" — detect improvement and tell user when to stop `[P1 · Collimation]`
+  - *Done:* `services/collimation/live_guidance.py` — `LiveGuidanceMonitor` polls `get_measurement()` each settle interval; tracks improvement (5% threshold); stops on: converged (error < green_fraction × outer_radius), worsened (2 consecutive non-improvements), star_lost, cancelled, max_frames; returns `LiveGuidanceResult` with reason, improvement_px, frame_count; 15 tests
 
 ### Phase 10 — Tri-Bahtinov Fine Collimation
 

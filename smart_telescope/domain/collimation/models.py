@@ -308,6 +308,18 @@ class ScrewCalibration:
 
 
 @dataclasses.dataclass(frozen=True)
+class ScrewAngularPosition:
+    """Image-angle of one collimation screw, calibrated by hand-touch detection.
+
+    angle_deg follows image convention: 0° = +x (right), 90° = +y (down).
+    Populated by Phase 8 hand-obstruction detection; used by Phase 9 guidance.
+    """
+    screw_id: str
+    angle_deg: float    # angle from outer ring center to detected shadow
+    confidence: float   # 0–1; detection quality
+
+
+@dataclasses.dataclass(frozen=True)
 class MaskSectorCalibration:
     """Maps Tri-Bahtinov mask sectors to physical collimation screws.
 

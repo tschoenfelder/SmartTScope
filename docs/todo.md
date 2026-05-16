@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-16 (Collimation Phase 7 donut detection + overlay — 42 new tests, all 2015 pass, 83% coverage)
+**Last updated:** 2026-05-16 (Collimation Phase 8 screw identification + response learning — 37 new tests, all 2052 pass, 83% coverage)
 
 ## Priority legend
 
@@ -366,8 +366,10 @@
 
 ### Phase 8 — Screw Identification
 
-- [ ] COL-080 Screw detection by hand obstruction shadow `[P1 · Collimation]`
-- [ ] COL-081 Screw response learning (before/after adjustment) `[P2 · Collimation]`
+- [x] COL-080 Screw detection by hand obstruction shadow `[P1 · Collimation]`
+  - *Done:* `domain/collimation/processing/obstruction_detection.py` — `detect_obstruction(reference, current, cx, cy)` thresholds diff (ref−current) at 5σ, finds shadow centroid, returns angle from outer ring center; 15 tests; new domain model `ScrewAngularPosition` added to models.py
+- [x] COL-081 Screw response learning (before/after adjustment) `[P2 · Collimation]`
+  - *Done:* `services/collimation/screw_mapper.py` — `ScrewResponseLearner` accumulates before/after `DonutMeasurement` pairs per screw, averages CW-equivalent response vectors, returns `ScrewCalibration`; confidence saturates at 5 samples; 22 tests
 
 ### Phase 9 — Rough Collimation Guidance
 

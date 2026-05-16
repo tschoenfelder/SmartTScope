@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-16 — Collimation Phase 8 — Screw Identification and Response Learning
+
+**What changed:**
+
+- `smart_telescope/domain/collimation/models.py`: added `ScrewAngularPosition` dataclass (screw_id, angle_deg, confidence) for hand-touch calibration results.
+- `smart_telescope/domain/collimation/processing/obstruction_detection.py` (NEW): `detect_obstruction(reference, current, cx, cy)` — computes diff (reference − current), thresholds at 5σ above diff background, finds brightness-weighted centroid of shadow region, computes angle from outer ring center. Returns `ObstructionResult(shadow_center_x, shadow_center_y, angle_deg, shadow_area_px, confidence)` or None if no shadow detected.
+- `smart_telescope/services/collimation/screw_mapper.py` (NEW): `ScrewResponseLearner` — accumulates before/after `DonutMeasurement` pairs per screw; converts CCW observations to CW-equivalent; averages response vectors across all observations; confidence saturates to 1.0 at 5 samples. Returns `ScrewCalibration`.
+- `tests/unit/domain/collimation/test_obstruction_detection.py` (NEW): 15 tests — result fields, no-shadow (identical frames, noise only, tiny shadow), shadow detected (area, center, confidence), angle accuracy (right/left/above/below), confidence bounds.
+- `tests/unit/services/test_screw_mapper.py` (NEW): 22 tests — `ScrewAngularPosition` fields, initial state, CW/CCW single observations, multiple-observation averaging, confidence growth, get_calibration/get_all, Y-axis response, magnitude.
+- `docs/todo.md`: COL-080, COL-081 marked done.
+- Test suite: 2052 tests, all pass, 83.49% coverage.
+
+---
+
 ## 2026-05-16 — Collimation Phase 7 — Rough Donut Collimation
 
 **What changed:**

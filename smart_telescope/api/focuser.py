@@ -131,6 +131,7 @@ class AutofocusRequest(BaseModel):
     step_size:    int   = 100
     exposure:     float = 2.0
     camera_index: int   = 0
+    camera_role: str | None = None
 
 
 @router.post("/autofocus")
@@ -142,7 +143,17 @@ def focuser_autofocus(
     if not focuser.is_available:
         raise HTTPException(status_code=503, detail="Focuser not available")
 
-    camera = deps.get_preview_camera(body.camera_index)
+    # Resolve camera_role → camera_index (R4-005)
+    cam_idx = body.camera_index
+    if body.camera_role:
+        try:
+            registry = deps.get_optical_train_registry()
+            train = registry.by_camera_role(body.camera_role) or registry.get(body.camera_role)
+            if train is not None:
+                cam_idx = train.camera_index
+        except Exception:
+            pass
+    camera = deps.get_preview_camera(cam_idx)
     try:
         params = AutofocusParams(
             range_steps=body.range_steps,

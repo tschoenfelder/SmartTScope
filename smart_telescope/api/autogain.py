@@ -36,6 +36,7 @@ _DIAGNOSTIC_EXP_MS = 10_000.0  # extended exposure for diagnostic runs
 
 class RunRequest(BaseModel):
     camera_index: int = Field(default=0, ge=0, le=7)
+    camera_role: str | None = Field(default=None, description="Optical train role (preferred over camera_index if configured)")
     mode: str = Field(default="DSO")
     camera_model: str | None = Field(default=None, description="Profile model name (e.g. ATR585M)")
     max_iterations: int = Field(default=12, ge=1, le=30)
@@ -197,13 +198,24 @@ def run_autogain(req: RunRequest) -> dict:
     except ValueError:
         raise HTTPException(status_code=422, detail=f"Unknown mode: {req.mode!r}")
 
+    # Resolve camera_role → camera_index (R4-005)
+    camera_index = req.camera_index
+    if req.camera_role:
+        try:
+            registry = deps.get_optical_train_registry()
+            train = registry.by_camera_role(req.camera_role) or registry.get(req.camera_role)
+            if train is not None:
+                camera_index = train.camera_index
+        except Exception:
+            pass
+
     job = _Job(running=True, diagnostic=req.diagnostic)
     try:
         rt.job_manager.submit(
             "autogain",
-            {f"camera:{req.camera_index}"},
+            {f"camera:{camera_index}"},
             _worker,
-            job, req.camera_index, profile, mode, req.max_iterations,
+            job, camera_index, profile, mode, req.max_iterations,
             cancel_event=job.cancel,
             timeout_s=300,
         )
@@ -211,7 +223,8 @@ def run_autogain(req: RunRequest) -> dict:
         raise HTTPException(status_code=409, detail=str(exc))
     with rt.autogain_lock:
         _set_job(job)
-    _log.info("AutoGain started: camera_index=%d model=%s mode=%s", req.camera_index, profile.model, mode.value)
+    _log.info("AutoGain started: camera_index=%d camera_role=%s model=%s mode=%s",
+              camera_index, req.camera_role or "(by index)", profile.model, mode.value)
     return {"started": True}
 
 

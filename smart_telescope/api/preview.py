@@ -31,6 +31,7 @@ async def ws_preview(
     exposure: float = Query(default=2.0, gt=0.0, le=3600.0),
     gain: int = Query(default=100, ge=100, le=15000),
     camera_index: int = Query(default=0, ge=0, le=7),
+    camera_role: str = Query(default=""),
     autogain: bool = Query(default=False),
     offset: int = Query(default=0, ge=0, le=10000),
     stretch: bool = Query(default=True),
@@ -42,9 +43,21 @@ async def ws_preview(
     Raw capture settings for science operations are not affected.
     """
     await websocket.accept()
+
+    # Resolve camera_role → camera_index (R4-005: role-based selection)
+    if camera_role:
+        try:
+            registry = deps.get_optical_train_registry()
+            train = registry.by_camera_role(camera_role) or registry.get(camera_role)
+            if train is not None:
+                camera_index = train.camera_index
+                _log.info("Preview WS: resolved camera_role=%r → camera_index=%d", camera_role, camera_index)
+        except Exception:
+            pass
+
     _log.info(
-        "Preview WS accepted: camera_index=%d exposure=%.3f gain=%d autogain=%s",
-        camera_index, exposure, gain, autogain,
+        "Preview WS accepted: camera_index=%d camera_role=%r exposure=%.3f gain=%d autogain=%s",
+        camera_index, camera_role or "(by index)", exposure, gain, autogain,
     )
 
     try:

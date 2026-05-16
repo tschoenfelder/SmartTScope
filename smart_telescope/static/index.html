@@ -718,7 +718,7 @@
           <span class="param-label">Autofocus cam</span>
           <span class="param-value" style="display:flex;align-items:center;gap:0.4rem">
             <select id="s1-focuser-cam-select"
-                    onchange="_focusCamIdx = +this.value"
+                    onchange="_focusCamRole = this.value"
                     style="flex:1;background:var(--bg);color:var(--fg);border:1px solid var(--border);
                            border-radius:3px;padding:0 4px;font-size:0.78rem">
               <option value="0">Scanning…</option>
@@ -907,7 +907,7 @@
                style="width:5ch">
         <label style="margin-left:0.5rem">Cam</label>
         <select id="pa-cam-select" style="font-size:0.8rem;max-width:16ch"
-                onchange="onPaCamChange(parseInt(this.value,10))"></select>
+                onchange="onPaCamChange(this.value)"></select>
         <label style="margin-left:0.5rem">Target</label>
         <select id="pa-precision" style="font-size:0.8rem">
           <option value="30">Rough visual (30′)</option>
@@ -1104,7 +1104,7 @@
             <label>Cam</label>
             <select id="preview-cam-select" style="font-size:0.8rem;max-width:16ch"
                     title="Preview camera"
-                    onchange="onPreviewCamChange(parseInt(this.value,10))"></select>
+                    onchange="onPreviewCamChange(this.value)"></select>
             <label style="margin-left:0.4rem">Exp</label>
             <input type="number" id="preview-exposure" value="2" min="0.0001" max="1000" step="any"
                    style="width:10ch" onchange="previewSendParams()">
@@ -1678,7 +1678,8 @@
   let _mountConnected  = false;
   let _focuserOk       = false;
   let _mountPendingCmd = null;   // set to command name while hardware is catching up
-  let _focusCamIdx     = 0;  // camera index used for autofocus (set in Stage 1 focuser tile)
+  let _focusCamRole    = 'main';  // optical train role used for autofocus (set in Stage 1 focuser tile)
+  let _opticalTrains   = [];      // cached optical train list from /api/optical_trains
   let _observerLat     = 50.336;
   let _observerLon     = 8.533;
   let _clockInterval   = null;
@@ -2423,7 +2424,7 @@
       ra_step_h:               parseFloat(document.getElementById('pa-ra-step').value)    || 1.0,
       exposure:                parseFloat(document.getElementById('pa-exposure').value)    || 5.0,
       gain:                    parseInt(document.getElementById('pa-gain').value, 10)      || 100,
-      camera_index:            parseInt(document.getElementById('pa-cam-select')?.value, 10) || 0,
+      camera_index:            _trainCamIdx(document.getElementById('pa-cam-select')?.value || 'main'),
       target_precision_arcmin: parseFloat(document.getElementById('pa-precision').value)   || 2.0,
     };
     try {
@@ -2700,7 +2701,7 @@
 
   function _calSharedParams() {
     return {
-      camIdx : parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0,
+      camIdx : _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main'),
       gain   : parseInt(document.getElementById('s4-cal-gain').value,    10) || 100,
       offset : parseInt(document.getElementById('s4-cal-offset').value,  10) || 0,
     };
@@ -2904,7 +2905,7 @@
     const detailEl = document.getElementById('s5-cal-detail');
     if (!badgesEl) return;
 
-    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const camIdx = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
     const gain   = parseInt(document.getElementById('s4-cal-gain')?.value,  10) || 100;
     const offset = parseInt(document.getElementById('s4-cal-offset')?.value, 10) || 0;
     // Use the session exposure (science frame) for dark matching
@@ -3054,7 +3055,7 @@
       setStatus('s3-center-status', 'Enter RA and Dec first', true);
       return;
     }
-    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const camIdx = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
     const btn = document.getElementById('s3-center-btn');
     if (btn) btn.disabled = true;
     setStatus('s3-center-status', `Centring RA ${ra.toFixed(3)} h  Dec ${dec.toFixed(2)}°…`);
@@ -3090,7 +3091,7 @@
     setStatus('s3-status', '');
     setStatus('s3-center-status', '');
     try {
-      const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+      const camIdx = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
       const result = await apiPost('/api/mount/goto_and_center',
         { ra, dec, tolerance_arcmin: 2.0, max_iterations: 3, camera_index: camIdx });
       if (result.success) {
@@ -3247,49 +3248,49 @@
     const sel = document.getElementById('s1-focuser-cam-select');
     if (!sel) return;
     try {
-      const scan = await (await fetch('/api/cameras')).json();
-      if (!scan.sdk_available) {
-        sel.innerHTML = '<option value="0" disabled>SDK not available</option>';
+      const trains = await (await fetch('/api/optical_trains')).json();
+      _opticalTrains = trains;
+      const withFocuser = trains.filter(t => t.has_focuser);
+      if (withFocuser.length === 0) {
+        sel.innerHTML = '<option value="" disabled>No focuser configured</option>';
         return;
       }
-      if (scan.cameras.length === 0) {
-        sel.innerHTML = '<option value="0" disabled>No cameras found</option>';
-        return;
-      }
-      // Use sdk_index (not loop index) so the correct physical camera is addressed
-      sel.innerHTML = scan.cameras.map(c => {
-        const label = (c.display_label || c.model_name || `Cam ${c.sdk_index}`)
-          + (c.role ? ` [${c.role}]` : '');
-        return `<option value="${c.sdk_index}">${escHtml(label)}</option>`;
-      }).join('');
-      // Default to the camera configured as "main"; fall back to sdk_index 0
-      const mainCam = scan.cameras.find(c => c.role === 'main');
-      const defaultIdx = mainCam ? mainCam.sdk_index : 0;
-      const defaultOpt = sel.querySelector(`option[value="${defaultIdx}"]`);
-      if (defaultOpt) sel.value = String(defaultIdx);
-      _focusCamIdx = +sel.value;
+      sel.innerHTML = withFocuser.map(t =>
+        `<option value="${escHtml(t.name)}">${escHtml(t.name + ' — ' + t.telescope)}</option>`
+      ).join('');
+      const mainOpt = sel.querySelector('option[value="main"]');
+      if (mainOpt) sel.value = 'main';
+      _focusCamRole = sel.value;
     } catch (_) {}
   }
 
-  /* Shared helper: populate any <select> with the camera list from /api/cameras.
+  /* Shared helper: populate any <select> with optical trains from /api/optical_trains.
+     Values are train names (strings). An optional filter(train) predicate narrows the list.
      Returns the populated select element (or null) so callers can read .value. */
-  async function _loadSelectFromCameras(selId) {
+  async function _loadSelectFromTrains(selId, filter) {
     const sel = document.getElementById(selId);
     if (!sel) return null;
     try {
-      const scan = await (await fetch('/api/cameras')).json();
-      if (!scan.sdk_available || scan.cameras.length === 0) {
-        sel.innerHTML = '<option value="0">Cam 0</option>';
+      const trains = await (await fetch('/api/optical_trains')).json();
+      _opticalTrains = trains;
+      const list = filter ? trains.filter(filter) : trains;
+      if (list.length === 0) {
+        sel.innerHTML = '<option value="main">main</option>';
         return sel;
       }
-      sel.innerHTML = scan.cameras.map(c => {
-        const label = c.display_label || c.model_name || `Cam ${c.sdk_index}`;
-        return `<option value="${c.sdk_index}">${escHtml(label)}</option>`;
-      }).join('');
+      sel.innerHTML = list.map(t =>
+        `<option value="${escHtml(t.name)}">${escHtml(t.name + ' — ' + t.telescope)}</option>`
+      ).join('');
     } catch (_) {
-      sel.innerHTML = '<option value="0">Cam 0</option>';
+      sel.innerHTML = '<option value="main">main</option>';
     }
     return sel;
+  }
+
+  /* Resolve an optical train name to its SDK camera index (from the cached train list). */
+  function _trainCamIdx(trainName) {
+    const t = _opticalTrains.find(t => t.name === (trainName || 'main'));
+    return t ? t.camera_index : 0;
   }
 
   /* Adaptive exposure formatter: avoids pointless trailing zeros */
@@ -3302,9 +3303,10 @@
   }
 
   /* Update Live Preview controls from camera capabilities (STS-ADDON-008/009) */
-  async function onPreviewCamChange(idx) {
+  async function onPreviewCamChange(role) {
     const wasRunning = _reconnect && _ws !== null;
     if (wasRunning) previewStop();
+    const idx = _trainCamIdx(role);
     try {
       const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
       const expIn  = document.getElementById('preview-exposure');
@@ -3332,7 +3334,8 @@
   }
 
   /* Update Polar Alignment controls from camera capabilities (STS-ADDON-008/009) */
-  async function onPaCamChange(idx) {
+  async function onPaCamChange(role) {
+    const idx = _trainCamIdx(role);
     try {
       const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
       const expIn  = document.getElementById('pa-exposure');
@@ -3374,8 +3377,8 @@
   }
 
   async function loadPreviewCameras() {
-    const sel = await _loadSelectFromCameras('preview-cam-select');
-    if (sel) onPreviewCamChange(parseInt(sel.value, 10) || 0);
+    const sel = await _loadSelectFromTrains('preview-cam-select');
+    if (sel) onPreviewCamChange(sel.value || 'main');
     document.getElementById('preview-exposure')?.addEventListener('keydown', _expArrowHandler);
   }
 
@@ -3463,7 +3466,7 @@
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Focusing…';
     try {
-      const d = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure, camera_index: _focusCamIdx });
+      const d = await apiPost('/api/focuser/autofocus', { range_steps, step_size, exposure, camera_role: _focusCamRole });
       const method = d.fitted ? 'parabola' : 'argmax';
       const gain   = d.metric_gain >= 0 ? `+${d.metric_gain.toFixed(1)}` : d.metric_gain.toFixed(1);
       res.style.display = 'block';
@@ -3480,8 +3483,8 @@
 
 
   async function runPreviewAutofocus() {
-    const btn    = document.getElementById('preview-af-btn');
-    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const btn     = document.getElementById('preview-af-btn');
+    const camRole = document.getElementById('preview-cam-select')?.value || 'main';
     const wasRunning = _reconnect && _ws !== null;
     if (wasRunning) previewStop();
     btn.disabled = true;
@@ -3491,7 +3494,7 @@
       const step  = parseInt(document.getElementById('af-step')?.value, 10) || 100;
       const exp   = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
       const d = await apiPost('/api/focuser/autofocus',
-        { range_steps: range, step_size: step, exposure: exp, camera_index: camIdx });
+        { range_steps: range, step_size: step, exposure: exp, camera_role: camRole });
       const sign = d.metric_gain >= 0 ? '+' : '';
       setStatus('s3-status',
         `AF: pos ${d.best_position}  gain ${sign}${d.metric_gain.toFixed(1)}`);
@@ -3784,7 +3787,7 @@
     const btn   = document.getElementById('s1-cooling-enable-btn');
     const camSel = document.getElementById('s1-cooling-cam-select');
     const tgtEl = document.getElementById('s1-cooling-target');
-    const cameraIndex = camSel ? parseInt(camSel.value, 10) : 0;
+    const cameraIndex = camSel ? _trainCamIdx(camSel.value || 'main') : 0;
     const targetC     = tgtEl  ? parseFloat(tgtEl.value)    : -10.0;
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Enabling…'; }
     try {
@@ -3891,7 +3894,7 @@
 
       // Refresh all camera selects regardless of mount state — cameras are
       // independent of the mount and may enumerate correctly even without it.
-      _loadSelectFromCameras('s1-cooling-cam-select');
+      _loadSelectFromTrains('s1-cooling-cam-select');
       // Hide cooling card when no camera supports TEC
       try {
         const camScan = await (await fetch('/api/cameras')).json();
@@ -3900,8 +3903,8 @@
         if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
       } catch (_) {}
       loadPreviewCameras();
-      _loadSelectFromCameras('pa-cam-select').then(sel => {
-        if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
+      _loadSelectFromTrains('pa-cam-select').then(sel => {
+        if (sel) onPaCamChange(sel.value || 'main');
       });
 
       await refreshMount();
@@ -4265,14 +4268,14 @@
     clearInterval(_histInterval);
     _histInterval = null;
     if (_ws) { _ws.close(); _ws = null; }
-    const exposure  = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
-    const gain      = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const offset    = parseInt(document.getElementById('preview-offset')?.value, 10) || 0;
-    const stretch   = document.getElementById('preview-stretch-chk')?.checked !== false;
-    const camIdx    = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
-    const autoGain  = document.getElementById('preview-autogain-chk')?.checked ? '&autogain=true' : '';
-    const proto     = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url       = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_index=${camIdx}&offset=${offset}&stretch=${stretch}${autoGain}`;
+    const exposure   = parseFloat(document.getElementById('preview-exposure').value) || 2.0;
+    const gain       = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const offset     = parseInt(document.getElementById('preview-offset')?.value, 10) || 0;
+    const stretch    = document.getElementById('preview-stretch-chk')?.checked !== false;
+    const camRole    = document.getElementById('preview-cam-select')?.value || 'main';
+    const autoGain   = document.getElementById('preview-autogain-chk')?.checked ? '&autogain=true' : '';
+    const proto      = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url        = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_role=${encodeURIComponent(camRole)}&offset=${offset}&stretch=${stretch}${autoGain}`;
 
     _setWsStatus('connecting');
     _updatePreviewBtns(true);
@@ -4597,7 +4600,7 @@
     if (!_histEnabled || _reconnect) return;  // skip when WS is active or reconnecting
     const exposure = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
     const gain     = parseInt(document.getElementById('preview-gain')?.value, 10)   || 100;
-    const camIdx   = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const camIdx   = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
     const params   = new URLSearchParams({
       camera_index: camIdx, exposure, gain, bit_depth: 12, n_bins: 256,
     });
@@ -4746,7 +4749,7 @@
   }
 
   async function autoGainDiagnostic() {
-    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const camRole = document.getElementById('preview-cam-select')?.value || 'main';
     const diagPrompt = document.getElementById('autogain-diag-prompt');
     const diagResult = document.getElementById('autogain-diag-result');
     if (diagPrompt) diagPrompt.style.display = 'none';
@@ -4764,7 +4767,7 @@
       const r = await fetch('/api/autogain/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ camera_index: camIdx, diagnostic: true, max_iterations: 15 }),
+        body: JSON.stringify({ camera_role: camRole, diagnostic: true, max_iterations: 15 }),
       });
       if (!r.ok) {
         _agIsDiag = false;
@@ -4790,7 +4793,7 @@
   }
 
   async function autoGainRun() {
-    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const camRole = document.getElementById('preview-cam-select')?.value || 'main';
     const badge  = document.getElementById('autogain-status-badge');
     const row    = document.getElementById('autogain-result-row');
     const diagPrompt = document.getElementById('autogain-diag-prompt');
@@ -4810,7 +4813,7 @@
       const r = await fetch('/api/autogain/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ camera_index: camIdx }),
+        body: JSON.stringify({ camera_role: camRole }),
       });
       if (!r.ok) {
         const d = await r.json().catch(() => ({}));
@@ -5072,7 +5075,7 @@
     const result   = document.getElementById('solve-result');
     const exposure = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
     const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx   = parseInt(document.getElementById('preview-cam-select').value, 10) || 0;
+    const camIdx   = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Solving…';
     result.style.display = 'none';
@@ -5554,7 +5557,7 @@
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
   loadPreviewCameras();
-  _loadSelectFromCameras('s1-cooling-cam-select').then(async () => {
+  _loadSelectFromTrains('s1-cooling-cam-select').then(async () => {
     try {
       const scan = await (await fetch('/api/cameras')).json();
       const hasTec = scan.cameras?.some(c => c.has_tec) ?? false;
@@ -5562,8 +5565,8 @@
       if (coolingCard) coolingCard.style.display = hasTec ? '' : 'none';
     } catch (_) {}
   });
-  _loadSelectFromCameras('pa-cam-select').then(sel => {
-    if (sel) onPaCamChange(parseInt(sel.value, 10) || 0);
+  _loadSelectFromTrains('pa-cam-select').then(sel => {
+    if (sel) onPaCamChange(sel.value || 'main');
   });
   loadStars();
   updateElevationLabel();

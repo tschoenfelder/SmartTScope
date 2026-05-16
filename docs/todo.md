@@ -156,9 +156,11 @@
   - *Acceptance:* cancel completes within < 1 s of the cancel request (POD-002 decision)
   - *Done:* `CaptureAbortedError` + `abort_capture()` in `CameraPort`; ToupcamCamera polls `_frame_ready` every 50ms and breaks on `_abort` event; AutoGainService spawns an abort-watcher thread that calls `camera.abort_capture()` as soon as `cancellation_flag` is set; catches `CaptureAbortedError` → CANCELLED. Cancel latency ≤ 50ms. Two regression tests in `test_autogain_service.py::TestCancelLatency`.
 - [ ] BUG-002b Preview shows `AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR` after autogain cancel `[P2 · UI · Source: Items_to_fix_20260513]`
-- [ ] BUG-019 Focuser nudge returns 409 conflict and blocks far too long; rapid +20 presses mostly rejected `[P1 · Hardware · Source: Items_to_fix_20260514]`
+- [x] BUG-019 Focuser nudge returns 409 conflict and blocks far too long; rapid +20 presses mostly rejected `[P1 · Hardware · Source: Items_to_fix_20260514]`
   - *Acceptance:* conflict cleared within 2 s; sequential presses each produce movement
-- [ ] BUG-022 Changing camera in Goto/Solve then pressing Find Best fails; WebSocket data transfer error logged `[P1 · Runtime · Source: Items_to_fix_20260514]`
+  - *Done:* `_safe_move` moved `time.sleep(0.3)` and `started` check outside the coordinator lock; lock now covers only serial command (~50-100 ms), not the started-check sleep
+- [x] BUG-022 Changing camera in Goto/Solve then pressing Find Best fails; WebSocket data transfer error logged `[P1 · Runtime · Source: Items_to_fix_20260514]`
+  - *Done:* Added `mountGotoAndCenter()` JS function (was called but never defined); `onPreviewCamChange()` now stops/restarts preview WS on camera change
 
 ### Milestone M2 tasks
 
@@ -183,13 +185,20 @@
 
 ### R4 — Optical Train Registry
 
-- [ ] R4-001 Define `OpticalTrain` and `OpticalTrainRegistry` `[P1 · Runtime]`
-- [ ] R4-002 Include camera role, serial/logical name, focuser binding, cooling capability, pixel scale, solver profile `[P1 · Runtime]`
-- [ ] R4-003 Load train definitions from config `[P1 · Config]`
-- [ ] R4-004 Validate train definitions at startup `[P1 · Config]`
-- [ ] R4-005 Replace product-facing camera index selection with train/role selection `[P1 · Runtime]`
-- [ ] R4-006 Update preview, focuser, cooling, polar alignment, autogain, and setup to use train model `[P1 · Runtime]`
-- [ ] R4-007 Tests for two-camera and three-camera/OAG setups `[P1 · Tests]`
+- [x] R4-001 Define `OpticalTrain` and `OpticalTrainRegistry` `[P1 · Runtime]`
+  - *Done:* `OpticalTrain` frozen dataclass + `OpticalTrainRegistry` with `from_config()`, `get()`, `main()`, `guide()`, `all()`, `by_camera_index()`, `by_camera_role()` — `smart_telescope/services/optical_train_registry.py`
+- [x] R4-002 Include camera role, serial/logical name, focuser binding, cooling capability, pixel scale, solver profile `[P1 · Runtime]`
+  - *Done:* `OpticalTrain` has `camera_role`, `camera_index`, `telescope_name`, `focal_mm`, `reducer_factor`, `pixel_scale_arcsec`, `has_focuser`, `focuser`; pixel scale priority: explicit TOML → derived from camera profile pixel_um → global fallback
+- [x] R4-003 Load train definitions from config `[P1 · Config]`
+  - *Done:* `OpticalTrainSpec` in config.py with `_parse_telescopes()` + `_parse_optical_trains()`; `[telescopes]` and `[optical_trains]` sections added to `templates/config.toml`
+- [x] R4-004 Validate train definitions at startup `[P1 · Config]`
+  - *Done:* `from_config()` collects all errors and raises `ValueError` listing every broken telescope/camera reference; `RuntimeContext.get_optical_train_registry()` catches errors and returns empty registry
+- [x] R4-005 Replace product-facing camera index selection with train/role selection `[P1 · Runtime]`
+  - *Done:* All camera `<select>` elements now show train names ("main — c8", "guide — guide_scope"); values are train name strings; `_loadSelectFromTrains()` replaces `_loadSelectFromCameras()` for all camera selects; focuser autofocus select filters to trains with `has_focuser=true`
+- [x] R4-006 Update preview, focuser, cooling, polar alignment, autogain, and setup to use train model `[P1 · Runtime]`
+  - *Done:* Preview WS accepts `camera_role` query param → resolves to index via registry; autogain `RunRequest` accepts `camera_role`; autofocus `AutofocusRequest` accepts `camera_role`; UI API calls pass `camera_role` (preview, autogain, autofocus); APIs that still need index (goto_and_center, solver, histogram, calibration, polar) resolve via `_trainCamIdx(role)` helper
+- [x] R4-007 Tests for two-camera and three-camera/OAG setups `[P1 · Tests]`
+  - *Done:* 16 new tests in `tests/unit/api/test_r4_role_camera.py` — autogain role resolution (2-cam, 3-cam, unknown role fallback, backward compat), autofocus role resolution, preview WS role resolution, registry multi-train queries; 28 registry tests in `test_optical_train_registry.py`
 
 ### R5 — Config and Readiness Services
 

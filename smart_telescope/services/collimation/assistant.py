@@ -19,6 +19,7 @@ from ...domain.collimation.models import (
 from ...ports.camera import CameraPort
 from ...ports.focuser import FocuserPort
 from ...ports.mount import MountPort
+from .session_report import SessionReportBuilder
 from .state_machine import (
     TERMINAL_STATES,
     USER_WAIT_STATES,
@@ -68,6 +69,7 @@ class CollimationAssistant:
         self._advance_payload: dict[str, Any] = {}
         self._target_ra: float | None = None
         self._target_dec: float | None = None
+        self._report_builder: SessionReportBuilder = self._new_report_builder()
 
     # ── Control ───────────────────────────────────────────────────────────────
 
@@ -86,6 +88,7 @@ class CollimationAssistant:
             self._target_ra = None
             self._target_dec = None
             self._started_at = _now()
+            self._report_builder = self._new_report_builder()
             self._sm.transition(CollimationState.PRECHECK)
             self._updated_at = _now()
 
@@ -112,6 +115,7 @@ class CollimationAssistant:
         self._cancel.set()
         self._user_event.set()
         with self._lock:
+            self._report_builder.mark_cancelled()
             self._sm.reset()
             self._updated_at = _now()
         _log.info("CollimationAssistant: cancelled")
@@ -219,14 +223,19 @@ class CollimationAssistant:
     @property
     def report(self) -> dict[str, Any]:
         with self._lock:
-            return {
-                "state":              self._sm.state.value,
-                "started_at":         self._started_at,
-                "updated_at":         self._updated_at,
-                "error":              self._error,
-                "telescope_profile":  self._cfg.telescope_profile,
-                "camera_id":          self._cfg.camera_id,
-            }
+            built = self._report_builder.build().to_dict()
+            built.update({
+                "state":      self._sm.state.value,
+                "updated_at": self._updated_at,
+                "error":      self._error,
+            })
+            return built
+
+    def _new_report_builder(self) -> SessionReportBuilder:
+        b = SessionReportBuilder()
+        b.set_optical_train(self._cfg.telescope_profile)
+        b.set_camera(self._cfg.camera_id)
+        return b
 
     # ── Background thread ─────────────────────────────────────────────────────
 
@@ -387,8 +396,60 @@ class CollimationAssistant:
         self._do_transition(CollimationState.GUIDE_FINE_COLLIMATION)
 
     def _handle_final_refocus(self) -> None:
-        _log.info("FINAL_REFOCUS: stub → MASKLESS_VALIDATION")
-        # TODO Phase 9: final Bahtinov focus after screws settled
+        _log.info("FINAL_REFOCUS: maskless FWHM hill-climb")
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.star_detection import detect_star
+        from .focuser_control import CollimationFocuserControl
+        from .fwhm_focus import FWHMFocusController
+
+        bit_depth     = self._camera.get_bit_depth()
+        exposure_s    = self._camera.get_exposure_ms() / 1000.0
+        focuser_ctrl  = CollimationFocuserControl(self._focuser, self._cfg.focuser)
+
+        def get_fwhm() -> float | None:
+            if self._cancel.is_set():
+                return None
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception as exc:
+                _log.warning("FINAL_REFOCUS: capture failed: %s", exc)
+                return None
+            frame = normalize_frame(raw, bit_depth=bit_depth)
+            star  = detect_star(frame)
+            return star.fwhm_px if star is not None else None
+
+        def move_focuser(steps: int) -> None:
+            focuser_ctrl.move_focus_relative(steps)
+
+        controller = FWHMFocusController(
+            coarse_step=self._cfg.focuser.coarse_step,
+            fine_step=self._cfg.focuser.fine_step,
+            settle_seconds=0.0,
+        )
+        result = controller.focus(
+            get_fwhm=get_fwhm,
+            move_focuser=move_focuser,
+            cancel_check=lambda: self._cancel.is_set(),
+        )
+
+        if result.reason == "cancelled":
+            return
+
+        if result.reason == "star_lost":
+            self._fail("final refocus: star lost")
+            return
+
+        with self._lock:
+            self._report_builder.record_focus_status(
+                initial_fwhm=result.initial_fwhm_px,
+                final_fwhm=result.final_fwhm_px,
+            )
+
+        _log.info(
+            "FINAL_REFOCUS: %s quality=%s best_fwhm=%.2f px",
+            result.reason, result.quality,
+            result.best_fwhm_px if result.best_fwhm_px is not None else -1,
+        )
         self._do_transition(CollimationState.MASKLESS_VALIDATION)
 
     # ── Helpers ────────────────────────────────────────────────────────────────

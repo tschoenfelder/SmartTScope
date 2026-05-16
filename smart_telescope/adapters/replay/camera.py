@@ -1,9 +1,12 @@
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
+
+import numpy as np
 
 from ...domain.camera_capabilities import CameraCapabilities, ConversionGain
 from ...domain.frame import FitsFrame
-from ...ports.camera import CameraPort
+from ...ports.camera import CameraPort, CaptureAbortedError
 
 _REPLAY_CAPABILITIES = CameraCapabilities(
     min_gain=100,
@@ -108,3 +111,115 @@ class ReplayCamera(CameraPort):
 
     def get_logical_name(self) -> str:
         return "ReplayCamera"
+
+
+class ReplayCameraAdapter(CameraPort):
+    """Camera adapter that serves in-memory NumPy frame arrays.
+
+    Designed for unit tests and replay sessions that need a real
+    :class:`CameraPort` without disk I/O or live hardware.
+
+    Args:
+        frames    : list of float32 ndarrays shaped (H, W) with ADU values.
+        bit_depth : bit depth reported by the adapter (default 16).
+        cycle     : if True, wrap around after the last frame; if False,
+                    raise :class:`CaptureAbortedError` when exhausted.
+    """
+
+    def __init__(
+        self,
+        frames: list[np.ndarray[Any, np.dtype[Any]]],
+        bit_depth: int = 16,
+        cycle: bool = True,
+    ) -> None:
+        if not frames:
+            raise ValueError("ReplayCameraAdapter: frames list must not be empty")
+        self._frames    = [f.astype(np.float32) for f in frames]
+        self._bit_depth = bit_depth
+        self._cycle     = cycle
+        self._index     = 0
+        self._exposure_ms: float = 1000.0
+        self._gain: int = 100
+
+    # ── CameraPort ────────────────────────────────────────────────────────────
+
+    def connect(self) -> bool:
+        return True
+
+    def disconnect(self) -> None:
+        pass
+
+    def capture(self, exposure_seconds: float) -> FitsFrame:
+        """Return the next frame in the sequence.
+
+        Raises:
+            CaptureAbortedError: when exhausted and ``cycle=False``.
+        """
+        if self._index >= len(self._frames):
+            if self._cycle:
+                self._index = 0
+            else:
+                raise CaptureAbortedError(
+                    "ReplayCameraAdapter: frame sequence exhausted"
+                )
+
+        pixels = self._frames[self._index].copy()
+        self._index += 1
+
+        from astropy.io import fits as _fits
+        header = _fits.Header()
+        header["EXPTIME"]  = exposure_seconds
+        header["BITDEPTH"] = self._bit_depth
+
+        return FitsFrame(pixels=pixels, header=header,
+                         exposure_seconds=exposure_seconds)
+
+    def get_exposure_ms(self) -> float:
+        return self._exposure_ms
+
+    def set_exposure_ms(self, ms: float) -> None:
+        self._exposure_ms = ms
+
+    def get_gain(self) -> int:
+        return self._gain
+
+    def set_gain(self, gain: int) -> None:
+        self._gain = gain
+
+    def get_black_level(self) -> int:
+        return 0
+
+    def set_black_level(self, level: int) -> None:
+        pass
+
+    def get_conversion_gain(self) -> ConversionGain:
+        return ConversionGain.LCG
+
+    def set_conversion_gain(self, mode: ConversionGain) -> None:
+        pass
+
+    def get_bit_depth(self) -> int:
+        return self._bit_depth
+
+    def get_temperature(self) -> float | None:
+        return None
+
+    def get_capabilities(self) -> CameraCapabilities:
+        return _REPLAY_CAPABILITIES
+
+    def get_serial_number(self) -> str:
+        return "REPLAY-ARRAY-0001"
+
+    def get_logical_name(self) -> str:
+        return "replay_array"
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    @property
+    def frame_index(self) -> int:
+        """Number of frames served so far."""
+        return self._index
+
+    def reset(self) -> None:
+        """Rewind the sequence to the first frame."""
+        self._index = 0

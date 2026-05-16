@@ -4,6 +4,70 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-16 — Collimation Phase 13 — Replay and Test Infrastructure
+
+**What changed:**
+
+- `smart_telescope/services/collimation/frame_factories.py` (NEW): `gaussian_star(H, W, cx, cy, fwhm_px, peak_adu, bg_adu)` — Gaussian PSF at given centre/FWHM; `donut_ring(H, W, outer_cx, outer_cy, outer_r, inner_r, error_x, error_y, ...)` — bright ring with sigmoid-smoothed inner hole offset for collimation error simulation; `focus_sequence(...)` — helper to build a list of frames with varying FWHM.
+- `smart_telescope/adapters/replay/camera.py` (UPDATED): Added `ReplayCameraAdapter(CameraPort)` alongside existing `ReplayCamera`. Serves in-memory NumPy float32 arrays as `FitsFrame` objects; supports `cycle=True/False`, `reset()`, `frame_index` property, all required `CameraPort` abstract methods.
+- `smart_telescope/services/collimation/assistant.py` (UPDATED): `_handle_final_refocus` wired to real `FWHMFocusController` — captures frame, normalises, detects star FWHM, drives `CollimationFocuserControl.move_focus_relative`, records focus status in session report builder, transitions to `MASKLESS_VALIDATION` on convergence, `FAILED` on star lost.
+- `tests/unit/services/test_frame_factories.py` (NEW): 17 tests — shape/dtype/peak-location/background for `gaussian_star`, shape/dtype/ring-brightness/background/error-offset/symmetry for `donut_ring`, length/element-type for `focus_sequence`, 3 round-trip tests: detect_star can detect gaussian frames, reports reasonable FWHM, reports correct position.
+- `tests/unit/services/test_replay_camera.py` (NEW): 14 tests — empty-frames raises, connect, bit-depth; first-frame pixels, ordering, frame-index increment, exposure-seconds; cycling, exhaustion-raises, reset; exposure/gain setters, logical-name, serial, temperature.
+- `tests/unit/services/test_state_machine.py` (NEW): 35 tests — initial state; all valid forward transitions (idle→precheck, precheck→select_star, rough→donut, final→validation, validation→complete/fine); invalid transitions (raises InvalidTransitionError, error message contents); pause/resume/reset (stores prev state, restores on resume, clears prev, raises in idle/terminal/non-paused); predicates (is_terminal, is_waiting_for_user, set membership); instruction text for all states.
+- `tests/unit/services/test_assistant_replay.py` (NEW): 18 integration tests — initial idle state, start transitions, double-start raises, cancel resets, retry after complete; full flow reaches COMPLETE, state sequence through all USER_WAIT states, non-terminal during flow, report fields; advance from idle raises, missing coordinates stays in select_star, validation reject returns to fine; pause sets paused, resume restores, is_paused flag; final refocus records FWHM, reaches MASKLESS_VALIDATION.
+- `docs/todo.md`: COL-130, COL-131 marked done; last-updated line updated.
+- Test suite: 2358 tests, all pass, 87% coverage.
+
+---
+
+## 2026-05-16 — Collimation Phase 12 — Validation and Report
+
+**What changed:**
+
+- `smart_telescope/services/collimation/fwhm_focus.py` (NEW): `FWHMFocusController` implements maskless hill-climb refocus (COL-120). Algorithm: (1) Probe — try +coarse_step; if not improved try −coarse_step; if neither return "max_steps". (2) Coarse scan in improving direction until N consecutive non-improving steps. (3) Backtrack to best-FWHM position. (4) If scan direction ≠ `final_approach_direction`, insert one overshoot then one correction to eliminate backlash bias. Returns `MasklessFocusResult(reason, quality, initial_fwhm_px, best_fwhm_px, final_fwhm_px, steps_taken, frame_count)`. Quality tiers: "excellent" (≤excellent_fwhm_px), "good" (≤good_fwhm_px), "poor" (converged but above good), "failed" (non-converged).
+- `smart_telescope/services/collimation/maskless_validator.py` (NEW): `MasklessValidator.assess(donut, jitter_px)` evaluates collimation quality after mask removal (COL-121). Computes `error_ratio = error_magnitude_px / mean(outer_ring.radius)`. Status: "complete" (ratio ≤ good), "acceptable_with_warning" (ratio ≤ fallback), "seeing_limited" (jitter above threshold), "failed" (above fallback or low confidence). Returns `ValidationReport(status, donut_error_px, donut_error_ratio, is_collimated, confidence, warnings)`.
+- `smart_telescope/services/collimation/session_report.py` (NEW): `SessionReportBuilder` accumulates session data via `set_optical_train`, `set_camera`, `set_selected_star`, `record_rough_start/end`, `record_fine_start/end`, `record_focus_status`, `record_seeing`, `record_final_result`, `mark_cancelled`; `build()` returns immutable `CollimationSessionReport`. Report provides `to_dict()` (JSON-serialisable) and `to_text()` (human-readable ASCII summary). Overall status mapped from validation status (COL-122).
+- `smart_telescope/services/collimation/assistant.py`: `CollimationAssistant.report` property now returns builder output merged with runtime state; `_new_report_builder()` helper initialises builder from config; builder reset on `start()`, cancelled on `cancel()`.
+- `tests/unit/services/test_fwhm_focus.py` (NEW): 22 tests — result fields, star-lost (immediate/probe/scan), probe forward/backward direction, max_steps (no improving direction), cancellation, step/frame accounting, final-approach overshoot (inserted when direction differs) and no-overshoot (when direction matches), quality tiers (excellent/good/poor).
+- `tests/unit/services/test_maskless_validator.py` (NEW): 22 tests — report fields, complete (below good ratio), acceptable_with_warning, failed (above fallback), low-confidence failure, seeing-limited status, seeing warning text, elliptical ring mean-radius calculation.
+- `tests/unit/services/test_session_report.py` (NEW): 29 tests — all report fields, timing, focus fields, overall status mapping (all 5 variants), cancellation override, warnings propagation, to_dict keys, to_text content (status, profile, FWHM, star name), minimal builder defaults.
+- `docs/todo.md`: COL-120, COL-121, COL-122 marked done; last-updated line updated.
+- Test suite: 2267 tests, all pass, 84% coverage.
+
+---
+
+## 2026-05-16 — Collimation Phase 11 — Fine Focus and Fine Collimation
+
+**What changed:**
+
+- `smart_telescope/domain/collimation/processing/spike_decomposition.py` (NEW): `decompose_spike_errors(lines)` treats each of the 3 spike lines as the "middle" in turn, computing its signed distance from the intersection of the other two. Common focus error = mean of 3 sector errors. Per-sector residuals = error_i − common. Returns `SpikeErrorDecomposition(sector_errors_px, common_focus_error_px, residuals_px, max_residual_px, rms_residual_px)`. Key correctness insight: when three lines are concurrent at any point, all sector errors = 0 (models perfect focus at any reference position).
+- `smart_telescope/services/collimation/fine_focus.py` (NEW): `FineFocusController` polls a `get_error: Callable[[], float | None]` callable (common focus error in px) and a `move_focuser: Callable[[int], None]` step function. Coarse steps until within `coarse_threshold_px`, then fine steps. At the coarse→fine transition, if the natural direction differs from `final_approach_direction`, one overshoot step is inserted so subsequent convergence comes from the correct side (backlash compensation). Returns `FineFocusResult(reason, initial_error_px, final_error_px, steps_taken, frame_count)`.
+- `smart_telescope/services/collimation/fine_collimation_advisor.py` (NEW): `FineCollimationAdvisor.recommend(residuals_by_screw, smoothed)` selects the screw with the largest `|residual_px|`, determines CW/CCW direction from residual sign, and size (MEDIUM if ratio ≥ 1.5× target, else SMALL). Blocked if `seeing_limited` or `confidence < threshold` or all residuals within target. Also provides `align_residuals_to_screws(decomp, lines, calibration)` helper.
+- `smart_telescope/services/collimation/contradiction_detector.py` (NEW): `ContradictionDetector.assess(smoothed, decomposition)` checks 4 indicators: (1) jitter > seeing_threshold, (2) |common_focus_error| > focus_target, (3) confidence < threshold, (4) max_residual increased since last call (stateful). Returns `ContradictionAssessment(has_contradiction, conflicting_indicators, stop_guidance, recommended_action, confidence)`. `.reset()` clears state for a new session.
+- `tests/unit/domain/collimation/test_spike_decomposition.py` (NEW): 16 tests — fields, 3-value tuples, perfect collimation (zero errors/residuals/common), concurrent at non-origin (models pure defocus), single-sector shift (worst index, positive max_residual, rms ≤ max), residuals sum-to-zero invariant, residual = error − common, raises on wrong line count.
+- `tests/unit/services/test_fine_focus.py` (NEW): 18 tests — result fields, convergence, initial error, star lost (first/mid), cancel, max steps, coarse/fine step usage, direction from error sign, final approach overshoot and no-overshoot.
+- `tests/unit/services/test_fine_collimation_advisor.py` (NEW): 18 tests — no-recommendation (within target, seeing-limited, low confidence, empty), worst screw selection (positive/negative), turn direction, adjustment size (small/medium/never-large), confidence, reason string.
+- `tests/unit/services/test_contradiction_detector.py` (NEW): 14 tests — no contradiction, seeing-limited, focus drift, low confidence, residuals worsening, no-worsening first call, reset, recommended action, confidence bounds.
+- `docs/todo.md`: COL-110, COL-111, COL-112, COL-113 marked done.
+- Test suite: 2194 tests, all pass.
+
+---
+
+## 2026-05-16 — Collimation Phase 10 — Tri-Bahtinov Fine Collimation Foundation
+
+**What changed:**
+
+- `smart_telescope/domain/collimation/processing/spike_detection.py` (NEW): `detect_spikes(processed, ref_center, analyzer?)` wraps `BahtinovAnalyzer.analyze()` to produce a `SpikeDetectionResult`. Reasons: "ok" (3 lines found → `SpikeMeasurement` built), "too_few_spikes" (analyzer raised `ValueError`), "no_signal" (zero confidence). Accepts an optional `analyzer` argument for dependency injection in tests.
+- `smart_telescope/services/collimation/sector_mapper.py` (NEW): `SectorMapper(sector_to_screw)` records which spike line disappears when each Tri-Bahtinov blade sector is closed. `observe(label, open_lines, closed_lines)` finds the missing angle using a 10° tolerance match. `build_calibration()` sorts the 3 observed angles and assigns `sector_0_deg` / `sector_120_deg` / `sector_240_deg` in the `MaskSectorCalibration`; returns None if any sector is missing or two sectors map to the same angle (orientation mismatch).
+- `smart_telescope/services/collimation/spike_smoother.py` (NEW): `SpikeSmoother(window=7, min_confidence=0.3, seeing_limited_threshold_px=3.0)` maintains a sliding deque of accepted `SpikeMeasurement` frames. `compute()` returns `SmoothedSpikeResult` with: median focus_error_px (current), moving average of most-recent half (trend), population std-dev (jitter), seeing_limited flag (jitter > threshold), frame_count, mean confidence.
+- `tests/unit/domain/collimation/test_spike_detection.py` (NEW): 11 tests — result fields, ok/too_few/no_signal reasons, measurement population, offset_from_ref, confidence, crossing point, ref center storage, default analyzer.
+- `tests/unit/services/test_sector_mapper.py` (NEW): 13 tests — missing-line detection, tolerance matching, two-sector observation, full calibration (3 sectors), sorted screw assignment, missing sector returns None, ambiguous duplicate angle returns None, defaults calibrated_at.
+- `tests/unit/services/test_spike_smoother.py` (NEW): 19 tests — empty/all-rejected, median odd/even/single, confidence filtering (excluded/count/threshold), jitter zero/nonzero/seeing-limited/not-limited, trend average-of-recent-half/single, window eviction, partial window, reset, mean confidence.
+- `docs/todo.md`: COL-100, COL-101, COL-102 marked done.
+- Test suite: 2128 tests, all pass.
+
+---
+
 ## 2026-05-16 — Collimation Phase 9 — Rough Collimation Guidance
 
 **What changed:**

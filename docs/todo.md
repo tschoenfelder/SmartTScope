@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-16 (Collimation Phase 9 rough collimation guidance — 33 new tests, all 2085 pass, 84% coverage)
+**Last updated:** 2026-05-16 (Collimation Phase 13 replay infrastructure — 91 new tests, all 2358 pass)
 
 ## Priority legend
 
@@ -380,27 +380,27 @@
 
 ### Phase 10 — Tri-Bahtinov Fine Collimation
 
-- [ ] COL-100 Detect Tri-Bahtinov spike pattern (background subtraction + line fitting) `[P1 · Collimation]`
-- [ ] COL-101 Mask sector mapping via blade open/close `[P1 · Collimation]`
-- [ ] COL-102 Spike measurement smoothing (7-frame window, median + trend) `[P2 · Collimation]`
+- [x] COL-100 Detect Tri-Bahtinov spike pattern (background subtraction + line fitting) `[P1 · Collimation]`
+- [x] COL-101 Mask sector mapping via blade open/close `[P1 · Collimation]`
+- [x] COL-102 Spike measurement smoothing (7-frame window, median + trend) `[P2 · Collimation]`
 
 ### Phase 11 — Fine Focus and Fine Collimation
 
-- [ ] COL-110 Separate common focus error from per-sector collimation residual `[P1 · Collimation]`
-- [ ] COL-111 Fine focus loop (image feedback, final approach direction) `[P1 · Collimation]`
-- [ ] COL-112 Fine collimation guidance (residual ≤ 2 px target) `[P1 · Collimation]`
-- [ ] COL-113 Contradiction detection: block screw hints when indicators disagree `[P1 · Collimation]`
+- [x] COL-110 Separate common focus error from per-sector collimation residual `[P1 · Collimation]`
+- [x] COL-111 Fine focus loop (image feedback, final approach direction) `[P1 · Collimation]`
+- [x] COL-112 Fine collimation guidance (residual ≤ 2 px target) `[P1 · Collimation]`
+- [x] COL-113 Contradiction detection: block screw hints when indicators disagree `[P1 · Collimation]`
 
 ### Phase 12 — Validation and Report
 
-- [ ] COL-120 Final refocus without mask `[P1 · Collimation]`
-- [ ] COL-121 Maskless validation (donut symmetry, optional Airy) `[P1 · Collimation]`
-- [ ] COL-122 Short session report via `/api/collimation/report` `[P1 · Collimation]`
+- [x] COL-120 Final refocus without mask `[P1 · Collimation]`
+- [x] COL-121 Maskless validation (donut symmetry, optional Airy) `[P1 · Collimation]`
+- [x] COL-122 Short session report via `/api/collimation/report` `[P1 · Collimation]`
 
 ### Phase 13 — Replay and Test Infrastructure
 
-- [ ] COL-130 Replay frame provider (prerecorded test frames, no hardware needed) `[P2 · Collimation]`
-- [ ] COL-131 Unit tests for remaining algorithm phases `[P1 · Collimation]`
+- [x] COL-130 Replay frame provider (prerecorded test frames, no hardware needed) `[P2 · Collimation]`
+- [x] COL-131 Unit tests for remaining algorithm phases `[P1 · Collimation]`
 
 **Next:** Phase 6 focuser algorithm (rough focus search + controlled defocus to donut regime).
 

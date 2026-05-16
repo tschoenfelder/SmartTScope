@@ -41,3 +41,12 @@ Table of contents for the SmartTelescope knowledge base.
 - **Phase 0 done:** config model, domain models, reference-center abstraction, optical profiles
 - **Phase 1 done:** `CollimationStateMachine` (20 states), `CollimationAssistant` background service, REST API
 - **Phase 3 done:** `ProcessedFrame` normalization, display stretch, star detection, circle/ellipse fitting
+- **Phases 4–5 done:** mount centering, star acquisition, rough focus search
+- **Phase 6 done:** defocus controller — threshold-masked RMS ring radius measurement
+- **Phase 7 done:** donut detection — RMS-radius edge split, Kasa circle fit, traffic-light overlay
+- **Phase 8 done:** obstruction detection (shadow angle → screw ID), `ScrewResponseLearner`
+- **Phase 9 done:** `CollimationAdvisor` (dot-product screw selection), `LiveGuidanceMonitor`
+- **Phase 10 done:** `detect_spikes` (BahtinovAnalyzer adapter), `SectorMapper` (blade closure mapping), `SpikeSmoother` (7-frame median + jitter + trend)
+- **Phase 11 done:** `decompose_spike_errors` (3-way focus/residual decomposition), `FineFocusController` (coarse→fine loop + final approach direction), `FineCollimationAdvisor` (worst-residual screw pick), `ContradictionDetector` (blocks guidance on 4 indicator checks)
+- **Phase 12 done:** `FWHMFocusController` (maskless hill-climb refocus, COL-120), `MasklessValidator` (donut error ratio assessment, COL-121), `SessionReportBuilder` + `CollimationSessionReport` (structured session summary, COL-122); `CollimationAssistant.report` wired to builder
+- **Phase 13 done:** `frame_factories` (gaussian star + donut ring synthetic frames), `ReplayCameraAdapter` (in-memory array camera port), `CollimationStateMachine` test suite (35 tests), full assistant integration tests (18 tests); `_handle_final_refocus` wired to real `FWHMFocusController`

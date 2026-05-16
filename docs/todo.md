@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-16 (Collimation Phase 5 star selection and acquisition — 35 new tests, all 1950 pass)
+**Last updated:** 2026-05-16 (Collimation Phase 7 donut detection + overlay — 42 new tests, all 2015 pass, 83% coverage)
 
 ## Priority legend
 
@@ -350,14 +350,19 @@
 
 ### Phase 6 — Focuser Algorithm
 
-- [ ] COL-060 Image-based rough focus search (relative steps, bracket, final approach direction) `[P1 · Collimation]`
-- [ ] COL-061 Controlled defocus to donut regime (target 25–50 % frame) `[P1 · Collimation]`
+- [x] COL-060 Image-based rough focus search (relative steps, bracket, final approach direction) `[P1 · Collimation]`
+  - *Done:* `services/collimation/focus_search.py` — `FocusSearcher` with probe→scan→backtrack→final-approach; 11 tests
+- [x] COL-061 Controlled defocus to donut regime (target 25–50 % frame) `[P1 · Collimation]`
+  - *Done:* `services/collimation/defocus_controller.py` — `DefocusController` with threshold-masked RMS radius (6σ above bg), clipping check via 10%-of-peak bounding box; 12 tests
 
 ### Phase 7 — Rough Donut Collimation
 
-- [ ] COL-070 Donut detection: outer ring + inner shadow fitting `[P1 · Collimation]`
-- [ ] COL-071 Rough error vector: shadow center − outer center `[P1 · Collimation]`
-- [ ] COL-072 Rough overlay: ellipses, error vector, screw labels, traffic-light `[P1 · Collimation]`
+- [x] COL-070 Donut detection: outer ring + inner shadow fitting `[P1 · Collimation]`
+  - *Done:* `domain/collimation/processing/donut_detection.py` — `DonutAnalyzer` with ring mask (10% of peak), brightness centroid, RMS-radius split of edge pixels, Kasa circle fit to inner/outer boundaries; 17 tests
+- [x] COL-071 Rough error vector: shadow center − outer center `[P1 · Collimation]`
+  - *Done:* error vector computed in `DonutAnalyzer.analyze()` → `DonutMeasurement.error_x_px / error_y_px / error_magnitude_px / error_angle_deg`
+- [x] COL-072 Rough overlay: ellipses, error vector, screw labels, traffic-light `[P1 · Collimation]`
+  - *Done:* `services/collimation/donut_overlay.py` — `build_donut_overlay()` → `DonutOverlay` with outer/inner circles, error vector, traffic-light (green <2%, yellow <10%, red ≥10%), T1/T2/T3 screw markers at 1.25× outer radius; 25 tests
 
 ### Phase 8 — Screw Identification
 

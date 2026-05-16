@@ -4,6 +4,32 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-16 — Collimation Phase 7 — Rough Donut Collimation
+
+**What changed:**
+
+- `smart_telescope/domain/collimation/processing/donut_detection.py` (NEW): `DonutAnalyzer` detects outer bright ring and inner dark shadow of a defocused C8 star. Ring mask = 10% of peak-above-background (or 3σ minimum). Centroid of ring pixels → RMS radius as inner/outer edge split point (mathematically guaranteed to lie between inner_r and outer_r). Kasa circle fit to each edge set. Error vector = inner_center − outer_center. Returns `DonutAnalysisResult` with `DonutMeasurement` or reason ("no_signal" / "no_ring_shape" / "inner_hole_unclear" / "clipped").
+- `smart_telescope/services/collimation/donut_overlay.py` (NEW): `build_donut_overlay(DonutMeasurement) → DonutOverlay`. Includes outer/inner circle parameters, error vector, traffic-light status (green <2%, yellow <10%, red ≥10% of outer radius), T1/T2/T3 screw markers at 1.25× outer radius at configurable angles (default 90°, 210°, 330°).
+- `tests/unit/domain/collimation/test_donut_detection.py` (NEW): 17 tests — analysis result fields, no-signal, centered donut accuracy (radius, error, center), offset/miscollimated donut (positive error, direction), clipping, off-center frame, custom confidence threshold.
+- `tests/unit/services/test_donut_overlay.py` (NEW): 25 tests — screw marker fields, all overlay fields, traffic-light thresholds (4 boundary tests), screw positions and geometry, error angle propagation.
+- `docs/todo.md`: COL-070, COL-071, COL-072 marked done.
+- Test suite: 2015 tests, all pass, 83.31% coverage.
+
+---
+
+## 2026-05-16 — Collimation Phase 6 — Focuser Algorithm
+
+**What changed:**
+
+- `smart_telescope/services/collimation/focus_search.py` (NEW): `FocusSearcher` performs image-based rough focus search using FWHM. Algorithm: initial measurement → probe (one coarse step each direction) → scan (bracket in improving direction, stop on 2 consecutive non-improvements) → backtrack to best position → final approach (overshoot + fine steps from configured direction). Result: `FocusSearchResult(success, reason, best_fwhm, net_steps)`.
+- `smart_telescope/services/collimation/defocus_controller.py` (NEW): `DefocusController` moves focuser in defocus direction until the star donut reaches 25–50 % of the shorter frame dimension. Radius measured via brightness-weighted RMS second moment, restricted to pixels above 6σ background threshold to eliminate noise inflation. Clipping detected via 10%-of-peak bounding box. Result: `DefocusResult(success, reason, estimated_radius_px, target_min_px, target_max_px, net_steps)`.
+- `tests/unit/services/test_focus_search.py` (NEW): 11 tests — result fields, star lost, search convergence, already in focus, cancellation, soft limits, max steps.
+- `tests/unit/services/test_defocus_controller.py` (NEW): 12 tests — result fields, target radius (rectangular frames), at-target success, growing donut reaching target, clipping detection, star lost, max steps, cancellation.
+- `docs/todo.md`: COL-060, COL-061 marked done.
+- Test suite: 1973 tests, all pass, 83.15% coverage.
+
+---
+
 ## 2026-05-16 — Bug fixes + optical trains config
 
 **What changed:**

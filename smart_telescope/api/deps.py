@@ -36,6 +36,7 @@ from ..runtime import get_runtime
 from ..services.hardware_coordinator import HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
 from ..services.job_manager import JobManager
+from ..services.optical_train_registry import OpticalTrainRegistry
 
 
 def get_camera() -> CameraPort:
@@ -85,6 +86,10 @@ def get_device_state() -> DeviceStateService:
 
 def get_job_manager() -> JobManager:
     return get_runtime().job_manager
+
+
+def get_optical_train_registry() -> OpticalTrainRegistry:
+    return get_runtime().get_optical_train_registry()  # type: ignore[return-value]
 
 
 def reset() -> None:

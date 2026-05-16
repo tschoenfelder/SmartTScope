@@ -128,6 +128,7 @@ class RuntimeContext:
         self.coordinator   = HardwareCommandCoordinator()
         self.device_state  = DeviceStateService()
         self.job_manager   = JobManager()
+        self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
         self.session_lock:    threading.Lock = threading.Lock()
         self._active_runner:  object | None  = None  # VerticalSliceRunner | None
@@ -367,6 +368,19 @@ class RuntimeContext:
 
     def set_autogain_job(self, job: object | None) -> None:
         self._autogain_job = job
+
+    # ── optical train registry (R4) ───────────────────────────────────────────
+
+    def get_optical_train_registry(self) -> object:
+        """Return the OpticalTrainRegistry, building it lazily on first call."""
+        if self._optical_train_registry is None:
+            from .services.optical_train_registry import OpticalTrainRegistry
+            try:
+                self._optical_train_registry = OpticalTrainRegistry.from_config()
+            except ValueError as exc:
+                _log.error("OpticalTrainRegistry: %s", exc)
+                self._optical_train_registry = OpticalTrainRegistry({})
+        return self._optical_train_registry
 
 
 # ── module-level singleton ────────────────────────────────────────────────────

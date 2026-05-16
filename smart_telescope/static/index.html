@@ -3047,6 +3047,44 @@
     }
   }
 
+  async function mountGotoAndCenter() {
+    const ra  = parseFloat(document.getElementById('goto-ra')?.value);
+    const dec = parseFloat(document.getElementById('goto-dec')?.value);
+    if (isNaN(ra) || isNaN(dec)) {
+      setStatus('s3-center-status', 'Enter RA and Dec first', true);
+      return;
+    }
+    const camIdx = parseInt(document.getElementById('preview-cam-select')?.value, 10) || 0;
+    const btn = document.getElementById('s3-center-btn');
+    if (btn) btn.disabled = true;
+    setStatus('s3-center-status', `Centring RA ${ra.toFixed(3)} h  Dec ${dec.toFixed(2)}°…`);
+    try {
+      const result = await apiPost('/api/mount/goto_and_center',
+        { ra, dec, tolerance_arcmin: 2.0, max_iterations: 3, camera_index: camIdx });
+      if (result.success) {
+        setStatus('s3-center-status',
+          `Centred ✓ — ${result.iterations} iter, offset ${result.offset_arcmin.toFixed(2)} arcmin`);
+        document.getElementById('s3-proceed-btn').disabled = false;
+        document.getElementById('s3-proceed-btn').title = '';
+        unlockStage(4);
+        await refreshMount();
+      } else {
+        setStatus('s3-center-status',
+          `Centring failed — ${result.offset_arcmin.toFixed(2)} arcmin${result.error ? ': ' + result.error : ''}`, true);
+      }
+    } catch (err) {
+      let msg = `Center failed: ${err.message}`;
+      try {
+        const d = JSON.parse(err.message);
+        if (d?.error === 'solar_exclusion') msg = 'Too close to the Sun — choose a different target.';
+        else if (d?.error === 'mount_limit') msg = `Outside mount limits (${d.reason}).`;
+      } catch {}
+      setStatus('s3-center-status', msg, true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   async function starGotoAndCenter(ra, dec, name) {
     setStatus('s3-stars-status', `Centring ${name}…`);
     setStatus('s3-status', '');
@@ -3265,6 +3303,8 @@
 
   /* Update Live Preview controls from camera capabilities (STS-ADDON-008/009) */
   async function onPreviewCamChange(idx) {
+    const wasRunning = _reconnect && _ws !== null;
+    if (wasRunning) previewStop();
     try {
       const caps = await (await fetch(`/api/cameras/${idx}/capabilities`)).json();
       const expIn  = document.getElementById('preview-exposure');
@@ -3288,6 +3328,7 @@
         if (curG > caps.max_gain) gainIn.value = caps.max_gain;
       }
     } catch (_) { /* camera not reachable yet — keep current values */ }
+    if (wasRunning) previewStart();
   }
 
   /* Update Polar Alignment controls from camera capabilities (STS-ADDON-008/009) */

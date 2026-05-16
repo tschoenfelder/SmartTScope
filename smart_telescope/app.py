@@ -22,6 +22,7 @@ async def _lifespan(app: FastAPI):
 from .api.readiness import router as readiness_router
 from .api.autogain import router as autogain_router
 from .api.collimation import router as collimation_router
+from .api.optical_trains import router as optical_trains_router
 from .api.guide_monitor import router as guide_monitor_router
 from .api.bahtinov import router as bahtinov_router
 from .api.calibration import router as calibration_router
@@ -53,6 +54,7 @@ async def serial_exception_handler(request: Request, exc: SerialException) -> JS
 app.include_router(readiness_router)
 app.include_router(autogain_router)
 app.include_router(collimation_router)
+app.include_router(optical_trains_router)
 app.include_router(guide_monitor_router)
 app.include_router(bahtinov_router)
 app.include_router(calibration_router)

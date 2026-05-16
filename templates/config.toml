@@ -54,19 +54,24 @@ obstruction  = 0.0
 [optical_trains]
 
 [optical_trains.main]
-telescope      = "c8"
-camera         = "main"        # camera role from [cameras]
-reducer_factor = 1.0           # native f/10; use 0.63 for Celestron f/6.3 reducer
+telescope           = "c8"
+camera              = "main"        # camera role from [cameras]
+reducer_factor      = 1.0           # native f/10; use 0.63 for Celestron f/6.3 reducer
+focuser             = "onstep"      # "onstep" | "" (no focuser)
+# pixel_scale_arcsec = 0.38         # optional override; computed from focal_mm if omitted
 
 [optical_trains.guide]
 telescope      = "guide_scope"
 camera         = "guide"
 reducer_factor = 1.0
+focuser        = ""
+# pixel_scale_arcsec = 3.32         # guide scope 50/180 + 2.9 µm sensor
 
 [optical_trains.oag]
 telescope      = "c8"          # OAG shares the main telescope beam
 camera         = "oag"         # add "oag" to [cameras] when a third camera is connected
 reducer_factor = 1.0
+focuser        = "onstep"      # OAG shares main focuser
 
 [astap]
 path        = ""   # empty = auto-detect via PATH

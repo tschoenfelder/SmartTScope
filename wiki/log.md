@@ -4,6 +4,51 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — BUG-019, BUG-022, R4-001..004
+
+**What changed:**
+
+- `api/focuser.py` (BUG-019): Moved the 300 ms started-check sleep outside
+  `coordinator.focuser_command()` lock.  The lock is now held only for the
+  serial exchange (~50-100 ms), so rapid nudge presses queue behind the command
+  issuance rather than the check.  Removed the now-redundant
+  `_check_focuser_started` background thread and the `threading` import.
+
+- `static/index.html` (BUG-022):
+  - Added `mountGotoAndCenter()` function — previously the GoTo card's
+    Center button called this function which was never defined, causing a
+    `ReferenceError` on every click.
+  - Updated `onPreviewCamChange(idx)` to stop and restart the preview
+    WebSocket when the camera is changed, preventing "WebSocket data transfer
+    error" when autogain runs after a camera switch.
+
+- `config.py` (R4-003): Added `focuser` and `pixel_scale_arcsec` fields to
+  `OpticalTrainSpec`; updated `_parse_optical_trains` to read them.
+
+- `services/optical_train_registry.py` (R4-001/002): New `OpticalTrain`
+  dataclass and `OpticalTrainRegistry` class.  `from_config()` loads trains
+  from the TOML config, validates telescope and camera-role references,
+  computes effective focal length (telescope × reducer_factor), and derives
+  pixel scale from camera model profiles or falls back to the global
+  `PIXEL_SCALE_ARCSEC`.
+
+- `runtime.py` + `api/deps.py` (R4-003): `RuntimeContext.get_optical_train_registry()`
+  builds the registry lazily; `deps.get_optical_train_registry()` exposes it as
+  a FastAPI dependency.
+
+- `api/optical_trains.py` + `app.py` (R4-003): New `GET /api/optical_trains`
+  and `GET /api/optical_trains/{name}` endpoints listing all configured trains.
+
+- `templates/config.toml`: Documented `focuser` and `pixel_scale_arcsec` fields
+  in the optical_trains example sections.
+
+- `tests/unit/services/test_optical_train_registry.py`: 28 tests covering
+  3-train and 2-train setups, reducer scaling, explicit vs computed pixel scale,
+  validation errors (unknown telescope, unknown camera role, multiple errors),
+  and all query methods.
+
+---
+
 ## 2026-05-16 — Collimation Phase 13 — Replay and Test Infrastructure
 
 **What changed:**

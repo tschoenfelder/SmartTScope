@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -51,23 +50,6 @@ def focuser_status(focuser: FocuserPort = Depends(deps.get_focuser)) -> FocuserS
     )
 
 
-def _check_focuser_started(focuser: FocuserPort, start_pos: int, target: int) -> None:
-    """Log a warning if the focuser hasn't moved 2 s after a command was sent."""
-    time.sleep(2.0)
-    try:
-        current = focuser.get_position()
-        if current == start_pos and not focuser.is_moving():
-            _log.warning(
-                "Focuser move may not have started: position unchanged after 2 s "
-                "(start=%d target=%d current=%d) — check OnStep focuser wiring",
-                start_pos, target, current,
-            )
-        else:
-            _log.debug("Focuser moving OK: start=%d current=%d target=%d", start_pos, current, target)
-    except Exception:
-        pass
-
-
 def _safe_move(
     focuser: FocuserPort,
     coordinator: HardwareCommandCoordinator,
@@ -78,10 +60,12 @@ def _safe_move(
     Returns True when the focuser motor has confirmed started moving within
     ~300 ms of the command.  Returns False when position and is_moving() are
     both unchanged — likely a wiring or config issue.
-    Returns 409 immediately if the focuser is currently moving or if another
-    move command is already serialised via coordinator.focuser_command()
-    (FR-SAFE-FOC-001).  STOP must never call this.
+
+    The coordinator lock is held ONLY during command issuance so that rapid
+    nudges queue behind the serial exchange (~50-100 ms) rather than the
+    started-check sleep (FR-SAFE-FOC-001).  STOP must never call this.
     """
+    start_pos = 0
     try:
         with coordinator.focuser_command():
             if focuser.is_moving():
@@ -90,24 +74,19 @@ def _safe_move(
             start_pos = focuser.get_position()
             focuser.move(target)
             _log.info("Focuser move issued: start=%d target=%d", start_pos, target)
-            time.sleep(0.3)
-            started = focuser.is_moving() or (focuser.get_position() != start_pos)
-            if not started:
-                _log.warning(
-                    "Focuser motor did not start within 300 ms "
-                    "(start=%d target=%d) — check OnStep focuser wiring",
-                    start_pos, target,
-                )
-            threading.Thread(
-                target=_check_focuser_started,
-                args=(focuser, start_pos, target),
-                daemon=True,
-                name="focuser-move-check",
-            ).start()
-            return started
     except CommandConflictError as exc:
         _log.warning("Focuser move: lock conflict (target=%d)", target)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # Outside the lock: rapid nudges can now proceed without queuing on this sleep
+    time.sleep(0.3)
+    started = focuser.is_moving() or (focuser.get_position() != start_pos)
+    if not started:
+        _log.warning(
+            "Focuser motor did not start within 300 ms "
+            "(start=%d target=%d) — check OnStep focuser wiring",
+            start_pos, target,
+        )
+    return started
 
 
 @router.post("/move")

@@ -115,9 +115,11 @@ class TelescopeSpec:
 @dataclass
 class OpticalTrainSpec:
     """One complete imaging path: telescope + optional modifier + camera role."""
-    telescope: str            # key into TELESCOPES
-    camera: str               # camera role key from CAMERAS
+    telescope: str              # key into TELESCOPES
+    camera: str                 # camera role key from CAMERAS
     reducer_factor: float = 1.0  # 1.0=none, 0.63=Celestron reducer, 2.0=Barlow 2×
+    focuser: str = ""            # "onstep" | "" (no focuser on this train)
+    pixel_scale_arcsec: float = 0.0  # override; 0.0 = derive from focal_mm
 
 
 def _parse_telescopes() -> dict[str, TelescopeSpec]:
@@ -143,6 +145,8 @@ def _parse_optical_trains() -> dict[str, OpticalTrainSpec]:
                 telescope=str(vals.get("telescope", "")),
                 camera=str(vals.get("camera", "")),
                 reducer_factor=float(vals.get("reducer_factor", 1.0)),
+                focuser=str(vals.get("focuser", "")),
+                pixel_scale_arcsec=float(vals.get("pixel_scale_arcsec", 0.0)),
             )
     return result
 

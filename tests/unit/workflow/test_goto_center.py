@@ -27,7 +27,9 @@ class _MockMount:
 
     def goto(self, ra: float, dec: float) -> bool:
         self.goto_calls.append((ra, dec))
-        return self._goto_ok
+        if not self._goto_ok:
+            raise RuntimeError("GoTo rejected by mount (mock)")
+        return True
 
     def is_slewing(self) -> bool:
         idx = min(self._slew_idx, len(self._slewing) - 1)

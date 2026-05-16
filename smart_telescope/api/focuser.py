@@ -11,18 +11,12 @@ from pydantic import BaseModel
 
 from ..domain.autofocus import AutofocusParams
 from ..ports.focuser import FocuserPort
+from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
 from ..workflow.autofocus import run_autofocus
 from . import deps
 
 _log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/focuser")
-
-# ── Move serialisation ────────────────────────────────────────────────────────
-# Prevents concurrent move commands from being sent before the focuser
-# confirms the previous movement is complete (FR-SAFE-FOC-001).
-
-_move_lock      = threading.Lock()
-_MOVE_TIMEOUT_S = 15.0   # max seconds to wait for focuser to stop before issuing a new move
 
 
 class FocuserStatus(BaseModel):
@@ -74,63 +68,77 @@ def _check_focuser_started(focuser: FocuserPort, start_pos: int, target: int) ->
         pass
 
 
-def _safe_move(focuser: FocuserPort, target: int) -> None:
+def _safe_move(
+    focuser: FocuserPort,
+    coordinator: HardwareCommandCoordinator,
+    target: int,
+) -> bool:
     """Issue a move command only when the focuser is confirmed idle.
 
+    Returns True when the focuser motor has confirmed started moving within
+    ~300 ms of the command.  Returns False when position and is_moving() are
+    both unchanged — likely a wiring or config issue.
     Returns 409 immediately if the focuser is currently moving or if another
-    move command is already serialised via _move_lock.  Does not block waiting
-    for a long in-progress move to finish — the caller (UI nudge) should retry.
-    Falls back to a best-effort move after _MOVE_TIMEOUT_S if the focuser
-    reports moving for an unusually long time (stop-button safety).
+    move command is already serialised via coordinator.focuser_command()
+    (FR-SAFE-FOC-001).  STOP must never call this.
     """
-    # Timeout is 3 s (> serial read timeout of 2 s) so that a concurrent mount
-    # status poll holding the serial lock doesn't cause a spurious 409.
-    if not _move_lock.acquire(blocking=True, timeout=3.0):
-        _log.warning("Focuser nudge: lock timeout — another request is already queued (target=%d)", target)
-        raise HTTPException(status_code=409, detail="Another focuser move is already queued — try again shortly")
-
     try:
-        if focuser.is_moving():
-            _log.info("Focuser nudge rejected: focuser is moving (target=%d)", target)
-            raise HTTPException(status_code=409, detail="Focuser is moving — try again shortly")
-        start_pos = focuser.get_position()
-        focuser.move(target)
-        _log.info("Focuser move issued: start=%d target=%d", start_pos, target)
-        threading.Thread(
-            target=_check_focuser_started,
-            args=(focuser, start_pos, target),
-            daemon=True,
-            name="focuser-move-check",
-        ).start()
-    finally:
-        _move_lock.release()
+        with coordinator.focuser_command():
+            if focuser.is_moving():
+                _log.info("Focuser move rejected: focuser is moving (target=%d)", target)
+                raise HTTPException(status_code=409, detail="Focuser is moving — try again shortly")
+            start_pos = focuser.get_position()
+            focuser.move(target)
+            _log.info("Focuser move issued: start=%d target=%d", start_pos, target)
+            time.sleep(0.3)
+            started = focuser.is_moving() or (focuser.get_position() != start_pos)
+            if not started:
+                _log.warning(
+                    "Focuser motor did not start within 300 ms "
+                    "(start=%d target=%d) — check OnStep focuser wiring",
+                    start_pos, target,
+                )
+            threading.Thread(
+                target=_check_focuser_started,
+                args=(focuser, start_pos, target),
+                daemon=True,
+                name="focuser-move-check",
+            ).start()
+            return started
+    except CommandConflictError as exc:
+        _log.warning("Focuser move: lock conflict (target=%d)", target)
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/move")
 def focuser_move(
-    body: MoveRequest, focuser: FocuserPort = Depends(deps.get_focuser)
+    body: MoveRequest,
+    focuser: FocuserPort = Depends(deps.get_focuser),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
 ) -> dict[str, bool]:
     if not focuser.is_available:
         raise HTTPException(status_code=503, detail="Focuser not available")
     max_pos = focuser.get_max_position()
     target = max(0, min(max_pos, body.position)) if max_pos else body.position
-    _safe_move(focuser, target)
+    _safe_move(focuser, coordinator, target)
     return {"ok": True}
 
 
 @router.post("/nudge")
 def focuser_nudge(
-    body: NudgeRequest, focuser: FocuserPort = Depends(deps.get_focuser)
-) -> dict[str, int]:
+    body: NudgeRequest,
+    focuser: FocuserPort = Depends(deps.get_focuser),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+) -> dict[str, object]:
     if not focuser.is_available:
         raise HTTPException(status_code=503, detail="Focuser not available")
     current = focuser.get_position()
     max_pos = focuser.get_max_position()
-    target = current + body.delta
+    target  = current + body.delta
     if max_pos:
         target = max(0, min(max_pos, target))
-    _safe_move(focuser, target)
-    return {"target": target}
+    started = _safe_move(focuser, coordinator, target)
+    return {"target": target, "started": started}
 
 
 @router.post("/stop")
@@ -148,8 +156,9 @@ class AutofocusRequest(BaseModel):
 
 @router.post("/autofocus")
 def focuser_autofocus(
-    body:    AutofocusRequest,
-    focuser: FocuserPort = Depends(deps.get_focuser),
+    body:        AutofocusRequest,
+    focuser:     FocuserPort = Depends(deps.get_focuser),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
 ) -> dict[str, object]:
     if not focuser.is_available:
         raise HTTPException(status_code=503, detail="Focuser not available")
@@ -157,16 +166,22 @@ def focuser_autofocus(
     camera = deps.get_preview_camera(body.camera_index)
     try:
         params = AutofocusParams(
-            range_steps = body.range_steps,
-            step_size   = body.step_size,
-            exposure    = body.exposure,
+            range_steps=body.range_steps,
+            step_size=body.step_size,
+            exposure=body.exposure,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
-        result = run_autofocus(focuser, camera, params)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
+        with coordinator.focuser_command(timeout=0):
+            try:
+                result = run_autofocus(focuser, camera, params)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except CommandConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Focuser is busy — stop the current move before starting autofocus",
+        ) from exc
     return result.to_dict()

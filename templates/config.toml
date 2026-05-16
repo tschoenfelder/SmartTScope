@@ -28,6 +28,46 @@ dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
 #
 main  = 0   # primary imaging camera
 
+# ── Optical hardware inventory ────────────────────────────────────────────────
+# Define each physical telescope once, then build optical trains from them.
+# Reducer/Barlow factors are set per train, not per telescope.
+
+[telescopes]
+
+[telescopes.c8]
+aperture_mm  = 203.2
+focal_mm     = 2032.0
+type         = "sct"          # sct | refractor | newt | rc
+obstruction  = 0.36           # central obstruction as fraction of aperture
+
+[telescopes.guide_scope]
+aperture_mm  = 50.0
+focal_mm     = 180.0
+type         = "refractor"
+obstruction  = 0.0
+
+# ── Optical trains ────────────────────────────────────────────────────────────
+# Each train binds a telescope to a camera role.
+# reducer_factor: 1.0=none, 0.63=Celestron f/6.3 reducer, 2.0=Barlow 2×
+# One telescope may appear in multiple trains (e.g. main + OAG both use "c8").
+
+[optical_trains]
+
+[optical_trains.main]
+telescope      = "c8"
+camera         = "main"        # camera role from [cameras]
+reducer_factor = 1.0           # native f/10; use 0.63 for Celestron f/6.3 reducer
+
+[optical_trains.guide]
+telescope      = "guide_scope"
+camera         = "guide"
+reducer_factor = 1.0
+
+[optical_trains.oag]
+telescope      = "c8"          # OAG shares the main telescope beam
+camera         = "oag"         # add "oag" to [cameras] when a third camera is connected
+reducer_factor = 1.0
+
 [astap]
 path        = ""   # empty = auto-detect via PATH
 catalog_dir = ""   # empty = auto-search standard locations

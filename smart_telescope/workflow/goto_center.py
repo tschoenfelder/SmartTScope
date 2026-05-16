@@ -49,12 +49,13 @@ async def goto_and_center(
 
     for iteration in range(1, max_iterations + 1):
         # ── 1. GoTo ───────────────────────────────────────────────────────────
-        ok = await asyncio.to_thread(mount.goto, target_ra, target_dec)
-        if not ok:
+        try:
+            await asyncio.to_thread(mount.goto, target_ra, target_dec)
+        except RuntimeError as exc:
             return CenterResult(
                 success=False, final_ra=last_ra, final_dec=last_dec,
                 iterations=iteration, offset_arcmin=last_offset,
-                error="GoTo rejected by mount",
+                error=f"GoTo rejected by mount: {exc}",
             )
 
         # ── 2. Wait for slew to finish ────────────────────────────────────────

@@ -6,7 +6,6 @@ import contextlib
 import dataclasses
 import logging
 import math
-import threading
 import time
 
 from astropy.coordinates import EarthLocation
@@ -19,17 +18,13 @@ from .. import config
 from ..domain.solar import is_solar_target
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
+from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
+from ..services.device_state import DeviceStateService
 from ..workflow.goto_center import goto_and_center
 from . import deps
 
 _log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mount")
-
-# ── GoTo serialisation ────────────────────────────────────────────────────────
-# Prevents a new GoTo from being issued while the mount is already slewing
-# (FR-SAFE-MNT-001).  Stop and guide bypass the lock so they remain effective.
-
-_goto_lock = threading.Lock()
 
 
 @router.get("/config")
@@ -81,6 +76,7 @@ class MountStatus(BaseModel):
     park_dec: float | None = None  # stored park position (degrees)
     home_ra: float | None = None   # home RA = LST (HA=0, Dec 89°)
     home_dec: float | None = None  # always 89.0°
+    stale: bool = False            # True if the cached state may be outdated
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -98,26 +94,34 @@ def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
     return round(ha, 4), round(alt_deg, 2)
 
 
-def _safe_goto(mount: MountPort, ra: float, dec: float) -> None:
+def _safe_goto(
+    mount: MountPort,
+    coordinator: HardwareCommandCoordinator,
+    ra: float,
+    dec: float,
+) -> None:
     """Issue a goto only when the mount is confirmed idle.
 
     Rejects with 409 if another goto is already queued or the mount is slewing.
     Unlike the focuser we do not wait for a long slew to finish — slews can
     take minutes, so a new command while the mount moves is always an error.
-    Serialised via _goto_lock to prevent concurrent moves (FR-SAFE-MNT-001).
+    Serialised via coordinator.mount_command() (FR-SAFE-MNT-001).
+    STOP must never call this.
     """
-    if not _goto_lock.acquire(blocking=True, timeout=5.0):
-        raise HTTPException(status_code=409, detail="Another mount GoTo is already queued — try again shortly")
     try:
-        if mount.is_slewing():
-            raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before issuing a new GoTo")
-        try:
-            mount.goto(ra, dec)
-        except RuntimeError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        _log.info("Mount goto issued: ra=%.4fh dec=%.2f°", ra, dec)
-    finally:
-        _goto_lock.release()
+        with coordinator.mount_command():
+            if mount.is_slewing():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Mount is currently slewing — stop it before issuing a new GoTo",
+                )
+            try:
+                mount.goto(ra, dec)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            _log.info("Mount goto issued: ra=%.4fh dec=%.2f°", ra, dec)
+    except CommandConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 class GotoRequest(BaseModel):
@@ -133,17 +137,35 @@ def _get_lst() -> float | None:
 
 
 @router.get("/status", response_model=MountStatus)
-def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
-    state = mount.get_state()
-    pos = None
-    if state != MountState.UNKNOWN:  # include PARKED — OnStep reports park position
-        with contextlib.suppress(Exception):
-            pos = mount.get_position()
-    ha: float | None = None
+def mount_status(
+    mount: MountPort = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> MountStatus:
+    # Prefer background-poll cache to avoid hammering the serial bus on every UI poll.
+    # Fall back to a direct query only if the poller has not run yet.
+    observed = device_state.get_mount_state()
+    if observed is not None:
+        state = observed.state
+        ra    = observed.ra
+        dec   = observed.dec
+        stale = observed.is_stale()
+    else:
+        state = mount.get_state()
+        ra    = None
+        dec   = None
+        stale = False
+        if state != MountState.UNKNOWN:
+            with contextlib.suppress(Exception):
+                pos = mount.get_position()
+                if pos:
+                    ra  = pos.ra
+                    dec = pos.dec
+
+    ha: float | None  = None
     alt: float | None = None
-    if pos is not None:
+    if ra is not None and dec is not None:
         with contextlib.suppress(Exception):
-            ha, alt = _compute_ha_alt(pos.ra, pos.dec)
+            ha, alt = _compute_ha_alt(ra, dec)
 
     park_pos = None
     with contextlib.suppress(Exception):
@@ -153,14 +175,15 @@ def mount_status(mount: MountPort = Depends(deps.get_mount)) -> MountStatus:
 
     return MountStatus(
         state=state.name.lower(),
-        ra=pos.ra if pos else None,
-        dec=pos.dec if pos else None,
+        ra=ra,
+        dec=dec,
         ha=ha,
         alt=alt,
         park_ra=park_pos.ra if park_pos else None,
         park_dec=park_pos.dec if park_pos else None,
         home_ra=lst,
         home_dec=89.0 if lst is not None else None,
+        stale=stale,
     )
 
 
@@ -169,7 +192,15 @@ def mount_unpark(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
     ok = mount.unpark()
     if not ok:
         raise HTTPException(status_code=500, detail="Unpark failed")
-    _log.info("Mount unpark issued — state will propagate within ~1 s")
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        state = mount.get_state()
+        if state != MountState.PARKED:
+            _log.info("Mount unparked — state is now %s", state.name)
+            break
+        time.sleep(0.25)
+    else:
+        _log.warning("Mount unpark: state still PARKED after 3 s — check OnStep")
     return {"ok": True}
 
 
@@ -194,6 +225,7 @@ def mount_stop(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
 def mount_goto(
     body: GotoRequest,
     mount: MountPort = Depends(deps.get_mount),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
     confirm_solar: bool = Query(default=False),
 ) -> dict[str, bool]:
     if not confirm_solar:
@@ -204,7 +236,7 @@ def mount_goto(
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
     _check_mount_limits(body.ra, body.dec)
-    _safe_goto(mount, body.ra, body.dec)
+    _safe_goto(mount, coordinator, body.ra, body.dec)
     return {"ok": True}
 
 
@@ -226,7 +258,10 @@ def mount_sync(
 
 
 @router.post("/home")
-def mount_home(mount: MountPort = Depends(deps.get_mount)) -> dict:
+def mount_home(
+    mount: MountPort = Depends(deps.get_mount),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+) -> dict:
     """Slew to the celestial pole (RA = current LST, Dec = 85°, HA = 0).
 
     Sets the mount to its starting position pointing at the polar region.
@@ -244,23 +279,43 @@ def mount_home(mount: MountPort = Depends(deps.get_mount)) -> dict:
     ra_hours: float = lst_hours      # HA = 0 → on meridian
     dec_deg: float  = 85.0           # near celestial pole, below OnStep zenith exclusion (87°)
     _log.info("Mount home: slewing to RA=%.4fh Dec=%.1f°", ra_hours, dec_deg)
-    _safe_goto(mount, ra_hours, dec_deg)
+    try:
+        with coordinator.mount_command():
+            if mount.is_slewing():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Mount is slewing — stop it before homing",
+                )
+            try:
+                mount.goto(ra_hours, dec_deg)
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Home slew failed — check mount is tracking and powered ({exc})",
+                ) from exc
+    except CommandConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True, "ra": ra_hours, "dec": dec_deg}
 
 
 @router.post("/park")
-def mount_park(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
-    if not _goto_lock.acquire(blocking=True, timeout=5.0):
-        raise HTTPException(status_code=409, detail="Another mount GoTo is in progress — stop it before parking")
+def mount_park(
+    mount: MountPort = Depends(deps.get_mount),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+) -> dict[str, bool]:
     try:
-        if mount.is_slewing():
-            raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before parking")
-        ok = mount.park()
-        if not ok:
-            raise HTTPException(status_code=500, detail="Park failed")
-        _log.info("Mount park issued")
-    finally:
-        _goto_lock.release()
+        with coordinator.mount_command():
+            if mount.is_slewing():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Mount is currently slewing — stop it before parking",
+                )
+            ok = mount.park()
+            if not ok:
+                raise HTTPException(status_code=500, detail="Park failed")
+            _log.info("Mount park issued")
+    except CommandConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"ok": True}
 
 
@@ -351,9 +406,10 @@ class GotoAndCenterResponse(BaseModel):
 
 @router.post("/goto_and_center", response_model=GotoAndCenterResponse)
 async def mount_goto_and_center(
-    body:   GotoAndCenterRequest,
-    mount:  MountPort  = Depends(deps.get_mount),
-    solver: SolverPort = Depends(deps.get_solver),
+    body:        GotoAndCenterRequest,
+    mount:       MountPort  = Depends(deps.get_mount),
+    solver:      SolverPort = Depends(deps.get_solver),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
     confirm_solar: bool = Query(default=False),
 ) -> GotoAndCenterResponse:
     """Goto target, plate-solve, sync, and refine until centered."""
@@ -366,23 +422,28 @@ async def mount_goto_and_center(
             )
     _check_mount_limits(body.ra, body.dec)
 
-    if not _goto_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="Another mount GoTo is in progress — try again after it completes")
     try:
-        if mount.is_slewing():
-            raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before centering")
-        camera = deps.get_preview_camera(body.camera_index)
-        scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
-        result = await goto_and_center(
-            mount, camera, solver,
-            body.ra, body.dec,
-            pixel_scale=scale,
-            exposure=body.exposure,
-            tolerance_arcmin=body.tolerance_arcmin,
-            max_iterations=body.max_iterations,
-        )
-    finally:
-        _goto_lock.release()
+        with coordinator.mount_command(timeout=0):
+            if mount.is_slewing():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Mount is currently slewing — stop it before centering",
+                )
+            camera = deps.get_preview_camera(body.camera_index)
+            scale  = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
+            result = await goto_and_center(
+                mount, camera, solver,
+                body.ra, body.dec,
+                pixel_scale=scale,
+                exposure=body.exposure,
+                tolerance_arcmin=body.tolerance_arcmin,
+                max_iterations=body.max_iterations,
+            )
+    except CommandConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Another mount GoTo is in progress — try again after it completes",
+        ) from exc
     return GotoAndCenterResponse(**dataclasses.asdict(result))
 
 
@@ -390,6 +451,7 @@ async def mount_goto_and_center(
 def mount_goto_sky(
     elevation: float = Query(default=80.0, ge=60.0, le=89.0),
     mount: MountPort = Depends(deps.get_mount),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
 ) -> SkyPosition:
     """Slew to the local meridian at the requested elevation.
 
@@ -403,8 +465,8 @@ def mount_goto_sky(
 
     loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
     lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
-    dec_deg: float = config.OBSERVER_LAT - (90.0 - elevation)
-    ra_hours: float = lst_hours
+    dec_deg: float   = config.OBSERVER_LAT - (90.0 - elevation)
+    ra_hours: float  = lst_hours
 
     blocked, sep = is_solar_target(ra_hours, dec_deg)
     if blocked:
@@ -413,5 +475,5 @@ def mount_goto_sky(
             detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
         )
 
-    _safe_goto(mount, ra_hours, dec_deg)
+    _safe_goto(mount, coordinator, ra_hours, dec_deg)
     return SkyPosition(ra=ra_hours, dec=dec_deg, elevation_deg=elevation, lst_hours=lst_hours)

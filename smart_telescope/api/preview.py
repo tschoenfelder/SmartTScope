@@ -230,7 +230,7 @@ async def ws_preview(
                 _adc_max = float((1 << cur_bit_depth) - 1)
                 _low_norm = frame.pixels.astype(np.float64).ravel() / _adc_max
                 _low_c, _low_e = np.histogram(
-                    _low_norm, bins=100, range=(0.0, _LOW_ADU / _adc_max)
+                    _low_norm, bins=200, range=(0.0, _LOW_ADU / _adc_max)
                 )
                 await websocket.send_text(json.dumps({
                     "type": "histogram",

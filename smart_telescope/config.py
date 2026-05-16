@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 # ── locate and load config file ───────────────────────────────────────────────
@@ -99,6 +100,55 @@ HORIZON_DAT: str           = _horizon_raw  or str(_USER_DIR / "horizon.dat")
 PIXEL_SCALE_ARCSEC: float  = float(os.environ.get("PIXEL_SCALE_ARCSEC", _get("session", "pixel_scale_arcsec", "0.38")))
 
 # STORAGE_DIR keeps env-var override because health.py checks it at module level.
+
+# ── telescopes ────────────────────────────────────────────────────────────────
+
+@dataclass
+class TelescopeSpec:
+    """Physical telescope optics."""
+    aperture_mm: float
+    focal_mm: float
+    type: str = "sct"         # sct | refractor | newt | rc
+    obstruction: float = 0.0  # central obstruction as fraction of aperture (0 for refractors)
+
+
+@dataclass
+class OpticalTrainSpec:
+    """One complete imaging path: telescope + optional modifier + camera role."""
+    telescope: str            # key into TELESCOPES
+    camera: str               # camera role key from CAMERAS
+    reducer_factor: float = 1.0  # 1.0=none, 0.63=Celestron reducer, 2.0=Barlow 2×
+
+
+def _parse_telescopes() -> dict[str, TelescopeSpec]:
+    section = _cfg.get("telescopes", {})
+    result: dict[str, TelescopeSpec] = {}
+    for name, vals in section.items():
+        if isinstance(vals, dict):
+            result[name] = TelescopeSpec(
+                aperture_mm=float(vals.get("aperture_mm", 0.0)),
+                focal_mm=float(vals.get("focal_mm", 0.0)),
+                type=str(vals.get("type", "sct")),
+                obstruction=float(vals.get("obstruction", 0.0)),
+            )
+    return result
+
+
+def _parse_optical_trains() -> dict[str, OpticalTrainSpec]:
+    section = _cfg.get("optical_trains", {})
+    result: dict[str, OpticalTrainSpec] = {}
+    for name, vals in section.items():
+        if isinstance(vals, dict):
+            result[name] = OpticalTrainSpec(
+                telescope=str(vals.get("telescope", "")),
+                camera=str(vals.get("camera", "")),
+                reducer_factor=float(vals.get("reducer_factor", 1.0)),
+            )
+    return result
+
+
+TELESCOPES:    dict[str, TelescopeSpec]    = _parse_telescopes()
+OPTICAL_TRAINS: dict[str, OpticalTrainSpec] = _parse_optical_trains()
 
 # ── collimation ───────────────────────────────────────────────────────────────
 

@@ -4,6 +4,240 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-16 — Bug fixes + optical trains config
+
+**What changed:**
+
+- `api/focuser.py`: `_safe_move` now sleeps 300 ms after issuing the move command and
+  checks `is_moving()` / position change; returns `bool` (`started`). `focuser_nudge`
+  response now includes `"started": bool` so the setup-check wizard can immediately
+  report wiring problems without waiting 2.5 s.
+
+- `api/mount.py`: `mount_unpark` now polls `get_state()` for up to 3 s after `:hU#` is
+  sent, logging the final state.  The API no longer returns until the mount actually
+  transitions away from PARKED (or times out with a warning).
+
+- `workflow/goto_center.py`: `goto_and_center` now wraps `mount.goto()` in
+  `try/except RuntimeError` — the previous `if not ok:` check was dead code because
+  `OnStepMount.goto()` raises on rejection rather than returning False.
+
+- `api/preview.py`: Low-range histogram changed from 100 to 200 bins (5 ADU/bin
+  instead of 10 ADU/bin over the 0–1000 ADU pedestal panel).
+
+- `static/index.html`:
+  - Setup-check focuser step: checks `result.started` immediately after nudge;
+    fails fast without the 2.5 s wait when the motor never started.
+  - Setup-check unpark: removed the hardcoded 600 ms `setTimeout`; the API now
+    blocks until state propagates.
+  - Histogram tick spacing: replaced the `rawMajor <= 1000 → majorInt = 1000`
+    forced-single-tick logic with a tiered lookup (50/100/200/500/1000/nearest-k);
+    minor-tick spacing is now `max(10, majorInt/5)` so small ranges get
+    readable tick grids.
+  - Label updated from "10 ADU/bin" to "5 ADU/bin".
+
+- `config.py`: Added `TelescopeSpec` and `OpticalTrainSpec` dataclasses plus
+  `_parse_telescopes()` / `_parse_optical_trains()` functions.  Module-level
+  `TELESCOPES` and `OPTICAL_TRAINS` dicts expose the parsed values.
+
+- `templates/config.toml`: Added commented `[telescopes]` and `[optical_trains]`
+  sections (C8 + guide scope; main / guide / OAG trains).
+
+- `tests/unit/workflow/test_goto_center.py`: `_MockMount.goto()` now raises
+  `RuntimeError` when `goto_ok=False`, matching the real `OnStepMount` behaviour.
+
+---
+
+## 2026-05-16 — Collimation Phase 5 — Star Selection and Acquisition
+
+**What changed:**
+
+- `smart_telescope/services/collimation/star_selector.py` (NEW) — `BrightStar`, `CollimationStarCandidate`, `StarSelectionResult` dataclasses; `CollimationStarSelector.select()` — picks brightest star above 60° altitude (fallback 45° with warning message in result); `select_by_name()` for manual override (case-insensitive, no altitude filtering); `load_bright_stars(path)` — parses stars.cfg TOML, returns only `type="star"` entries with a magnitude field; uses `compute_altaz()` from `domain/visibility.py`; observer lat/lon injected; `obs_time` injectable for deterministic tests.
+- `smart_telescope/services/collimation/star_acquisition.py` (NEW) — `AcquisitionResult` dataclass (`success`, `reason`, `star_measurement`, `centering`); `StarAcquisition.acquire(candidate, cancel_check, dec_deg)` — slew via `mount.goto()`, wait for `is_slewing()` with 120 s timeout, enable tracking if not already, settle (`sleep`), capture + `normalize_frame()` + `detect_star()`, center via injected `PulseCenterer`; reasons: "ok" / "slew_failed" / "star_not_found" / "centering_failed" / "cancelled"; cancellation checked before slew, during slew poll, and after settle.
+- `tests/unit/services/test_star_selector.py` (NEW) — 22 tests: dataclass fields (3), select() primary threshold (3), fallback (3), none_visible (3), select_by_name (5), load_bright_stars (4); `compute_altaz` patched for deterministic altitude control.
+- `tests/unit/services/test_star_acquisition.py` (NEW) — 13 tests: result fields, successful acquisition (6), slew_failed (1), star_not_found (1), cancellation (3), centering_failed (1); 256×256 Gaussian PSF frames used to stay within 2 % blob-fraction limit.
+- `docs/todo.md` — COL-050, COL-051 marked done.
+
+**1950 tests pass (35 new). Coverage 83 %.**
+
+---
+
+## 2026-05-16 — Collimation Phase 4 — Mount and Focuser Control
+
+**What changed:**
+
+- `smart_telescope/services/collimation/mount_centering.py` (NEW) — `MountCorrectionResult` dataclass; `PulseCenterer.center(get_offset_px, cancel_check, dec_deg)` — iterative guide-pulse loop; per-iteration: measure offset → check tolerance → check divergence → choose dominant axis → convert px→arcsec→ms → clamp to max_pulse_ms → guide → settle; abort on star_lost / diverging (3 × 10 % grow) / cancelled / max_pulses; cos(dec) correction for RA guide rate.
+- `smart_telescope/services/collimation/focuser_control.py` (NEW) — `FocuserMoveResult` dataclass; `CollimationFocuserControl` with `move_focus_relative()`, `move_focus_clockwise()`, `move_focus_counterclockwise()`, `defocus()`, `focus_fine()`; two-stage clamp (max_single_step → soft position limits); direction sign from `increasing_value_direction` config; `reason` = "ok" | "soft_limit" | "unavailable"; unavailable focuser handled gracefully.
+- `smart_telescope/adapters/mock/focuser.py` — **Bug fix:** `MockFocuser.move(steps)` now does `self._position += steps` (relative) instead of `self._position = steps` (absolute), matching the OnStep adapter contract.
+- `tests/unit/services/test_mount_centering.py` (NEW) — 19 tests: result fields, within-tolerance (no pulses), guide direction for all 4 axes, dominant-axis selection, pulse clamp, 1ms minimum, convergence, pulses counted, star_lost, star_lost after pulse, diverging, max_pulses, cancel_check immediate, cancel after pulse, dec correction.
+- `tests/unit/services/test_focuser_control.py` (NEW) — 29 tests: result fields, unavailable (3), relative move (4), max_single_step clamp (3), soft limits (4), direction mapping (5), defocus/fine focus (6), clipped flag (3).
+- `docs/todo.md` — COL-040, COL-041 marked done.
+
+**1915 tests pass (48 new). Coverage 83 %.**
+
+---
+
+## 2026-05-16 — Collimation Phase 3 — Frame Processing Foundation
+
+**What changed:**
+
+- `smart_telescope/domain/collimation/processing/__init__.py` (NEW) — package init
+- `smart_telescope/domain/collimation/processing/frame.py` (NEW) — `ProcessedFrame` dataclass (`raw` uint16, `mono` float32, `bit_depth`, `width`, `height`, `timestamp`); `normalize_frame(FitsFrame, bit_depth=16)` — copies pixel data, does not mutate input; `.normalized` property returns [0, 1] float32.
+- `smart_telescope/domain/collimation/processing/stretch.py` (NEW) — `estimate_background()` (sigma-clip, 5 iterations); `auto_stretch()` → uint8 percentile stretch; `saturation_fraction(bit_depth)`; `peak_location()`.
+- `smart_telescope/domain/collimation/processing/star_detection.py` (NEW) — `detect_star(ProcessedFrame) → StarMeasurement | None`; 5σ threshold; intensity-weighted centroid; radial-profile FWHM; hot-pixel rejection (< 4 px blob) and nebula rejection (> 2 % frame area); SNR-based confidence with saturation penalty.
+- `smart_telescope/domain/collimation/processing/geometry_fits.py` (NEW) — `fit_circle()` (Kasa algebraic least-squares, confidence = 1 − rms/r); `fit_ellipse()` (Bookstein direct fit, conic → eigenvalue decomposition, falls back to circle on non-elliptic conics); `extract_edge_points()` (4-connectivity erosion, returns float64 (N,2) array); `detect_clipping(fit, w, h)`; `compare_circle_centers()`.
+- `tests/unit/domain/collimation/` (NEW) — 4 test files, 75 tests, all pass:
+  - `test_frame_processing.py` (18 tests) — type, dimensions, float32/uint16 conversion, negative clamping, overflow, immutability, independence, bit depths, normalized property
+  - `test_stretch.py` (22 tests) — background estimation with star ignored, sigma floor, stretch range+monotonicity+no-mutation, saturation fraction (8-bit and 16-bit), peak location
+  - `test_star_detection.py` (11 tests) — dark frame None, Gaussian star detection, centroid accuracy ≤ 1 px, FWHM within 50 %, hot-pixel rejection, saturation penalty, edge star, noisy frame
+  - `test_geometry_fits.py` (24 tests) — exact/noisy/small circle, partial arc, degenerate cases, ellipse axis-aligned and noisy, edge extraction from disc mask, circle-from-edge round-trip, clipping detection, center comparison
+- `docs/todo.md` — Collimation section added (COL-001 through COL-131), Phases 0+1+3 marked done.
+
+**1867 tests pass (75 new). Coverage 82 %.**
+
+---
+
+## 2026-05-16 — BUG-001 abort_capture + M2 milestone close
+
+**What changed:**
+
+- `smart_telescope/ports/camera.py` — Added `CaptureAbortedError` exception class and `abort_capture()` non-abstract default no-op method to `CameraPort`.
+- `smart_telescope/adapters/mock/camera.py` — Added `capture_delay_s: float = 0.0` parameter and `threading.Event`-based `_abort`; `capture()` blocks for `capture_delay_s` seconds then checks abort; `abort_capture()` sets the event. Used for cancel-latency unit tests.
+- `smart_telescope/adapters/touptek/camera.py` — Added `self._abort = threading.Event()`; replaced single `_frame_ready.wait(timeout)` with a 50ms polling loop that breaks on `_abort`; added `abort_capture()` that sets `_abort`; imports `CaptureAbortedError`.
+- `smart_telescope/domain/autogain_service.py` — Added abort-watcher thread (starts before the main loop, waits for `cancellation_flag`, calls `camera.abort_capture()`); catches `CaptureAbortedError` before generic `Exception` and returns `CANCELLED` immediately. Cancel latency now ≤ 50ms (one poll interval).
+- `tests/unit/domain/test_autogain_service.py` — Added `_SlowCamera` stub and `TestCancelLatency` (2 tests): verifies `CANCELLED` status and verifies elapsed time < 1 s.
+- `docs/todo.md` — BUG-001 closed; M2-003/004/005/006 closed; M2 milestone complete.
+
+**All 1792 tests pass (2 new).**
+
+---
+
+## 2026-05-16 — R3 Shared Job Manager
+
+**What changed:**
+
+- `smart_telescope/services/job_manager.py` (NEW) — `JobStatus`, `ResourceConflictError`, `Job` dataclass, `JobManager` class. Two submission modes: `submit()` (JobManager owns daemon thread, wraps fn with status update, optional timeout via companion watcher thread) and `claim()`/`release()` (caller owns thread). Atomic resource conflict detection in `_register()`. Query API: `get_job`, `get_by_name`, `list_active`, `active_resources`, `is_resource_held`, `purge_finished`. Cancellation: `cancel`, `cancel_by_name`, `cancel_all`.
+- `smart_telescope/runtime.py` — Added `from .services.job_manager import JobManager`; `self.job_manager = JobManager()` in `__init__`; `self.job_manager.cancel_all()` at start of `shutdown()`; `self.job_manager = JobManager()` in `reset_for_tests()`.
+- `smart_telescope/api/deps.py` — Added `get_job_manager() -> JobManager`.
+- `smart_telescope/api/autogain.py` — Removed manual `threading.Thread` creation and old `j.running` 409 check; replaced with `rt.job_manager.submit("autogain", {"camera:N"}, _worker, ..., cancel_event=job.cancel, timeout_s=300)`. `_reset()` now also calls `rt.job_manager.cancel_by_name("autogain")` for test isolation.
+- `smart_telescope/api/session.py` — Replaced `rt.session_lock` conflict check with `rt.job_manager.claim("session", {"camera:0", "mount", "focuser"})`; thread target wrapped in `_session_thread()` that calls `rt.job_manager.release()` in finally; `_reset_session()` also calls `rt.job_manager.cancel_by_name("session")`.
+- `tests/unit/services/test_job_manager.py` (NEW) — 40 tests: `TestSubmit` (done/failed/conflict/resource-release/args/bridged-cancel), `TestClaimRelease` (hold/release/done/failed/noop/empty), `TestCancellation` (by-id/by-name/cancel-all), `TestTimeout` (cancelled after timeout, not cancelled when fn finishes first), `TestQuery` (get/get-by-name/list-active/active-resources/is-resource-held), `TestConflictDetection` (done-doesn't-block, non-overlapping ok, error names holder, cancelled-doesn't-block), `TestPurge` (removes finished, leaves active, returns count).
+- `tests/unit/test_runtime.py` — Added `test_job_manager_is_fresh_instance` and `test_reset_installs_fresh_job_manager`.
+- `docs/todo.md` — R3-001 through R3-007 marked complete; M2-001 and M2-002 marked complete.
+
+**All 1790 tests pass (42 new).**
+
+---
+
+## 2026-05-16 — R0-010 lifecycle tests + UX-PENDING-001 mount pending indicator
+
+**What changed:**
+
+- `tests/unit/test_runtime.py` (NEW) — 40 tests: `TestRuntimeContextInit` (all slots None, coordinator/device_state fresh, session/autogain None), `TestConnectDevices` (mock mode, adapters_built flag, idempotency, polling starts, simulator env var), `TestShutdown` (device_state stops, focuser.stop called, mount stop-before-disconnect ordering, preview cameras closed, error tolerance), `TestResetForTests` (all adapters cleared, polling stopped, fresh coordinator/device_state, session+autogain cleared, new adapters on next access), `TestModuleSingleton` (get/set_runtime), `TestSessionState` (set/clear/is_running), `TestAutogainState` (set/get/clear), `TestLifespan` (FastAPI lifespan sets app.state.runtime, readiness endpoint live, polling thread dead after exit).
+- `smart_telescope/static/index.html` — UX-PENDING-001 (POD-003):
+  - CSS: `.state-pending` badge style (blue outline)
+  - JS: `_mountPendingCmd` module variable (null or command name string)
+  - `_updateMountStrip()`: dot turns yellow + label shows `cmd…` when pending; `⚠ state` suffix when `data.stale`
+  - `mountCard()`: state badge replaced by spinner-badge when pending, or `⚠ state` badge when stale
+  - `mountAction()`: sets `_mountPendingCmd` before API call, clears in `finally`; polls 10× at 500ms for park/unpark confirmation
+  - `mountHome()`: sets/clears `_mountPendingCmd` in `finally`
+  - `mountGoto()`: sets/clears `_mountPendingCmd` in `finally`
+- `docs/todo.md` — R0-010 and UX-PENDING-001 marked complete.
+
+**All 1791 tests pass (40 new).**
+
+---
+
+## 2026-05-15 — PO decisions: POD-001 / POD-002 / POD-003 / POD-006 / POD-008
+
+**Decisions recorded:**
+
+- **POD-001 (Reconnect):** Auto-park on reconnect — already implemented; no change needed.
+- **POD-002 (STOP latency):** < 1 s maximum. Safety checklist and BUG-001 acceptance criteria updated.
+- **POD-003 (UI state lag):** Spinner/pending indicator between command acceptance and hardware confirmation. New task UX-PENDING-001 added to backlog.
+- **POD-006 (MVP demo):** Guided single-target session — Pick target → GoTo → plate-solve & center → autofocus → stack 10 frames → save.
+- **POD-008 (Deferred):** ISS tracking, multi-target queue, advanced calibration wizard, collimation assistant are post-MVP.
+
+**docs/todo.md updated:** POD-001/002/003/006/008 marked complete; BUG-001 acceptance criterion updated to < 1 s; safety checklist annotated with POD-002 target; UX-PENDING-001 task added.
+
+---
+
+## 2026-05-15 — R1-010 / R2-008 / R0-005 / R0-006: Tests + runtime state consolidation
+
+**What changed:**
+
+- `tests/unit/services/__init__.py` (NEW) — services test package.
+- `tests/unit/services/test_hardware_coordinator.py` (NEW) — 11 tests: acquire/release, lock-released-on-exception, concurrent conflict, timeout=0 non-blocking, lock independence (mount ≠ focuser), two-coordinator isolation, STOP bypass pattern, informative error message.
+- `tests/unit/services/test_device_state.py` (NEW) — 13 tests: initial None, start populates, idempotent start, stop halts polling, error stored as UNKNOWN state, flaky-poll reverts to UNKNOWN, UNKNOWN skips position query, position error doesn't crash poll, concurrent reads are safe, stale/not-stale MountObservedState.
+- `smart_telescope/runtime.py` — `RuntimeContext` gains `session_lock`, `_active_runner`, `_runner_thread`, `autogain_lock`, `_autogain_job`; new methods `get_active_runner()`, `is_session_running()`, `set_session()`, `clear_session()`, `get_autogain_job()`, `set_autogain_job()`; `reset_for_tests()` clears all new state.
+- `smart_telescope/api/session.py` — removed module-level `_session_lock`, `_active_runner`, `_runner_thread`; all references go through `_get_runtime()`.
+- `smart_telescope/api/autogain.py` — removed module-level `_job`, `_lock`; replaced with `_get_job()` / `_set_job()` wrappers over RuntimeContext; all endpoints use `rt.autogain_lock`.
+- `docs/todo.md` — marked R1-010, R2-008, R0-005, R0-006 complete.
+
+**All 1751 tests pass (24 new).**
+
+---
+
+## 2026-05-15 — M1: Hardware Safety Spine (R1 coordinator + R2 device state)
+
+**What changed:**
+
+- `smart_telescope/services/hardware_coordinator.py` (NEW) — `HardwareCommandCoordinator` with `mount_command()` and `focuser_command()` context managers. `CommandConflictError` raised immediately on timeout. STOP bypasses this entirely.
+- `smart_telescope/services/device_state.py` (NEW) — `DeviceStateService`: daemon thread polls mount state every 2 s. `MountObservedState` dataclass with `is_stale()` (10 s threshold). Injected via `deps.get_device_state()`.
+- `smart_telescope/runtime.py` — integrates both services: `coordinator` and `device_state` in `__init__`; polling started in `connect_devices()`; `device_state.stop()` called first in `shutdown()` and `reset_for_tests()`.
+- `smart_telescope/api/deps.py` — added `get_coordinator()` and `get_device_state()` wrappers.
+- `smart_telescope/api/mount.py` — removed module-level `_goto_lock`; all motion endpoints (`goto`, `home`, `park`, `goto_sky`, `goto_and_center`) use `coordinator.mount_command()`; `mount_status` reads from `DeviceStateService` cache with direct-poll fallback; `MountStatus` gains `stale: bool` field; `mount_home` now returns specific "Home slew failed — check mount is tracking and powered" message (BUG-014).
+- `smart_telescope/api/focuser.py` — removed module-level `_move_lock` and `_MOVE_TIMEOUT_S`; `_safe_move`, `focuser_move`, `focuser_nudge`, `focuser_autofocus` use `coordinator.focuser_command()`.
+- `docs/todo.md` — marked BUG-023, BUG-014, R1-001/002/003/004/007, R2-001/002/004/006/007, M1-001/002/003 as complete.
+
+**All 1727 tests pass.**
+
+---
+
+## 2026-05-15 — NEXT-011: R5 ReadinessService + UX1 Readiness Card
+
+**What changed:**
+
+- `smart_telescope/services/readiness.py` (NEW) — `ReadinessService` with 9 checks: config_file, stars_cfg (RED if missing), horizon_dat (YELLOW), storage (RED if missing/full), astap_exe (RED), astap_catalog (RED), camera (YELLOW if unconfigured), mount, focuser. Returns `ReadinessReport` with `overall` (green/yellow/red), `can_observe`, and `repair` guidance per item.
+- `smart_telescope/api/readiness.py` (NEW) — `GET /api/readiness` endpoint, always HTTP 200.
+- `smart_telescope/app.py` — readiness router registered.
+- `smart_telescope/static/index.html` — System Readiness card added at top of Stage 1. Loads automatically on page open, refreshes every 30 s. Shows overall badge + per-item dot/message/repair. Refresh button for manual re-check.
+- `tests/unit/api/test_readiness.py` (NEW) — 22 tests covering all checks, overall level rules, API response shape.
+
+**All NEXT-001 through NEXT-011 complete. All 176 tests pass.**
+
+---
+
+## 2026-05-15 — Immediate Actions: R0 RuntimeContext + AI Skills
+
+**What changed:**
+
+- `smart_telescope/runtime.py` (NEW) — `RuntimeContext` class owns all adapter state: camera, mount, focuser, stacker, storage, solver, preview cameras. Methods: `connect_devices()` (lazy, thread-safe), `shutdown()` (stop motion before disconnect), `disconnect_devices()`, `reset_for_tests()`. Module-level `get_runtime()` / `set_runtime()` singleton for `deps.py` compatibility wrappers.
+- `smart_telescope/app.py` — lifespan now creates `RuntimeContext`, registers it via `set_runtime()` and `app.state.runtime`, then calls `ctx.shutdown()`. Removed direct `deps._focuser / _mount / _preview_cameras` access from shutdown path.
+- `smart_telescope/api/deps.py` — rewritten as thin compatibility wrappers. All public functions (`get_camera`, `get_mount`, `get_focuser`, `get_stacker`, `make_stacker`, `get_solver`, `get_storage`, `get_preview_camera`, `get_camera_by_role`, `reset`) delegate to `get_runtime()`. No module-level globals remain. All 154 existing tests pass unchanged.
+- `docs/skills/smarttscope-product-steward.md` (NEW) — AI skill definition: maintains backlog, imports bugs, deduplicates, enforces acceptance criteria, produces Top-10 risk view.
+- `docs/skills/smarttscope-quality-sentinel.md` (NEW) — AI skill definition: verifies task evidence, flags done-without-test, produces milestone traffic-light and release go/no-go report.
+- `docs/todo.md` — NEXT-001 through NEXT-009 marked complete; R0-001 through R0-004, R0-007, R0-008, R0-009 marked complete.
+
+**R0 remaining:** R0-005 (session runner into RuntimeContext), R0-006 (autogain job), R0-010 (lifecycle tests).
+**Next:** NEXT-011 UX1 Ready To Observe, then M1 hardware safety spine.
+
+---
+
+## 2026-05-15 — Ingest: smarttscope-final-product-architecture-ai-plan.md
+
+**Source ingested**: `docs/smarttscope-final-product-architecture-ai-plan.md`  
+**Field bugs also ingested**: `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`
+
+**New pages**:
+- `docs/todo.md` — prioritized master backlog covering M0–M6 milestones, R0–R7 architecture refactors, UX1–UX5 UX refactors, 18 field bugs (BUG-005 through BUG-024), 9 open product-owner decisions, and a safety regression checklist.
+
+**What changed**:
+- Consolidated all open work from the architecture review, field bug files, and prior task lists into one authoritative todo.
+- 2 P0 Safety items identified: BUG-023 (shutdown doesn't close OnStep, focuser keeps moving) and BUG-005 (system isolation — moving parts must stay controlled on any crash).
+- Milestone order: M0 (project control) → M1 (hardware safety) → M2 (runtime/jobs) → M3 (optical train/config) → M4 (intent UX) → M5 (MVP demo) → M6 (field reliability).
+
+---
+
 ## 2026-05-06 — Ingest: SmartTScope_Fixes_Requirements_20260506
 
 **Source ingested**: `resources/hlrequirements/SmartTScope_Fixes_Requirements_20260506.md`

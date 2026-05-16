@@ -25,7 +25,7 @@ class MockFocuser(FocuserPort):
         return self._available
 
     def move(self, steps: int) -> None:
-        self._position = steps
+        self._position += steps
 
     def get_position(self) -> int:
         return self._position

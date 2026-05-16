@@ -30,3 +30,14 @@ Table of contents for the SmartTelescope knowledge base.
 - [requirements-addon-20260506](requirements-addon-20260506.md) — Fix/update requirements: camera naming, Live Preview backend, histogram, exposure/gain UI, Startup polish (2026-05-06)
 - [vertical-slice-mvp](vertical-slice-mvp.md) — End-to-end MVP slice: power-on → align → GoTo M42 → recenter → stack 10 frames → save
 - [quickstart](quickstart.md) — First-time setup guide: Raspberry Pi OS Trixie (Debian 13), ToupTek camera, ASTAP, no libcamera
+
+## Architecture
+
+- [job-manager](job-manager.md) — `JobManager` service: resource ownership model, `submit()`/`claim()`/`release()` modes, cancellation, timeout policy
+
+## Collimation Assistant
+
+- [collimation-task-plan](../resources/hlrequirements/smarttscope_c8_collimation_assistant_task_plan_updated.md) — Full 15-phase implementation plan for C8 SCT collimation wizard
+- **Phase 0 done:** config model, domain models, reference-center abstraction, optical profiles
+- **Phase 1 done:** `CollimationStateMachine` (20 states), `CollimationAssistant` background service, REST API
+- **Phase 3 done:** `ProcessedFrame` normalization, display stretch, star detection, circle/ellipse fitting

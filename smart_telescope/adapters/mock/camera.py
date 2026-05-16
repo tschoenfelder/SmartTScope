@@ -1,10 +1,11 @@
+import threading
 from typing import Any
 
 import numpy as np
 
 from ...domain.camera_capabilities import CameraCapabilities, ConversionGain
 from ...domain.frame import FitsFrame
-from ...ports.camera import CameraPort
+from ...ports.camera import CameraPort, CaptureAbortedError
 
 
 def _bright_pixels() -> np.ndarray[Any, np.dtype[Any]]:
@@ -49,6 +50,7 @@ class MockCamera(CameraPort):
         fail_on_capture: int | None = None,
         return_bright: bool = False,
         dim_on_captures: frozenset[int] | None = None,
+        capture_delay_s: float = 0.0,
     ) -> None:
         self._fail_connect = fail_connect
         self._fail_on_capture = fail_on_capture
@@ -59,6 +61,8 @@ class MockCamera(CameraPort):
         self._gain: int = 100
         self._black_level: int = 0
         self._conversion_gain: ConversionGain = ConversionGain.LCG
+        self._capture_delay_s = capture_delay_s
+        self._abort = threading.Event()
 
     def connect(self) -> bool:
         return not self._fail_connect
@@ -67,6 +71,10 @@ class MockCamera(CameraPort):
         self._capture_count += 1
         if self._fail_on_capture is not None and self._capture_count == self._fail_on_capture:
             raise RuntimeError(f"MockCamera: capture failed (call #{self._capture_count})")
+        if self._capture_delay_s > 0.0:
+            if self._abort.wait(timeout=self._capture_delay_s):
+                self._abort.clear()
+                raise CaptureAbortedError("MockCamera: capture aborted")
         if self._capture_count in self._dim_on_captures:
             pixels: np.ndarray[Any, np.dtype[Any]] = _dim_pixels()
         elif self._return_bright:
@@ -74,6 +82,9 @@ class MockCamera(CameraPort):
         else:
             pixels = np.zeros((2080, 3096), dtype=np.float32)
         return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure_seconds)
+
+    def abort_capture(self) -> None:
+        self._abort.set()
 
     def disconnect(self) -> None:
         pass

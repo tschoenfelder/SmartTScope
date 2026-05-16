@@ -55,7 +55,12 @@ class AutoGainStatusResponse(BaseModel):
     error: str | None = None
 
 
-# ── Module-level job state ────────────────────────────────────────────────────
+# ── Job state ─────────────────────────────────────────────────────────────────
+# Owned by RuntimeContext so reset_for_tests() covers it automatically.
+
+from ..runtime import get_runtime as _get_runtime
+from ..services.job_manager import ResourceConflictError
+
 
 @dataclass
 class _Job:
@@ -71,8 +76,12 @@ class _Job:
             self.cancel = threading.Event()
 
 
-_job: _Job | None = None
-_lock = threading.Lock()
+def _get_job() -> _Job | None:
+    return _get_runtime().get_autogain_job()  # type: ignore[return-value]
+
+
+def _set_job(job: _Job | None) -> None:
+    _get_runtime().set_autogain_job(job)
 
 
 # ── Background worker ─────────────────────────────────────────────────────────
@@ -84,10 +93,11 @@ def _worker(
     mode: AutoGainMode,
     max_iterations: int,
 ) -> None:
+    rt = _get_runtime()
     try:
         camera = deps.get_preview_camera(camera_index)
     except Exception as exc:
-        with _lock:
+        with rt.autogain_lock:
             job.running = False
             job.error = str(exc)
         return
@@ -104,7 +114,7 @@ def _worker(
         )
     except Exception as exc:
         _log.error("AutoGain worker error: %s", exc)
-        with _lock:
+        with rt.autogain_lock:
             job.running = False
             job.error = str(exc)
         return
@@ -113,7 +123,7 @@ def _worker(
     if result.status == AutoGainStatus.OK:
         _save_last_good(result, profile, mode)
 
-    with _lock:
+    with rt.autogain_lock:
         job.running = False
         job.result = result
 
@@ -162,11 +172,7 @@ def run_autogain(req: RunRequest) -> dict:
     Returns 409 if a run is already in progress.
     Returns 400 if the camera_model is unknown.
     """
-    global _job
-
-    with _lock:
-        if _job is not None and _job.running:
-            raise HTTPException(status_code=409, detail="Auto-gain run already in progress")
+    rt = _get_runtime()
 
     # Resolve profile
     profile: CameraProfile | None = None
@@ -192,16 +198,19 @@ def run_autogain(req: RunRequest) -> dict:
         raise HTTPException(status_code=422, detail=f"Unknown mode: {req.mode!r}")
 
     job = _Job(running=True, diagnostic=req.diagnostic)
-    with _lock:
-        _job = job
-
-    thread = threading.Thread(
-        target=_worker,
-        args=(job, req.camera_index, profile, mode, req.max_iterations),
-        daemon=True,
-        name="autogain-run",
-    )
-    thread.start()
+    try:
+        rt.job_manager.submit(
+            "autogain",
+            {f"camera:{req.camera_index}"},
+            _worker,
+            job, req.camera_index, profile, mode, req.max_iterations,
+            cancel_event=job.cancel,
+            timeout_s=300,
+        )
+    except ResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    with rt.autogain_lock:
+        _set_job(job)
     _log.info("AutoGain started: camera_index=%d model=%s mode=%s", req.camera_index, profile.model, mode.value)
     return {"started": True}
 
@@ -213,8 +222,9 @@ def get_status() -> AutoGainStatusResponse:
     *running* is True while a run is in progress.
     When a result is available, all result fields are populated.
     """
-    with _lock:
-        j = _job
+    rt = _get_runtime()
+    with rt.autogain_lock:
+        j = _get_job()
 
     if j is None:
         return AutoGainStatusResponse(running=False)
@@ -244,11 +254,12 @@ def get_status() -> AutoGainStatusResponse:
 @router.post("/cancel", status_code=200)
 def cancel_autogain() -> dict:
     """Cancel an in-progress auto-gain run.  No-op if idle."""
-    with _lock:
-        j = _job
+    rt = _get_runtime()
+    with rt.autogain_lock:
+        j = _get_job()
     if j is not None and j.running:
         j.cancel.set()
-        with _lock:
+        with rt.autogain_lock:
             j.cancelling = True
         _log.info("AutoGain cancellation requested")
     return {"cancelled": True}
@@ -256,8 +267,10 @@ def cancel_autogain() -> dict:
 
 def _reset() -> None:
     """Clear state (used by tests)."""
-    global _job
-    with _lock:
-        if _job is not None and _job.running:
-            _job.cancel.set()
-        _job = None
+    rt = _get_runtime()
+    with rt.autogain_lock:
+        j = _get_job()
+        if j is not None and j.running:
+            j.cancel.set()
+        _set_job(None)
+    rt.job_manager.cancel_by_name("autogain")

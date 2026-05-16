@@ -14,7 +14,7 @@ from astropy.io import fits
 
 from ...domain.camera_capabilities import CameraCapabilities, ConversionGain
 from ...domain.frame import FitsFrame
-from ...ports.camera import CameraPort
+from ...ports.camera import CameraPort, CaptureAbortedError
 
 # Event constants from toupcam SDK — stable protocol values, not imported at runtime.
 _EVENT_IMAGE        = 0x0004
@@ -68,6 +68,7 @@ class ToupcamCamera(CameraPort):
         self._serial_number: str = ""
         self._logical_name: str = ""
         self._frame_ready = threading.Event()
+        self._abort = threading.Event()
         self._capture_error: Exception | None = None
         self._capture_lock = threading.Lock()  # prevents concurrent captures on same handle
 
@@ -148,6 +149,10 @@ class ToupcamCamera(CameraPort):
         self._buf = None
         self._tc = None
 
+    def abort_capture(self) -> None:
+        """Signal abort to any in-progress capture() call."""
+        self._abort.set()
+
     # ------------------------------------------------------------------
     # CameraPort — capture
     # ------------------------------------------------------------------
@@ -176,7 +181,17 @@ class ToupcamCamera(CameraPort):
 
             timeout = exposure_seconds + self._timeout_extra
             _log.debug("capture(%s index=%d): waiting for frame (timeout=%.1fs)", self._logical_name or "?", self._index, timeout)
-            got_frame = self._frame_ready.wait(timeout=timeout)
+            self._abort.clear()
+            got_frame = False
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                if self._frame_ready.wait(timeout=min(0.05, remaining)):
+                    got_frame = True
+                    break
+                if self._abort.is_set():
+                    self._abort.clear()
+                    raise CaptureAbortedError("capture aborted")
             if not got_frame:
                 _log.error("capture(%s index=%d): TIMEOUT — no frame callback within %.1fs", self._logical_name or "?", self._index, timeout)
                 raise TimeoutError(f"No frame received within {timeout:.1f}s")

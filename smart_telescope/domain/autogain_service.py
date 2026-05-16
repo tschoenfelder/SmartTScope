@@ -26,7 +26,7 @@ from enum import Enum
 
 import numpy as np
 
-from ..ports.camera import CameraPort
+from ..ports.camera import CameraPort, CaptureAbortedError
 from .autogain import AutoGainMode, _LO, _HI, _MAX_RATIO, _TARGET, _select_conversion_gain
 from .camera_capabilities import ConversionGain
 from .camera_profile import CameraProfile
@@ -201,6 +201,17 @@ class AutoGainService:
             ns_signal_thr = _NO_SIGNAL_THRESHOLD
             ns_exp_ms     = _NO_SIGNAL_EXP_MS
 
+        # Abort-watcher: when caller sets cancellation_flag, immediately interrupt
+        # any blocking camera.capture() call so cancel responds within one poll cycle.
+        if cancellation_flag is not None:
+            def _abort_watcher() -> None:
+                cancellation_flag.wait()
+                try:
+                    camera.abort_capture()
+                except Exception:
+                    pass
+            threading.Thread(target=_abort_watcher, daemon=True).start()
+
         # Steps 5–12: adjustment loop
         for iteration in range(max_iterations):
             # Cancellation check
@@ -218,6 +229,15 @@ class AutoGainService:
             _apply_settings(camera, cur_exp_ms, cur_gain, cur_offset)
             try:
                 frame = camera.capture(cur_exp_ms / 1000.0)
+            except CaptureAbortedError:
+                return AutoGainResult(
+                    status=AutoGainStatus.CANCELLED,
+                    exposure_ms=cur_exp_ms,
+                    gain=cur_gain,
+                    offset=cur_offset,
+                    conversion_gain=cg,
+                    histogram_stats=None,
+                )
             except Exception as exc:
                 _log.error("AutoGain: capture failed at iteration %d: %s", iteration, exc)
                 return AutoGainResult(

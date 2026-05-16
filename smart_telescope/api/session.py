@@ -62,26 +62,25 @@ def _apply_calibration(stacker, bias, dark, flat) -> None:  # noqa: ANN001
         _log.warning("Stacker does not support set_calibration; calibration skipped")
 
 # ── Session runner state ─────────────────────────────────────────────────────
+# State lives in RuntimeContext so reset_for_tests() covers it automatically.
 
-_session_lock = threading.Lock()
-_active_runner: VerticalSliceRunner | None = None
-_runner_thread: threading.Thread | None = None
+from ..runtime import get_runtime as _get_runtime
+from ..services.job_manager import ResourceConflictError
 
 
 def _reset_session() -> None:
-    global _active_runner, _runner_thread
-    with _session_lock:
-        _active_runner = None
-        _runner_thread = None
+    rt = _get_runtime()
+    with rt.session_lock:
+        rt.clear_session()
+    rt.job_manager.cancel_by_name("session")
 
 
 def get_active_runner() -> VerticalSliceRunner | None:
-    return _active_runner
+    return _get_runtime().get_active_runner()  # type: ignore[return-value]
 
 
 def get_session_running() -> bool:
-    thread = _runner_thread
-    return thread is not None and thread.is_alive()
+    return _get_runtime().is_session_running()
 
 _ACTIONS: dict[str, str] = {
     "camera": "Check USB connection and power; ensure ToupTek driver is installed",
@@ -233,53 +232,66 @@ def session_run(
     dark_arr = _load_fits_master(dark_path) if dark_path else None
     flat_arr = _load_fits_master(flat_path) if flat_path else None
 
-    global _active_runner, _runner_thread
-    with _session_lock:
-        if _runner_thread is not None and _runner_thread.is_alive():
-            raise HTTPException(status_code=409, detail="Session already running")
-        stacker = deps.get_stacker()
-        _apply_calibration(stacker, bias_arr, dark_arr, flat_arr)
-        session_id = str(uuid.uuid4())
-        runner = VerticalSliceRunner(
-            camera=camera,
-            mount=mount,
-            solver=deps.get_solver(),
-            stacker=stacker,
-            storage=deps.get_storage(),
-            focuser=focuser,
-            optical_profile=optical_profile,
-            target_name=target_obj.name,
-            target_ra=target_obj.ra_hours,
-            target_dec=target_obj.dec_deg,
-            stack_exposure_s=exposure,
-            stack_depth=stack_depth,
-            preview_exposure_s=preview_exposure,
-            autofocus_range_steps=autofocus_range,
-            autofocus_step_size=autofocus_step,
-            autofocus_exposure_s=autofocus_exposure,
-            autofocus_backlash_steps=autofocus_backlash,
-            skip_autofocus=skip_autofocus,
-            enable_refocus_triggers=enable_refocus,
-            refocus_temp_delta_c=refocus_temp_delta,
-            refocus_alt_delta_deg=refocus_alt_delta,
-            refocus_elapsed_min=refocus_elapsed_min,
-            enable_frame_quality=enable_quality_filter,
-            frame_quality_min_snr=quality_min_snr,
-            frame_quality_baseline_frames=quality_baseline_frames,
-        )
-        _active_runner = runner
-        _runner_thread = threading.Thread(
-            target=runner.run, kwargs={"session_id": session_id}, daemon=True,
-        )
-        _runner_thread.start()
+    rt = _get_runtime()
+    try:
+        jm_job = rt.job_manager.claim("session", {"camera:0", "mount", "focuser"})
+    except ResourceConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    try:
+        with rt.session_lock:
+            stacker = deps.get_stacker()
+            _apply_calibration(stacker, bias_arr, dark_arr, flat_arr)
+            session_id = str(uuid.uuid4())
+            runner = VerticalSliceRunner(
+                camera=camera,
+                mount=mount,
+                solver=deps.get_solver(),
+                stacker=stacker,
+                storage=deps.get_storage(),
+                focuser=focuser,
+                optical_profile=optical_profile,
+                target_name=target_obj.name,
+                target_ra=target_obj.ra_hours,
+                target_dec=target_obj.dec_deg,
+                stack_exposure_s=exposure,
+                stack_depth=stack_depth,
+                preview_exposure_s=preview_exposure,
+                autofocus_range_steps=autofocus_range,
+                autofocus_step_size=autofocus_step,
+                autofocus_exposure_s=autofocus_exposure,
+                autofocus_backlash_steps=autofocus_backlash,
+                skip_autofocus=skip_autofocus,
+                enable_refocus_triggers=enable_refocus,
+                refocus_temp_delta_c=refocus_temp_delta,
+                refocus_alt_delta_deg=refocus_alt_delta,
+                refocus_elapsed_min=refocus_elapsed_min,
+                enable_frame_quality=enable_quality_filter,
+                frame_quality_min_snr=quality_min_snr,
+                frame_quality_baseline_frames=quality_baseline_frames,
+            )
+
+            def _session_thread() -> None:
+                try:
+                    runner.run(session_id=session_id)
+                finally:
+                    rt.job_manager.release(jm_job.job_id)
+
+            thread = threading.Thread(target=_session_thread, daemon=True)
+            rt.set_session(runner, thread)
+            thread.start()
+    except Exception:
+        rt.job_manager.release(jm_job.job_id, error="setup failed")
+        raise
+
     return RunResponse(session_id=session_id, state=SessionState.IDLE.name)
 
 
 @router.get("/status", response_model=SessionStatusResponse)
 def session_status() -> SessionStatusResponse:
-    runner = _active_runner
-    thread = _runner_thread
-    running = thread is not None and thread.is_alive()
+    rt = _get_runtime()
+    runner = rt.get_active_runner()
+    running = rt.is_session_running()
     if runner is None:
         return SessionStatusResponse(running=False)
     log = runner.current_log
@@ -304,7 +316,7 @@ def session_status() -> SessionStatusResponse:
 
 @router.post("/stop", status_code=204)
 def session_stop() -> None:
-    runner = _active_runner
+    runner = _get_runtime().get_active_runner()
     if runner is None:
         raise HTTPException(status_code=404, detail="No active session")
-    runner.stop()
+    runner.stop()  # type: ignore[union-attr]

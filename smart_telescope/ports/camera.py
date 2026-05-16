@@ -4,6 +4,10 @@ from ..domain.camera_capabilities import CameraCapabilities, ConversionGain
 from ..domain.frame import FitsFrame
 
 
+class CaptureAbortedError(Exception):
+    """Raised by capture() when abort_capture() is called during an exposure."""
+
+
 class CameraPort(ABC):
     @abstractmethod
     def connect(self) -> bool: ...
@@ -52,3 +56,6 @@ class CameraPort(ABC):
 
     @abstractmethod
     def get_logical_name(self) -> str: ...
+
+    def abort_capture(self) -> None:
+        """Interrupt an in-progress capture.  Default: no-op."""

@@ -1,0 +1,120 @@
+# fix the following items
+- on rapsberry stars.cfg isn't found even so file exists under 
+astro@rasppiserver3:~$ ls -l ~/.SmartTScope/
+total 20
+-rw-rw-r-- 1 astro astro 1761 May 13 00:12 config.toml
+-rw-rw-r-- 1 astro astro 9040 May 11 23:19 stars.cfg
+-rw-rw-r-- 1 astro astro  140 May 11 23:18 Usingen_horizon.dat
+with config.toml
+[session]
+storage_dir        = "~/astro"
+stars_cfg          = "~/.SmartTScope/stars.cfg"
+horizon_dat        = "~/.SmartTScope/Usingen_horizon.dat"
+- Don't offer colling in setup page, if camera doesn't support cooling
+- Logs states focuser not available, even so later the log states: WARNING  smart_telescope.api.deps: Adapter selected: ToupcamCamera(index=0)  [[cameras] main]
+INFO     smart_telescope.api.deps: Adapter selected: OnStepMount+OnStepFocuser on port /dev/ttyUSB_ONSTEP0
+INFO     smart_telescope.adapters.onstep.mount: OnStepMount.connect(): opening /dev/ttyUSB_ONSTEP0 @ 9600 baud timeout=2.0s
+INFO:     192.168.178.129:53531 - "GET /api/cameras HTTP/1.1" 200 OK
+INFO     smart_telescope.adapters.onstep.mount: OnStepMount.connect(): :GVP# response = 'On-Step#On-Step'
+INFO     smart_telescope.adapters.onstep.mount: OnStepMount.connect(): :GVP# response = '1'
+ERROR    smart_telescope.adapters.onstep.mount: OnStepMount.connect(): unexpected product '1' — not OnStep, closing
+The lines above show mount connected and now logs shows:
+ERROR    smart_telescope.api.deps: OnStepMount.connect() failed on port /dev/ttyUSB_ONSTEP0 — mount will be unavailable
+INFO     smart_telescope.adapters.onstep.focuser: OnStepFocuser.connect(): :FA# reply='' available=False
+WARNING  smart_telescope.adapters.onstep.focuser: OnStepFocuser.connect(): focuser not available — check OnStep focuser wiring/config
+INFO     smart_telescope.api.deps: OnStepFocuser: connected, available=False — focuser not available (check wiring)
+and later:
+INFO     smart_telescope.adapters.onstep.focuser: OnStepFocuser.connect(): :FA# reply='1' available=True
+- Park command moved mount, but flag still shows UNPARKED. It takes to long seeminly for the flaf chainging to PARK
+- After the connect, show mount is shown as unparked even so the requirement has been to put iot to parked after reconnect (see issue above, may be related))
+- Setup check fails to move mount at all
+- Home button genertates internal server error 500. Error message in UI states unspecific 'Home failed: GoTo failed'. Further logging is required
+- put HOME; PARK, UNPARK, STOP buttons together
+- unpark command is returning code 200, but label stays parked
+- Fix focuser being on status page connected to giode cam when optical trains from config should link it to main camera 678M. As well forsee, that focuser later will apply to main camera as well to OAG camera.
+- Park button adds log Mount park issued' but unpark don't log anything besides the code 200
+- Goto and solve Preview page reacts to +20 focuser command strange. Several times pressed doesn't lead always to a focuser movement (only once): INFO:     192.168.178.129:56865 - "GET /api/mount/status HTTP/1.1" 200 OK
+INFO     smart_telescope.adapters.onstep.focuser: OnStepFocuser.move(): steps=22608
+INFO:     192.168.178.129:62201 - "POST /api/focuser/nudge HTTP/1.1" 409 Conflict
+INFO:     192.168.178.129:61647 - "GET /api/status HTTP/1.1" 200 OK
+INFO:     192.168.178.129:50640 - "POST /api/focuser/nudge HTTP/1.1" 409 Conflict
+INFO     smart_telescope.api.focuser: Focuser move issued: target=22608
+INFO:     192.168.178.129:49279 - "POST /api/focuser/nudge HTTP/1.1" 200 OK
+UI shows mesage 'Focus failed: Another focuser move is already queued — try again shortly', but second movement seems blocked far to long
+- Clicking +20 doeesn't show up in logfile when live preview is on. try again shortly', stays visible
+- Check, if histogram at small values is filled
+- Changing camera in Goto and solve and pressing find best not working. Log shows INFO     smart_telescope.api.preview: Preview frame: camera_index=1 adapter=ToupcamCamera capture=0.107s exp=0.0084s gain=100 offset=0 mean_adu=20680 p99_adu=22368 sat=0.00%
+ERROR:    data transfer failed
+Traceback (most recent call last):
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 940, in transfer_data
+    message = await self.read_message()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 1010, in read_message
+    frame = await self.read_data_frame(max_size=self.max_size)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 1100, in read_data_frame
+    await self.write_close_frame(self.close_rcvd, frame.data)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 1211, in write_close_frame
+    await self.write_frame(True, OP_CLOSE, data, _state=State.CLOSING)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 1184, in write_frame
+    await self.drain()
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 1167, in drain
+    await self._drain()
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 328, in _drain
+    await self._drain_helper()
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/websockets/legacy/protocol.py", line 308, in _drain_helper
+    assert waiter is None or waiter.cancelled()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError
+- Server stutdown with CTRL-C stops the server but seemingly dowsn't close the onstep connection! Focuser seems keeping moving in small steps, new connect fails
+Log shows errors without end: KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/httptools_impl.py", line 421, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 56, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 674, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/home/astro/astro_sw/SmartTScope/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 330, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+- Preview shows ⚠ AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR for camera without focuser connected
+
+

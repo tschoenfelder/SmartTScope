@@ -20,7 +20,7 @@ from smart_telescope.domain.autogain import _select_conversion_gain
 from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.domain.histogram import HistogramStats
 from smart_telescope.domain.last_good_settings import LastGoodSettings
-from smart_telescope.ports.camera import CameraPort
+from smart_telescope.ports.camera import CameraPort, CaptureAbortedError
 
 
 # ── Mock camera ───────────────────────────────────────────────────────────────
@@ -710,3 +710,69 @@ class TestPlanetaryModeNoPlanet:
         )
         if result.status == AutoGainStatus.NO_SIGNAL and result.warning_msg:
             assert "planet" in result.warning_msg.lower()
+
+
+# ── BUG-001 — cancel within 1 s even during a long blocking capture ───────────
+
+class _SlowCamera(_SeqCamera):
+    """Camera that blocks in capture() until abort_capture() is called."""
+
+    def __init__(self, frames: list[FitsFrame], block_s: float = 10.0) -> None:
+        super().__init__(frames)
+        self._block_s = block_s
+        self._abort = threading.Event()
+
+    def capture(self, exposure_seconds: float) -> FitsFrame:
+        if self._abort.wait(timeout=self._block_s):
+            self._abort.clear()
+            raise CaptureAbortedError("SlowCamera: capture aborted")
+        return super().capture(exposure_seconds)
+
+    def abort_capture(self) -> None:
+        self._abort.set()
+
+
+class TestCancelLatency:
+    def test_cancel_returns_cancelled_during_long_exposure(self) -> None:
+        cam = _SlowCamera([_frame(0.28)], block_s=10.0)
+        cancel = threading.Event()
+        result: list[AutoGainResult] = []
+
+        def _run() -> None:
+            result.append(
+                AutoGainService.run_one_shot(cam, _PROFILE, cancellation_flag=cancel)
+            )
+
+        t = threading.Thread(target=_run)
+        t.start()
+        # Let the worker reach the blocking capture, then cancel
+        import time
+        time.sleep(0.05)
+        cancel.set()
+        t.join(timeout=2.0)
+
+        assert not t.is_alive(), "AutoGainService did not return within 2 s of cancellation"
+        assert result[0].status == AutoGainStatus.CANCELLED
+
+    def test_cancel_returns_within_one_second(self) -> None:
+        cam = _SlowCamera([_frame(0.28)], block_s=10.0)
+        cancel = threading.Event()
+        start = None
+        elapsed: list[float] = []
+
+        def _run() -> None:
+            nonlocal start
+            import time as _t
+            start = _t.monotonic()
+            AutoGainService.run_one_shot(cam, _PROFILE, cancellation_flag=cancel)
+            elapsed.append(_t.monotonic() - start)
+
+        t = threading.Thread(target=_run)
+        t.start()
+        import time
+        time.sleep(0.05)
+        cancel.set()
+        t.join(timeout=2.0)
+
+        assert elapsed, "service never returned"
+        assert elapsed[0] < 1.0, f"cancel took {elapsed[0]:.2f}s — must be < 1 s"

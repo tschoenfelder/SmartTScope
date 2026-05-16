@@ -211,6 +211,7 @@
     .state-unknown  { background: rgba(139,148,158,0.15); color: var(--muted); }
     .state-at_limit { background: rgba(248,81,73,0.15);   color: var(--danger); }
     .state-error    { background: rgba(248,81,73,0.15);   color: var(--error); }
+    .state-pending  { background: rgba(56,139,253,0.12);  color: var(--accent-hi); border: 1px solid rgba(56,139,253,0.25); }
 
     /* ── params grid ── */
     .params {
@@ -520,6 +521,24 @@
   <!-- STAGE 1 — Startup                                                   -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <section class="stage-panel active" id="s1">
+
+    <!-- System Readiness (UX1) -->
+    <div class="card" id="s1-readiness-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-readiness-dot"></span>
+        System Readiness
+        <span style="flex:1"></span>
+        <span id="s1-readiness-badge"
+              style="font-size:0.72rem;font-weight:600;padding:0.15rem 0.6rem;
+                     border-radius:999px;background:var(--surface);border:1px solid var(--border)">
+          Checking…
+        </span>
+        <button onclick="refreshReadiness()"
+                style="padding:0.1rem 0.45rem;font-size:0.72rem;margin-left:0.4rem"
+                title="Re-check readiness">↺</button>
+      </div>
+      <div id="s1-readiness-items" style="margin-top:0.25rem"></div>
+    </div>
 
     <!-- Observer & Time -->
     <div class="card">
@@ -1133,7 +1152,7 @@
             <canvas id="s3-histogram" class="hist-canvas" width="400" height="100"></canvas>
             <div id="s3-hist-stats" class="hist-stats"></div>
             <div id="s3-hist-low-wrap" style="display:none;margin-top:4px">
-              <div style="font-size:0.7rem;color:var(--muted);margin-bottom:2px">0 – 1 k ADU — pedestal detail (10 ADU/bin)</div>
+              <div style="font-size:0.7rem;color:var(--muted);margin-bottom:2px">0 – 1 k ADU — pedestal detail (5 ADU/bin)</div>
               <canvas id="s3-histogram-low" class="hist-canvas" width="400" height="70"></canvas>
             </div>
           </div>
@@ -1658,6 +1677,7 @@
   ══════════════════════════════════════════════════════════════════════ */
   let _mountConnected  = false;
   let _focuserOk       = false;
+  let _mountPendingCmd = null;   // set to command name while hardware is catching up
   let _focusCamIdx     = 0;  // camera index used for autofocus (set in Stage 1 focuser tile)
   let _observerLat     = 50.336;
   let _observerLon     = 8.533;
@@ -1744,6 +1764,51 @@
     }
     const ts = document.getElementById('s1-health-ts');
     if (ts) ts.textContent = new Date().toLocaleTimeString();
+  }
+
+  /* ── Readiness panel (UX1) ─────────────────────────────────────────────── */
+
+  function _levelStyle(level) {
+    if (level === 'green')  return { dot: 'dot-green',  color: 'var(--success)', label: 'Ready' };
+    if (level === 'yellow') return { dot: 'dot-yellow', color: 'var(--warning)', label: 'Degraded' };
+    return                         { dot: 'dot-red',    color: 'var(--danger)',  label: 'Not Ready' };
+  }
+
+  function _renderReadiness(r) {
+    const dot    = document.getElementById('s1-readiness-dot');
+    const badge  = document.getElementById('s1-readiness-badge');
+    const items  = document.getElementById('s1-readiness-items');
+    if (!dot || !badge || !items) return;
+
+    const ls = _levelStyle(r.overall);
+    dot.className = `dot ${ls.dot}`;
+    badge.textContent = ls.label;
+    badge.style.color = ls.color;
+    badge.style.borderColor = ls.color;
+
+    const rows = r.items.map(item => {
+      const s = _levelStyle(item.level);
+      const repair = item.repair
+        ? `<div style="font-size:0.75rem;color:var(--muted);margin-top:0.2rem;padding-left:1.1rem">
+             ↳ ${escHtml(item.repair)}
+           </div>`
+        : '';
+      return `<div style="padding:0.3rem 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <span class="dot ${s.dot}" style="width:7px;height:7px;flex-shrink:0"></span>
+          <span style="font-size:0.82rem;flex:1">${escHtml(item.label)}</span>
+          <span style="font-size:0.78rem;color:var(--muted)">${escHtml(item.message)}</span>
+        </div>${repair}
+      </div>`;
+    });
+    items.innerHTML = rows.join('');
+  }
+
+  async function refreshReadiness() {
+    try {
+      const r = await (await fetch('/api/readiness')).json();
+      _renderReadiness(r);
+    } catch (_) {}
   }
 
   async function refreshHealth() {
@@ -1916,8 +1981,8 @@
     const stEl   = document.getElementById('ms-state');
     const rdEl   = document.getElementById('ms-radec');
     const haEl   = document.getElementById('ms-haalt');
-    if (dotEl) dotEl.className = 'dot ' + (_STRIP_DOT[state] || 'dot-grey');
-    if (stEl)  stEl.textContent = state;
+    if (dotEl) dotEl.className = 'dot ' + (_mountPendingCmd ? 'dot-yellow' : (_STRIP_DOT[state] || 'dot-grey'));
+    if (stEl)  stEl.textContent = _mountPendingCmd ? `${_mountPendingCmd}…` : (data.stale ? `${state} ⚠` : state);
     if (rdEl)  rdEl.textContent = data.ra != null
       ? `${_formatRA(+data.ra)}  ${_formatDec(+data.dec)}`
       : '—';
@@ -1951,18 +2016,23 @@
 
   function mountCard(data) {
     const state  = data.state || 'unknown';
-    const dotCls = _MOUNT_DOT[state] || 'dot-grey';
+    const dotCls = _mountPendingCmd ? 'dot-yellow' : (_MOUNT_DOT[state] || 'dot-grey');
     const ra     = data.ra  != null ? _formatRA(+data.ra)   : '—';
     const dec    = data.dec != null ? _formatDec(+data.dec) : '—';
     const badge  = _mountConnected
       ? '<span style="font-size:0.68rem;color:var(--success);margin-left:0.25rem">● Connected</span>'
       : '';
+    const stateBadge = _mountPendingCmd
+      ? `<span class="state-badge state-pending"><span class="spin" style="display:inline-block;width:0.65em;height:0.65em;margin-right:0.3em;vertical-align:middle"></span>${_mountPendingCmd}…</span>`
+      : data.stale
+        ? `<span class="state-badge state-unknown" title="Status data may be outdated — serial poll delayed">⚠ ${state}</span>`
+        : `<span class="state-badge state-${state}">${state}</span>`;
     return `
       <div class="card">
         <div class="card-title">
           <span class="dot ${dotCls}"></span>
           OnStep Mount
-          <span class="state-badge state-${state}">${state}</span>
+          ${stateBadge}
           ${badge}
         </div>
         <div class="params">
@@ -2050,16 +2120,17 @@
 
   async function mountAction(action) {
     setStatus('s1-mount-status', '');
+    _mountPendingCmd = action;
+    await refreshMount();  // show pending badge immediately
     try {
       await apiPost(`/api/mount/${action}`);
       const expectParked   = action === 'park';
       const expectUnparked = action === 'unpark';
       if (expectParked || expectUnparked) {
-        // Poll until OnStep state register reflects the command (typically 1-3 s)
-        for (let i = 0; i < 8; i++) {
-          await new Promise(r => setTimeout(r, i === 0 ? 300 : 700));
+        // Poll until DeviceStateService confirms the new hardware state (typically 2-4 s)
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, i === 0 ? 300 : 500));
           const data = await (await fetch('/api/mount/status')).json();
-          document.getElementById('s1-mount-card').innerHTML = mountCard(data);
           _updateMountStrip(data);
           const st = data.state;
           if (expectParked   && st === 'parked')  break;
@@ -2067,13 +2138,15 @@
         }
       } else {
         await new Promise(r => setTimeout(r, 450));
-        await refreshMount();
       }
       if (action === 'unpark' || action === 'track') {
         unlockStage(2);
       }
     } catch (err) {
       setStatus('s1-mount-status', `${action} failed: ${err.message}`, true);
+    } finally {
+      _mountPendingCmd = null;
+      await refreshMount();  // render confirmed hardware state
     }
   }
 
@@ -2085,6 +2158,7 @@
       return;
     }
     setStatus('s3-status', '');
+    _mountPendingCmd = 'goto';
     try {
       await apiPost('/api/mount/goto', { ra, dec });
       document.getElementById('s3-proceed-btn').disabled = false;
@@ -2102,22 +2176,27 @@
           msg = `Mount limit (${d.reason}): alt ${d.altitude_deg?.toFixed(1) ?? '—'}° or HA ${d.ha_hours?.toFixed(2) ?? '—'} h.`;
       } catch {}
       setStatus('s3-status', msg, true);
+    } finally {
+      _mountPendingCmd = null;
     }
   }
 
   async function mountHome() {
     setStatus('s1-mount-status', '');
+    _mountPendingCmd = 'home';
     const btn = document.querySelector('button[onclick="mountHome()"]');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Homing…'; }
+    await refreshMount();  // show pending badge immediately
     try {
       const data = await apiPost('/api/mount/home');
       setStatus('s1-mount-status',
         `Slewing to pole — RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(1)}°`);
-      await refreshMount();
     } catch (err) {
       setStatus('s1-mount-status', `Home failed: ${err.message}`, true);
     } finally {
+      _mountPendingCmd = null;
       if (btn) { btn.disabled = false; btn.innerHTML = 'Home'; }
+      await refreshMount();  // render confirmed hardware state
     }
   }
 
@@ -3861,19 +3940,23 @@
         const maxP  = fs.max_position || 50000;
         const delta = Math.min(500, Math.max(50, Math.round(maxP * 0.02)));
         const d = _scStep('⏳', `Focuser: nudging ±${delta} steps from position ${orig}…`);
-        await apiPost('/api/focuser/nudge', { delta });
-        await new Promise(r => setTimeout(r, 2500));
-        const fs2 = await (await fetch('/api/focuser/status')).json();
-        if (Math.abs(fs2.position - orig) < 1) {
-          _scUpdate(d, mark('✗'), `Focuser: did not move (still at ${fs2.position})`);
+        const r1 = await apiPost('/api/focuser/nudge', { delta });
+        if (r1.started === false) {
+          _scUpdate(d, mark('✗'), `Focuser: motor did not start — check OnStep focuser wiring`);
         } else {
-          await apiPost('/api/focuser/nudge', { delta: -delta });
           await new Promise(r => setTimeout(r, 2500));
-          const fs3 = await (await fetch('/api/focuser/status')).json();
-          const ok  = Math.abs(fs3.position - orig) <= Math.max(5, delta * 0.05);
-          _scUpdate(d, mark(ok ? '✓' : '⚠'),
-            ok ? `Focuser: moved and returned ✓ (pos ${fs3.position})`
-               : `Focuser: returned to ${fs3.position} (expected ~${orig})`);
+          const fs2 = await (await fetch('/api/focuser/status')).json();
+          if (Math.abs(fs2.position - orig) < 1) {
+            _scUpdate(d, mark('✗'), `Focuser: did not move (still at ${fs2.position})`);
+          } else {
+            await apiPost('/api/focuser/nudge', { delta: -delta });
+            await new Promise(r => setTimeout(r, 2500));
+            const fs3 = await (await fetch('/api/focuser/status')).json();
+            const ok  = Math.abs(fs3.position - orig) <= Math.max(5, delta * 0.05);
+            _scUpdate(d, mark(ok ? '✓' : '⚠'),
+              ok ? `Focuser: moved and returned ✓ (pos ${fs3.position})`
+                 : `Focuser: returned to ${fs3.position} (expected ~${orig})`);
+          }
         }
       }
     } catch (err) {
@@ -3894,7 +3977,6 @@
           } else {
             try {
               await apiPost('/api/mount/unpark');
-              await new Promise(r => setTimeout(r, 600));
               ms = await (await fetch('/api/mount/status')).json();
             } catch (uErr) {
               _scStep(mark('✗'), `Mount RA: unpark failed — ${uErr.message}`);
@@ -4399,11 +4481,16 @@
     ctx.fillRect(0, xY, CW, xAxisH);
     ctx.font = '8px ui-monospace, monospace';
 
-    // Target ~8 major ticks rounded to nearest 1000 ADU, minimum 1000.
-    // Minor ticks are 1/10 of major → 100 ADU minor ticks when major = 1000.
+    // Target ~8 major ticks with adaptive step sizes for small ranges (e.g. 0–1k ADU).
     const rawMajor = histAduMax / 8;
-    const majorInt = rawMajor <= 1000 ? 1000 : Math.round(rawMajor / 1000) * 1000;
-    const minorInt = Math.max(100, majorInt / 10);
+    let majorInt;
+    if      (rawMajor <=   50) majorInt = 50;
+    else if (rawMajor <=  100) majorInt = 100;
+    else if (rawMajor <=  200) majorInt = 200;
+    else if (rawMajor <=  500) majorInt = 500;
+    else if (rawMajor <= 1000) majorInt = 1000;
+    else majorInt = Math.round(rawMajor / 1000) * 1000;
+    const minorInt = Math.max(10, majorInt / 5);
 
     // Minor ticks (4 px, no label)
     ctx.strokeStyle = 'rgba(140,165,200,0.75)';
@@ -5420,7 +5507,9 @@
   initSiteConfig();
   loadVersion();
   refreshMount();
+  refreshReadiness();
   refreshHealth();
+  setInterval(refreshReadiness, 30_000);
   setInterval(refreshHealth, 10_000);
   loadFocuserCameras();
   loadPreviewCameras();

@@ -1,5 +1,4 @@
 """FastAPI application factory."""
-import contextlib
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,28 +12,14 @@ _log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from .runtime import RuntimeContext, set_runtime
+    ctx = RuntimeContext()
+    set_runtime(ctx)
+    app.state.runtime = ctx
     yield
-    # Graceful shutdown: stop moving parts before closing serial.
-    # OnStep is autonomous — it keeps executing a move command even after the
-    # serial port closes.  Send stop commands first so hardware halts cleanly.
-    from .api import deps
-    if deps._focuser is not None:
-        with contextlib.suppress(Exception):
-            deps._focuser.stop()
-        _log.info("Shutdown: focuser stop sent")
-    if deps._mount is not None:
-        with contextlib.suppress(Exception):
-            deps._mount.stop()
-        _log.info("Shutdown: mount stop sent")
-        with contextlib.suppress(Exception):
-            deps._mount.disconnect()
-        _log.info("Shutdown: mount serial closed")
-    for cam in list(deps._preview_cameras.values()):
-        with contextlib.suppress(Exception):
-            cam.disconnect()
-    if deps._preview_cameras:
-        _log.info("Shutdown: %d secondary camera handle(s) closed", len(deps._preview_cameras))
+    ctx.shutdown()
 
+from .api.readiness import router as readiness_router
 from .api.autogain import router as autogain_router
 from .api.collimation import router as collimation_router
 from .api.guide_monitor import router as guide_monitor_router
@@ -65,6 +50,7 @@ app = FastAPI(title="SmartTelescope", version="0.1.0", lifespan=_lifespan)
 async def serial_exception_handler(request: Request, exc: SerialException) -> JSONResponse:
     _log.warning("Serial I/O error on %s: %s", request.url.path, exc)
     return JSONResponse(status_code=503, content={"detail": "Mount serial connection lost — reconnect the USB cable and restart"})
+app.include_router(readiness_router)
 app.include_router(autogain_router)
 app.include_router(collimation_router)
 app.include_router(guide_monitor_router)

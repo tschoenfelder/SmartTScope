@@ -1286,3 +1286,29 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
 
 - `docs/todo.md`: M3-001, M3-003, M3-005, BUG-003, BUG-017 marked complete.
   R2-003, R2-005 marked complete.
+
+---
+
+## 2026-05-17 — UX2-001..004 (Intent-Based Observation Flow)
+
+**What changed:**
+
+- `smart_telescope/static/index.html`:
+  - Stage 5 card title updated from "Run Observation" to "Start Observation" (UX2-001).
+  - Added a 5-step pipeline strip inside the run-status panel (UX2-002):
+    Connect → GoTo → Centre → Focus → Capture. Each step updates live to
+    pending / active (blue) / done (green, ✓) / failed (red, ✗) as the session
+    progresses through `SessionState` transitions.
+  - Added recovery banner inside the run-status panel (UX2-004): shown when
+    `state=FAILED`; displays failure reason, a contextual action suggestion keyed
+    on `failure_stage`, and a ↺ Retry button that re-runs `s5StartSession()`.
+  - `_s5UpdateSteps(data)`: new function mapping `SessionState` → active step and
+    `failure_stage` → failed step; also drives the recovery banner.
+  - `_s5ResetRunUI()`: extended to reset step strip and hide recovery banner on
+    session start.
+  - CSS: new `.s5-step`, `.s5-step-circle`, `.s5-step-label`, `.s5-step-line`
+    classes with `.step-active`, `.step-done`, `.step-failed`, `.line-done` modifiers.
+  - UX2-003 (automatic sequencing of autofocus/solve/recenter) is already
+    implemented in `VerticalSliceRunner`; the pipeline strip now makes this visible.
+
+- `docs/todo.md`: UX2-001, UX2-002, UX2-003, UX2-004 marked complete.

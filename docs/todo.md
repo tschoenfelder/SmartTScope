@@ -264,10 +264,14 @@
 
 ### UX2 — Intent-Based Observation Flow
 
-- [ ] UX2-001 Add `Start Observation` as the primary action `[P1 · UI]`
-- [ ] UX2-002 Show guided progress steps (slewing → solving → centering → focusing → capturing) `[P1 · UI]`
-- [ ] UX2-003 Move autogain/autofocus/solve/recenter into the automatic workflow `[P1 · UI]`
-- [ ] UX2-004 Show recovery actions when automation fails `[P1 · UI]`
+- [x] UX2-001 Add `Start Observation` as the primary action `[P1 · UI]`
+  - *Done:* Card title updated to "Start Observation"; Start button is the primary CTA in Stage 5.
+- [x] UX2-002 Show guided progress steps (slewing → solving → centering → focusing → capturing) `[P1 · UI]`
+  - *Done:* 5-step pipeline strip (Connect → GoTo → Centre → Focus → Capture) shown inside run-status panel; steps update live with done/active/failed states.
+- [x] UX2-003 Move autogain/autofocus/solve/recenter into the automatic workflow `[P1 · UI]`
+  - *Done:* Backend VerticalSliceRunner already sequences all steps; the pipeline strip makes the automatic sequencing visible to the user.
+- [x] UX2-004 Show recovery actions when automation fails `[P1 · UI]`
+  - *Done:* Recovery banner shown inside run-status when state=FAILED; includes failure reason, contextual action suggestion, and Retry button.
 
 ### UX3 — Hide Camera Index Thinking
 

@@ -213,6 +213,35 @@
     .state-error    { background: rgba(248,81,73,0.15);   color: var(--error); }
     .state-pending  { background: rgba(56,139,253,0.12);  color: var(--accent-hi); border: 1px solid rgba(56,139,253,0.25); }
 
+    /* ── observation pipeline steps (UX2-002) ── */
+    .s5-step {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 0.3rem; flex: 0 0 auto; min-width: 3rem;
+    }
+    .s5-step-circle {
+      width: 1.6rem; height: 1.6rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.68rem; font-weight: 700;
+      border: 2px solid var(--border); background: var(--surface); color: var(--muted);
+      transition: border-color 0.3s, background 0.3s, color 0.3s;
+    }
+    .s5-step-label {
+      font-size: 0.62rem; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--muted);
+      text-align: center; transition: color 0.3s;
+    }
+    .s5-step-line {
+      flex: 1; height: 2px; background: var(--border);
+      margin-top: 0.775rem; transition: background 0.3s;
+    }
+    .s5-step.step-active .s5-step-circle { border-color: var(--accent); color: var(--accent-hi); background: rgba(56,139,253,0.1); }
+    .s5-step.step-active .s5-step-label  { color: var(--accent-hi); }
+    .s5-step.step-done   .s5-step-circle { border-color: var(--success); color: var(--success); background: rgba(63,185,80,0.1); }
+    .s5-step.step-done   .s5-step-label  { color: var(--success); }
+    .s5-step.step-failed .s5-step-circle { border-color: var(--danger); color: var(--danger); background: rgba(248,81,73,0.1); }
+    .s5-step.step-failed .s5-step-label  { color: var(--danger); }
+    .s5-step-line.line-done              { background: var(--success); }
+
     /* ── params grid ── */
     .params {
       display: grid;
@@ -1504,7 +1533,7 @@
     <div class="card">
       <div class="card-title">
         <span class="dot dot-grey" id="s5-session-dot"></span>
-        Run Observation
+        Start Observation
       </div>
       <div class="params">
         <div class="param">
@@ -1562,6 +1591,44 @@
 
       <!-- Live run status — shown while / after a session runs -->
       <div id="s5-run-status" style="display:none;margin-top:1.1rem">
+
+        <!-- UX2-002: Pipeline step strip -->
+        <div style="display:flex;align-items:flex-start;margin-bottom:1rem">
+          <div class="s5-step" id="s5-step-1">
+            <div class="s5-step-circle" id="s5-sc-1">1</div>
+            <div class="s5-step-label">Connect</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-1"></div>
+          <div class="s5-step" id="s5-step-2">
+            <div class="s5-step-circle" id="s5-sc-2">2</div>
+            <div class="s5-step-label">GoTo</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-2"></div>
+          <div class="s5-step" id="s5-step-3">
+            <div class="s5-step-circle" id="s5-sc-3">3</div>
+            <div class="s5-step-label">Centre</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-3"></div>
+          <div class="s5-step" id="s5-step-4">
+            <div class="s5-step-circle" id="s5-sc-4">4</div>
+            <div class="s5-step-label">Focus</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-4"></div>
+          <div class="s5-step" id="s5-step-5">
+            <div class="s5-step-circle" id="s5-sc-5">5</div>
+            <div class="s5-step-label">Capture</div>
+          </div>
+        </div>
+
+        <!-- UX2-004: Recovery panel — shown on FAILED -->
+        <div id="s5-recovery-banner"
+             style="display:none;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.2);border-radius:6px;padding:0.75rem 1rem;margin-bottom:0.75rem">
+          <div style="font-size:0.82rem;font-weight:600;color:var(--danger);margin-bottom:0.25rem">Session failed</div>
+          <div id="s5-recovery-reason" style="font-size:0.8rem;color:var(--text);margin-bottom:0.4rem"></div>
+          <div id="s5-recovery-action" style="font-size:0.75rem;color:var(--muted);margin-bottom:0.6rem"></div>
+          <button onclick="s5StartSession()" style="font-size:0.8rem;padding:0.2rem 0.6rem">&#x21BA;&nbsp;Retry</button>
+        </div>
+
         <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">
           <span style="font-size:0.78rem;color:var(--muted)">Phase</span>
           <span id="s5-state-badge" class="state-badge state-unknown">—</span>
@@ -5142,6 +5209,77 @@
     FAILED:             'state-at_limit',
   };
 
+  // UX2-002: state → which step is currently active (1..5); 6 = all done
+  const _S5_STATE_TO_STEP = {
+    IDLE: 0, CONNECTED: 1, MOUNT_READY: 1,
+    ALIGNED: 2, SLEWED: 2,
+    CENTERED: 3, CENTERING_DEGRADED: 3,
+    FOCUSING: 4,
+    PREVIEWING: 5, STACKING: 5, STACK_COMPLETE: 5, SAVED: 6,
+  };
+
+  // UX2-004: failure stage → which step failed (1..5)
+  const _S5_STAGE_TO_STEP = {
+    connect: 1, initialize_mount: 1,
+    align: 2, goto: 2,
+    recenter: 3,
+    autofocus: 4,
+    preview: 5, stack: 5, save: 5,
+  };
+
+  const _S5_RECOVERY_ACTIONS = {
+    connect:           'Check USB and serial connections, then click Retry.',
+    initialize_mount:  'Verify OnStep is powered and the port is set in smart_telescope.toml.',
+    align:             'Check that the mount is levelled and alignment stars are correctly identified.',
+    goto:              'Target may be below the horizon, or the mount slew was interrupted.',
+    recenter:          'Plate solver could not centre the target — verify the ASTAP catalog is installed.',
+    autofocus:         'Focuser failed to converge — try again with "Skip autofocus" checked.',
+    preview:           'Camera capture failed — check the USB connection to the camera.',
+    stack:             'Stacking failed — check available disk space in the storage directory.',
+    save:              'Could not save the image — check storage directory permissions.',
+  };
+
+  // UX2-002: update the pipeline step strip and (UX2-004) recovery banner
+  function _s5UpdateSteps(data) {
+    const state   = data.state || 'IDLE';
+    const failed  = state === 'FAILED';
+    const failStep  = failed ? (_S5_STAGE_TO_STEP[data.failure_stage] || 0) : 0;
+    const activeStep = failed ? 0 : (_S5_STATE_TO_STEP[state] ?? 0);
+
+    for (let i = 1; i <= 5; i++) {
+      const el     = document.getElementById(`s5-step-${i}`);
+      const circle = document.getElementById(`s5-sc-${i}`);
+      if (!el || !circle) continue;
+
+      const done = activeStep >= 6 || (!failed && i < activeStep) ||
+                   (failed && i < failStep);
+      const active = !failed && i === activeStep;
+      const fail   = failed && i === failStep;
+
+      el.className = 's5-step' + (fail ? ' step-failed' : done ? ' step-done' : active ? ' step-active' : '');
+      circle.textContent = fail ? '✗' : done ? '✓' : String(i);
+    }
+
+    // connector lines: done if the step they lead TO is done
+    const stepsDone = failed ? failStep - 1 : (activeStep >= 6 ? 5 : activeStep - 1);
+    for (let i = 1; i <= 4; i++) {
+      const line = document.getElementById(`s5-sl-${i}`);
+      if (line) line.className = 's5-step-line' + (i <= stepsDone ? ' line-done' : '');
+    }
+
+    // recovery banner (UX2-004)
+    const banner = document.getElementById('s5-recovery-banner');
+    if (!banner) return;
+    if (failed) {
+      document.getElementById('s5-recovery-reason').textContent = data.failure_reason || '';
+      document.getElementById('s5-recovery-action').textContent =
+        _S5_RECOVERY_ACTIONS[data.failure_stage] || 'Check device connections and click Retry.';
+      banner.style.display = '';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
   function _s5ConnectStackWs() {
     if (_s5StackWs) { _s5StackWs.close(); _s5StackWs = null; }
     const proto  = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -5286,6 +5424,19 @@
     document.getElementById('s5-stack-ph').style.display = '';
     document.getElementById('s5-stack-preview').style.display = 'none';
     document.getElementById('s5-stack-ws-status').innerHTML = '';
+    // reset step strip and recovery banner
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById(`s5-step-${i}`);
+      if (el) el.className = 's5-step';
+      const c = document.getElementById(`s5-sc-${i}`);
+      if (c) c.textContent = String(i);
+    }
+    for (let i = 1; i <= 4; i++) {
+      const l = document.getElementById(`s5-sl-${i}`);
+      if (l) l.className = 's5-step-line';
+    }
+    const banner = document.getElementById('s5-recovery-banner');
+    if (banner) banner.style.display = 'none';
   }
 
   function _s5StartPolling() {
@@ -5312,6 +5463,8 @@
 
   function _s5UpdateUI(data) {
     const state = data.state || 'IDLE';
+
+    _s5UpdateSteps(data);
 
     const badge = document.getElementById('s5-state-badge');
     badge.textContent = state.replace(/_/g, ' ');

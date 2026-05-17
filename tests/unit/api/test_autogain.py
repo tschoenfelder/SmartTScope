@@ -139,6 +139,27 @@ class TestCancelEndpoint:
         assert r.status_code == 200
         assert r.json()["cancelled"] is True
 
+    def test_status_returns_cancelled_when_job_completed_after_cancel_request(self) -> None:
+        # BUG-002b: worker completes with POSSIBLE_FOCUS_OR_POINTING_ERROR just as
+        # the cancel request arrives (race).  cancelling=True must override the
+        # non-CANCELLED result so the UI never shows a stale warning after cancel.
+        from smart_telescope.api.autogain import _Job, _set_job
+        from smart_telescope.domain.camera_capabilities import ConversionGain
+
+        job = _Job(running=False, cancelling=True)
+        job.result = AutoGainResult(
+            status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
+            exposure_ms=10000.0,
+            gain=400,
+            offset=0,
+            conversion_gain=ConversionGain.LCG,
+        )
+        _set_job(job)
+
+        d = client.get("/api/autogain/status").json()
+        assert d["status"] == AutoGainStatus.CANCELLED.value
+        assert d.get("warning_msg") is None
+
 
 # ── Full round-trip: run → complete → status ──────────────────────────────────
 

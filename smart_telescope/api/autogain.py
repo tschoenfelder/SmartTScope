@@ -263,6 +263,17 @@ def get_status() -> AutoGainStatusResponse:
     if r is None:
         return AutoGainStatusResponse(running=False, diagnostic=j.diagnostic)
 
+    # If cancel was requested but the job completed before the worker saw the
+    # flag (race: worker finished POSSIBLE_FOCUS_OR_POINTING_ERROR right as the
+    # cancel arrived), report CANCELLED so the UI never shows a stale warning
+    # after the user clicked Cancel.
+    if j.cancelling and r.status != AutoGainStatus.CANCELLED:
+        return AutoGainStatusResponse(
+            running=False,
+            diagnostic=j.diagnostic,
+            status=AutoGainStatus.CANCELLED.value,
+        )
+
     return AutoGainStatusResponse(
         running=False,
         diagnostic=j.diagnostic,

@@ -158,7 +158,7 @@
 - [x] BUG-001 Autogain cancel does not stop for a long time `[P1 · Runtime · Source: Items_to_fix_20260513]`
   - *Acceptance:* cancel completes within < 1 s of the cancel request (POD-002 decision)
   - *Done:* `CaptureAbortedError` + `abort_capture()` in `CameraPort`; ToupcamCamera polls `_frame_ready` every 50ms and breaks on `_abort` event; AutoGainService spawns an abort-watcher thread that calls `camera.abort_capture()` as soon as `cancellation_flag` is set; catches `CaptureAbortedError` → CANCELLED. Cancel latency ≤ 50ms. Two regression tests in `test_autogain_service.py::TestCancelLatency`.
-- [ ] BUG-002b Preview shows `AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR` after autogain cancel `[P2 · UI · Source: Items_to_fix_20260513]`
+- [x] BUG-002b Preview shows `AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR` after autogain cancel `[P2 · UI · Source: Items_to_fix_20260513]`
 - [x] BUG-019 Focuser nudge returns 409 conflict and blocks far too long; rapid +20 presses mostly rejected `[P1 · Hardware · Source: Items_to_fix_20260514]`
   - *Acceptance:* conflict cleared within 2 s; sequential presses each produce movement
   - *Done:* `_safe_move` moved `time.sleep(0.3)` and `started` check outside the coordinator lock; lock now covers only serial command (~50-100 ms), not the started-check sleep
@@ -307,7 +307,7 @@
 - [x] BUG-014 Home button generates HTTP 500; message `Home failed: GoTo failed` gives no cause or next action `[P1 · UI · Source: Items_to_fix_20260514]`
   - *Done:* `mount_home` now returns `"Home slew failed — check mount is tracking and powered (<detail>)"`
   - *Acceptance:* error states cause, current safety state, and recommended next action
-- [ ] BUG-015 HOME, PARK, UNPARK, STOP buttons should be grouped together `[P3 · UI · Source: Items_to_fix_20260514]`
+- [x] BUG-015 HOME, PARK, UNPARK, STOP buttons should be grouped together `[P3 · UI · Source: Items_to_fix_20260514]`
 - [ ] BUG-002 AG checkbox vs Autogain button layout confusing; AF button below histogram, autogain at bottom `[P3 · UI · Source: Items_to_fix_20260513]`
 - [ ] BUG-004 Histogram should show detail below ADU 1000 and current block size above `[P3 · UI · Source: Items_to_fix_20260513]`
 - [ ] BUG-021 Histogram not filled at small values `[P3 · UI · Source: Items_to_fix_20260514]`

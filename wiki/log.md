@@ -1405,3 +1405,31 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
 **Test result:** 2415 passed (pre-existing `test_frame_counter_increments_on_donut_measurement` excluded).
 
 - `docs/todo.md`: R1-008, R1-009 marked complete.
+
+---
+
+## 2026-05-17 — BUG-002b, BUG-015 (autogain cancel + mount button grouping)
+
+**What changed:**
+
+- `smart_telescope/api/autogain.py` (BUG-002b):
+  - `GET /api/autogain/status`: when `job.cancelling=True` and the result status
+    is not `AUTO_GAIN_CANCELLED`, the endpoint now returns `AUTO_GAIN_CANCELLED`
+    instead of the actual result. This prevents a race where the background
+    worker finishes with `POSSIBLE_FOCUS_OR_POINTING_ERROR` just as the cancel
+    request arrives, which would cause the UI to show the warning badge after
+    the user clicked Cancel.
+
+- `tests/unit/api/test_autogain.py`: added
+  `test_status_returns_cancelled_when_job_completed_after_cancel_request` to
+  `TestCancelEndpoint`, directly exercising the race scenario.
+
+- `smart_telescope/static/index.html` (BUG-015):
+  - `mountCard()`: wrapped the Home / Unpark / Park / Stop buttons in a
+    `<span style="display:flex;gap:0.5rem;flex-wrap:nowrap">` so they are
+    always visually grouped and never wrap independently onto separate lines
+    when the controls row is narrow.
+
+**Test result:** 2416 passed.
+
+- `docs/todo.md`: BUG-002b, BUG-015 marked complete.

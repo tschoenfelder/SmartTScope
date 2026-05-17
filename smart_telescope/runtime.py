@@ -83,7 +83,7 @@ def _build_adapters(
                 mount.park()
             else:
                 _log.info("Mount already parked after connect")
-        focuser = OnStepFocuser(mount)
+        focuser = OnStepFocuser(mount.serial_bus)
         focuser.connect()
         _log.info(
             "OnStepFocuser: connected, available=%s — %s",

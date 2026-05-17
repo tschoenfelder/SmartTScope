@@ -69,8 +69,8 @@
 - [ ] R1-006 Add command IDs and structured command logs `[P2 · Runtime]`
 - [x] R1-007 Move mount/focuser endpoint-local locks into coordinator `[P1 · Runtime]`
   - *Done:* `_goto_lock` removed from `mount.py`, `_move_lock` removed from `focuser.py`; all commands use `coordinator.mount_command()` / `coordinator.focuser_command()`
-- [ ] R1-008 Introduce OnStep serial bus abstraction `[P1 · Runtime]`
-- [ ] R1-009 Stop exposing private mount serial methods to focuser adapter `[P1 · Runtime]`
+- [x] R1-008 Introduce OnStep serial bus abstraction `[P1 · Runtime]`
+- [x] R1-009 Stop exposing private mount serial methods to focuser adapter `[P1 · Runtime]`
 - [x] R1-010 Add concurrency, timeout, and STOP-priority tests `[P1 · Tests]`
   - *Done:* 11 tests in `tests/unit/services/test_hardware_coordinator.py` — conflict detection, timeout=0, lock independence, exception release, STOP bypass pattern
 - [ ] R1-011 Hardware verification: STOP during mount slew and STOP during focuser move `[P0 · Hardware]`

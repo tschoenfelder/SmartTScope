@@ -1355,3 +1355,53 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
     for list layout.
 
 - `docs/todo.md`: M4-001..003, M4-005, M4-006 marked complete.
+
+---
+
+## 2026-05-17 — R1-008, R1-009 (OnStep serial bus abstraction)
+
+**What changed:**
+
+- `smart_telescope/adapters/onstep/serial_bus.py` (new): `OnStepSerialBus` owns
+  the `serial.Serial` handle and `threading.Lock` that were previously private
+  attributes of `OnStepMount`. Exposes three public methods:
+  - `send(cmd) -> str` — locked write + readline, decoded and stripped.
+  - `raw_send(cmd) -> bytes` — locked write + readline, raw bytes.
+  - `write_bypass(data: bytes) -> None` — lockless write for emergency-stop
+    commands (:Q#, :FQ#) that must interrupt an in-progress command.
+
+- `smart_telescope/adapters/onstep/mount.py`:
+  - Replaced `self._serial` + `self._lock` with `self._bus: OnStepSerialBus`.
+  - Added a `_serial` property (getter + setter) so existing tests that inject
+    `mount._serial = fake` continue to work without changes.
+  - Added `serial_bus` public property for `OnStepFocuser` to consume.
+  - `_raw_send` / `_send` now delegate to bus; `stop()` calls
+    `self._bus.write_bypass(b":Q#")`.
+  - `connect()` creates the `serial.Serial` object locally and assigns it to
+    `self._bus._serial`; product check logic is unchanged.
+
+- `smart_telescope/adapters/onstep/focuser.py`:
+  - Constructor signature changed from `OnStepFocuser(mount: OnStepMount)` to
+    `OnStepFocuser(bus: OnStepSerialBus)`. No more private-member access.
+  - All `self._mount._send(...)` / `._raw_send(...)` / `._serial` calls replaced
+    with `self._bus.send(...)` / `.raw_send(...)` / `.write_bypass(...)`.
+
+- `smart_telescope/runtime.py`: Updated `OnStepFocuser(mount)` →
+  `OnStepFocuser(mount.serial_bus)`.
+
+- `tests/unit/adapters/onstep/test_onstep_focuser.py`:
+  - Replaced `MagicMock(spec=OnStepMount)` with `MagicMock(spec=OnStepSerialBus)`.
+  - `stop()` test now asserts `bus.write_bypass.assert_called_once_with(b":FQ#")`
+    instead of reaching into a mock serial attribute.
+
+- `tests/unit/adapters/onstep/test_onstep_mount.py`: no changes needed — the
+  `"smart_telescope.adapters.onstep.mount.serial.Serial"` patch target is still
+  valid because `connect()` still lives in mount.py.
+
+- `tests/unit/adapters/onstep/test_with_fake_serial.py`: no changes needed — the
+  `_serial` property setter makes `mount._serial = fake` transparently update the
+  bus.
+
+**Test result:** 2415 passed (pre-existing `test_frame_counter_increments_on_donut_measurement` excluded).
+
+- `docs/todo.md`: R1-008, R1-009 marked complete.

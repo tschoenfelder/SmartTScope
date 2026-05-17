@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import threading
 import time
 
 import serial
 
 from ...ports.mount import MountPort, MountPosition, MountState
+from .serial_bus import OnStepSerialBus
 
 _log = logging.getLogger(__name__)
 
@@ -59,20 +58,36 @@ class OnStepMount(MountPort):
         self._port = port
         self._baud_rate = baud_rate
         self._timeout = timeout
-        self._serial: serial.Serial | None = None
-        self._lock = threading.Lock()
+        self._bus = OnStepSerialBus()
+
+    # ── backward-compat property so test_with_fake_serial.py can set _serial ──
+
+    @property
+    def _serial(self) -> serial.Serial | None:  # type: ignore[override]
+        return self._bus._serial
+
+    @_serial.setter
+    def _serial(self, value: serial.Serial | None) -> None:
+        self._bus._serial = value
+
+    @property
+    def serial_bus(self) -> OnStepSerialBus:
+        """Public access to the shared bus (used by OnStepFocuser)."""
+        return self._bus
 
     def connect(self) -> bool:
-        if self._serial is not None and self._serial.is_open:
+        s = self._bus._serial
+        if s is not None and s.is_open:
             _log.info("OnStepMount.connect(): already open on %s", self._port)
             return True  # already connected — idempotent
         _log.info("OnStepMount.connect(): opening %s @ %d baud timeout=%.1fs",
                   self._port, self._baud_rate, self._timeout)
         try:
-            self._serial = serial.Serial(self._port, self._baud_rate, timeout=self._timeout)
+            s = serial.Serial(self._port, self._baud_rate, timeout=self._timeout)
         except (serial.SerialException, OSError) as exc:
             _log.error("OnStepMount.connect(): failed to open %s — %s", self._port, exc)
             return False
+        self._bus._serial = s
 
         # Confirm we're talking to OnStep and not another serial device on this port.
         # Uses read() instead of readline() so unit-test mocks (which only stub
@@ -81,9 +96,9 @@ class OnStepMount(MountPort):
         # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
         # On reconnect the input buffer may contain a stale command ACK ('0' or '1').
         # If we get a short numeric response, flush and retry once before rejecting.
-        self._serial.reset_input_buffer()
-        self._serial.write(b":GVP#")
-        raw = self._serial.read(32)
+        s.reset_input_buffer()
+        s.write(b":GVP#")
+        raw = s.read(32)
         product = ""
         if isinstance(raw, bytes):
             product = raw.decode(errors="replace").rstrip("#\r\n").strip()
@@ -95,16 +110,16 @@ class OnStepMount(MountPort):
                     product,
                 )
                 time.sleep(0.3)
-                self._serial.reset_input_buffer()
-                self._serial.write(b":GVP#")
-                raw2 = self._serial.read(32)
+                s.reset_input_buffer()
+                s.write(b":GVP#")
+                raw2 = s.read(32)
                 if isinstance(raw2, bytes):
                     product = raw2.decode(errors="replace").rstrip("#\r\n").strip()
                     _log.info("OnStepMount.connect(): :GVP# retry response = %r", product)
             if product and "on" not in product.lower() and "step" not in product.lower():
                 _log.error("OnStepMount.connect(): unexpected product %r — not OnStep, closing", product)
-                self._serial.close()
-                self._serial = None
+                s.close()
+                self._bus._serial = None
                 return False
         else:
             _log.warning("OnStepMount.connect(): :GVP# returned non-bytes %r (mock?)", raw)
@@ -114,22 +129,15 @@ class OnStepMount(MountPort):
         return True
 
     def disconnect(self) -> None:
-        if self._serial is not None:
-            self._serial.close()
+        s = self._bus._serial
+        if s is not None:
+            s.close()
 
     def _raw_send(self, cmd: str) -> bytes:
-        if self._serial is None:
-            return b""
-        with self._lock:
-            try:
-                self._serial.write(cmd.encode())
-                return bytes(self._serial.readline())
-            except Exception:
-                self._serial = None
-                raise
+        return self._bus.raw_send(cmd)
 
     def _send(self, cmd: str) -> str:
-        return self._raw_send(cmd).decode(errors="replace").rstrip("#\r\n")
+        return self._bus.send(cmd)
 
     def get_state(self) -> MountState:
         r = self._send(":GU#")
@@ -185,9 +193,7 @@ class OnStepMount(MountPort):
         return "|" in self._send(":D#")
 
     def stop(self) -> None:
-        if self._serial is not None:
-            with contextlib.suppress(Exception):
-                self._serial.write(b":Q#")
+        self._bus.write_bypass(b":Q#")
 
     def park(self) -> bool:
         self._raw_send(":hP#")

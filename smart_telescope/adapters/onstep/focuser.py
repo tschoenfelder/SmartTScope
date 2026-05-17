@@ -1,8 +1,8 @@
-"""OnStep V4 focuser adapter — delegates serial I/O to OnStepMount.
+"""OnStep V4 focuser adapter — delegates serial I/O to OnStepSerialBus.
 
 The OnStep controller uses a single serial port for both mount and focuser
-commands.  OnStepFocuser holds no serial handle of its own; it calls
-OnStepMount._send / _raw_send so that all traffic shares the mount's lock.
+commands.  OnStepFocuser holds no serial handle of its own; it calls methods
+on OnStepSerialBus so that all traffic shares the mount's lock.
 """
 
 from __future__ import annotations
@@ -10,27 +10,27 @@ from __future__ import annotations
 import logging
 
 from ...ports.focuser import FocuserPort
-from .mount import OnStepMount
+from .serial_bus import OnStepSerialBus
 
 _log = logging.getLogger(__name__)
 
 
 class OnStepFocuser(FocuserPort):
-    """Controls the OnStep focuser via the mount's shared serial connection.
+    """Controls the OnStep focuser via the shared serial bus.
 
     Args:
-        mount: connected OnStepMount whose serial handle and lock are reused.
+        bus: OnStepSerialBus instance obtained from OnStepMount.serial_bus.
     """
 
-    def __init__(self, mount: OnStepMount) -> None:
-        self._mount = mount
+    def __init__(self, bus: OnStepSerialBus) -> None:
+        self._bus = bus
         self._available: bool = False
         self._max_position: int = 0
 
     # ── FocuserPort ───────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
-        reply = self._mount._send(":FA#")
+        reply = self._bus.send(":FA#")
         self._available = reply == "1"
         _log.info("OnStepFocuser.connect(): :FA# reply=%r available=%s", reply, self._available)
         if self._available:
@@ -41,14 +41,14 @@ class OnStepFocuser(FocuserPort):
         return True
 
     def disconnect(self) -> None:
-        pass  # serial owned by OnStepMount
+        pass  # serial owned by OnStepSerialBus
 
     @property
     def is_available(self) -> bool:
         return self._available
 
     def get_position(self) -> int:
-        reply = self._mount._send(":FG#")
+        reply = self._bus.send(":FG#")
         try:
             return int(reply)
         except ValueError:
@@ -59,24 +59,20 @@ class OnStepFocuser(FocuserPort):
 
     def move(self, steps: int) -> None:
         _log.info("OnStepFocuser.move(): steps=%d", steps)
-        self._mount._raw_send(f":FS{steps}#")
+        self._bus.raw_send(f":FS{steps}#")
 
     def is_moving(self) -> bool:
-        return self._mount._send(":FT#") == "M"
+        return self._bus.send(":FT#") == "M"
 
     def stop(self) -> None:
         # Bypass the serial lock — stop must be immediate even when another
         # command is in progress.  Write-only: no response expected from :FQ#.
-        s = self._mount._serial
-        if s is not None:
-            import contextlib
-            with contextlib.suppress(Exception):
-                s.write(b":FQ#")
+        self._bus.write_bypass(b":FQ#")
 
     # ── private ───────────────────────────────────────────────────────────────
 
     def _fetch_max_position(self) -> int:
-        reply = self._mount._send(":FM#")
+        reply = self._bus.send(":FM#")
         try:
             return int(reply)
         except ValueError:

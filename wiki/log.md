@@ -1332,3 +1332,26 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
     connect, autofocus, etc.).
 
 - `docs/todo.md`: UX4-004, R6-005, UX5-001..004 marked complete.
+
+---
+
+## 2026-05-17 — M4-002 (Visible Tonight target card)
+
+**What changed:**
+
+- `smart_telescope/static/index.html`:
+  - Added "Visible Tonight" card to Stage 5 (M4-002): fetches
+    `GET /api/catalog/tonight?min_altitude=20&limit=12` and renders a
+    clickable list of Messier objects above 20° at the current time, sorted by
+    altitude. Each row shows the object name, common name, type chip (e.g.
+    "Galaxy", "Glob. Cluster"), altitude in degrees, and a ☀ warning icon for
+    objects with `solar_safe=false`.
+  - `s5LoadTargets()`: async function that drives the card; dot indicator shows
+    yellow while loading, green on success, red on error, grey when list is empty.
+  - `s5UseTarget(name)`: clicking a row copies the name into the target input and
+    moves focus to the Start Session button with a brief status message.
+  - `goToStage(5)` now calls `s5LoadTargets()` so the card auto-loads on entry.
+  - CSS: `.tonight-row`, `.tonight-name`, `.tonight-type-chip`, `.tonight-alt`
+    for list layout.
+
+- `docs/todo.md`: M4-001..003, M4-005, M4-006 marked complete.

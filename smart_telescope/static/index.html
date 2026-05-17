@@ -213,6 +213,23 @@
     .state-error    { background: rgba(248,81,73,0.15);   color: var(--error); }
     .state-pending  { background: rgba(56,139,253,0.12);  color: var(--accent-hi); border: 1px solid rgba(56,139,253,0.25); }
 
+    /* ── tonight target list (M4-002) ── */
+    .tonight-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 0.4rem; border-radius: 4px; cursor: pointer; font-size: 0.82rem;
+    }
+    .tonight-row:hover { background: rgba(56,139,253,0.07); }
+    .tonight-name { flex: 1; }
+    .tonight-type-chip {
+      font-size: 0.64rem; padding: 0.08rem 0.35rem; border-radius: 3px;
+      background: rgba(56,139,253,0.12); color: var(--accent-hi);
+      text-transform: uppercase; font-weight: 600; white-space: nowrap;
+    }
+    .tonight-alt {
+      font-family: ui-monospace, monospace; color: var(--muted);
+      font-size: 0.76rem; min-width: 2.5rem; text-align: right;
+    }
+
     /* ── observation pipeline steps (UX2-002) ── */
     .s5-step {
       display: flex; flex-direction: column; align-items: center;
@@ -1528,6 +1545,22 @@
 
     <div class="toolbar"><h2>Observation Session</h2></div>
 
+    <!-- M4-002: Visible Tonight — target recommendations -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s5-tonight-dot"></span>
+        Visible Tonight
+        <button onclick="s5LoadTargets()"
+                style="padding:0.2rem 0.6rem;font-size:0.75rem;margin-left:auto">
+          ↻ Refresh
+        </button>
+      </div>
+      <div id="s5-tonight-list" style="min-height:2rem">
+        <span style="color:var(--muted);font-size:0.8rem">Loading…</span>
+      </div>
+      <div id="s5-tonight-status" class="status-line" style="min-height:0;margin-top:0.25rem"></div>
+    </div>
+
     <!-- Session Setup & Control -->
     <div id="s5-session-status" class="status-line"></div>
     <div class="card">
@@ -2003,6 +2036,7 @@
     else         { _startMountStripPoll(); }
     _renderStageBar();
     if (n === 4) { refreshFocuser(); loadCollimStars(); }
+    if (n === 5) { s5LoadTargets(); }
   }
 
   function unlockStage(n) {
@@ -5236,6 +5270,54 @@
       setStatus('s3-status', `Sync failed: ${err.message}`, true);
       if (btn) { btn.disabled = false; btn.innerHTML = 'Sync Mount'; }
     }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Visible Tonight — target recommendations (M4-002)
+  ══════════════════════════════════════════════════════════════════════ */
+  const _OBJ_TYPE_LABELS = {
+    EN: 'Nebula', RN: 'Nebula', PN: 'Plan. Neb.', SNR: 'SNR',
+    GC: 'Glob. Cluster', OC: 'Open Cluster',
+    SG: 'Galaxy', EG: 'Galaxy', DS: 'Double Star',
+    AST: 'Asterism', MSC: 'Star Cloud',
+  };
+
+  async function s5LoadTargets() {
+    const dot  = document.getElementById('s5-tonight-dot');
+    const list = document.getElementById('s5-tonight-list');
+    dot.className = 'dot dot-yellow';
+    list.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">Loading…</span>';
+    setStatus('s5-tonight-status', '');
+    try {
+      const data = await (await fetch('/api/catalog/tonight?min_altitude=20&limit=12')).json();
+      if (!Array.isArray(data) || data.length === 0) {
+        list.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No Messier objects above 20° right now.</span>';
+        dot.className = 'dot dot-grey';
+        return;
+      }
+      list.innerHTML = data.map(t => {
+        const label = _OBJ_TYPE_LABELS[t.object_type] || t.object_type;
+        const cn    = t.common_name ? ` <span style="color:var(--muted)">${escHtml(t.common_name)}</span>` : '';
+        const solar = !t.solar_safe ? ' <span style="color:var(--warning);font-size:0.68rem">☀</span>' : '';
+        return `<div class="tonight-row" onclick="s5UseTarget('${escHtml(t.name)}')" title="Click to use ${escHtml(t.name)}">
+          <span class="tonight-name">${escHtml(t.name)}${cn}</span>
+          <span class="tonight-type-chip">${label}</span>
+          <span class="tonight-alt">${t.altitude_deg != null ? t.altitude_deg.toFixed(0) : '?'}°</span>
+          ${solar}
+        </div>`;
+      }).join('');
+      dot.className = 'dot dot-green';
+    } catch (err) {
+      setStatus('s5-tonight-status', 'Failed to load: ' + err, true);
+      list.innerHTML = '';
+      dot.className = 'dot dot-red';
+    }
+  }
+
+  function s5UseTarget(name) {
+    document.getElementById('s5-target').value = name;
+    document.getElementById('s5-start-btn').focus();
+    setStatus('s5-session-status', `Target set to ${name} — adjust settings and press Start Session.`);
   }
 
   /* ══════════════════════════════════════════════════════════════════════

@@ -314,12 +314,17 @@
 
 ### Milestone M4 tasks
 
-- [ ] M4-001 Implement `Ready to Observe` first-run screen `[P1 · UI]`
-- [ ] M4-002 Implement target recommendation view `[P1 · UI]`
-- [ ] M4-003 Implement `Start Observation` guided workflow `[P1 · UI]`
+- [x] M4-001 Implement `Ready to Observe` first-run screen `[P1 · UI]`
+  - *Done (UX1):* Readiness card loads automatically on Stage 1 page open; red/yellow/green summary with repair guidance.
+- [x] M4-002 Implement target recommendation view `[P1 · UI]`
+  - *Done:* "Visible Tonight" card in Stage 5 uses `/api/catalog/tonight` to list Messier objects above 20° sorted by altitude; clicking any row sets the target; card auto-loads on entering Stage 5.
+- [x] M4-003 Implement `Start Observation` guided workflow `[P1 · UI]`
+  - *Done (UX2):* Pipeline step strip shows Connect→GoTo→Centre→Focus→Capture live; recovery banner on failure.
 - [ ] M4-004 Move manual controls into advanced/diagnostics mode `[P2 · UI]`
-- [ ] M4-005 Add recovery-oriented errors `[P1 · UI]`
-- [ ] M4-006 Keep emergency stop globally visible `[P0 · UI]`
+- [x] M4-005 Add recovery-oriented errors `[P1 · UI]`
+  - *Done (UX5):* `friendlyError()` + `_ERROR_PATTERNS` in setStatus; recovery banner in session.
+- [x] M4-006 Keep emergency stop globally visible `[P0 · UI]`
+  - *Done (UX4-004):* Mount strip always visible on all stages.
 
 **Quality gate:** User can start observing without manually managing solve/focus/gain/recenter. Beginner mode avoids camera indices and hardware jargon. Recovery messages tell user what to do next.
 

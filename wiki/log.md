@@ -4,6 +4,52 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — R1-006, R1-008/009, BUG-002b, BUG-015 (continued)
+
+**What changed:**
+
+- `services/device_state.py` (R1-006): `record_command()` now returns a
+  sequential command ID (`cmd-NNNN` format). Added `_cmd_counter` and
+  `_last_command_id` to `__init__`. Both `record_command()` and
+  `record_command_error()` emit structured `key=value` log lines including the
+  command ID for log correlation. New `get_last_command_id()` method exposes the
+  last ID to callers.
+
+- `tests/unit/services/test_device_state.py` (R1-006): 7 new tests covering
+  ID format, uniqueness, sequential ordering, `get_last_command_id()` initial
+  state and match, and caplog assertions for both `record_command` and
+  `record_command_error`. All 30 device-state tests pass.
+
+- `adapters/onstep/serial_bus.py` (R1-008): New `OnStepSerialBus` class owns
+  the `serial.Serial` object and threading lock previously private to
+  `OnStepMount`. Exposes `send()`, `raw_send()`, `write_bypass()`.
+
+- `adapters/onstep/mount.py` (R1-009): Replaced `self._serial`/`self._lock`
+  with `self._bus = OnStepSerialBus()`. Added `_serial` property (getter/setter)
+  proxying to `self._bus._serial` for backward compatibility with existing tests.
+  Added `serial_bus` property for consumers.
+
+- `adapters/onstep/focuser.py` (R1-009): Constructor now accepts
+  `OnStepSerialBus` instead of `OnStepMount`. All serial I/O goes through the
+  bus directly — no access to mount private members.
+
+- `runtime.py` (R1-009): Updated `OnStepFocuser(mount)` → `OnStepFocuser(mount.serial_bus)`.
+
+- `api/autogain.py` (BUG-002b): `get_status()` now returns
+  `AUTO_GAIN_CANCELLED` when `job.cancelling=True` even if the worker completed
+  with a non-CANCELLED result before seeing the cancel flag (cancel race fix).
+
+- `static/index.html` (BUG-015): Mount Home/Unpark/Park/Stop buttons wrapped
+  in a `flex-wrap:nowrap` span to prevent wrapping into multiple rows on narrow
+  viewports.
+
+- `tests/unit/services/test_pipeline_wiring.py`: Added missing `_donut_camera()`
+  helper (was referenced but never defined — pre-existing `NameError`).
+
+**Tests:** 2436 passed, 0 failed.
+
+---
+
 ## 2026-05-17 — BUG-019, BUG-022, R4-001..004
 
 **What changed:**

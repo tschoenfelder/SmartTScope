@@ -216,6 +216,63 @@ def test_successive_commands_overwrite_previous():
     assert cmd == "goto ra=5.0h dec=45.0°"
 
 
+# ── R1-006: command IDs ───────────────────────────────────────────────────────
+
+def test_record_command_returns_string_id():
+    svc = DeviceStateService()
+    cmd_id = svc.record_command("park")
+    assert isinstance(cmd_id, str)
+    assert len(cmd_id) > 0
+
+
+def test_command_ids_are_unique_per_call():
+    svc = DeviceStateService()
+    id1 = svc.record_command("unpark")
+    id2 = svc.record_command("park")
+    assert id1 != id2
+
+
+def test_command_ids_are_sequential():
+    svc = DeviceStateService()
+    id1 = svc.record_command("unpark")
+    id2 = svc.record_command("track")
+    id3 = svc.record_command("park")
+    # IDs have the form "cmd-NNNN"; extract numbers and verify strictly increasing
+    nums = [int(x.split("-")[1]) for x in (id1, id2, id3)]
+    assert nums[0] < nums[1] < nums[2]
+
+
+def test_get_last_command_id_matches_returned_id():
+    svc = DeviceStateService()
+    returned_id = svc.record_command("goto ra=6.0h dec=45.0°")
+    stored_id   = svc.get_last_command_id()
+    assert stored_id == returned_id
+
+
+def test_initial_command_id_is_none():
+    svc = DeviceStateService()
+    assert svc.get_last_command_id() is None
+
+
+def test_command_id_logged(caplog):
+    import logging
+    svc = DeviceStateService()
+    with caplog.at_level(logging.INFO, logger="smart_telescope.services.device_state"):
+        cmd_id = svc.record_command("park")
+    assert cmd_id in caplog.text
+    assert "park" in caplog.text
+
+
+def test_command_error_logged_with_id(caplog):
+    import logging
+    svc = DeviceStateService()
+    with caplog.at_level(logging.WARNING, logger="smart_telescope.services.device_state"):
+        cmd_id = svc.record_command("park")
+        svc.record_command_error("Park rejected")
+    assert cmd_id in caplog.text
+    assert "Park rejected" in caplog.text
+
+
 # ── R2-005: state convergence helpers ─────────────────────────────────────────
 
 def _svc_with_state(state: MountState) -> DeviceStateService:

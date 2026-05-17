@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-16 (Collimation Phase 13 replay infrastructure — 91 new tests, all 2358 pass)
+**Last updated:** 2026-05-17 (Phase 14 pipeline wiring + R1-006 command IDs — 2436 tests pass)
 
 ## Priority legend
 
@@ -66,7 +66,7 @@
   - *Done:* STOP endpoints call mount/focuser directly, never through coordinator
 - [x] R1-005 Define command lifecycle states `[P1 · Runtime]`
   - *Done (R2-003+R2-005):* Lifecycle is: command issued (record_command) → hardware executing (convergence helpers poll cached state) → done or error (record_command_error + observed state change); exposed in MountStatus.last_command/last_command_error
-- [ ] R1-006 Add command IDs and structured command logs `[P2 · Runtime]`
+- [x] R1-006 Add command IDs and structured command logs `[P2 · Runtime]`
 - [x] R1-007 Move mount/focuser endpoint-local locks into coordinator `[P1 · Runtime]`
   - *Done:* `_goto_lock` removed from `mount.py`, `_move_lock` removed from `focuser.py`; all commands use `coordinator.mount_command()` / `coordinator.focuser_command()`
 - [x] R1-008 Introduce OnStep serial bus abstraction `[P1 · Runtime]`
@@ -441,7 +441,14 @@
 - [x] COL-130 Replay frame provider (prerecorded test frames, no hardware needed) `[P2 · Collimation]`
 - [x] COL-131 Unit tests for remaining algorithm phases `[P1 · Collimation]`
 
-**Next:** Phase 6 focuser algorithm (rough focus search + controlled defocus to donut regime).
+### Phase 14 — Live Pipeline Wiring
+
+- [x] COL-140 Wire acquisition pipeline: ACQUIRE_STAR → CENTER_STAR → AUTO_EXPOSURE `[P1 · Collimation]`
+  - *Done:* `_handle_acquire_star` (5-attempt star detection), `_handle_center_star` (centering loop), `_handle_auto_exposure` (8-step ADU search)
+- [x] COL-141 Wire rough collimation pipeline: ROUGH_DEFOCUS → MAP_SCREWS → MEASURE_DONUT → GUIDE_ROUGH_COLLIMATION `[P1 · Collimation]`
+  - *Done:* `_handle_rough_defocus` (focuser steps to defocus target), `_handle_map_screws_by_obstruction`, `_handle_measure_donut` (DonutAnalyzer), `_handle_guide_rough_collimation` (user-wait with advisor recommendation)
+- [x] COL-142 Wire fine collimation pipeline: MAP_MASK_SECTORS → FINE_FOCUS → MEASURE_SPIKES → GUIDE_FINE_COLLIMATION → MASKLESS_VALIDATION `[P1 · Collimation]`
+  - *Done:* `_handle_map_mask_sectors` (MaskSectorCalibration + SpikeSmoother + ContradictionDetector init), `_handle_fine_focus`, `_handle_measure_spikes` (BahtinovAnalyzer), `_handle_guide_fine_collimation`, `_handle_maskless_validation`
 
 ---
 

@@ -55,10 +55,12 @@ class DeviceStateService:
         self._lock         = threading.Lock()
         self._stop_event   = threading.Event()
         self._thread: threading.Thread | None = None
-        # R2-003: last command tracking
+        # R2-003: last command tracking; R1-006: sequential command IDs
         self._last_command:       str   | None = None
+        self._last_command_id:    str   | None = None
         self._last_command_at:    float | None = None  # time.monotonic()
         self._last_command_error: str   | None = None
+        self._cmd_counter: int = 0
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -91,24 +93,46 @@ class DeviceStateService:
         with self._lock:
             return self._mount_state
 
-    # ── R2-003: command tracking ──────────────────────────────────────────────
+    # ── R2-003 / R1-006: command tracking with structured IDs ─────────────────
 
-    def record_command(self, command: str) -> None:
-        """Record that a mount command was issued (park, unpark, goto, etc.)."""
+    def record_command(self, command: str) -> str:
+        """Record that a mount command was issued and return its command ID.
+
+        Each call increments an internal counter and generates a unique ID of
+        the form ``cmd-0001``.  The ID is included in the structured log line
+        so that the matching ``record_command_error`` entry can be correlated.
+
+        Returns:
+            The assigned command ID string (e.g. ``"cmd-0001"``).
+        """
         with self._lock:
+            self._cmd_counter += 1
+            cmd_id = f"cmd-{self._cmd_counter:04d}"
             self._last_command       = command
+            self._last_command_id    = cmd_id
             self._last_command_at    = time.monotonic()
             self._last_command_error = None
+        _log.info("command issued command_id=%s command=%r", cmd_id, command)
+        return cmd_id
 
     def record_command_error(self, error: str) -> None:
         """Record the error string from the most recent command."""
         with self._lock:
             self._last_command_error = error
+            cmd_id   = self._last_command_id
+            command  = self._last_command
+        _log.warning("command failed command_id=%s command=%r error=%r",
+                     cmd_id, command, error)
 
     def get_last_command(self) -> tuple[str | None, float | None, str | None]:
         """Return (command_name, monotonic_timestamp, error_or_None)."""
         with self._lock:
             return self._last_command, self._last_command_at, self._last_command_error
+
+    def get_last_command_id(self) -> str | None:
+        """Return the ID assigned to the most recently issued command."""
+        with self._lock:
+            return self._last_command_id
 
     # ── R2-005: state convergence helpers ────────────────────────────────────
 

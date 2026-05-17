@@ -279,14 +279,18 @@
   - *Done (R4-005):* All camera selects show train names ("main — c8", "guide — guide_scope")
 - [x] UX3-002 Show guide/OAG/wide-field camera only as configured roles `[P1 · UI]`
   - *Done (R4-005):* Trains appear only when configured; focuser select filters to has_focuser=true
-- [ ] UX3-003 Show serial/logical name only in diagnostics `[P2 · UI]`
+- [x] UX3-003 Show serial/logical name only in diagnostics `[P2 · UI]`
+  - *Done:* Camera IDs / hardware serials shown only in `cameraCard()` in Stage 6 scan area. Main UI uses optical train role names ("main", "guide") throughout.
 - [ ] UX3-004 Hide unsupported controls (e.g. cooling for non-cooled cameras) `[P2 · UI]`
 
 ### UX4 — Advanced Mode For Manual Controls
 
-- [ ] UX4-001 Add beginner/advanced mode distinction `[P2 · UI]`
-- [ ] UX4-002 Move manual mount controls to advanced/diagnostics (except emergency stop) `[P2 · UI]`
-- [ ] UX4-003 Move manual focuser controls to advanced/diagnostics (except recovery actions) `[P2 · UI]`
+- [x] UX4-001 Add beginner/advanced mode distinction `[P2 · UI]`
+  - *Done:* "Advanced" toggle button in header; state persisted in `localStorage` (`tsc_advanced_mode`). `body.advanced-mode` CSS class controls `.adv-only` visibility.
+- [x] UX4-002 Move manual mount controls to advanced/diagnostics (except emergency stop) `[P2 · UI]`
+  - *Done:* Home / Unpark / Park / Enable Tracking / Disable Tracking wrapped in `.adv-only` span in `mountCard()`. Stop always visible.
+- [x] UX4-003 Move manual focuser controls to advanced/diagnostics (except recovery actions) `[P2 · UI]`
+  - *Done:* Nudge buttons (±1000/±100/±10) and Move To row wrapped in `.adv-only` in `focuserCard()`. Autofocus and Stop always visible.
 - [x] UX4-004 Keep emergency stop globally visible at all times `[P0 · UI]`
   - *Done:* Mount strip now starts visible (class `visible` in HTML); `goToStage()` no longer hides it on Stage 1. STOP button is in the strip at all times.
 
@@ -300,7 +304,8 @@
   - *Done:* Camera not found, capture timeout, camera error patterns in `_ERROR_PATTERNS`.
 - [x] UX5-004 Map solver errors to user-facing messages `[P1 · UI]`
   - *Done:* ASTAP not found, catalog not found, no stars, plate solve failed patterns in `_ERROR_PATTERNS`.
-- [ ] UX5-005 Add diagnostics link for advanced error details `[P2 · UI]`
+- [x] UX5-005 Add diagnostics link for advanced error details `[P2 · UI]`
+  - *Done:* `setStatus(..., true)` now appends a "→ Setup & Diagnostics" link that calls `goToStage(1)`. Visible on every error status banner.
 
 ### Field bugs — UX and errors
 
@@ -320,7 +325,8 @@
   - *Done:* "Visible Tonight" card in Stage 5 uses `/api/catalog/tonight` to list Messier objects above 20° sorted by altitude; clicking any row sets the target; card auto-loads on entering Stage 5.
 - [x] M4-003 Implement `Start Observation` guided workflow `[P1 · UI]`
   - *Done (UX2):* Pipeline step strip shows Connect→GoTo→Centre→Focus→Capture live; recovery banner on failure.
-- [ ] M4-004 Move manual controls into advanced/diagnostics mode `[P2 · UI]`
+- [x] M4-004 Move manual controls into advanced/diagnostics mode `[P2 · UI]`
+  - *Done (UX4-001/002/003):* Advanced Mode toggle in header; Home/Unpark/Park/Tracking hidden in beginner mode; focuser nudge/Move-To hidden in beginner mode.
 - [x] M4-005 Add recovery-oriented errors `[P1 · UI]`
   - *Done (UX5):* `friendlyError()` + `_ERROR_PATTERNS` in setStatus; recovery banner in session.
 - [x] M4-006 Keep emergency stop globally visible `[P0 · UI]`
@@ -369,8 +375,10 @@
 
 ### Phase 2 — User-Visible MVP Shell (UI)
 
-- [ ] COL-020 Add wizard panel (current step, instruction, status, pause/cancel) `[P2 · Collimation · UI]`
-- [ ] COL-021 Add overlay visibility test mode (crosshair, test circles, screw labels) `[P2 · Collimation · UI]`
+- [x] COL-020 Add wizard panel (current step, instruction, status, pause/cancel) `[P2 · Collimation · UI]`
+  - *Done:* Wizard card added to Stage 4 with 5-phase progress strip, instruction text, recommendation block, Start/Pause/Resume/Cancel/Reset action buttons, contextual Remeasure/Finish-Phase/Accept/Adjust-More buttons, error display; polls `/api/collimation/status` every 2 s when active; star clicks in SELECT_STAR state route to `/api/collimation/next` with ra/dec.
+- [x] COL-021 Add overlay visibility test mode (crosshair, test circles, screw labels) `[P2 · Collimation · UI]`
+  - *Done:* `_drawCollimOverlay()` draws donut outer/inner circles (blue/green), error vector (red arrow), and spike crossing crosshair on `s4-bahtinov-svg` overlay; polled from `/api/collimation/overlay` alongside status poll.
 - [ ] COL-022 Add hardware self-test page (camera stream, mount pulse guide, focuser small step) `[P2 · Collimation · UI]`
 
 ### Phase 4 — Mount and Focuser Control
@@ -525,8 +533,10 @@
   - No automatic cover exists; user must drive frame collection manually. Defer to post-MVP.
 - [ ] BUG-006 Extended setup check: focuser move test, RA/DEC 10° test, multi-camera plate solve, home return `[P2 · Hardware · Source: Items_to_fix_20260513]`
   - Implement after M3 readiness service is in place.
-- [ ] BUG-018 Park logs `park issued` but unpark logs nothing `[P3 · Logging · Source: Items_to_fix_20260514]`
-- [ ] BUG-020 Clicking +20 focuser not logged when live preview is running `[P2 · Logging · Source: Items_to_fix_20260514]`
+- [x] BUG-018 Park logs `park issued` but unpark logs nothing `[P3 · Logging · Source: Items_to_fix_20260514]`
+  - *Done:* Added `_log.info("Mount unpark issued")` in `services/mount_operations.py::unpark_sequence()` immediately after the unpark command is accepted.
+- [x] BUG-020 Clicking +20 focuser not logged when live preview is running `[P2 · Logging · Source: Items_to_fix_20260514]`
+  - *Done:* Added `_log.info("Focuser nudge request: delta=%d", body.delta)` at the entry of `api/focuser.py::focuser_nudge()` — logs every nudge request before any conflict check.
 
 ---
 

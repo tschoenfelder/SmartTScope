@@ -109,6 +109,7 @@ def focuser_nudge(
     focuser: FocuserPort = Depends(deps.get_focuser),
     coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
 ) -> dict[str, object]:
+    _log.info("Focuser nudge request: delta=%d", body.delta)
     if not focuser.is_available:
         raise HTTPException(status_code=503, detail="Focuser not available")
     current = focuser.get_position()

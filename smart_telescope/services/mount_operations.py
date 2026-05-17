@@ -72,6 +72,7 @@ def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
     ok = mount.unpark()
     if not ok:
         raise RuntimeError("Unpark rejected by OnStep")
+    _log.info("Mount unpark issued")
     changed = device_state.wait_while_mount_state(MountState.PARKED, timeout_s=3.0)
     if changed:
         obs = device_state.get_mount_state()

@@ -494,10 +494,22 @@
       font-size: 0.85rem;
     }
 
+    /* ── advanced-mode toggle — hides .adv-only in beginner mode ── */
+    .adv-only { display: none !important; }
+    body.advanced-mode .adv-only { display: flex !important; }
+
     /* ── visibility badges (custom targets) ── */
     .vis-badge { font-size: 0.62rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 3px; flex-shrink: 0; }
     .vis-now   { background: rgba(63,185,80,0.15);  color: var(--success); }
     .vis-later { background: rgba(210,153,34,0.15); color: var(--warning); }
+
+    /* ── collimation wizard phase strip ── */
+    .wiz-phases { display: flex; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; margin-bottom: 0.75rem; }
+    .wiz-phase { flex: 1; padding: 0.28rem 0.3rem; text-align: center; background: var(--bg); color: var(--muted); border-right: 1px solid var(--border); }
+    .wiz-phase:last-child { border-right: none; }
+    .wiz-phase.wiz-done   { background: rgba(63,185,80,0.1);  color: var(--success); }
+    .wiz-phase.wiz-active { background: rgba(56,139,253,0.15); color: var(--accent-hi); font-weight: 600; }
+    .wiz-phase.wiz-fail   { background: rgba(248,81,73,0.12);  color: var(--danger); }
 
     /* ── guide pad (3×3 grid N/S/E/W) ── */
     .guide-pad {
@@ -524,6 +536,12 @@
 <header>
   <h1>SmartTelescope</h1>
   <span class="pill">v0.1</span>
+  <button id="adv-toggle" class="pill"
+          onclick="toggleAdvancedMode()"
+          title="Show/hide manual mount and focuser controls"
+          style="cursor:pointer;margin-left:auto;border:1px solid var(--border);background:var(--surface);color:var(--muted);padding:0.2rem 0.7rem">
+    Advanced
+  </button>
 </header>
 
 <!-- ── Stage navigation bar ──────────────────────────────────────────────── -->
@@ -1272,6 +1290,49 @@
     <div class="toolbar"><h2>Collimation</h2></div>
     <div id="s4-status" class="status-line"></div>
 
+    <!-- ── Collimation Wizard (COL-020) ── -->
+    <div class="card" id="s4-wizard-card" style="margin-bottom:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s4-wiz-dot"></span>
+        Collimation Wizard
+        <span id="s4-wiz-badge" class="state-badge state-unknown" style="margin-left:0.5rem">Idle</span>
+      </div>
+      <div class="wiz-phases">
+        <div class="wiz-phase" id="wiz-ph-1">Prepare</div>
+        <div class="wiz-phase" id="wiz-ph-2">Acquire</div>
+        <div class="wiz-phase" id="wiz-ph-3">Rough</div>
+        <div class="wiz-phase" id="wiz-ph-4">Fine</div>
+        <div class="wiz-phase" id="wiz-ph-5">Validate</div>
+      </div>
+      <div id="s4-wiz-instruction"
+           style="font-size:0.88rem;min-height:2.5em;margin-bottom:0.6rem;line-height:1.45;color:var(--text)">
+        Ready. Click Start to begin the collimation wizard.
+      </div>
+      <!-- Screw recommendation (rough/fine guidance phases) -->
+      <div id="s4-wiz-recommendation"
+           style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;
+                  padding:0.45rem 0.75rem;margin-bottom:0.6rem;font-size:0.85rem;line-height:1.5">
+        <span style="color:var(--muted);font-size:0.74rem;text-transform:uppercase;letter-spacing:0.04em">Adjust</span><br>
+        <span id="s4-wiz-rec-screw" style="font-weight:600"></span>
+        <span id="s4-wiz-rec-dir"></span>
+        <span id="s4-wiz-rec-size" style="color:var(--muted);font-size:0.8rem;margin-left:0.4rem"></span>
+        <span id="s4-wiz-rec-confidence" style="color:var(--muted);font-size:0.75rem;margin-left:0.6rem"></span>
+      </div>
+      <div id="s4-wiz-error" class="status-line error" style="display:none;min-height:auto;margin-bottom:0.5rem"></div>
+      <div class="controls">
+        <button id="s4-wiz-start-btn"  onclick="collimStart()">Start</button>
+        <button id="s4-wiz-pause-btn"  onclick="collimPause()"   class="secondary" style="display:none">Pause</button>
+        <button id="s4-wiz-resume-btn" onclick="collimResume()"  class="secondary" style="display:none">Resume</button>
+        <button id="s4-wiz-cancel-btn" onclick="collimCancel()"  class="secondary" style="display:none">Cancel</button>
+        <button id="s4-wiz-retry-btn"  onclick="collimRetry()"   class="secondary" style="display:none">Reset</button>
+        <span class="controls-spacer"></span>
+        <button id="s4-wiz-next-btn"   onclick="collimNext(false)" style="display:none">Next</button>
+        <button id="s4-wiz-finish-btn" onclick="collimNext(true)"  style="display:none">Finish Phase</button>
+        <button id="s4-wiz-accept-btn" onclick="collimAccept(true)"  style="display:none">Accept</button>
+        <button id="s4-wiz-more-btn"   onclick="collimAccept(false)" class="secondary" style="display:none">Adjust More</button>
+      </div>
+    </div>
+
     <div class="two-col">
 
       <!-- ── Left: Bright stars + Focuser ── -->
@@ -1781,6 +1842,25 @@
   let _mountPendingCmd = null;   // set to command name while hardware is catching up
   let _focusCamRole    = 'main';  // optical train role used for autofocus (set in Stage 1 focuser tile)
   let _opticalTrains   = [];      // cached optical train list from /api/optical_trains
+
+  /* ── Advanced mode (UX4-001/002/003) ─────────────────────────────────── */
+  let _advancedMode = localStorage.getItem('tsc_advanced_mode') === '1';
+
+  function _applyAdvancedMode() {
+    document.body.classList.toggle('advanced-mode', _advancedMode);
+    const btn = document.getElementById('adv-toggle');
+    if (btn) {
+      btn.style.color       = _advancedMode ? 'var(--accent-hi)' : 'var(--muted)';
+      btn.style.borderColor = _advancedMode ? 'var(--accent-hi)' : 'var(--border)';
+    }
+  }
+
+  function toggleAdvancedMode() {
+    _advancedMode = !_advancedMode;
+    localStorage.setItem('tsc_advanced_mode', _advancedMode ? '1' : '0');
+    _applyAdvancedMode();
+  }
+
   let _observerLat     = 50.336;
   let _observerLon     = 8.533;
   let _clockInterval   = null;
@@ -1980,7 +2060,9 @@
     if (isError && msg) {
       const { message, hint } = friendlyError(msg);
       el.innerHTML = escHtml(message) +
-        (hint ? `<br><span style="font-size:0.76em;color:var(--muted)">${escHtml(hint)}</span>` : '');
+        (hint ? `<br><span style="font-size:0.76em;color:var(--muted)">${escHtml(hint)}</span>` : '') +
+        `<br><a href="#" onclick="goToStage(1);return false"
+               style="font-size:0.73em;color:var(--accent);text-decoration:none">→ Setup &amp; Diagnostics</a>`;
     } else {
       el.textContent = msg;
     }
@@ -2035,7 +2117,7 @@
     if (n === 1) { _stopMountStripPoll(); }
     else         { _startMountStripPoll(); }
     _renderStageBar();
-    if (n === 4) { refreshFocuser(); loadCollimStars(); }
+    if (n === 4) { refreshFocuser(); loadCollimStars(); _refreshCollimWizardOnce(); }
     if (n === 5) { s5LoadTargets(); }
   }
 
@@ -2229,20 +2311,22 @@
           </div>
         </div>
         <div class="controls">
-          ${state === 'tracking'
-            ? `<button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>`
-            : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
-          <span class="controls-spacer"></span>
-          <span style="display:flex;gap:0.5rem;flex-wrap:nowrap;align-items:center">
-            <button class="secondary" onclick="mountHome()"
-                    title="Slew to celestial pole (Dec 85°, HA 0)">Home</button>
-            <button class="secondary" onclick="mountAction('unpark')"
-                    title="Unpark mount">Unpark</button>
-            <button class="secondary" onclick="mountAction('park')"
-                    title="Park mount">Park</button>
-            <button class="danger"    onclick="mountEmergencyStop()"
-                    title="Emergency stop — halts mount and focuser immediately">Stop</button>
+          <span class="adv-only" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex:1">
+            ${state === 'tracking'
+              ? `<button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>`
+              : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
+            <span class="controls-spacer"></span>
+            <span style="display:flex;gap:0.5rem;flex-wrap:nowrap;align-items:center">
+              <button class="secondary" onclick="mountHome()"
+                      title="Slew to celestial pole (Dec 85°, HA 0)">Home</button>
+              <button class="secondary" onclick="mountAction('unpark')"
+                      title="Unpark mount">Unpark</button>
+              <button class="secondary" onclick="mountAction('park')"
+                      title="Park mount">Park</button>
+            </span>
           </span>
+          <button class="danger" onclick="mountEmergencyStop()"
+                  title="Emergency stop — halts mount and focuser immediately">Stop</button>
         </div>
       </div>`;
   }
@@ -2824,7 +2908,10 @@
   }
 
   function collimSelect(ra, dec, name) {
-    /* just populate goto inputs in stage 3 if user wants to cross-reference */
+    if (_collimState === 'select_star') {
+      collimSelectStar(ra, dec);
+      return;
+    }
     document.getElementById('goto-ra').value  = ra.toFixed(4);
     document.getElementById('goto-dec').value = dec.toFixed(4);
   }
@@ -2838,6 +2925,259 @@
     } catch (err) {
       setStatus('s4-status', `GoTo ${name} failed: ${err.message}`, true);
     }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Collimation Wizard (COL-020/021)
+  ══════════════════════════════════════════════════════════════════════ */
+
+  let _collimState     = 'idle';
+  let _collimPollTimer = null;
+
+  const _COLLIM_PHASE_MAP = {
+    precheck: 1, select_star: 1, slew_to_star: 1,
+    acquire_star: 2, center_star: 2, auto_exposure: 2,
+    rough_defocus: 3, map_screws_by_obstruction: 3,
+    measure_donut: 3, guide_rough_collimation: 3,
+    install_tribahtinov: 4, map_mask_sectors: 4,
+    fine_focus: 4, measure_spikes: 4, guide_fine_collimation: 4, final_refocus: 4,
+    maskless_validation: 5, complete: 5,
+  };
+
+  function _startCollimPoll() {
+    if (_collimPollTimer) return;
+    _collimPollTimer = setInterval(async () => {
+      try {
+        const s = await (await fetch('/api/collimation/status')).json();
+        _updateCollimWizard(s);
+        if (s.state !== 'idle' && !s.is_terminal) {
+          const o = await (await fetch('/api/collimation/overlay')).json();
+          _drawCollimOverlay(o);
+        }
+        if (s.state === 'idle' || s.is_terminal) _stopCollimPoll();
+      } catch { /* ignore transient */ }
+    }, 2000);
+  }
+
+  function _stopCollimPoll() {
+    if (_collimPollTimer) { clearInterval(_collimPollTimer); _collimPollTimer = null; }
+  }
+
+  async function _refreshCollimWizardOnce() {
+    try {
+      const s = await (await fetch('/api/collimation/status')).json();
+      _updateCollimWizard(s);
+      if (s.state !== 'idle' && !s.is_terminal) _startCollimPoll();
+    } catch { /* ignore */ }
+  }
+
+  function _wizBtn(id, show, label) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = show ? '' : 'none';
+    if (show && label) el.textContent = label;
+  }
+
+  function _updateCollimWizard(s) {
+    _collimState = s.state;
+    const idle         = s.state === 'idle';
+    const terminal     = s.is_terminal;
+    const paused       = s.is_paused;
+    const waiting      = s.is_waiting_for_user;
+    const active       = !idle && !terminal && !paused;
+    const selectStar   = s.state === 'select_star';
+    const guideState   = s.state === 'guide_rough_collimation' || s.state === 'guide_fine_collimation';
+    const validateState = s.state === 'maskless_validation';
+
+    // Dot colour
+    const dot = document.getElementById('s4-wiz-dot');
+    if (dot) {
+      dot.className = 'dot ' + (
+        s.state === 'complete' ? 'dot-green' :
+        s.state === 'failed'   ? 'dot-red'   :
+        idle ? 'dot-grey' : paused ? 'dot-grey' : 'dot-yellow'
+      );
+    }
+
+    // State badge
+    const badge = document.getElementById('s4-wiz-badge');
+    if (badge) {
+      badge.textContent = s.state.replace(/_/g, ' ');
+      badge.className = 'state-badge ' + (
+        s.state === 'complete' ? 'state-tracking' :
+        s.state === 'failed'   ? 'state-error'    :
+        idle || paused ? 'state-unknown' : 'state-pending'
+      );
+    }
+
+    // Phase strip
+    const phase = _COLLIM_PHASE_MAP[s.state] || 0;
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById(`wiz-ph-${i}`);
+      if (!el) continue;
+      el.className = 'wiz-phase' + (
+        s.state === 'failed' && i === phase ? ' wiz-fail' :
+        i < phase ? ' wiz-done' :
+        i === phase && !idle ? ' wiz-active' : ''
+      );
+    }
+
+    // Instruction
+    const instr = document.getElementById('s4-wiz-instruction');
+    if (instr) {
+      instr.textContent = s.instruction || '';
+      instr.style.color = (s.state === 'select_star')
+        ? 'var(--accent-hi)' : 'var(--text)';
+    }
+
+    // Recommendation
+    const rec = s.current_recommendation;
+    const recEl = document.getElementById('s4-wiz-recommendation');
+    if (recEl && rec) {
+      document.getElementById('s4-wiz-rec-screw').textContent = `Screw ${rec.screw_id}: `;
+      document.getElementById('s4-wiz-rec-dir').textContent   = rec.direction === 'cw' ? 'Turn Clockwise' : 'Turn Counter-clockwise';
+      document.getElementById('s4-wiz-rec-size').textContent  = `(${rec.size})`;
+      document.getElementById('s4-wiz-rec-confidence').textContent = `${(rec.confidence * 100).toFixed(0)}% confidence`;
+      recEl.style.display = '';
+    } else if (recEl) {
+      recEl.style.display = 'none';
+    }
+
+    // Error
+    const errEl = document.getElementById('s4-wiz-error');
+    if (errEl) {
+      if (s.error) { errEl.textContent = s.error; errEl.style.display = ''; }
+      else { errEl.style.display = 'none'; }
+    }
+
+    // Buttons
+    _wizBtn('s4-wiz-start-btn',  idle);
+    _wizBtn('s4-wiz-pause-btn',  (active || waiting) && !terminal);
+    _wizBtn('s4-wiz-resume-btn', paused);
+    _wizBtn('s4-wiz-cancel-btn', !idle && !terminal);
+    _wizBtn('s4-wiz-retry-btn',  terminal);
+    _wizBtn('s4-wiz-next-btn',   waiting && !selectStar && !validateState,
+            guideState ? 'Remeasure' : 'Next');
+    _wizBtn('s4-wiz-finish-btn', guideState,
+            s.state === 'guide_rough_collimation' ? 'Finish Rough' : 'Finish Fine');
+    _wizBtn('s4-wiz-accept-btn', validateState);
+    _wizBtn('s4-wiz-more-btn',   validateState);
+  }
+
+  async function collimStart() {
+    try {
+      const s = await apiPost('/api/collimation/start');
+      _updateCollimWizard(s);
+      _startCollimPoll();
+    } catch (err) {
+      setStatus('s4-status', `Wizard start failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimPause() {
+    try {
+      const s = await apiPost('/api/collimation/pause');
+      _updateCollimWizard(s);
+    } catch (err) {
+      setStatus('s4-status', `Pause failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimResume() {
+    try {
+      const s = await apiPost('/api/collimation/resume');
+      _updateCollimWizard(s);
+      _startCollimPoll();
+    } catch (err) {
+      setStatus('s4-status', `Resume failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimCancel() {
+    try {
+      const s = await apiPost('/api/collimation/cancel');
+      _updateCollimWizard(s);
+      _stopCollimPoll();
+    } catch (err) {
+      setStatus('s4-status', `Cancel failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimNext(finish = false) {
+    try {
+      const payload = finish ? { finish: true } : {};
+      const s = await apiPost('/api/collimation/next', payload);
+      _updateCollimWizard(s);
+    } catch (err) {
+      setStatus('s4-status', `Step failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimAccept(accepted) {
+    try {
+      const s = await apiPost('/api/collimation/next', { accept: accepted });
+      _updateCollimWizard(s);
+    } catch (err) {
+      setStatus('s4-status', `Step failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimRetry() {
+    try {
+      const s = await apiPost('/api/collimation/retry');
+      _updateCollimWizard(s);
+      _stopCollimPoll();
+    } catch (err) {
+      setStatus('s4-status', `Reset failed: ${err.message}`, true);
+    }
+  }
+
+  async function collimSelectStar(ra, dec) {
+    try {
+      const s = await apiPost('/api/collimation/next', { ra, dec });
+      _updateCollimWizard(s);
+    } catch (err) {
+      setStatus('s4-status', `Star selection failed: ${err.message}`, true);
+    }
+  }
+
+  /* Collimation overlay on s4-bahtinov-svg (COL-021) */
+  function _drawCollimOverlay(d) {
+    const svg = document.getElementById('s4-bahtinov-svg');
+    const img = document.getElementById('s4-preview-img');
+    if (!svg || !d || !d.available) {
+      if (svg) svg.style.display = 'none';
+      return;
+    }
+    if (!img || img.style.display === 'none') return;
+    const iw = img.naturalWidth  || 1280;
+    const ih = img.naturalHeight || 960;
+    svg.setAttribute('viewBox', `0 0 ${iw} ${ih}`);
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none';
+    svg.style.display = '';
+
+    const arrowDef = `<defs><marker id="col-arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="rgba(248,81,73,0.9)"/></marker></defs>`;
+    let body = '';
+
+    if (d.donut) {
+      const { outer_cx: ocx, outer_cy: ocy, outer_r: or_, inner_cx: icx, inner_cy: icy, inner_r: ir, error_x: ex, error_y: ey } = d.donut;
+      body += `<circle cx="${ocx}" cy="${ocy}" r="${or_}" fill="none" stroke="rgba(56,139,253,0.8)" stroke-width="2"/>`;
+      body += `<circle cx="${icx}" cy="${icy}" r="${ir}"  fill="none" stroke="rgba(63,185,80,0.8)"  stroke-width="2"/>`;
+      body += `<line x1="${ocx}" y1="${ocy}" x2="${ocx+ex}" y2="${ocy+ey}" stroke="rgba(248,81,73,0.9)" stroke-width="2" marker-end="url(#col-arr)"/>`;
+      const cs = or_ * 0.06;
+      body += `<line x1="${ocx-cs}" y1="${ocy}" x2="${ocx+cs}" y2="${ocy}" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>`;
+      body += `<line x1="${ocx}" y1="${ocy-cs}" x2="${ocx}" y2="${ocy+cs}" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>`;
+    }
+
+    if (d.spike) {
+      const { crossing_x: cx, crossing_y: cy } = d.spike;
+      const cs = 14;
+      body += `<circle cx="${cx}" cy="${cy}" r="5" fill="none" stroke="rgba(248,81,73,0.9)" stroke-width="2"/>`;
+      body += `<line x1="${cx-cs}" y1="${cy}" x2="${cx+cs}" y2="${cy}" stroke="rgba(248,81,73,0.9)" stroke-width="1.5"/>`;
+      body += `<line x1="${cx}" y1="${cy-cs}" x2="${cx}" y2="${cy+cs}" stroke="rgba(248,81,73,0.9)" stroke-width="1.5"/>`;
+    }
+
+    svg.innerHTML = arrowDef + body;
   }
 
   function s4PreviewStart() {
@@ -3365,18 +3705,20 @@
           </div>
         </div>
         <div class="controls">
-          <div class="nudge-group">
-            <button class="secondary nudge" onclick="nudge(-1000)">−1000</button>
-            <button class="secondary nudge" onclick="nudge(-100)">−100</button>
-            <button class="secondary nudge" onclick="nudge(-10)">−10</button>
-            <button class="secondary nudge" onclick="nudge(10)">+10</button>
-            <button class="secondary nudge" onclick="nudge(100)">+100</button>
-            <button class="secondary nudge" onclick="nudge(1000)">+1000</button>
-          </div>
-          <span class="controls-spacer"></span>
+          <span class="adv-only" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;flex:1">
+            <div class="nudge-group">
+              <button class="secondary nudge" onclick="nudge(-1000)">−1000</button>
+              <button class="secondary nudge" onclick="nudge(-100)">−100</button>
+              <button class="secondary nudge" onclick="nudge(-10)">−10</button>
+              <button class="secondary nudge" onclick="nudge(10)">+10</button>
+              <button class="secondary nudge" onclick="nudge(100)">+100</button>
+              <button class="secondary nudge" onclick="nudge(1000)">+1000</button>
+            </div>
+            <span class="controls-spacer"></span>
+          </span>
           <button class="danger" onclick="focuserStop()">Stop</button>
         </div>
-        <div class="input-row">
+        <div class="input-row adv-only">
           <label>Move to</label>
           <input type="number" id="focuser-target" step="1" placeholder="steps" style="width:10ch">
           <button onclick="focuserMoveTo()">Move</button>
@@ -5842,6 +6184,7 @@
     } catch (_) {}
   }
 
+  _applyAdvancedMode();
   initSiteConfig();
   loadVersion();
   refreshMount();

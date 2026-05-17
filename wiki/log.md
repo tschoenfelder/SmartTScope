@@ -4,6 +4,53 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — COL-020/021, BUG-018/020, M4-004, UX4/UX5 — Wizard UI and logging fixes
+
+**What changed:**
+
+- `static/index.html` — Collimation Wizard panel (COL-020):
+  - Wizard card added to Stage 4 above the two-column layout: 5-phase strip (Prepare/Acquire/Rough/Fine/Validate), instruction text, recommendation block, state badge.
+  - Contextual controls: Start → Pause/Resume/Cancel → Remeasure|Finish Phase|Next → Accept|Adjust More → Reset.
+  - Star list click in `select_star` state routes to `collimSelectStar()` → `/api/collimation/next {ra, dec}`.
+  - Status polled every 2 s via `_startCollimPoll()` when session is active; auto-stops when terminal.
+  - `_refreshCollimWizardOnce()` called in `goToStage(4)` to restore wizard state after navigation.
+
+- `static/index.html` — Collimation overlay drawing (COL-021):
+  - `_drawCollimOverlay(d)` renders on `s4-bahtinov-svg`: donut outer ring (blue), inner hole (green), error-vector red arrow; Bahtinov crossing-point crosshair (red); overlay fetched from `/api/collimation/overlay` alongside status poll.
+
+- `static/index.html` — Advanced Mode (UX4-001/002/003):
+  - `.adv-only { display: none !important; }` / `body.advanced-mode .adv-only { display: flex !important; }`.
+  - "Advanced" toggle in header; mount Home/Unpark/Park/Tracking and focuser nudge/Move-To hidden in beginner mode.
+
+- `static/index.html` — Diagnostics link in errors (UX5-005):
+  - `setStatus(..., true)` appends "→ Setup & Diagnostics" link on every error banner.
+
+- `services/mount_operations.py` (BUG-018): Added `_log.info("Mount unpark issued")` in `unpark_sequence()`.
+- `api/focuser.py` (BUG-020): Added `_log.info("Focuser nudge request: delta=%d", body.delta)` at entry of `focuser_nudge()`.
+- `docs/todo.md`: M4-004, BUG-018, BUG-020, COL-020/021 marked done.
+
+**Tests:** 2471 passed, 0 failed. Coverage 87%.
+
+---
+
+## 2026-05-17 — UX3-003, UX4-001/002/003, UX5-005 — Advanced mode and diagnostics link
+
+**What changed:**
+
+- `static/index.html` — Advanced Mode toggle (UX4-001/002/003):
+  - Added `.adv-only { display: none; }` + `body.advanced-mode .adv-only { display: flex; }` CSS.
+  - "Advanced" button in header toggles `body.advanced-mode` class; state persisted in `localStorage['tsc_advanced_mode']`.
+  - `_applyAdvancedMode()` called at page init to restore prior session state.
+  - `mountCard()`: Home / Unpark / Park / Enable Tracking / Disable Tracking wrapped in `.adv-only` span. Stop always visible.
+  - `focuserCard()`: Nudge buttons (±1000/±100/±10) and Move To row wrapped in `.adv-only`. Autofocus and Stop always visible.
+
+- `static/index.html` — Diagnostics link in errors (UX5-005):
+  - `setStatus(id, msg, true)` now appends a "→ Setup & Diagnostics" link calling `goToStage(1)` after every error message.
+
+- UX3-003 confirmed done: camera hardware IDs / serial numbers displayed only in `cameraCard()` (Stage 6 scan). All main UI selects and labels use optical train role names.
+
+---
+
 ## 2026-05-17 — R6-001/002 Service extraction
 
 **What changed:**

@@ -424,3 +424,67 @@ def test_watchdog_cleared_on_new_command():
     # New command resets the watchdog
     svc.record_command("stop")
     assert svc.get_watchdog_warning() is None
+
+
+# ── BUG-011/012/016: poll_now() ───────────────────────────────────────────────
+
+class TestPollNow:
+    """poll_now() refreshes the cache on demand without waiting for the 2 s background interval."""
+
+    def test_poll_now_updates_cache_immediately(self) -> None:
+        svc = DeviceStateService()
+        mount = _mock_mount(state=MountState.PARKED)
+        svc.start(mount, poll_interval=60.0)  # long interval so background never fires
+        try:
+            # Cache starts empty or with background-poll value; force an immediate update
+            svc._mount_state = None
+            svc.poll_now()
+            obs = svc.get_mount_state()
+            assert obs is not None
+            assert obs.state == MountState.PARKED
+        finally:
+            svc.stop()
+
+    def test_poll_now_reflects_state_change_after_command(self) -> None:
+        svc = DeviceStateService()
+        mount = _mock_mount(state=MountState.PARKED)
+        svc.start(mount, poll_interval=60.0)
+        try:
+            svc.poll_now()
+            assert svc.get_mount_state().state == MountState.PARKED  # type: ignore[union-attr]
+
+            # Simulate mount leaving parked state
+            mount.get_state.return_value = MountState.TRACKING
+            svc.poll_now()
+            assert svc.get_mount_state().state == MountState.TRACKING  # type: ignore[union-attr]
+        finally:
+            svc.stop()
+
+    def test_poll_now_handles_mount_exception_gracefully(self) -> None:
+        svc = DeviceStateService()
+        mount = MagicMock()
+        mount.get_state.side_effect = RuntimeError("serial timeout")
+        svc.start(mount, poll_interval=60.0)
+        try:
+            svc.poll_now()  # must not raise
+            obs = svc.get_mount_state()
+            assert obs is not None
+            assert obs.state == MountState.UNKNOWN
+            assert obs.error is not None
+        finally:
+            svc.stop()
+
+    def test_poll_now_is_noop_before_start(self) -> None:
+        svc = DeviceStateService()
+        svc.poll_now()  # must not raise; mount is None
+        assert svc.get_mount_state() is None
+
+    def test_poll_now_is_noop_after_stop(self) -> None:
+        svc = DeviceStateService()
+        mount = _mock_mount(state=MountState.TRACKING)
+        svc.start(mount, poll_interval=60.0)
+        svc.stop()
+        calls_before = mount.get_state.call_count
+        svc.poll_now()  # must not raise; _mount cleared by stop()
+        assert mount.get_state.call_count == calls_before, \
+            "poll_now() must not call get_state after stop()"

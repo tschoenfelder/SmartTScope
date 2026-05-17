@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-18 (BUG-005 crash isolation tests + M5-005 solar gate marked done — 2539 tests pass)
+**Last updated:** 2026-05-18 (BUG-011/012/016 park-unpark state propagation — poll_now() + JS loop — 2544 tests pass)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -99,11 +99,14 @@
 
 ### Field bugs — Mount state
 
-- [ ] BUG-011 Park command moves mount but UNPARKED flag remains too long `[P1 · Hardware · Source: Items_to_fix_20260514]`
+- [x] BUG-011 Park command moves mount but UNPARKED flag remains too long `[P1 · Hardware · Source: Items_to_fix_20260514]`
   - *Acceptance:* UI label changes only after observed state confirms park; correct within 5 s
-- [ ] BUG-012 After reconnect, mount shown as unparked when policy requires parked `[P1 · Hardware · Source: Items_to_fix_20260514]`
-- [ ] BUG-016 Unpark returns HTTP 200 but label stays PARKED `[P1 · Hardware · Source: Items_to_fix_20260514]`
+  - *Done:* `device_state.poll_now()` after park command refreshes cache immediately; frontend park poll loop extended from 10×500ms to 60×1000ms (60 s total — covers full park slew duration)
+- [x] BUG-012 After reconnect, mount shown as unparked when policy requires parked `[P1 · Hardware · Source: Items_to_fix_20260514]`
+  - *Done:* `RuntimeContext.connect_devices()` calls `device_state.poll_now()` immediately after `start()` — cache populated from first millisecond of startup, no 2 s gap
+- [x] BUG-016 Unpark returns HTTP 200 but label stays PARKED `[P1 · Hardware · Source: Items_to_fix_20260514]`
   - *Acceptance:* label follows observed hardware state, not command receipt
+  - *Done:* `device_state.poll_now()` after unpark command; timeout extended from 3 s to 5 s; frontend unpark loop extended to 20×500ms (10 s)
 
 ### Milestone M1 tasks
 

@@ -4,6 +4,24 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-18 — BUG-011/012/016 — Park/unpark state propagation fix
+
+**What changed:**
+
+- `smart_telescope/services/device_state.py`: Added `self._mount` attribute (set in `start()`, cleared in `stop()`). Added `poll_now()` — runs `_poll_once()` synchronously on demand; no-op before `start()` or after `stop()`.
+
+- `smart_telescope/services/mount_operations.py`: `park_sequence()` calls `device_state.poll_now()` after issuing the park command, before `wait_for_mount_state`. `unpark_sequence()` calls `device_state.poll_now()` after `mount.unpark()`, before `wait_while_mount_state`; timeout extended from 3 s → 5 s.
+
+- `smart_telescope/runtime.py`: `connect_devices()` calls `self.device_state.poll_now()` immediately after `device_state.start()` — initial cache populated from startup, eliminating the 2 s gap (BUG-012).
+
+- `smart_telescope/static/js/mount.js`: Park poll loop extended from 10×500 ms to 60×1000 ms (60 s total). Unpark loop extended to 20×500 ms (10 s). Both loops use a single `maxIter`/`delayMs` variable so the change is readable.
+
+- `tests/unit/services/test_device_state.py`: Added `TestPollNow` class (5 tests) — updates cache immediately, reflects state change, handles exception gracefully, no-op before start, no-op after stop.
+
+**Test result:** 2544 passed, coverage 87%.
+
+---
+
 ## 2026-05-18 — BUG-005 + M5-005 — Crash isolation tests + solar gate closure
 
 **What changed:**

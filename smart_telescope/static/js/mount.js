@@ -179,9 +179,12 @@ async function mountAction(action) {
       const expectParked   = action === 'park';
       const expectUnparked = action === 'unpark';
       if (expectParked || expectUnparked) {
-        // Poll until DeviceStateService confirms the new hardware state (typically 2-4 s)
-        for (let i = 0; i < 10; i++) {
-          await new Promise(r => setTimeout(r, i === 0 ? 300 : 500));
+        // Park slews can take 30-60 s; unpark is fast but give 10 s margin.
+        // Poll until DeviceStateService confirms the new hardware state.
+        const maxIter  = expectParked ? 60 : 20;
+        const delayMs  = expectParked ? 1000 : 500;
+        for (let i = 0; i < maxIter; i++) {
+          await new Promise(r => setTimeout(r, i === 0 ? 300 : delayMs));
           const data = await (await fetch('/api/mount/status')).json();
           _updateMountStrip(data);
           const st = data.state;

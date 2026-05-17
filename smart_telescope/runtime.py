@@ -179,6 +179,7 @@ class RuntimeContext:
                 self._adapters_built = True
                 assert self._mount is not None
                 self.device_state.start(self._mount)
+                self.device_state.poll_now()  # BUG-012: populate cache immediately at startup
 
     def shutdown(self) -> None:
         """Stop moving hardware, stop polling, then close all connections.

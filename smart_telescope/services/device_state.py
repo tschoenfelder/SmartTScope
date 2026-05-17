@@ -54,6 +54,7 @@ class DeviceStateService:
 
     def __init__(self) -> None:
         self._mount_state: MountObservedState | None = None
+        self._mount: MountPort | None = None
         self._lock         = threading.Lock()
         self._stop_event   = threading.Event()
         self._thread: threading.Thread | None = None
@@ -73,6 +74,7 @@ class DeviceStateService:
         """Start the background polling thread (idempotent)."""
         if self._thread is not None and self._thread.is_alive():
             return
+        self._mount = mount
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._poll_loop,
@@ -89,7 +91,20 @@ class DeviceStateService:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             self._thread = None
+        self._mount = None
         _log.info("DeviceStateService: polling stopped")
+
+    def poll_now(self) -> None:
+        """Run a single mount poll immediately and update the cache.
+
+        Used after park/unpark commands to refresh the cached state without
+        waiting for the next background poll interval (nominally 2 s).
+        No-op when called before start() or after stop().
+        """
+        mount = self._mount
+        if mount is None:
+            return
+        self._poll_once(mount)
 
     # ── state access ──────────────────────────────────────────────────────────
 

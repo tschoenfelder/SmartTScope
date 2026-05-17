@@ -1433,3 +1433,16 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
 **Test result:** 2416 passed.
 
 - `docs/todo.md`: BUG-002b, BUG-015 marked complete.
+
+---
+
+## 2026-05-17 — Fix pre-existing test failure in test_pipeline_wiring.py
+
+**What changed:**
+
+- `tests/unit/services/test_pipeline_wiring.py`: added `_donut_camera()` helper
+  (an alias for `_star_then_donut_camera()`) which was referenced by
+  `TestFinePipeline::test_frame_counter_increments_on_donut_measurement` but
+  never defined, causing a persistent `NameError` since the test was committed.
+
+**Test result:** 2429 passed (all tests green, no exclusions needed).

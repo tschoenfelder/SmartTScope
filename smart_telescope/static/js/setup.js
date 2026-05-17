@@ -86,6 +86,17 @@ function _renderReadiness(r) {
     badge.style.color = ls.color;
     badge.style.borderColor = ls.color;
 
+    const modeBadge = document.getElementById('s1-readiness-mode');
+    if (modeBadge && r.mode) {
+        const modeColor = r.mode === 'real' ? 'var(--success)'
+                        : r.mode === 'simulator' ? 'var(--warning)'
+                        : 'var(--muted)';
+        modeBadge.textContent = r.mode.toUpperCase();
+        modeBadge.style.color = modeColor;
+        modeBadge.style.borderColor = modeColor;
+        modeBadge.style.display = '';
+    }
+
     const rows = r.items.map(item => {
       const s = _levelStyle(item.level);
       const repair = item.repair

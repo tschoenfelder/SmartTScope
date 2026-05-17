@@ -212,9 +212,6 @@ class VerticalSliceRunner:
         finally:
             if log.completed_at is None:
                 log.completed_at = _now()
-            self._mount.disconnect()
-            self._camera.disconnect()
-            self._focuser.disconnect()
 
         return log
 

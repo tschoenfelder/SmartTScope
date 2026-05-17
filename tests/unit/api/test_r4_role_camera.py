@@ -1,4 +1,4 @@
-"""R4-005..007: Camera role-based selection across autogain, autofocus, preview WS.
+"""R4-005..008: Camera role-based selection across autogain, autofocus, preview WS, session.
 
 Covers two-camera and three-camera/OAG setups.  Each test verifies that a
 camera_role string is resolved to the correct SDK camera index before any
@@ -17,6 +17,9 @@ from smart_telescope.api import autogain as ag_mod
 from smart_telescope.api import deps
 from smart_telescope.api.autogain import _Job, _worker
 from smart_telescope.app import app
+from smart_telescope.domain.catalog import CatalogObject
+from smart_telescope.ports.mount import MountPort
+from smart_telescope.runtime import get_runtime
 from smart_telescope.domain.autogain import AutoGainMode
 from smart_telescope.domain.autogain_service import AutoGainResult, AutoGainService, AutoGainStatus
 from smart_telescope.domain.camera_profile import ATR585M
@@ -369,3 +372,80 @@ class TestRegistryMultiTrain:
         assert reg.by_camera_index(1).name == "guide"
         assert reg.by_camera_index(2).name == "oag"
         assert reg.by_camera_index(99) is None
+
+
+# ── R4-008: session /run uses optical train for camera resource claim ──────────
+
+def _fake_catalog_target() -> CatalogObject:
+    return CatalogObject(
+        name="M42", common_name="Orion Nebula",
+        ra_hours=5.588, dec_deg=-5.39,
+        object_type="EN", magnitude=4.0,
+    )
+
+
+class TestSessionOpticalTrainAware:
+    """R4-008: /api/session/run derives camera resource from main optical train."""
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        deps.reset()
+        yield
+        app.dependency_overrides.clear()
+        deps.reset()
+
+    def test_session_claims_main_train_camera_index(self) -> None:
+        """When main train is camera:1, session must conflict on 'camera:1', not 'camera:0'."""
+        registry = OpticalTrainRegistry({
+            "main": _train("main", "main", 1, has_focuser=True),
+        })
+        app.dependency_overrides[deps.get_optical_train_registry] = lambda: registry
+        app.dependency_overrides[deps.get_mount] = lambda: MagicMock(spec=MountPort)
+        app.dependency_overrides[deps.get_focuser] = lambda: MagicMock(spec=FocuserPort)
+
+        rt = get_runtime()
+        blocker = rt.job_manager.claim("blocker", {"camera:1"})
+        try:
+            with patch("smart_telescope.api.session._catalog_get", return_value=_fake_catalog_target()):
+                with patch.object(deps, "get_camera_by_role", return_value=MagicMock(spec=CameraPort)):
+                    resp = client.post("/api/session/run?target=M42")
+            assert resp.status_code == 409
+        finally:
+            rt.job_manager.release(blocker.job_id)
+
+    def test_session_no_conflict_on_wrong_camera_index(self) -> None:
+        """With main at index 1, pre-claiming 'camera:0' must NOT block the session."""
+        registry = OpticalTrainRegistry({
+            "main": _train("main", "main", 1, has_focuser=True),
+        })
+        app.dependency_overrides[deps.get_optical_train_registry] = lambda: registry
+        app.dependency_overrides[deps.get_mount] = lambda: MagicMock(spec=MountPort)
+        app.dependency_overrides[deps.get_focuser] = lambda: MagicMock(spec=FocuserPort)
+
+        rt = get_runtime()
+        blocker = rt.job_manager.claim("blocker", {"camera:0"})
+        try:
+            with patch("smart_telescope.api.session._catalog_get", return_value=_fake_catalog_target()):
+                with patch.object(deps, "get_camera_by_role", return_value=MagicMock(spec=CameraPort)):
+                    resp = client.post("/api/session/run?target=M42")
+            assert resp.status_code == 202
+        finally:
+            rt.job_manager.release(blocker.job_id)
+            rt.job_manager.cancel_by_name("session")
+
+    def test_session_fallback_claims_camera_0_without_main_train(self) -> None:
+        """Empty registry → session falls back to 'camera:0'."""
+        registry = OpticalTrainRegistry({})
+        app.dependency_overrides[deps.get_optical_train_registry] = lambda: registry
+        app.dependency_overrides[deps.get_mount] = lambda: MagicMock(spec=MountPort)
+        app.dependency_overrides[deps.get_focuser] = lambda: MagicMock(spec=FocuserPort)
+
+        rt = get_runtime()
+        blocker = rt.job_manager.claim("blocker", {"camera:0"})
+        try:
+            with patch("smart_telescope.api.session._catalog_get", return_value=_fake_catalog_target()):
+                with patch.object(deps, "get_camera", return_value=MagicMock(spec=CameraPort)):
+                    resp = client.post("/api/session/run?target=M42")
+            assert resp.status_code == 409
+        finally:
+            rt.job_manager.release(blocker.job_id)

@@ -26,6 +26,9 @@ from .services.job_manager import JobManager
 _log = logging.getLogger(__name__)
 
 
+_MODE_RANK: dict[str, int] = {"mock": 2, "simulator": 1, "real": 0}
+
+
 def _build_adapters(
     ctx: RuntimeContext,
 ) -> tuple[CameraPort, MountPort, FocuserPort]:
@@ -47,24 +50,30 @@ def _build_adapters(
     replay_dir     = os.environ.get("REPLAY_FITS_DIR", "")
 
     camera: CameraPort
+    cam_mode: str
     if main_index_str:
         from .adapters.touptek.camera import ToupcamCamera
         camera = ToupcamCamera(index=int(main_index_str))
+        cam_mode = "real"
         role_label = "TOUPTEK_INDEX env" if os.environ.get("TOUPTEK_INDEX") else "[cameras] main"
         _log.warning("Adapter selected: ToupcamCamera(index=%s)  [%s]", main_index_str, role_label)
     elif sim_dir:
         from pathlib import Path
         from .adapters.simulator.camera import SimulatorCamera
         camera = SimulatorCamera(Path(sim_dir))
+        cam_mode = "simulator"
         _log.warning("Adapter selected: SimulatorCamera(dir=%s)", sim_dir)
     elif replay_dir:
         from .adapters.replay.camera import ReplayCamera
         camera = ReplayCamera.from_directory(replay_dir)
+        cam_mode = "simulator"
         _log.warning("Adapter selected: ReplayCamera(dir=%s)", replay_dir)
     else:
         _log.warning("Adapter selected: MockCamera  — no TOUPTEK_INDEX, SIMULATOR_FITS_DIR or REPLAY_FITS_DIR set")
         camera = MockCamera()
+        cam_mode = "mock"
 
+    mnt_mode: str
     if onstep_port:
         from .adapters.onstep.focuser import OnStepFocuser
         from .adapters.onstep.mount import OnStepMount
@@ -91,6 +100,8 @@ def _build_adapters(
             focuser.is_available,
             "REAL HARDWARE" if focuser.is_available else "focuser not available (check wiring)",
         )
+        mnt_mode = "real"
+        ctx._hardware_mode = max([cam_mode, mnt_mode], key=lambda m: _MODE_RANK[m])
         return camera, mount, focuser
 
     if sim_dir:
@@ -98,9 +109,13 @@ def _build_adapters(
         from .adapters.simulator.focuser import SimulatorFocuser
         from .adapters.simulator.mount import SimulatorMount
         _log.info("Adapter selected: SimulatorMount+SimulatorFocuser (SIMULATOR_FITS_DIR=%s)", sim_dir)
+        mnt_mode = "simulator"
+        ctx._hardware_mode = max([cam_mode, mnt_mode], key=lambda m: _MODE_RANK[m])
         return camera, SimulatorMount(), SimulatorFocuser()
 
     _log.warning("Adapter selected: MockMount+MockFocuser — no ONSTEP_PORT or SIMULATOR_FITS_DIR set")
+    mnt_mode = "mock"
+    ctx._hardware_mode = max([cam_mode, mnt_mode], key=lambda m: _MODE_RANK[m])
     return camera, MockMount(), MockFocuser()
 
 
@@ -138,6 +153,13 @@ class RuntimeContext:
         # Autogain job (R0-006)
         self.autogain_lock:   threading.Lock = threading.Lock()
         self._autogain_job:   object | None  = None  # autogain._Job | None
+        # Hardware mode (R5-011): set by _build_adapters; default "mock" until adapters built
+        self._hardware_mode: str = "mock"
+
+    @property
+    def hardware_mode(self) -> str:
+        """Return the current hardware mode: 'real', 'simulator', or 'mock'."""
+        return self._hardware_mode
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -212,6 +234,7 @@ class RuntimeContext:
         self._storage = None
         self._solver = None
         self._adapters_built = False
+        self._hardware_mode = "mock"
         self._preview_cameras = {}
         self.coordinator     = HardwareCommandCoordinator()
         self.cooling_service = CoolingService()

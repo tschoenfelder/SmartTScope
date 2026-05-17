@@ -43,13 +43,17 @@ class ReadinessItem(BaseModel):
 class ReadinessReport(BaseModel):
     overall:     Level
     can_observe: bool
+    mode:        str
     items:       list[ReadinessItem]
     checked_at:  str
 
 
 class ReadinessService:
     def check(self) -> ReadinessReport:
-        items: list[ReadinessItem] = []
+        mode = self._get_hardware_mode()
+        mode_item = self._check_mode(mode)
+
+        items: list[ReadinessItem] = [mode_item]
         items.append(self._check_config_file())
         items.append(self._check_stars_cfg())
         items.append(self._check_horizon_dat())
@@ -65,14 +69,42 @@ class ReadinessService:
         else:
             overall = Level.GREEN
 
+        can_observe = overall != Level.RED and mode == "real"
+
         return ReadinessReport(
             overall=overall,
-            can_observe=overall != Level.RED,
+            can_observe=can_observe,
+            mode=mode,
             items=items,
             checked_at=datetime.now(timezone.utc).isoformat(),
         )
 
     # ── individual checks ─────────────────────────────────────────────────────
+
+    def _get_hardware_mode(self) -> str:
+        try:
+            from ..runtime import get_runtime
+            return get_runtime().hardware_mode
+        except Exception:
+            return "mock"
+
+    def _check_mode(self, mode: str) -> ReadinessItem:
+        if mode == "real":
+            return ReadinessItem(
+                key="hardware_mode", label="Hardware mode",
+                level=Level.GREEN, message="REAL",
+            )
+        if mode == "simulator":
+            return ReadinessItem(
+                key="hardware_mode", label="Hardware mode",
+                level=Level.YELLOW, message="SIMULATOR — observation disabled",
+                repair="Simulator mode active. Use real hardware to enable observation.",
+            )
+        return ReadinessItem(
+            key="hardware_mode", label="Hardware mode",
+            level=Level.YELLOW, message="MOCK — observation disabled",
+            repair="No hardware configured. Set onstep_port / camera index in config.toml.",
+        )
 
     def _check_config_file(self) -> ReadinessItem:
         from .. import config

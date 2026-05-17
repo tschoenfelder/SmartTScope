@@ -25,6 +25,7 @@ from ..domain.states import SessionState
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
+from ..services.optical_train_registry import OpticalTrainRegistry
 from ..workflow.runner import C8_BARLOW2X, C8_NATIVE, C8_REDUCER, OpticalProfile, VerticalSliceRunner
 from . import deps
 
@@ -208,9 +209,9 @@ def session_run(
     bias_path: str | None = Query(default=None, description="Absolute path to master bias FITS"),
     dark_path: str | None = Query(default=None, description="Absolute path to master dark FITS"),
     flat_path: str | None = Query(default=None, description="Absolute path to master flat FITS"),
-    camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
+    registry: OpticalTrainRegistry = Depends(deps.get_optical_train_registry),
 ) -> RunResponse:
     target_obj = _catalog_get(target)
     if target_obj is None:
@@ -228,13 +229,23 @@ def session_run(
                 status_code=403,
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
+
+    # Resolve main camera from optical train; fall back to index 0 if unconfigured
+    main_train = registry.main() if registry is not None else None
+    if main_train is not None:
+        camera: CameraPort = deps.get_camera_by_role(main_train.camera_role)
+        camera_resource = f"camera:{main_train.camera_index}"
+    else:
+        camera = deps.get_camera()
+        camera_resource = "camera:0"
+
     bias_arr = _load_fits_master(bias_path) if bias_path else None
     dark_arr = _load_fits_master(dark_path) if dark_path else None
     flat_arr = _load_fits_master(flat_path) if flat_path else None
 
     rt = _get_runtime()
     try:
-        jm_job = rt.job_manager.claim("session", {"camera:0", "mount", "focuser"})
+        jm_job = rt.job_manager.claim("session", {camera_resource, "mount", "focuser"})
     except ResourceConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
 

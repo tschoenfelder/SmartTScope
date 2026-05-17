@@ -4,6 +4,79 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-18 — BUG-005 + M5-005 — Crash isolation tests + solar gate closure
+
+**What changed:**
+
+- `tests/unit/api/test_bug005_isolation.py` (new, 10 tests): Explicit proof of isolation invariants — `TestStopBypassesCoordinatorLock` (STOP calls `mount.stop()` directly while coordinator is locked by a background thread); `TestSessionCrashReleasesResources` (mount/focuser/camera resources released from JobManager when runner thread raises WorkflowError); `TestStopWorksAfterSessionCrash` (mount STOP and focuser STOP both return 200 after session crash); `TestMountCommandsAfterSessionCrash` (mount goto and new session start return non-409 after crash).
+
+- `docs/todo.md`: BUG-005 marked done; M5-005 marked done (implementation already existed across all four GoTo entry points with tests in test_mount.py and test_session.py).
+
+**Test result:** 2539 passed, coverage 87%.
+
+---
+
+## 2026-05-18 — R5-011 — Hardware mode in readiness API + UI
+
+**What changed:**
+
+- `smart_telescope/runtime.py`: Added `_hardware_mode: str = "mock"` attribute to `RuntimeContext.__init__`; `_MODE_RANK` dict and mode assignment in `_build_adapters()` — each adapter branch sets `cam_mode`/`mnt_mode` ("real", "simulator", "mock") and the overall mode is the worst of both (mock > simulator > real) via `max(..., key=_MODE_RANK)`; `hardware_mode` property added; `reset_for_tests()` resets to "mock".
+
+- `smart_telescope/services/readiness.py`: `ReadinessReport` gains `mode: str` field; `_get_hardware_mode()` reads from `RuntimeContext.hardware_mode` with fallback to "mock"; `_check_mode(mode)` returns a `ReadinessItem` (GREEN for real, YELLOW for simulator/mock with repair guidance); `can_observe` now requires both `overall != RED` and `mode == "real"`.
+
+- `smart_telescope/static/index.html`: Added `<span id="s1-readiness-mode">` badge element in the readiness card header (hidden by default, shown/colored by JS).
+
+- `smart_telescope/static/js/setup.js`: `_renderReadiness()` now shows the mode badge (REAL/SIMULATOR/MOCK) with color-coded border next to the overall badge.
+
+- `tests/unit/api/test_readiness.py`: Added `TestHardwareMode` class (8 tests — mode field in API, real mode allows observe, mock/simulator blocks can_observe, mode item in items list, repair guidance, RuntimeContext defaults, reset); updated `test_yellow_overall_if_no_red_but_some_yellow` to patch `_get_hardware_mode` to "real".
+
+- `docs/todo.md`: R5-011 marked done.
+
+**Test result:** 2529 passed, coverage 87%.
+
+---
+
+## 2026-05-18 — R0-011 / R4-008 — Runner lifecycle + session optical-train aware
+
+**What changed:**
+
+- `smart_telescope/workflow/runner.py`: Removed `mount.disconnect()`, `camera.disconnect()`, `focuser.disconnect()` from `VerticalSliceRunner.run()` `finally` block. Runtime shutdown sequence (`RuntimeContext.shutdown()`) now owns all adapter teardown. Hardware stays live after a session completes or fails, enabling post-session diagnostics, retry, and dawn auto-park (M5-013).
+
+- `smart_telescope/api/session.py`: Replaced hard-coded `{"camera:0", "mount", "focuser"}` resource claim with optical-train-aware resolution. `session_run` now injects `OpticalTrainRegistry` via `Depends(deps.get_optical_train_registry)`, calls `registry.main()`, and derives `camera_resource = f"camera:{main_train.camera_index}"`. Falls back to `"camera:0"` when no main train is configured. Camera adapter resolved via `deps.get_camera_by_role(main_train.camera_role)`.
+
+- `tests/unit/workflow/test_focuser.py`: Updated `test_run_disconnects_focuser_on_completion` → `test_run_does_not_disconnect_focuser_on_completion` to assert the new contract.
+
+- `tests/unit/api/test_r4_role_camera.py`: Added `TestSessionOpticalTrainAware` with 3 tests (main train at index 1 conflicts on `camera:1`; `camera:0` pre-claim does not conflict with main-at-1; empty registry falls back to `camera:0`). Imports extended with `CatalogObject`, `MountPort`, `get_runtime`.
+
+- `docs/todo.md`: R0-011 and R4-008 marked done.
+
+**Test result:** 2521 passed, coverage 87%.
+
+---
+
+## 2026-05-17 — Architect review integrated into docs/todo.md
+
+**Source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
+
+**What changed in `docs/todo.md`:**
+
+- M0-001 marked done: `docs/todo.md` is the established authoritative backlog.
+- R0-011 added: change `VerticalSliceRunner.run()` to not disconnect adapters in `finally`; keep hardware live post-session (P1 Runtime).
+- R4-008 added: make guided session optical-train aware — derive `camera:N` from selected train, remove `camera:0` hard-code (P1 Runtime).
+- R5-011 added: explicit hardware mode field (`real`/`simulator`/`mock`) in readiness API and UI; `can_observe=true` blocked for mock/simulator mode (P1 Runtime).
+- R6-007 added: `FocusRunConfig` policy object; clean focus sub-boundary (P2 Runtime).
+- M5-005 enhanced: acceptance criteria now require solar exclusion at ALL GoTo entry points (direct GoTo, catalog launch, guided session, sky slew).
+- M5-013 added: dawn auto-park at astronomical dawn; hardware stays connected after park (P2 Product).
+- POD-005 enhanced: guidance examples added (ASTAP missing → observing blocked only; mount serial fail → preview + diagnostics still available).
+- POD-007 answered: Pi hardware/app logs + saved FITS + session JSON log.
+- POD-008 updated: minimal collimation wizard UI shell is part of MVP demo; deep algorithm phases deferred.
+- POD-010 added: camera index in API request bodies — policy decision pending.
+- Review header and source reference added to `docs/todo.md`.
+
+**Reviewer note:** P1-001 finding ("pyproject.toml missing") was a reviewer environment issue — `pyproject.toml` exists at workspace root and `pip install -e .[dev]` was not run in the reviewer's environment. Not added as an action item.
+
+---
+
 ## 2026-05-17 — R6-003 / R6-004 — JS module split + shared API client
 
 **What changed:**

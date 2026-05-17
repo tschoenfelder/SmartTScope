@@ -65,10 +65,11 @@ class TestStageConnectWithFocuser:
             stage_connect(ctx, make_log())
         mount_mock.connect.assert_not_called()
 
-    def test_run_disconnects_focuser_on_completion(self, focuser_mock: Mock) -> None:
+    def test_run_does_not_disconnect_focuser_on_completion(self, focuser_mock: Mock) -> None:
+        # R0-011: runtime owns device lifecycle; runner must NOT disconnect adapters
         runner = make_unit_runner(focuser=focuser_mock)
         runner.run()
-        focuser_mock.disconnect.assert_called_once()
+        focuser_mock.disconnect.assert_not_called()
 
 
 class TestMockFocuser:

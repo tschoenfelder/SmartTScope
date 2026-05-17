@@ -47,6 +47,7 @@ class TestReadinessEndpoint:
         d = client.get("/api/readiness").json()
         assert "overall" in d
         assert "can_observe" in d
+        assert "mode" in d
         assert "items" in d
         assert "checked_at" in d
 
@@ -267,7 +268,81 @@ class TestOverallLevel:
         with (
             patch("smart_telescope.adapters.astap.solver.find_astap", return_value=tmp_path / "astap"),
             patch("smart_telescope.adapters.astap.solver.find_catalog", return_value=tmp_path / "cat.290"),
+            patch.object(ReadinessService, "_get_hardware_mode", return_value="real"),
         ):
             report = ReadinessService().check()
         assert report.overall == Level.YELLOW
         assert report.can_observe is True
+
+
+# ── R5-011: hardware mode field ───────────────────────────────────────────────
+
+class TestHardwareMode:
+    """R5-011: mode field in ReadinessReport; can_observe blocked for non-real modes."""
+
+    def test_mode_field_present_in_api_response(self) -> None:
+        d = client.get("/api/readiness").json()
+        assert "mode" in d
+        assert d["mode"] in ("real", "simulator", "mock")
+
+    def test_mode_real_allows_observe_when_no_red_items(self, tmp_path: Path) -> None:
+        stars = tmp_path / "stars.cfg"
+        stars.write_text("# stars")
+        with (
+            patch.object(ReadinessService, "_get_hardware_mode", return_value="real"),
+            patch("smart_telescope.config.STARS_CFG", str(stars)),
+            patch("smart_telescope.config.HORIZON_DAT", str(stars)),
+            patch("smart_telescope.config.STORAGE_DIR", str(tmp_path)),
+            patch("smart_telescope.config.CAMERAS", {"main": 0}),
+            patch("smart_telescope.config.ONSTEP_PORT", ""),
+            patch.dict("os.environ", {}, clear=False),
+            patch("smart_telescope.adapters.astap.solver.find_astap", return_value=tmp_path / "astap"),
+            patch("smart_telescope.adapters.astap.solver.find_catalog", return_value=tmp_path / "cat.290"),
+        ):
+            report = ReadinessService().check()
+        assert report.mode == "real"
+        assert report.can_observe is True
+
+    def test_mode_mock_blocks_can_observe(self) -> None:
+        with patch.object(ReadinessService, "_get_hardware_mode", return_value="mock"):
+            report = ReadinessService().check()
+        assert report.mode == "mock"
+        assert report.can_observe is False
+
+    def test_mode_simulator_blocks_can_observe(self, tmp_path: Path) -> None:
+        stars = tmp_path / "stars.cfg"
+        stars.write_text("# stars")
+        with (
+            patch.object(ReadinessService, "_get_hardware_mode", return_value="simulator"),
+            patch("smart_telescope.adapters.astap.solver.find_astap", return_value=tmp_path / "astap"),
+            patch("smart_telescope.adapters.astap.solver.find_catalog", return_value=tmp_path / "cat.290"),
+        ):
+            report = ReadinessService().check()
+        assert report.mode == "simulator"
+        assert report.can_observe is False
+
+    def test_mode_item_in_items_list(self) -> None:
+        with patch.object(ReadinessService, "_get_hardware_mode", return_value="real"):
+            report = ReadinessService().check()
+        mode_item = next((i for i in report.items if i.key == "hardware_mode"), None)
+        assert mode_item is not None
+        assert "REAL" in mode_item.message
+
+    def test_mode_mock_item_has_repair_guidance(self) -> None:
+        with patch.object(ReadinessService, "_get_hardware_mode", return_value="mock"):
+            report = ReadinessService().check()
+        mode_item = next(i for i in report.items if i.key == "hardware_mode")
+        assert mode_item.repair is not None
+        assert "config.toml" in mode_item.repair
+
+    def test_runtime_hardware_mode_default_is_mock(self) -> None:
+        from smart_telescope.runtime import RuntimeContext
+        ctx = RuntimeContext()
+        assert ctx.hardware_mode == "mock"
+
+    def test_runtime_hardware_mode_reset_to_mock(self) -> None:
+        from smart_telescope.runtime import get_runtime
+        rt = get_runtime()
+        rt._hardware_mode = "real"
+        rt.reset_for_tests()
+        assert rt.hardware_mode == "mock"

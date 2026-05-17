@@ -3,7 +3,8 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-17 (R6-003/004 JS module split + StaticFiles — 43 smoke tests pass)
+**Last updated:** 2026-05-18 (BUG-005 crash isolation tests + M5-005 solar gate marked done — 2539 tests pass)
+**Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
 
@@ -32,7 +33,8 @@
 
 *Team knows what is open, what matters, what is duplicated, and what blocks a safe usable product.*
 
-- [ ] M0-001 Create one authoritative maintained backlog `[P1 · Process]`
+- [x] M0-001 Create one authoritative maintained backlog `[P1 · Process]`
+  - *Done:* `docs/todo.md` is the established authoritative backlog (NEXT-002); all field bugs and architecture items imported and prioritized with acceptance criteria on every P0/P1 item.
 - [ ] M0-002 Import field bugs from Items_to_fix_20260513.txt and Items_to_fix_20260514.txt `[P1 · Process]`
 - [ ] M0-003 Import open items from task docs and architecture review `[P1 · Process]`
 - [ ] M0-004 Deduplicate overlapping issues `[P1 · Process]`
@@ -54,8 +56,9 @@
 - [x] BUG-023 Shutdown with CTRL-C does not close OnStep connection; focuser keeps moving in small steps after exit `[P0 · Hardware · Source: Items_to_fix_20260514]`
   - *Acceptance:* shutdown sequence stops motion and closes serial before process exits; verified on real Pi
   - *Done:* `RuntimeContext.shutdown()` calls `focuser.stop()` then `mount.stop()` then `mount.disconnect()` in lifespan teardown
-- [ ] BUG-005 Any component crash must not release control of mount or focuser; STOP must always respond `[P0 · Hardware · Source: Items_to_fix_20260513]`
+- [x] BUG-005 Any component crash must not release control of mount or focuser; STOP must always respond `[P0 · Hardware · Source: Items_to_fix_20260513]`
   - *Acceptance:* preview/camera failure does not affect mount/focuser control; STOP always completes within agreed time
+  - *Done:* `_session_thread()` wraps `runner.run()` in a `finally` that calls `rt.job_manager.release()`; STOP endpoint calls `mount.stop()` directly (no coordinator); 10 explicit isolation tests in `tests/unit/api/test_bug005_isolation.py` — coordinator lock bypass, resource release on crash, STOP/goto available post-crash
 
 ### R1 — Hardware Command Coordinator
 
@@ -135,6 +138,8 @@
 - [x] R0-009 Keep compatibility wrappers during migration `[P2 · Runtime]`
 - [x] R0-010 Add lifecycle tests `[P1 · Tests]`
   - *Done:* 40 tests in `tests/unit/test_runtime.py` — init state, connect_devices (mock + simulator + idempotency + polling starts), shutdown (focuser stop, mount stop-before-disconnect, preview cameras, error tolerance), reset_for_tests (all cleared, session/autogain cleared, new adapters on next access), module singleton (get/set_runtime), session state management, autogain state management, FastAPI lifespan smoke tests
+- [x] R0-011 Change `VerticalSliceRunner.run()` to not disconnect adapters in `finally`; release job ownership only; keep hardware live after session `[P1 · Runtime]`
+  - *Done:* removed `mount.disconnect()`, `camera.disconnect()`, `focuser.disconnect()` from `runner.py finally`; runtime shutdown sequence owns all device teardown; `test_run_does_not_disconnect_focuser_on_completion` verifies new contract
 
 ### R3 — Shared Job Manager
 
@@ -202,6 +207,8 @@
   - *Done:* Preview WS accepts `camera_role` query param → resolves to index via registry; autogain `RunRequest` accepts `camera_role`; autofocus `AutofocusRequest` accepts `camera_role`; UI API calls pass `camera_role` (preview, autogain, autofocus); APIs that still need index (goto_and_center, solver, histogram, calibration, polar) resolve via `_trainCamIdx(role)` helper
 - [x] R4-007 Tests for two-camera and three-camera/OAG setups `[P1 · Tests]`
   - *Done:* 16 new tests in `tests/unit/api/test_r4_role_camera.py` — autogain role resolution (2-cam, 3-cam, unknown role fallback, backward compat), autofocus role resolution, preview WS role resolution, registry multi-train queries; 28 registry tests in `test_optical_train_registry.py`
+- [x] R4-008 Make guided session optical-train aware: use role/train, never hard-code `camera:0`; derive `{"camera:N"}` from selected train `[P1 · Runtime]`
+  - *Done:* `session_run` injects `OpticalTrainRegistry` via `Depends`; resolves `camera_resource = f"camera:{main_train.camera_index}"` from `registry.main()`; falls back to `"camera:0"` when no main train; 3 new tests in `test_r4_role_camera.py::TestSessionOpticalTrainAware`
 
 ### R5 — Config and Readiness Services
 
@@ -218,6 +225,9 @@
 - [x] R5-008 Add actionable repair guidance per failed check — `repair` field on every non-green item `[P1 · UI]`
 - [x] R5-009 Update setup check endpoint and UI — readiness card at top of Stage 1, auto-loads on page open `[P1 · UI]`
 - [x] R5-010 Tests: missing-file and invalid-config scenarios — `tests/unit/api/test_readiness.py` (22 tests) `[P1 · Tests]`
+- [x] R5-011 Add explicit hardware mode field to readiness API and UI (`real` / `simulator` / `mock`) `[P1 · Runtime]`
+  - *Acceptance:* `/api/readiness` includes `mode` field; `can_observe=true` blocked when mode is `mock` or `simulator`; UI label shows "REAL", "SIMULATOR", or "MOCK"; prevents accidental real-sky session with mock devices
+  - *Done:* `RuntimeContext._hardware_mode` set by `_build_adapters()` from adapter types (ToupcamCamera+OnStepMount→real, Simulator→simulator, Mock→mock); `hardware_mode` property exposed; `ReadinessReport.mode` field added; `can_observe` blocked for non-real modes; mode item in readiness items list; REAL/SIMULATOR/MOCK badge in UI header; 8 new tests in `test_readiness.py`
 
 ### Field bugs — Config and optical train
 
@@ -479,6 +489,8 @@
   - *Done (UX4-004):* Mount strip starts visible; STOP button visible on all stages.
 - [x] R6-006 Browser smoke tests: setup, preview, mount, focuser, stop `[P1 · Tests]`
   - *Done:* `tests/unit/api/test_smoke.py` — 39 tests covering HTML page load, readiness API shape, mount status (state/stale/watchdog fields), focuser status (available/position/moving), emergency STOP (always 200, mount_stopped true/false, calls stop once), optical trains list, version endpoint; all mock-based, no hardware.
+- [ ] R6-007 Add `FocusRunConfig` policy object; clean focus sub-boundary so focus options touch only focus domain `[P2 · Runtime]`
+  - *Acceptance:* focus options (step size, frame count, timeout) carried in a `FocusRunConfig` object passed top-down; changes to focus options touch only focus domain, focus service, one API shape, and focused tests; session/mount internals not touched
 
 ### Milestone M5 tasks
 
@@ -486,7 +498,9 @@
 - [ ] M5-002 Connect all configured devices `[P1 · Hardware]`
 - [ ] M5-003 Show readiness dashboard `[P1 · UI]`
 - [ ] M5-004 Select target `[P1 · Product]`
-- [ ] M5-005 Enforce solar safety gate `[P0 · Hardware]`
+- [x] M5-005 Enforce solar safety gate `[P0 · Hardware]`
+  - *Acceptance:* solar exclusion enforced at ALL GoTo entry points: direct GoTo, catalog target launch, guided session launch, sky slew; test shows rejection for Sun coordinates from each entry point
+  - *Done:* `is_solar_target()` called in `mount_goto`, `mount_goto_and_center`, `mount_goto_sky`, and `session_run`; each returns HTTP 403 with `solar_exclusion` detail; catalog tonight marks `solar_safe` flag; `confirm_solar=true` bypass available; tests in `test_mount.py` and `test_session.py`
 - [ ] M5-006 Validate mount limits `[P1 · Hardware]`
 - [ ] M5-007 GoTo, plate solve, recenter `[P1 · Hardware]`
 - [ ] M5-008 Focus and optimize exposure `[P1 · Hardware]`
@@ -494,6 +508,8 @@
 - [ ] M5-010 Save output image and session log `[P1 · Imaging]`
 - [ ] M5-011 Stop/recover safely `[P0 · Hardware]`
 - [ ] M5-012 Verify reconnect and shutdown behavior `[P1 · Hardware]`
+- [ ] M5-013 Dawn auto-park: auto-park when astronomical dawn approaches (end-of-night behaviour) `[P2 · Product]`
+  - *Acceptance:* system parks mount automatically at astronomical dawn (sun at −18°); user notified; hardware stays connected after park for diagnostics/retry
 
 **Quality gate:** Full workflow demonstrated on real hardware. Emergency stop tested during workflow. Logs useful without shell investigation. Product owner signs off against visible checklist.
 
@@ -554,12 +570,16 @@
   - *Decision:* **Show spinner / pending indicator** — after a Park/Unpark/Home/GoTo command is accepted, the label shows a loading state until `DeviceStateService` confirms the new hardware state. Adds a UX task: see UX-PENDING-001 below.
 - [ ] POD-004 Is SDK camera index acceptable anywhere outside diagnostics?
 - [ ] POD-005 Which failures may block the whole app, and which must degrade locally?
+  - *Guidance (decision pending):* ASTAP missing → blocks observing only; mount serial failure → allows camera preview + diagnostics; camera failure → allows mount controls + diagnostics. Formal isolation policy needed before M5.
 - [x] POD-006 What is the minimum successful demo workflow?
   - *Decision:* **Guided single-target session** — Pick target → GoTo → plate-solve & center → autofocus → stack 10 frames → save. That is the MVP demo.
-- [ ] POD-007 What evidence is required for product-owner sign-off?
+- [x] POD-007 What evidence is required for product-owner sign-off?
+  - *Decision:* Pi hardware/app logs + saved FITS/output image + session JSON log. Evidence folder: one directory with timestamped app log, session JSON, and saved output image from a real hardware session.
 - [x] POD-008 Which requirements are deferred beyond MVP?
-  - *Decision:* Defer ISS tracking, multi-target queue, advanced calibration frames wizard, and collimation assistant to post-MVP.
+  - *Decision:* Defer ISS tracking, multi-target queue, advanced calibration frames wizard, and deep collimation algorithm phases to post-MVP. Minimal collimation wizard UI shell (start/status/overlay) is part of the MVP demo.
 - [ ] POD-009 Concrete performance targets: preview latency, solve time, centering accuracy, Pi thermal ceiling?
+- [ ] POD-010 Should SDK camera indices be forbidden in API request bodies, or only hidden in the UI? `[P2 · Process]`
+  - *Context:* R4 removed indices from product UI; some API endpoints still accept index directly. Decision needed for API contract (affects R4-008 and any client tooling).
 
 ### UX-PENDING-001 — Command-pending indicator in mount/focuser UI `[P1 · UI]`
 

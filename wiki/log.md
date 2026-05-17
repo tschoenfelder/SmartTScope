@@ -4,6 +4,47 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — R6-001/002 Service extraction
+
+**What changed:**
+
+- `services/cooling.py` (new, R6-001): `CoolingService` extracted from
+  `api/cooling.py`. Owns `_Session` dataclass, threading lock, polling loop,
+  `_stop_session` (with lock-release during join to prevent deadlock).
+  Public API: `start(camera, camera_index, target_c)`, `stop()`,
+  `get_status() → CoolingStatus`.
+
+- `api/cooling.py` (R6-002): Reduced from 251 → 86 lines. Now a thin wrapper:
+  validate TEC capability, call `CoolingService`, map `CoolingStatus` to
+  response model. `_reset()` delegates to `svc.stop()`.
+
+- `services/mount_operations.py` (new, R6-001): Mount orchestration module with
+  `MountSlewingError` exception and five sequence functions:
+  `safe_goto`, `unpark_sequence`, `track_sequence`, `park_sequence`,
+  `home_sequence`. Accepts domain-level objects; raises domain exceptions
+  (no HTTP concerns).
+
+- `api/mount.py` (R6-002): `_safe_goto`, `mount_unpark`, `mount_track`,
+  `mount_home`, `mount_park` endpoints now delegate to `mount_operations` and
+  map domain exceptions to HTTP. `Time` / `is_solar_target` imports kept at
+  the API level to preserve existing test patch targets.
+
+- `runtime.py`: `CoolingService` added to `__init__`, `shutdown()`, and
+  `reset_for_tests()`.
+
+- `api/deps.py`: Added `get_cooling_service()`.
+
+- `tests/unit/services/test_cooling_service.py` (new): 21 tests covering
+  idle state, start/stop lifecycle, restart, polling, and thread safety.
+
+- `tests/unit/services/test_mount_operations.py` (new): 22 tests covering
+  safe_goto, unpark_sequence, track_sequence, park_sequence, home_sequence —
+  including domain exception propagation and coordinator conflict detection.
+
+**Tests:** 2471 passed, 0 failed. Coverage 87%.
+
+---
+
 ## 2026-05-17 — R1-006, R1-008/009, BUG-002b, BUG-015 (continued)
 
 **What changed:**

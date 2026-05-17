@@ -19,6 +19,7 @@ from .ports.solver import SolverPort
 from .ports.stacker import StackerPort
 from .ports.storage import StoragePort
 from .services.hardware_coordinator import HardwareCommandCoordinator
+from .services.cooling import CoolingService
 from .services.device_state import DeviceStateService
 from .services.job_manager import JobManager
 
@@ -125,9 +126,10 @@ class RuntimeContext:
         self._preview_cameras: dict[int, CameraPort] = {}
         self._adapters_built: bool = False
         self._adapters_lock: threading.Lock = threading.Lock()
-        self.coordinator   = HardwareCommandCoordinator()
-        self.device_state  = DeviceStateService()
-        self.job_manager   = JobManager()
+        self.coordinator     = HardwareCommandCoordinator()
+        self.cooling_service = CoolingService()
+        self.device_state    = DeviceStateService()
+        self.job_manager     = JobManager()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
         self.session_lock:    threading.Lock = threading.Lock()
@@ -163,6 +165,7 @@ class RuntimeContext:
         closes, so stop commands must be sent first.
         """
         self.job_manager.cancel_all()
+        self.cooling_service.stop()
         self.device_state.stop()
         if self._focuser is not None:
             with contextlib.suppress(Exception):
@@ -210,9 +213,10 @@ class RuntimeContext:
         self._solver = None
         self._adapters_built = False
         self._preview_cameras = {}
-        self.coordinator  = HardwareCommandCoordinator()
-        self.device_state = DeviceStateService()
-        self.job_manager  = JobManager()
+        self.coordinator     = HardwareCommandCoordinator()
+        self.cooling_service = CoolingService()
+        self.device_state    = DeviceStateService()
+        self.job_manager     = JobManager()
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None

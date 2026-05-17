@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-17 (Phase 14 pipeline wiring + R1-006 command IDs — 2436 tests pass)
+**Last updated:** 2026-05-17 (R6-001/002 service extraction + R1-006 command IDs — 2471 tests pass)
 
 ## Priority legend
 
@@ -458,8 +458,10 @@
 
 ### R6 — API Thinness and UI Consistency
 
-- [ ] R6-001 Move mount/focuser/camera/setup/job orchestration out of API modules into services `[P1 · Runtime]`
-- [ ] R6-002 Keep API modules thin: validate request, call service, map response `[P1 · Runtime]`
+- [x] R6-001 Move mount/focuser/camera/setup/job orchestration out of API modules into services `[P1 · Runtime]`
+  - *Done:* `CoolingService` extracted from `api/cooling.py` → `services/cooling.py` (full session/threading moved out). `MountOperations` extracted from `api/mount.py` → `services/mount_operations.py` (safe_goto, home_sequence, park_sequence, unpark_sequence, track_sequence). 35 new service tests.
+- [x] R6-002 Keep API modules thin: validate request, call service, map response `[P1 · Runtime]`
+  - *Done:* `api/cooling.py` reduced from 251 to 86 lines. `api/mount.py` endpoints for unpark/track/home/park now delegate to `mount_operations` and map domain exceptions to HTTP.
 - [ ] R6-003 Split large static UI into maintainable modules `[P2 · UI]`
 - [ ] R6-004 Create shared frontend API client and shared device/job state model `[P2 · UI]`
 - [x] R6-005 Ensure STOP button is globally available `[P0 · UI]`

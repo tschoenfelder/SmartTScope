@@ -1,0 +1,242 @@
+"""Unit tests for mount_operations — R6-001."""
+from __future__ import annotations
+
+import time
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from smart_telescope.ports.mount import MountPort, MountState
+from smart_telescope.services.hardware_coordinator import (
+    CommandConflictError,
+    HardwareCommandCoordinator,
+)
+from smart_telescope.services.device_state import DeviceStateService, MountObservedState
+from smart_telescope.services.mount_operations import (
+    MountSlewingError,
+    safe_goto,
+    unpark_sequence,
+    track_sequence,
+    park_sequence,
+    home_sequence,
+)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _mock_mount(
+    state: MountState = MountState.TRACKING,
+    slewing: bool = False,
+    unpark_ok: bool = True,
+    track_ok: bool = True,
+    park_ok: bool = True,
+    goto_ok: bool = True,
+) -> MagicMock:
+    m = MagicMock(spec=MountPort)
+    m.get_state.return_value = state
+    m.is_slewing.return_value = slewing
+    m.unpark.return_value = unpark_ok
+    m.enable_tracking.return_value = track_ok
+    m.park.return_value = park_ok
+    if goto_ok:
+        m.goto.return_value = True
+    else:
+        m.goto.side_effect = RuntimeError("GoTo rejected")
+    return m
+
+
+def _coordinator() -> HardwareCommandCoordinator:
+    return HardwareCommandCoordinator()
+
+
+def _device_state(observed_state: MountState | None = None) -> DeviceStateService:
+    svc = DeviceStateService()
+    if observed_state is not None:
+        with svc._lock:
+            svc._mount_state = MountObservedState(
+                state=observed_state, ra=None, dec=None, polled_at=time.monotonic(),
+            )
+    return svc
+
+
+# ── safe_goto ─────────────────────────────────────────────────────────────────
+
+def test_safe_goto_calls_mount_goto():
+    m = _mock_mount()
+    c = _coordinator()
+    safe_goto(m, c, ra=5.0, dec=45.0)
+    m.goto.assert_called_once_with(5.0, 45.0)
+
+
+def test_safe_goto_raises_slewing_error_when_slewing():
+    m = _mock_mount(slewing=True)
+    c = _coordinator()
+    with pytest.raises(MountSlewingError):
+        safe_goto(m, c, ra=5.0, dec=45.0)
+
+
+def test_safe_goto_raises_runtime_on_goto_failure():
+    m = _mock_mount(goto_ok=False)
+    c = _coordinator()
+    with pytest.raises(RuntimeError):
+        safe_goto(m, c, ra=5.0, dec=45.0)
+
+
+def test_safe_goto_raises_conflict_when_coordinator_busy():
+    m = _mock_mount()
+    c = _coordinator()
+    with c.mount_command():
+        with pytest.raises(CommandConflictError):
+            safe_goto(m, c, ra=5.0, dec=45.0)
+
+
+# ── unpark_sequence ───────────────────────────────────────────────────────────
+
+def test_unpark_sequence_calls_unpark():
+    m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
+    ds = _device_state(MountState.TRACKING)
+    unpark_sequence(m, ds)
+    m.unpark.assert_called_once()
+
+
+def test_unpark_sequence_raises_on_failure():
+    m = _mock_mount(unpark_ok=False)
+    ds = _device_state()
+    with pytest.raises(RuntimeError, match="Unpark rejected"):
+        unpark_sequence(m, ds)
+
+
+def test_unpark_sequence_returns_true_when_state_changed():
+    m = _mock_mount(unpark_ok=True)
+    ds = _device_state(MountState.TRACKING)  # pre-loaded with TRACKING
+    result = unpark_sequence(m, ds)
+    assert result is True
+
+
+def test_unpark_sequence_returns_false_on_timeout():
+    m = _mock_mount(unpark_ok=True)
+    ds = _device_state(MountState.PARKED)  # still PARKED → times out quickly
+    result = unpark_sequence(m, ds)
+    assert result is False
+
+
+# ── track_sequence ────────────────────────────────────────────────────────────
+
+def test_track_sequence_enables_tracking():
+    m = _mock_mount(state=MountState.TRACKING)
+    track_sequence(m)
+    m.enable_tracking.assert_called_once()
+
+
+def test_track_sequence_auto_unparks_when_parked():
+    m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
+    track_sequence(m)
+    m.unpark.assert_called_once()
+
+
+def test_track_sequence_raises_on_unpark_failure():
+    m = _mock_mount(state=MountState.PARKED, unpark_ok=False)
+    with pytest.raises(RuntimeError, match="Auto-unpark"):
+        track_sequence(m)
+
+
+def test_track_sequence_raises_on_track_failure():
+    m = _mock_mount(state=MountState.TRACKING, track_ok=False)
+    with pytest.raises(RuntimeError, match="Enable tracking"):
+        track_sequence(m)
+
+
+# ── park_sequence ─────────────────────────────────────────────────────────────
+
+def test_park_sequence_calls_park():
+    m = _mock_mount(park_ok=True)
+    c = _coordinator()
+    ds = _device_state(MountState.PARKED)
+    park_sequence(m, c, ds)
+    m.park.assert_called_once()
+
+
+def test_park_sequence_raises_slewing_error():
+    m = _mock_mount(slewing=True)
+    c = _coordinator()
+    ds = _device_state()
+    with pytest.raises(MountSlewingError):
+        park_sequence(m, c, ds)
+
+
+def test_park_sequence_raises_on_park_failure():
+    m = _mock_mount(park_ok=False)
+    c = _coordinator()
+    ds = _device_state()
+    with pytest.raises(RuntimeError, match="Park command rejected"):
+        park_sequence(m, c, ds)
+
+
+def test_park_sequence_raises_conflict_when_busy():
+    m = _mock_mount()
+    c = _coordinator()
+    ds = _device_state()
+    with c.mount_command():
+        with pytest.raises(CommandConflictError):
+            park_sequence(m, c, ds)
+
+
+# ── home_sequence ─────────────────────────────────────────────────────────────
+
+def _mock_time_now(lst_hours: float = 12.0):
+    mock_lst = MagicMock()
+    mock_lst.hour = lst_hours
+    mock_now = MagicMock()
+    mock_now.sidereal_time.return_value = mock_lst
+    return patch("smart_telescope.services.mount_operations.Time"), mock_now
+
+
+def test_home_sequence_returns_ra_dec():
+    m = _mock_mount()
+    c = _coordinator()
+    time_patch, mock_now = _mock_time_now(6.0)
+    with time_patch as mock_time_cls:
+        mock_time_cls.now.return_value = mock_now
+        ra, dec = home_sequence(m, c)
+    assert ra == pytest.approx(6.0)
+    assert dec == pytest.approx(85.0)
+
+
+def test_home_sequence_issues_goto():
+    m = _mock_mount()
+    c = _coordinator()
+    time_patch, mock_now = _mock_time_now()
+    with time_patch as mock_time_cls:
+        mock_time_cls.now.return_value = mock_now
+        home_sequence(m, c)
+    m.goto.assert_called_once()
+
+
+def test_home_sequence_auto_unparks_when_parked():
+    m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
+    c = _coordinator()
+    time_patch, mock_now = _mock_time_now()
+    with time_patch as mock_time_cls, patch("smart_telescope.services.mount_operations.time") as mock_sleep_mod:
+        mock_time_cls.now.return_value = mock_now
+        home_sequence(m, c)
+    m.unpark.assert_called_once()
+
+
+def test_home_sequence_raises_on_unpark_failure():
+    m = _mock_mount(state=MountState.PARKED, unpark_ok=False)
+    c = _coordinator()
+    time_patch, mock_now = _mock_time_now()
+    with time_patch as mock_time_cls:
+        mock_time_cls.now.return_value = mock_now
+        with pytest.raises(RuntimeError, match="Auto-unpark"):
+            home_sequence(m, c)
+
+
+def test_home_sequence_raises_slewing_error():
+    m = _mock_mount(slewing=True)
+    c = _coordinator()
+    time_patch, mock_now = _mock_time_now()
+    with time_patch as mock_time_cls:
+        mock_time_cls.now.return_value = mock_now
+        with pytest.raises(MountSlewingError):
+            home_sequence(m, c)

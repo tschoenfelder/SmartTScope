@@ -33,6 +33,7 @@ from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 from ..runtime import get_runtime
+from ..services.cooling import CoolingService
 from ..services.hardware_coordinator import HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
 from ..services.job_manager import JobManager
@@ -74,6 +75,10 @@ def get_solver() -> SolverPort:
 
 def get_storage() -> StoragePort:
     return get_runtime().get_storage()
+
+
+def get_cooling_service() -> CoolingService:
+    return get_runtime().cooling_service
 
 
 def get_coordinator() -> HardwareCommandCoordinator:

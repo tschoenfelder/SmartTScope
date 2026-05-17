@@ -287,14 +287,19 @@
 - [ ] UX4-001 Add beginner/advanced mode distinction `[P2 · UI]`
 - [ ] UX4-002 Move manual mount controls to advanced/diagnostics (except emergency stop) `[P2 · UI]`
 - [ ] UX4-003 Move manual focuser controls to advanced/diagnostics (except recovery actions) `[P2 · UI]`
-- [ ] UX4-004 Keep emergency stop globally visible at all times `[P0 · UI]`
+- [x] UX4-004 Keep emergency stop globally visible at all times `[P0 · UI]`
+  - *Done:* Mount strip now starts visible (class `visible` in HTML); `goToStage()` no longer hides it on Stage 1. STOP button is in the strip at all times.
 
 ### UX5 — Recovery-Oriented Errors
 
-- [ ] UX5-001 Define error model: what happened / safety state / user action / retry `[P1 · UI]`
-- [ ] UX5-002 Map OnStep command errors to user-facing messages `[P1 · UI]`
-- [ ] UX5-003 Map camera errors to user-facing messages `[P1 · UI]`
-- [ ] UX5-004 Map solver errors to user-facing messages `[P1 · UI]`
+- [x] UX5-001 Define error model: what happened / safety state / user action / retry `[P1 · UI]`
+  - *Done:* `friendlyError(raw)` maps raw error strings to `{message, hint}`. `setStatus(..., true)` renders the translated message + hint. Recovery banner (UX2-004) covers session failures.
+- [x] UX5-002 Map OnStep command errors to user-facing messages `[P1 · UI]`
+  - *Done:* `_ERROR_PATTERNS` includes serial timeout, serial error, rejected command, not connected, not aligned, unsafe position patterns.
+- [x] UX5-003 Map camera errors to user-facing messages `[P1 · UI]`
+  - *Done:* Camera not found, capture timeout, camera error patterns in `_ERROR_PATTERNS`.
+- [x] UX5-004 Map solver errors to user-facing messages `[P1 · UI]`
+  - *Done:* ASTAP not found, catalog not found, no stars, plate solve failed patterns in `_ERROR_PATTERNS`.
 - [ ] UX5-005 Add diagnostics link for advanced error details `[P2 · UI]`
 
 ### Field bugs — UX and errors
@@ -445,7 +450,8 @@
 - [ ] R6-002 Keep API modules thin: validate request, call service, map response `[P1 · Runtime]`
 - [ ] R6-003 Split large static UI into maintainable modules `[P2 · UI]`
 - [ ] R6-004 Create shared frontend API client and shared device/job state model `[P2 · UI]`
-- [ ] R6-005 Ensure STOP button is globally available `[P0 · UI]`
+- [x] R6-005 Ensure STOP button is globally available `[P0 · UI]`
+  - *Done (UX4-004):* Mount strip starts visible; STOP button visible on all stages.
 - [ ] R6-006 Browser smoke tests: setup, preview, mount, focuser, stop `[P1 · Tests]`
 
 ### Milestone M5 tasks

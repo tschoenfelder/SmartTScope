@@ -1312,3 +1312,23 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
     implemented in `VerticalSliceRunner`; the pipeline strip now makes this visible.
 
 - `docs/todo.md`: UX2-001, UX2-002, UX2-003, UX2-004 marked complete.
+
+---
+
+## 2026-05-17 — UX4-004, R6-005, UX5-001..004 (global STOP + error model)
+
+**What changed:**
+
+- `smart_telescope/static/index.html`:
+  - Mount strip now carries `class="visible"` in HTML so it is shown from page
+    load; `goToStage()` no longer removes `visible` when navigating to Stage 1.
+    Emergency STOP button is now globally visible at all times (UX4-004 / R6-005).
+  - Added `_ERROR_PATTERNS` array and `friendlyError(raw)` function (UX5-001):
+    pattern-matches raw error strings to `{message, hint}` pairs in three
+    categories — mount/OnStep (UX5-002), camera (UX5-003), solver (UX5-004).
+  - `setStatus(..., isError=true)` now calls `friendlyError()` and renders the
+    translated message with an optional hint in a smaller muted line beneath it.
+    All existing error callsites benefit automatically (park, unpark, goto, home,
+    connect, autofocus, etc.).
+
+- `docs/todo.md`: UX4-004, R6-005, UX5-001..004 marked complete.

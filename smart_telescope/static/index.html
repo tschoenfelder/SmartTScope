@@ -91,7 +91,7 @@
     .stage-btn.active .stage-num { background: var(--accent); color: #fff; }
     .stage-btn.done .stage-num   { background: var(--success); color: #fff; }
 
-    /* ── compact mount strip (stages 2–5) ── */
+    /* ── compact mount strip (always visible — global STOP + mount state) ── */
     #mount-strip {
       display: none;
       background: var(--surface);
@@ -533,8 +533,8 @@
   </button>
 </nav>
 
-<!-- ── Compact mount strip (stages 2–5) ─────────────────────────────────── -->
-<div id="mount-strip">
+<!-- ── Compact mount strip (always visible — global STOP, mount state on 2–5) -->
+<div id="mount-strip" class="visible">
   <span class="dot dot-grey" id="ms-dot"></span>
   <span id="ms-state" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">—</span>
   <span id="ms-radec">—</span>
@@ -1895,10 +1895,62 @@
     } catch (_) {}
   }
 
+  // UX5-001..004: pattern-matched error translation (mount, camera, solver, storage)
+  const _ERROR_PATTERNS = [
+    // Mount / OnStep
+    [/serial.*timeout|timeout.*serial|timed.*out.*serial/i,
+      'Mount not responding', 'Check the USB/serial cable connection and retry'],
+    [/serial.*error|serial.*exception|write.*fail|read.*fail/i,
+      'Serial communication error', 'Check the cable and the serial port setting in smart_telescope.toml'],
+    [/refused|rejected|denied.*command|command.*denied/i,
+      'Command rejected by mount', 'Mount may be in an unsafe state — check alignment and limits'],
+    [/not.*connected|connect.*fail|disconnected/i,
+      'Mount not connected', 'Use Connect All on Stage 1 to reconnect'],
+    [/not.*initial|not.*aligned|align.*required/i,
+      'Mount needs alignment', 'Complete the alignment procedure in Stage 2'],
+    [/below.*horizon|above.*meridian|at.*limit|unsafe.*position/i,
+      'Target is in an unsafe position', 'Choose a target above the horizon and within mount limits'],
+    // Camera
+    [/camera.*not.*found|no.*camera|cannot.*open.*camera|open.*device.*fail/i,
+      'Camera not connected', 'Check the USB connection and verify the ToupTek driver is installed'],
+    [/capture.*timeout|exposure.*timeout|grab.*timeout/i,
+      'Camera capture timed out', 'Check the USB cable — try a shorter exposure'],
+    [/camera.*error|camera.*exception/i,
+      'Camera error', 'Check USB connection and restart'],
+    // Solver
+    [/astap.*not.*found|no.*astap/i,
+      'Plate solver not installed', 'Download and install ASTAP from hnsky.org/astap'],
+    [/catalog.*not.*found|no.*catalog|no.*star.*catalog/i,
+      'Star catalog not found', 'Download the ASTAP D80 catalog and extract it to the catalog directory'],
+    [/no.*stars.*found|no.*stars.*detect|too.*few.*stars/i,
+      'No stars detected', 'Check focus and try a longer exposure'],
+    [/plate.*solve.*fail|solution.*fail|wcs.*fail/i,
+      'Plate solve failed', 'Verify the target is in the field and the star catalog is installed'],
+    // Storage
+    [/no.*space.*left|disk.*full|storage.*full/i,
+      'Storage full', 'Free up disk space in the storage directory'],
+    [/permission.*denied|cannot.*write|cannot.*save/i,
+      'Cannot write to storage', 'Check permissions on the storage directory'],
+  ];
+
+  function friendlyError(raw) {
+    const s = String(raw);
+    for (const [pat, message, hint] of _ERROR_PATTERNS) {
+      if (pat.test(s)) return { message, hint };
+    }
+    return { message: s, hint: null };
+  }
+
   function setStatus(id, msg, isError = false) {
     const el = document.getElementById(id);
     if (!el) return;
-    el.textContent = msg;
+    if (isError && msg) {
+      const { message, hint } = friendlyError(msg);
+      el.innerHTML = escHtml(message) +
+        (hint ? `<br><span style="font-size:0.76em;color:var(--muted)">${escHtml(hint)}</span>` : '');
+    } else {
+      el.textContent = msg;
+    }
     el.className = 'status-line' + (isError ? ' error' : '');
   }
 
@@ -1946,9 +1998,9 @@
     document.getElementById(`s${_stage.current}`).classList.remove('active');
     document.getElementById(`s${n}`).classList.add('active');
     _stage.current = n;
-    const strip = document.getElementById('mount-strip');
-    if (n === 1) { strip.classList.remove('visible'); _stopMountStripPoll(); }
-    else         { strip.classList.add('visible');    _startMountStripPoll(); }
+    // strip always visible (global STOP — UX4-004); only poll mount state on stages 2–5
+    if (n === 1) { _stopMountStripPoll(); }
+    else         { _startMountStripPoll(); }
     _renderStageBar();
     if (n === 4) { refreshFocuser(); loadCollimStars(); }
   }

@@ -70,6 +70,10 @@ class CollimationAssistant:
         self._target_ra: float | None = None
         self._target_dec: float | None = None
         self._report_builder: SessionReportBuilder = self._new_report_builder()
+        self._frame_counter: int = 0
+        self._mask_calibration: Any = None  # MaskSectorCalibration | None
+        self._spike_smoother: Any = None    # SpikeSmoother | None
+        self._contradiction_detector: Any = None  # ContradictionDetector | None
 
     # ── Control ───────────────────────────────────────────────────────────────
 
@@ -89,6 +93,10 @@ class CollimationAssistant:
             self._target_dec = None
             self._started_at = _now()
             self._report_builder = self._new_report_builder()
+            self._frame_counter = 0
+            self._mask_calibration = None
+            self._spike_smoother = None
+            self._contradiction_detector = None
             self._sm.transition(CollimationState.PRECHECK)
             self._updated_at = _now()
 
@@ -351,48 +359,409 @@ class CollimationAssistant:
         self._do_transition(CollimationState.ACQUIRE_STAR)
 
     def _handle_acquire_star(self) -> None:
-        _log.info("ACQUIRE_STAR: stub → CENTER_STAR")
-        # TODO Phase 3: capture frame, centroid, fail if SNR too low
-        self._do_transition(CollimationState.CENTER_STAR)
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.star_detection import detect_star
+
+        bit_depth  = self._camera.get_bit_depth()
+        exposure_s = self._camera.get_exposure_ms() / 1000.0
+
+        for attempt in range(5):
+            if self._cancel.is_set():
+                return
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception as exc:
+                _log.warning("ACQUIRE_STAR attempt %d: capture failed: %s", attempt + 1, exc)
+                continue
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            star = detect_star(processed)
+            if star is not None:
+                _log.info(
+                    "ACQUIRE_STAR: star at (%.1f, %.1f) FWHM=%.1f px",
+                    star.center_x, star.center_y, star.fwhm_px,
+                )
+                self._do_transition(CollimationState.CENTER_STAR)
+                return
+            _log.warning("ACQUIRE_STAR: no star on attempt %d/5", attempt + 1)
+
+        self._fail("ACQUIRE_STAR: no star detected after 5 attempts")
 
     def _handle_center_star(self) -> None:
-        _log.info("CENTER_STAR: stub → AUTO_EXPOSURE")
-        # TODO Phase 3: pulse-guide loop until within fine_tolerance_px
+        from ...domain.collimation.models import ReferenceCenterCalibration
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.star_detection import detect_star
+        from ...domain.collimation.profiles import get_profile
+        from .mount_centering import PulseCenterer
+
+        bit_depth  = self._camera.get_bit_depth()
+        exposure_s = self._camera.get_exposure_ms() / 1000.0
+        profile    = get_profile(self._cfg.telescope_profile)
+        ref_cfg    = self._cfg.reference_center
+
+        centerer = PulseCenterer(
+            mount=self._mount,
+            config=self._cfg.mount_centering,
+            pixel_scale_arcsec=profile.pixel_scale_arcsec,
+        )
+
+        def _get_offset() -> tuple[float, float] | None:
+            if self._cancel.is_set():
+                return None
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception:
+                return None
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            star = detect_star(processed)
+            if star is None:
+                return None
+            ref = ReferenceCenterCalibration(
+                offset_x_px=ref_cfg.offset_x_px,
+                offset_y_px=ref_cfg.offset_y_px,
+                source=ref_cfg.source.value,
+            ).compute(processed.width, processed.height)
+            return star.center_x - ref.x, star.center_y - ref.y
+
+        result = centerer.center(
+            get_offset_px=_get_offset,
+            cancel_check=lambda: self._cancel.is_set(),
+            dec_deg=self._target_dec or 0.0,
+        )
+        if self._cancel.is_set():
+            return
+        _log.info(
+            "CENTER_STAR: %s pulses=%d offset=%.1f px",
+            result.reason, result.pulses_issued, result.final_offset_px,
+        )
         self._do_transition(CollimationState.AUTO_EXPOSURE)
 
     def _handle_auto_exposure(self) -> None:
-        _log.info("AUTO_EXPOSURE: stub → ROUGH_DEFOCUS")
-        # TODO Phase 3: bracket exposures, target ~80 % well depth
+        import numpy as np
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.star_detection import detect_star
+
+        bit_depth  = self._camera.get_bit_depth()
+        max_adu    = float((1 << bit_depth) - 1)
+        target     = 0.80
+        exposure_s = self._camera.get_exposure_ms() / 1000.0
+
+        for _ in range(8):
+            if self._cancel.is_set():
+                return
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception as exc:
+                _log.warning("AUTO_EXPOSURE: capture failed: %s", exc)
+                break
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            if detect_star(processed) is None:
+                _log.warning("AUTO_EXPOSURE: no star detected")
+                break
+            fraction = float(np.max(processed.mono)) / max_adu
+            if abs(fraction - target) < 0.10:
+                break
+            new_exp = max(0.001, min(30.0, exposure_s * (target / max(fraction, 0.01))))
+            if abs(new_exp - exposure_s) < 0.001:
+                break
+            self._camera.set_exposure_ms(new_exp * 1000.0)
+            exposure_s = new_exp
+
+        _log.info("AUTO_EXPOSURE: final exposure=%.3f s", exposure_s)
         self._do_transition(CollimationState.ROUGH_DEFOCUS)
 
     def _handle_rough_defocus(self) -> None:
-        _log.info("ROUGH_DEFOCUS: stub → MAP_SCREWS_BY_OBSTRUCTION")
-        # TODO Phase 4: move focuser until donut ratio in [min, max]
+        from .defocus_controller import DefocusController
+        from .focus_search import FocusSearcher
+        from .focuser_control import CollimationFocuserControl
+
+        bit_depth    = self._camera.get_bit_depth()
+        exposure_s   = self._camera.get_exposure_ms() / 1000.0
+        focuser_ctrl = CollimationFocuserControl(self._focuser, self._cfg.focuser)
+
+        def _capture():
+            return self._camera.capture(exposure_s)
+
+        # Step 1: rough focus search
+        searcher = FocusSearcher(
+            focuser=focuser_ctrl,
+            config=self._cfg.focuser,
+            bit_depth=bit_depth,
+            settle_seconds=0.0,
+        )
+        focus_result = searcher.search(
+            capture_frame=_capture,
+            cancel_check=lambda: self._cancel.is_set(),
+        )
+        if self._cancel.is_set():
+            return
+        if focus_result.reason == "star_lost":
+            self._fail("ROUGH_DEFOCUS: star lost during focus search")
+            return
+        _log.info(
+            "ROUGH_DEFOCUS focus: %s best_fwhm=%s",
+            focus_result.reason,
+            f"{focus_result.best_fwhm:.2f}" if focus_result.best_fwhm is not None else "n/a",
+        )
+
+        # Step 2: get frame dimensions then defocus to donut regime
+        try:
+            sample = _capture()
+        except Exception as exc:
+            self._fail(f"ROUGH_DEFOCUS: capture failed: {exc}")
+            return
+        if self._cancel.is_set():
+            return
+
+        defocuser = DefocusController(
+            focuser=focuser_ctrl,
+            focuser_cfg=self._cfg.focuser,
+            rough_cfg=self._cfg.rough_collimation,
+            bit_depth=bit_depth,
+            settle_seconds=0.0,
+        )
+        defocus_result = defocuser.defocus(
+            capture_frame=_capture,
+            frame_width=sample.width,
+            frame_height=sample.height,
+            cancel_check=lambda: self._cancel.is_set(),
+        )
+        if self._cancel.is_set():
+            return
+        _log.info(
+            "ROUGH_DEFOCUS defocus: %s radius=%s px",
+            defocus_result.reason,
+            f"{defocus_result.estimated_radius_px:.1f}"
+            if defocus_result.estimated_radius_px is not None else "n/a",
+        )
         self._do_transition(CollimationState.MAP_SCREWS_BY_OBSTRUCTION)
 
     def _handle_map_screws(self) -> None:
-        _log.info("MAP_SCREWS_BY_OBSTRUCTION: stub → MEASURE_DONUT")
-        # TODO Phase 5: nudge each screw, track obstruction shadow shift
+        # Full screw-response calibration requires per-screw user interaction
+        # (physically touching each screw to detect the shadow shift) which is
+        # not yet modelled in the state machine.  Proceed without calibration —
+        # CollimationAdvisor will suppress recommendations when no ScrewCalibration
+        # objects are available.
+        _log.info("MAP_SCREWS_BY_OBSTRUCTION: no calibration — screw mapping skipped")
         self._do_transition(CollimationState.MEASURE_DONUT)
 
     def _handle_measure_donut(self) -> None:
-        _log.info("MEASURE_DONUT: stub → GUIDE_ROUGH_COLLIMATION")
-        # TODO Phase 5: fit donut, compute error vector, build recommendation
+        from ...domain.collimation.models import FrameMeasurement
+        from ...domain.collimation.processing.donut_detection import DonutAnalyzer
+        from ...domain.collimation.processing.frame import normalize_frame
+        from .collimation_advisor import CollimationAdvisor
+
+        bit_depth  = self._camera.get_bit_depth()
+        exposure_s = self._camera.get_exposure_ms() / 1000.0
+        analyzer   = DonutAnalyzer()
+        advisor    = CollimationAdvisor(calibrations=[])  # no screw cal in MVP
+
+        for attempt in range(5):
+            if self._cancel.is_set():
+                return
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception as exc:
+                _log.warning("MEASURE_DONUT attempt %d: capture failed: %s", attempt + 1, exc)
+                continue
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            result    = analyzer.analyze(processed)
+            if result.reason == "ok" and result.measurement is not None:
+                donut = result.measurement
+                _log.info(
+                    "MEASURE_DONUT: error=(%.1f, %.1f) mag=%.1f conf=%.2f",
+                    donut.error_x_px, donut.error_y_px,
+                    donut.error_magnitude_px, donut.confidence,
+                )
+                with self._lock:
+                    self._frame_counter += 1
+                    self._last_frame = FrameMeasurement(
+                        frame_index=self._frame_counter,
+                        captured_at=_now(),
+                        exposure_s=exposure_s,
+                        gain=self._camera.get_gain(),
+                        donut=donut,
+                    )
+                    rec = advisor.recommend(donut)
+                    if rec is not None:
+                        self._last_recommendation = rec
+                self._do_transition(CollimationState.GUIDE_ROUGH_COLLIMATION)
+                return
+            _log.debug("MEASURE_DONUT attempt %d: %s", attempt + 1, result.reason)
+
+        _log.warning("MEASURE_DONUT: no donut detected after 5 attempts — proceeding")
         self._do_transition(CollimationState.GUIDE_ROUGH_COLLIMATION)
 
     def _handle_map_mask_sectors(self) -> None:
-        _log.info("MAP_MASK_SECTORS: stub → FINE_FOCUS")
-        # TODO Phase 7: identify Tri-Bahtinov sector orientation from spikes
+        from ...domain.collimation.models import MaskSectorCalibration
+        from .contradiction_detector import ContradictionDetector
+        from .spike_smoother import SpikeSmoother
+
+        # Full sector-blade calibration (user closes each blade to identify which
+        # spike vanishes) is deferred; use a default T1/T2/T3 angular assignment.
+        cal = MaskSectorCalibration(
+            sector_0_deg="T1",
+            sector_120_deg="T2",
+            sector_240_deg="T3",
+            calibrated_at=_now(),
+        )
+        smoother = SpikeSmoother(window=self._cfg.fine_collimation.moving_window_frames)
+        detector = ContradictionDetector(
+            focus_target_px=self._cfg.fine_collimation.target_residual_px,
+        )
+        with self._lock:
+            self._mask_calibration  = cal
+            self._spike_smoother    = smoother
+            self._contradiction_detector = detector
+
+        _log.info("MAP_MASK_SECTORS: default sector mapping T1/T2/T3")
         self._do_transition(CollimationState.FINE_FOCUS)
 
     def _handle_fine_focus(self) -> None:
-        _log.info("FINE_FOCUS: stub → MEASURE_SPIKES")
-        # TODO Phase 8: Bahtinov autofocus loop
+        from ...domain.collimation.models import ReferenceCenterCalibration
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.spike_decomposition import decompose_spike_errors
+        from ...domain.collimation.processing.spike_detection import detect_spikes
+        from .fine_focus import FineFocusController
+        from .focuser_control import CollimationFocuserControl
+
+        bit_depth    = self._camera.get_bit_depth()
+        exposure_s   = self._camera.get_exposure_ms() / 1000.0
+        focuser_ctrl = CollimationFocuserControl(self._focuser, self._cfg.focuser)
+        ref_cfg      = self._cfg.reference_center
+        frame_w: list[int] = []  # populated on first capture
+
+        def _get_error() -> float | None:
+            if self._cancel.is_set():
+                return None
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception:
+                return None
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            if not frame_w:
+                frame_w.append(processed.width)
+                frame_w.append(processed.height)
+            ref = ReferenceCenterCalibration(
+                offset_x_px=ref_cfg.offset_x_px,
+                offset_y_px=ref_cfg.offset_y_px,
+                source=ref_cfg.source.value,
+            ).compute(frame_w[0], frame_w[1])
+            spike_result = detect_spikes(processed, ref)
+            if spike_result.reason != "ok" or spike_result.raw_result is None:
+                return None
+            try:
+                decomp = decompose_spike_errors(spike_result.raw_result.lines)
+            except ValueError:
+                return None
+            return decomp.common_focus_error_px
+
+        controller = FineFocusController(
+            target_px=self._cfg.fine_collimation.target_residual_px,
+            coarse_step=self._cfg.focuser.coarse_step,
+            fine_step=self._cfg.focuser.fine_step,
+            settle_seconds=0.0,
+        )
+        result = controller.focus(
+            get_error=_get_error,
+            move_focuser=lambda s: focuser_ctrl.move_focus_relative(s),
+            cancel_check=lambda: self._cancel.is_set(),
+        )
+        if self._cancel.is_set():
+            return
+        _log.info(
+            "FINE_FOCUS: %s initial=%.2f final=%s px steps=%d",
+            result.reason, result.initial_error_px,
+            f"{result.final_error_px:.2f}" if result.final_error_px is not None else "n/a",
+            result.steps_taken,
+        )
         self._do_transition(CollimationState.MEASURE_SPIKES)
 
     def _handle_measure_spikes(self) -> None:
-        _log.info("MEASURE_SPIKES: stub → GUIDE_FINE_COLLIMATION")
-        # TODO Phase 8: analyse Tri-Bahtinov spikes, compute residuals
+        from ...domain.collimation.models import FrameMeasurement, ReferenceCenterCalibration
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.spike_decomposition import decompose_spike_errors
+        from ...domain.collimation.processing.spike_detection import detect_spikes
+        from .fine_collimation_advisor import FineCollimationAdvisor, align_residuals_to_screws
+
+        bit_depth  = self._camera.get_bit_depth()
+        exposure_s = self._camera.get_exposure_ms() / 1000.0
+        ref_cfg    = self._cfg.reference_center
+
+        with self._lock:
+            smoother  = self._spike_smoother
+            detector  = self._contradiction_detector
+            mask_cal  = self._mask_calibration
+
+        if smoother is None or detector is None or mask_cal is None:
+            _log.warning("MEASURE_SPIKES: not initialised — transitioning without measurement")
+            self._do_transition(CollimationState.GUIDE_FINE_COLLIMATION)
+            return
+
+        advisor = FineCollimationAdvisor(
+            target_residual_px=self._cfg.fine_collimation.target_residual_px,
+            seeing_limited_px=self._cfg.fine_collimation.poor_seeing_residual_px,
+        )
+
+        for attempt in range(5):
+            if self._cancel.is_set():
+                return
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception as exc:
+                _log.warning("MEASURE_SPIKES attempt %d: capture failed: %s", attempt + 1, exc)
+                continue
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            ref = ReferenceCenterCalibration(
+                offset_x_px=ref_cfg.offset_x_px,
+                offset_y_px=ref_cfg.offset_y_px,
+                source=ref_cfg.source.value,
+            ).compute(processed.width, processed.height)
+
+            spike_result = detect_spikes(processed, ref)
+            if spike_result.reason != "ok" or spike_result.measurement is None:
+                _log.debug("MEASURE_SPIKES attempt %d: %s", attempt + 1, spike_result.reason)
+                continue
+
+            smoother.add(spike_result.measurement)
+            smoothed = smoother.compute()
+            if smoothed is None:
+                continue
+
+            raw_result = spike_result.raw_result
+            if raw_result is None or len(raw_result.lines) != 3:
+                continue
+
+            try:
+                decomp = decompose_spike_errors(raw_result.lines)
+            except ValueError as exc:
+                _log.warning("MEASURE_SPIKES: decompose failed: %s", exc)
+                continue
+
+            residuals     = align_residuals_to_screws(decomp, raw_result.lines, mask_cal)
+            rec           = advisor.recommend(residuals, smoothed)
+            contradiction = detector.assess(smoothed, decomp)
+
+            with self._lock:
+                self._frame_counter += 1
+                self._last_frame = FrameMeasurement(
+                    frame_index=self._frame_counter,
+                    captured_at=_now(),
+                    exposure_s=exposure_s,
+                    gain=self._camera.get_gain(),
+                    spike=spike_result.measurement,
+                )
+                if rec is not None and not contradiction.stop_guidance:
+                    self._last_recommendation = rec
+
+            _log.info(
+                "MEASURE_SPIKES: focus=%.2f px contradiction=%s",
+                decomp.common_focus_error_px,
+                contradiction.stop_guidance,
+            )
+            self._do_transition(CollimationState.GUIDE_FINE_COLLIMATION)
+            return
+
+        _log.warning("MEASURE_SPIKES: no spikes detected after 5 attempts — proceeding")
         self._do_transition(CollimationState.GUIDE_FINE_COLLIMATION)
 
     def _handle_final_refocus(self) -> None:

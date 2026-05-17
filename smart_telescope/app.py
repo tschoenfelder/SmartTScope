@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from serial import SerialException
 
 _log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ from .api.stack import router as stack_router
 _STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="SmartTelescope", version="0.1.0", lifespan=_lifespan)
+app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
 @app.exception_handler(SerialException)

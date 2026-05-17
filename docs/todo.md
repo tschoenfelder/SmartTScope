@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-17 (R6-006 API smoke tests + UX3-004 confirmed done — 39 new tests, 73 total in device_state+smoke)
+**Last updated:** 2026-05-17 (R6-003/004 JS module split + StaticFiles — 43 smoke tests pass)
 
 ## Priority legend
 
@@ -471,8 +471,10 @@
   - *Done:* `CoolingService` extracted from `api/cooling.py` → `services/cooling.py` (full session/threading moved out). `MountOperations` extracted from `api/mount.py` → `services/mount_operations.py` (safe_goto, home_sequence, park_sequence, unpark_sequence, track_sequence). 35 new service tests.
 - [x] R6-002 Keep API modules thin: validate request, call service, map response `[P1 · Runtime]`
   - *Done:* `api/cooling.py` reduced from 251 to 86 lines. `api/mount.py` endpoints for unpark/track/home/park now delegate to `mount_operations` and map domain exceptions to HTTP.
-- [ ] R6-003 Split large static UI into maintainable modules `[P2 · UI]`
-- [ ] R6-004 Create shared frontend API client and shared device/job state model `[P2 · UI]`
+- [x] R6-003 Split large static UI into maintainable modules `[P2 · UI]`
+  - *Done:* `index.html` reduced from 6216 to 1847 lines (HTML/CSS only); 4376 lines of JS split into 8 modules in `static/js/`: `api.js` (API client), `app.js` (globals + nav + init), `mount.js` (mount card + guide + PA), `collimation.js` (wizard + overlay), `focuser.js` (focuser card + position poll), `preview.js` (preview WS + autogain + Bahtinov), `session.js` (pipeline + guide monitor), `setup.js` (readiness + health + catalog + cooling + cameras + sky). `StaticFiles` added to `app.py`; `pyproject.toml` package-data updated.
+- [x] R6-004 Create shared frontend API client and shared device/job state model `[P2 · UI]`
+  - *Done:* `static/js/api.js` contains `escHtml()`, `_ERROR_PATTERNS`, `friendlyError()`, `setStatus()`, `apiPost()` — loaded first by all pages, providing a uniform fetch + error-translation layer used by all other modules.
 - [x] R6-005 Ensure STOP button is globally available `[P0 · UI]`
   - *Done (UX4-004):* Mount strip starts visible; STOP button visible on all stages.
 - [x] R6-006 Browser smoke tests: setup, preview, mount, focuser, stop `[P1 · Tests]`

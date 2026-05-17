@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — R6-003 / R6-004 — JS module split + shared API client
+
+**What changed:**
+
+- `smart_telescope/static/index.html`: reduced from 6216 to 1847 lines (HTML/CSS only). The 4376-line JavaScript block replaced with 8 `<script src="/static/js/...">` tags. No logic changed — same code, now in separate files.
+
+- `smart_telescope/static/js/` (new directory, 8 files):
+  - `api.js` (87 lines, R6-004): `escHtml`, `_ERROR_PATTERNS`, `friendlyError`, `setStatus`, `apiPost` — shared fetch/error-handling layer, loaded first.
+  - `app.js` (179 lines): global state, advanced mode, stage navigation, clock, `initSiteConfig`, init block — loaded last so it can call all other modules.
+  - `mount.js` (721 lines): mount strip, mount card, mount actions, guide controls, polar alignment.
+  - `collimation.js` (274 lines): collimation wizard UI, overlay drawing.
+  - `focuser.js` (375 lines): focuser card, focuser actions, exposure controls, camera/train loading.
+  - `preview.js` (954 lines): preview WebSocket, histogram canvas, autogain, guide autogain, Bahtinov overlay.
+  - `session.js` (496 lines): session pipeline strip, guide monitor, target selection.
+  - `setup.js` (1305 lines): readiness, health card, catalog, calibration, cooling, setup check, cameras, sky elevation, camera card.
+
+- `smart_telescope/app.py`: added `StaticFiles` mount at `/static`.
+- `pyproject.toml`: package-data updated to include `static/js/*`.
+- `tests/unit/api/test_smoke.py`: 4 new tests verifying all 8 JS modules are served (200) and index.html references them. 43 tests total pass.
+
+---
+
 ## 2026-05-17 — R6-006 / UX3-004 — API smoke tests + unsupported-control confirmation
 
 **What changed:**

@@ -66,6 +66,26 @@ class TestSetupSmoke:
     def test_index_contains_page_title(self):
         assert "SmartTelescope" in client.get("/").text
 
+    def test_index_references_js_modules_not_inline(self):
+        body = client.get("/").text
+        assert "/static/js/api.js" in body
+        assert "/static/js/app.js" in body
+
+    def test_js_api_module_served(self):
+        resp = client.get("/static/js/api.js")
+        assert resp.status_code == 200
+        assert "apiPost" in resp.text
+
+    def test_js_app_module_served(self):
+        resp = client.get("/static/js/app.js")
+        assert resp.status_code == 200
+        assert "goToStage" in resp.text
+
+    def test_all_js_modules_served(self):
+        for module in ["api", "app", "mount", "focuser", "preview", "session", "collimation", "setup"]:
+            resp = client.get(f"/static/js/{module}.js")
+            assert resp.status_code == 200, f"{module}.js not served"
+
     def test_readiness_returns_200(self):
         assert client.get("/api/readiness").status_code == 200
 

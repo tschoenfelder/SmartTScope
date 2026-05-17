@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-17 (R6-001/002 service extraction + R1-006 command IDs — 2471 tests pass)
+**Last updated:** 2026-05-17 (M1-004 hardware watchdog — 34 unit tests pass)
 
 ## Priority legend
 
@@ -107,7 +107,7 @@
 - [x] M1-001 Complete R1 hardware command coordinator `[P0 · Runtime]`
 - [x] M1-002 Complete R2 observed device state for mount/focuser `[P1 · Runtime]`
 - [x] M1-003 Define and implement shutdown sequence `[P0 · Runtime]`
-- [ ] M1-004 Add hardware watchdog for slow mount/focuser response `[P2 · Runtime]`
+- [x] M1-004 Add hardware watchdog for slow mount/focuser response `[P2 · Runtime]`
 - [ ] M1-005 Verify STOP during mount slew (hardware evidence) `[P0 · Hardware]`
 - [ ] M1-006 Verify STOP during focuser move (hardware evidence) `[P0 · Hardware]`
 - [ ] M1-007 Verify shutdown during active motion (hardware evidence) `[P0 · Hardware]`

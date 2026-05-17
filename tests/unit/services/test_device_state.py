@@ -12,6 +12,7 @@ from smart_telescope.services.device_state import (
     DeviceStateService,
     MountObservedState,
     _STALE_THRESHOLD_S,
+    _WATCHDOG_SLEW_S,
 )
 
 
@@ -368,3 +369,58 @@ def test_concurrent_reads_are_safe():
     svc.stop()
 
     assert not errors
+
+
+# ── M1-004: hardware watchdog ─────────────────────────────────────────────────
+
+def test_watchdog_no_warning_when_slewing_below_threshold():
+    svc = DeviceStateService()
+    mount = _mock_mount(state=MountState.SLEWING)
+    # command issued 5 s ago — well below the 120 s threshold
+    with svc._lock:
+        svc._last_command    = "goto"
+        svc._last_command_at = time.monotonic() - 5.0
+    svc._poll_once(mount)
+    assert svc.get_watchdog_warning() is None
+
+
+def test_watchdog_fires_when_slewing_too_long():
+    svc = DeviceStateService()
+    mount = _mock_mount(state=MountState.SLEWING)
+    # command issued well beyond the threshold
+    with svc._lock:
+        svc._last_command    = "goto"
+        svc._last_command_at = time.monotonic() - (_WATCHDOG_SLEW_S + 10.0)
+    svc._poll_once(mount)
+    warn = svc.get_watchdog_warning()
+    assert warn is not None
+    assert "SLEWING" in warn or "slewing" in warn.lower()
+
+
+def test_watchdog_clears_when_state_leaves_slewing():
+    svc = DeviceStateService()
+    # Trigger watchdog with SLEWING
+    mount_slewing  = _mock_mount(state=MountState.SLEWING)
+    with svc._lock:
+        svc._last_command    = "goto"
+        svc._last_command_at = time.monotonic() - (_WATCHDOG_SLEW_S + 10.0)
+    svc._poll_once(mount_slewing)
+    assert svc.get_watchdog_warning() is not None
+    # Now state transitions to TRACKING
+    mount_tracking = _mock_mount(state=MountState.TRACKING)
+    svc._poll_once(mount_tracking)
+    assert svc.get_watchdog_warning() is None
+
+
+def test_watchdog_cleared_on_new_command():
+    svc = DeviceStateService()
+    mount = _mock_mount(state=MountState.SLEWING)
+    # Trigger watchdog
+    with svc._lock:
+        svc._last_command    = "goto"
+        svc._last_command_at = time.monotonic() - (_WATCHDOG_SLEW_S + 10.0)
+    svc._poll_once(mount)
+    assert svc.get_watchdog_warning() is not None
+    # New command resets the watchdog
+    svc.record_command("stop")
+    assert svc.get_watchdog_warning() is None

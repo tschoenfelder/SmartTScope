@@ -2264,6 +2264,11 @@
       : data.stale
         ? `<span class="state-badge state-unknown" title="Status data may be outdated — serial poll delayed">⚠ ${state}</span>`
         : `<span class="state-badge state-${state}">${state}</span>`;
+    const wdWarn = data.watchdog_warning
+      ? `<div style="font-size:0.78rem;color:var(--warning);background:rgba(210,153,34,0.1);
+              border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:0.35rem 0.6rem;
+              margin-top:0.5rem">⚠ ${escHtml(data.watchdog_warning)}</div>`
+      : '';
     return `
       <div class="card">
         <div class="card-title">
@@ -2272,6 +2277,7 @@
           ${stateBadge}
           ${badge}
         </div>
+        ${wdWarn}
         <div class="params">
           <div class="param">
             <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Current</span>

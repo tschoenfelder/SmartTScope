@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — M1-004 — Hardware watchdog for stuck SLEWING
+
+**What changed:**
+
+- `smart_telescope/services/device_state.py`:
+  - Added `_WATCHDOG_SLEW_S = 120.0` and `_WATCHDOG_COOLDOWN_S = 30.0` module constants.
+  - `DeviceStateService.__init__`: added `_watchdog_warning` and `_watchdog_fired_at` fields.
+  - `record_command()`: clears `_watchdog_warning` and `_watchdog_fired_at` on every new command.
+  - `get_watchdog_warning()`: new public accessor (thread-safe).
+  - `_poll_once()`: calls `_check_watchdog_locked()` inside the lock block after updating state.
+  - `_check_watchdog_locked()`: fires a warning if mount stays `SLEWING` beyond `_WATCHDOG_SLEW_S`; suppresses repeated logs within `_WATCHDOG_COOLDOWN_S`; clears automatically when state leaves `SLEWING`.
+
+- `smart_telescope/api/mount.py`: Added `watchdog_warning: str | None = None` to `MountStatus`; populated from `device_state.get_watchdog_warning()` in `mount_status()`.
+
+- `smart_telescope/static/index.html` (`mountCard()`): Added yellow warning banner rendered when `data.watchdog_warning` is non-null.
+
+- `tests/unit/services/test_device_state.py`: 4 new watchdog tests — below-threshold (no warning), above-threshold (fires), clears on state change, clears on new command. All 34 tests pass.
+
+- `docs/todo.md`: M1-004 marked done.
+
+---
+
 ## 2026-05-17 — COL-020/021, BUG-018/020, M4-004, UX4/UX5 — Wizard UI and logging fixes
 
 **What changed:**

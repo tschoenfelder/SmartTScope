@@ -20,8 +20,10 @@ from ..ports.mount import MountPort, MountPosition, MountState
 
 _log = logging.getLogger(__name__)
 
-_POLL_INTERVAL_S  = 2.0   # seconds between state polls
-_STALE_THRESHOLD_S = 10.0  # seconds — state older than this is shown as uncertain
+_POLL_INTERVAL_S   = 2.0    # seconds between state polls
+_STALE_THRESHOLD_S = 10.0   # seconds — state older than this is shown as uncertain
+_WATCHDOG_SLEW_S   = 120.0  # M1-004: warn if mount stays SLEWING beyond this
+_WATCHDOG_COOLDOWN_S = 30.0  # suppress repeated watchdog log lines within this window
 
 
 @dataclasses.dataclass
@@ -61,6 +63,9 @@ class DeviceStateService:
         self._last_command_at:    float | None = None  # time.monotonic()
         self._last_command_error: str   | None = None
         self._cmd_counter: int = 0
+        # M1-004: hardware watchdog
+        self._watchdog_warning:   str   | None = None
+        self._watchdog_fired_at:  float | None = None  # time.monotonic() of last log
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -112,6 +117,8 @@ class DeviceStateService:
             self._last_command_id    = cmd_id
             self._last_command_at    = time.monotonic()
             self._last_command_error = None
+            self._watchdog_warning   = None
+            self._watchdog_fired_at  = None
         _log.info("command issued command_id=%s command=%r", cmd_id, command)
         return cmd_id
 
@@ -133,6 +140,11 @@ class DeviceStateService:
         """Return the ID assigned to the most recently issued command."""
         with self._lock:
             return self._last_command_id
+
+    def get_watchdog_warning(self) -> str | None:
+        """Return the active watchdog warning string, or None if hardware is responding normally."""
+        with self._lock:
+            return self._watchdog_warning
 
     # ── R2-005: state convergence helpers ────────────────────────────────────
 
@@ -206,3 +218,38 @@ class DeviceStateService:
             )
         with self._lock:
             self._mount_state = observed
+            self._check_watchdog_locked()
+
+    def _check_watchdog_locked(self) -> None:
+        """M1-004: fire a warning if mount stays SLEWING past the watchdog threshold.
+
+        Must be called while ``self._lock`` is held.
+        """
+        obs = self._mount_state
+        now = time.monotonic()
+
+        if obs is None or obs.state != MountState.SLEWING:
+            if self._watchdog_warning is not None:
+                _log.info("Watchdog: mount left SLEWING state — clearing warning")
+                self._watchdog_warning  = None
+                self._watchdog_fired_at = None
+            return
+
+        if self._last_command_at is None:
+            return
+        age = now - self._last_command_at
+        if age < _WATCHDOG_SLEW_S:
+            return
+
+        if (self._watchdog_fired_at is not None
+                and (now - self._watchdog_fired_at) < _WATCHDOG_COOLDOWN_S):
+            return
+
+        msg = (
+            f"Mount has been SLEWING for {age:.0f} s "
+            f"(command: {self._last_command!r}) — "
+            "OnStep may not be responding; consider issuing a STOP"
+        )
+        self._watchdog_warning  = msg
+        self._watchdog_fired_at = now
+        _log.warning("Watchdog: %s", msg)

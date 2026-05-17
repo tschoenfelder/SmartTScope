@@ -82,6 +82,8 @@ class MountStatus(BaseModel):
     last_command: str | None = None
     last_command_age_s: float | None = None
     last_command_error: str | None = None
+    # M1-004: hardware watchdog
+    watchdog_warning: str | None = None
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -182,6 +184,7 @@ def mount_status(
         last_command=cmd,
         last_command_age_s=cmd_age,
         last_command_error=cmd_err,
+        watchdog_warning=device_state.get_watchdog_warning(),
     )
 
 

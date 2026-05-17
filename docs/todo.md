@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-17 (M1-004 hardware watchdog — 34 unit tests pass)
+**Last updated:** 2026-05-17 (R6-006 API smoke tests + UX3-004 confirmed done — 39 new tests, 73 total in device_state+smoke)
 
 ## Priority legend
 
@@ -281,7 +281,8 @@
   - *Done (R4-005):* Trains appear only when configured; focuser select filters to has_focuser=true
 - [x] UX3-003 Show serial/logical name only in diagnostics `[P2 · UI]`
   - *Done:* Camera IDs / hardware serials shown only in `cameraCard()` in Stage 6 scan area. Main UI uses optical train role names ("main", "guide") throughout.
-- [ ] UX3-004 Hide unsupported controls (e.g. cooling for non-cooled cameras) `[P2 · UI]`
+- [x] UX3-004 Hide unsupported controls (e.g. cooling for non-cooled cameras) `[P2 · UI]`
+  - *Done (BUG-009/M3-004):* Cooling card shown/hidden dynamically via `onCoolingCamChange()` based on camera TEC capability; focuser controls filtered by `has_focuser` in optical train registry.
 
 ### UX4 — Advanced Mode For Manual Controls
 
@@ -474,7 +475,8 @@
 - [ ] R6-004 Create shared frontend API client and shared device/job state model `[P2 · UI]`
 - [x] R6-005 Ensure STOP button is globally available `[P0 · UI]`
   - *Done (UX4-004):* Mount strip starts visible; STOP button visible on all stages.
-- [ ] R6-006 Browser smoke tests: setup, preview, mount, focuser, stop `[P1 · Tests]`
+- [x] R6-006 Browser smoke tests: setup, preview, mount, focuser, stop `[P1 · Tests]`
+  - *Done:* `tests/unit/api/test_smoke.py` — 39 tests covering HTML page load, readiness API shape, mount status (state/stale/watchdog fields), focuser status (available/position/moving), emergency STOP (always 200, mount_stopped true/false, calls stop once), optical trains list, version endpoint; all mock-based, no hardware.
 
 ### Milestone M5 tasks
 

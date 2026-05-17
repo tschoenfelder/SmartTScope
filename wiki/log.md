@@ -4,6 +4,21 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-17 — R6-006 / UX3-004 — API smoke tests + unsupported-control confirmation
+
+**What changed:**
+
+- `tests/unit/api/test_smoke.py` (R6-006 — new, 39 tests):
+  - `TestSetupSmoke` (8 tests): `GET /` returns 200 HTML with correct title; `/api/readiness` returns 200 with `overall`/`items` in valid colour.
+  - `TestMountSmoke` (11 tests): `/api/mount/status` returns `state`/`stale`/`watchdog_warning`/`last_command*` fields; state serialised lowercase; stale=false for fresh observation; watchdog=null with no alert. `/api/mount/config` returns location fields.
+  - `TestFocuserSmoke` (7 tests): `/api/focuser/status` returns `position`/`available`/`moving`/`max_position`; available=True → real position; available=False → zeros.
+  - `TestEmergencyStopSmoke` (8 tests): `POST /api/emergency_stop` always 200; `mount_stopped` true/false on success/error; `session_stopped` false when idle; `mount.stop()` called once.
+  - `TestPreviewSmoke` (4 tests): optical trains list endpoint, version endpoint, catalog endpoint all respond.
+
+- `docs/todo.md`: R6-006 marked done; UX3-004 confirmed done (already implemented via BUG-009/M3-004).
+
+---
+
 ## 2026-05-17 — M1-004 — Hardware watchdog for stuck SLEWING
 
 **What changed:**

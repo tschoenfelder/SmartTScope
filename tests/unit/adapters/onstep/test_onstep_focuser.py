@@ -1,6 +1,6 @@
 """Unit tests for OnStepFocuser — delegates serial I/O to OnStepSerialBus."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from smart_telescope.adapters.onstep.focuser import OnStepFocuser
 from smart_telescope.adapters.onstep.serial_bus import OnStepSerialBus
@@ -80,6 +80,50 @@ class TestConnect:
     def test_disconnect_is_safe_noop(self) -> None:
         foc, _ = _make_focuser()
         foc.disconnect()  # must not raise
+
+
+# ── connect retry (BUG-010 connect ordering) ─────────────────────────────────
+
+
+class TestConnectRetry:
+    """focuser.connect() retries :FA# up to 3× before concluding unavailable."""
+
+    def test_available_on_first_attempt_sends_FA_once(self) -> None:
+        foc, bus = _make_focuser()
+        bus.send.side_effect = ["1", "5000"]
+        with patch("smart_telescope.adapters.onstep.focuser.time.sleep") as mock_sleep:
+            foc.connect()
+        fa_calls = [c[0][0] for c in bus.send.call_args_list if c[0][0] == ":FA#"]
+        assert len(fa_calls) == 1
+        mock_sleep.assert_not_called()
+        assert foc.is_available is True
+
+    def test_retry_if_first_FA_returns_0_then_1(self) -> None:
+        foc, bus = _make_focuser()
+        bus.send.side_effect = ["0", "1", "5000"]  # :FA# miss, :FA# hit, :FM#
+        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+            foc.connect()
+        fa_calls = [c[0][0] for c in bus.send.call_args_list if c[0][0] == ":FA#"]
+        assert len(fa_calls) == 2
+        assert foc.is_available is True
+        assert foc.get_max_position() == 5000
+
+    def test_retry_exhausted_stays_unavailable(self) -> None:
+        foc, bus = _make_focuser()
+        bus.send.return_value = "0"  # every :FA# returns 0
+        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+            foc.connect()
+        fa_calls = [c[0][0] for c in bus.send.call_args_list if c[0][0] == ":FA#"]
+        assert len(fa_calls) == 3
+        assert foc.is_available is False
+
+    def test_retry_on_empty_reply_then_available(self) -> None:
+        foc, bus = _make_focuser()
+        bus.send.side_effect = ["", "1", "8000"]  # empty/garbage, then available
+        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+            foc.connect()
+        assert foc.is_available is True
+        assert foc.get_max_position() == 8000
 
 
 # ── is_available (pre-connect) ────────────────────────────────────────────────

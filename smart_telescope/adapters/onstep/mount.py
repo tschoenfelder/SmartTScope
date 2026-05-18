@@ -12,6 +12,9 @@ from .serial_bus import OnStepSerialBus
 
 _log = logging.getLogger(__name__)
 
+_MAX_GVP_ATTEMPTS = 3
+_GVP_RETRY_DELAY_S = 0.3
+
 # ── sexagesimal helpers ────────────────────────────────────────────────────────
 
 def _format_ra(ra: float) -> str:
@@ -89,40 +92,40 @@ class OnStepMount(MountPort):
             return False
         self._bus._serial = s
 
-        # Confirm we're talking to OnStep and not another serial device on this port.
+        # Confirm we're talking to OnStep and not another serial device.
         # Uses read() instead of readline() so unit-test mocks (which only stub
         # readline) pass through unaffected; non-bytes mock return values are
         # treated as "no response" and accepted as inconclusive.
         # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
-        # On reconnect the input buffer may contain a stale command ACK ('0' or '1').
-        # If we get a short numeric response, flush and retry once before rejecting.
-        s.reset_input_buffer()
-        s.write(b":GVP#")
-        raw = s.read(32)
+        # On reconnect the buffer may contain stale command ACKs ('0'/'1') from a
+        # previous session.  Retry up to _MAX_GVP_ATTEMPTS times, flushing between
+        # each attempt, before concluding the port is not OnStep.
         product = ""
-        if isinstance(raw, bytes):
+        for attempt in range(_MAX_GVP_ATTEMPTS):
+            if attempt:
+                time.sleep(_GVP_RETRY_DELAY_S)
+            s.reset_input_buffer()
+            s.write(b":GVP#")
+            raw = s.read(32)
+            if not isinstance(raw, bytes):
+                _log.warning("OnStepMount.connect(): :GVP# returned non-bytes %r (mock?)", raw)
+                break
             product = raw.decode(errors="replace").rstrip("#\r\n").strip()
-            _log.info("OnStepMount.connect(): :GVP# response = %r", product)
-            if product and len(product) <= 2 and all(c in "0123456789" for c in product):
-                # Looks like a stale command ACK — flush and retry once
-                _log.warning(
-                    "OnStepMount.connect(): :GVP# returned short numeric %r (stale ACK?) — flushing and retrying",
-                    product,
-                )
-                time.sleep(0.3)
-                s.reset_input_buffer()
-                s.write(b":GVP#")
-                raw2 = s.read(32)
-                if isinstance(raw2, bytes):
-                    product = raw2.decode(errors="replace").rstrip("#\r\n").strip()
-                    _log.info("OnStepMount.connect(): :GVP# retry response = %r", product)
-            if product and "on" not in product.lower() and "step" not in product.lower():
-                _log.error("OnStepMount.connect(): unexpected product %r — not OnStep, closing", product)
-                s.close()
-                self._bus._serial = None
-                return False
+            _log.info("OnStepMount.connect(): :GVP# attempt=%d response=%r", attempt + 1, product)
+            if not product or ("on" in product.lower() and "step" in product.lower()):
+                break  # empty (inconclusive but accepted) or confirmed OnStep
+            _log.warning(
+                "OnStepMount.connect(): :GVP# unexpected %r on attempt %d — retrying",
+                product, attempt + 1,
+            )
         else:
-            _log.warning("OnStepMount.connect(): :GVP# returned non-bytes %r (mock?)", raw)
+            _log.error(
+                "OnStepMount.connect(): not OnStep after %d attempts (last: %r) — closing",
+                _MAX_GVP_ATTEMPTS, product,
+            )
+            s.close()
+            self._bus._serial = None
+            return False
 
         self.disable_tracking()
         _log.info("OnStepMount.connect(): connected — product=%r port=%s", product, self._port)

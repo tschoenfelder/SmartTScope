@@ -29,6 +29,8 @@ LX200 / OnStep V4 command reference (subset used by this adapter):
   :D#     → slew indicator → "|" while slewing, "" when stopped
 """
 
+from unittest.mock import patch
+
 import pytest
 import serial
 
@@ -140,6 +142,60 @@ class TestConnect:
         mount = _make_mount()
         # disconnect() before connect() must not raise
         mount.disconnect()
+
+
+# ── connect retry (BUG-013 stale ACK robustness) ─────────────────────────────
+
+
+class TestConnectRetry:
+    """:GVP# retry loop handles stale ACKs left by previous sessions."""
+
+    def _make_serial(self, mocker, read_responses: list[bytes]) -> object:
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.read.side_effect = read_responses
+        instance.readline.return_value = b""
+        return instance
+
+    def test_valid_product_on_first_attempt_no_retry(self, mocker) -> None:
+        instance = self._make_serial(mocker, [b"On-Step#"])
+        mount = _make_mount()
+        with patch("smart_telescope.adapters.onstep.mount.time.sleep") as mock_sleep:
+            result = mount.connect()
+        assert result is True
+        mock_sleep.assert_not_called()
+        gvp_writes = [c.args[0] for c in instance.write.call_args_list if c.args[0] == b":GVP#"]
+        assert len(gvp_writes) == 1
+
+    def test_retry_once_on_stale_ack_then_succeeds(self, mocker) -> None:
+        self._make_serial(mocker, [b"1", b"On-Step#"])
+        mount = _make_mount()
+        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+            result = mount.connect()
+        assert result is True
+
+    def test_retry_exhausted_returns_false(self, mocker) -> None:
+        self._make_serial(mocker, [b"1", b"1", b"1"])
+        mount = _make_mount()
+        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+            result = mount.connect()
+        assert result is False
+
+    def test_retry_on_empty_response_then_succeeds(self, mocker) -> None:
+        # Empty product is "inconclusive but accepted" — connect succeeds immediately.
+        self._make_serial(mocker, [b""])
+        mount = _make_mount()
+        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+            result = mount.connect()
+        assert result is True
+
+    def test_doubled_product_string_accepted(self, mocker) -> None:
+        # Firmware may send "On-Step#On-Step#" when reconnecting.
+        self._make_serial(mocker, [b"On-Step#On-Step#"])
+        mount = _make_mount()
+        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+            result = mount.connect()
+        assert result is True
 
 
 # ── get_state ─────────────────────────────────────────────────────────────────

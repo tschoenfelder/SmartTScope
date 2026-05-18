@@ -953,7 +953,7 @@ async function runSetupCheck() {
     try {
       let ms = await (await fetch('/api/mount/status')).json();
       if (!ms.ra || ms.state === 'unknown') {
-        _scStep(mark('⚠'), `Mount RA: state is '${ms.state}' — skipped`);
+        _scStep(mark('⚠'), 'Mount RA: mount not connected (state unknown) — use Connect All to reconnect');
       } else {
         if (ms.state === 'parked') {
           const doUnpark = await _scConfirm('Mount is parked. Unpark to test RA movement?');
@@ -1010,7 +1010,10 @@ async function runSetupCheck() {
     try {
       let ms3 = await (await fetch('/api/mount/status')).json();
       if (!ms3.dec || ms3.state === 'unknown' || ms3.state === 'parked') {
-        _scStep(mark('⚠'), `Mount DEC: state is '${ms3.state}' — skipped`);
+        const _ms3Reason = ms3.state === 'unknown'
+          ? 'mount not connected — use Connect All to reconnect'
+          : `state is '${ms3.state}'`;
+        _scStep(mark('⚠'), `Mount DEC: ${_ms3Reason} — skipped`);
       } else {
         const go3 = await _scConfirm(
           'Mount DEC test: will slew +40 arcmin north. Ensure telescope has clearance.');

@@ -8,11 +8,15 @@ on OnStepSerialBus so that all traffic shares the mount's lock.
 from __future__ import annotations
 
 import logging
+import time
 
 from ...ports.focuser import FocuserPort
 from .serial_bus import OnStepSerialBus
 
 _log = logging.getLogger(__name__)
+
+_MAX_FA_ATTEMPTS = 3
+_FA_RETRY_DELAY_S = 0.3
 
 
 class OnStepFocuser(FocuserPort):
@@ -30,14 +34,26 @@ class OnStepFocuser(FocuserPort):
     # ── FocuserPort ───────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
-        reply = self._bus.send(":FA#")
-        self._available = reply == "1"
-        _log.info("OnStepFocuser.connect(): :FA# reply=%r available=%s", reply, self._available)
+        for attempt in range(_MAX_FA_ATTEMPTS):
+            if attempt:
+                time.sleep(_FA_RETRY_DELAY_S)
+            reply = self._bus.send(":FA#")
+            self._available = reply == "1"
+            _log.info(
+                "OnStepFocuser.connect(): attempt=%d :FA# reply=%r available=%s",
+                attempt + 1, reply, self._available,
+            )
+            if self._available:
+                break
         if self._available:
             self._max_position = self._fetch_max_position()
             _log.info("OnStepFocuser.connect(): max_position=%d", self._max_position)
         else:
-            _log.warning("OnStepFocuser.connect(): focuser not available — check OnStep focuser wiring/config")
+            _log.warning(
+                "OnStepFocuser.connect(): focuser not available after %d attempts"
+                " — check OnStep focuser wiring/config",
+                _MAX_FA_ATTEMPTS,
+            )
         return True
 
     def disconnect(self) -> None:

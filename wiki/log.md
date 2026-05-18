@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — R7-006 — Done-without-evidence report
+
+**What changed:**
+- `smart_telescope/domain/milestones.py`: Added `EvidenceGapItem` frozen dataclass (`id`, `priority`, `description`, `milestone`, `mock_tested_by`, `hardware_needed`) and `EVIDENCE_GAPS` registry (8 items: BUG-023/005 P0, BUG-011/012/016/010/013/019 P1, sorted P0 first). Also updated `RISK_REGISTRY` replacing completed M6-003 with M6-012.
+- `smart_telescope/api/milestones.py`: Added `GET /api/evidence-gaps` → `{items, count}`.
+- `tests/unit/domain/test_milestones.py`: Added `TestEvidenceGaps` (6 tests).
+- `tests/unit/api/test_milestones.py`: Added `TestEvidenceGapsEndpoint` (7 tests).
+
+**Tests:** 38 pass
+
+---
+
 ## 2026-05-19 — M6-001–006 — Performance targets defined
 
 **What changed:**

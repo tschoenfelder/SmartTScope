@@ -45,6 +45,17 @@ class RiskItem:
     tags: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class EvidenceGapItem:
+    """A backlog item marked done but verified only with mocks, not real hardware."""
+    id: str
+    priority: str           # "P0" | "P1"
+    description: str
+    milestone: str
+    mock_tested_by: str     # test file / class that covers it with mocks
+    hardware_needed: str    # action needed to close the evidence gap
+
+
 # ── Registry ─────────────────────────────────────────────────────────────────
 
 MILESTONE_REGISTRY: list[MilestoneSummary] = [
@@ -81,11 +92,11 @@ MILESTONE_REGISTRY: list[MilestoneSummary] = [
     MilestoneSummary(
         id="M6", name="Field Reliability and Release Readiness",
         # R7: 001-006 (6) + M6: 001-012 (12) = 18 total
-        # Done: R7-001/002/003/005 + M6-001..006 + M6-009 = 11
-        # Open: R7-004(P0 Hw), R7-006(P2), M6-007(P1 Hw), M6-008(P2 Hw),
-        #        M6-010(P1 Hw), M6-011(P1 Hw), M6-012(P1) = 7
-        total=18, done=11, hardware_blocked=5,
-        p0_open=1, p1_open=4,
+        # Done: R7-001/002/003/005/006 + M6-001..006 + M6-009 = 12
+        # Open: R7-004(P0 Hw), M6-007(P1 Hw), M6-008(P2 Hw),
+        #        M6-010(P1 Hw), M6-011(P1 Hw), M6-012(P1) = 6
+        total=18, done=12, hardware_blocked=5,
+        p0_open=1, p1_open=3,
     ),
     MilestoneSummary(
         id="COL", name="Collimation Assistant",
@@ -123,8 +134,8 @@ RISK_REGISTRY: list[RiskItem] = [
         tags=["Hardware"],
     ),
     RiskItem(
-        id="M6-003", priority="P1", milestone="M6",
-        description="Define stop-response time target (process — needed for release gate)",
+        id="M6-012", priority="P1", milestone="M6",
+        description="Produce release notes and known issues (needed to complete release gate)",
         tags=["Process"],
     ),
     RiskItem(
@@ -146,5 +157,58 @@ RISK_REGISTRY: list[RiskItem] = [
         id="M5-011", priority="P1", milestone="M5",
         description="Stop/recover safely (hardware end-to-end evidence)",
         tags=["Hardware"],
+    ),
+]
+
+# Items marked done in the backlog but verified only with mocks — no real
+# hardware run has confirmed the fix yet.  Sorted P0 first, then P1.
+EVIDENCE_GAPS: list[EvidenceGapItem] = [
+    EvidenceGapItem(
+        id="BUG-023", priority="P0", milestone="M1",
+        description="Shutdown with CTRL-C must close OnStep serial connection and stop focuser motion",
+        mock_tested_by="tests/unit/test_runtime.py::TestShutdown",
+        hardware_needed="Run CTRL-C during active focuser move on Pi; verify serial port released and motion stopped",
+    ),
+    EvidenceGapItem(
+        id="BUG-005", priority="P0", milestone="M1",
+        description="Any component crash must not release mount/focuser control; STOP must always respond",
+        mock_tested_by="tests/unit/api/test_bug005_isolation.py",
+        hardware_needed="Force Python exception in camera thread on Pi; confirm STOP command halts mount within 500 ms",
+    ),
+    EvidenceGapItem(
+        id="BUG-011", priority="P1", milestone="M1",
+        description="Park command moves mount but UNPARKED flag remains too long in UI",
+        mock_tested_by="tests/unit/adapters/onstep/test_onstep_mount.py",
+        hardware_needed="Issue park command on real mount; verify UI label changes to PARKED within 5 s of mechanical stop",
+    ),
+    EvidenceGapItem(
+        id="BUG-012", priority="P1", milestone="M1",
+        description="After reconnect, mount shown as unparked when hardware is actually parked",
+        mock_tested_by="tests/unit/adapters/onstep/test_onstep_mount.py",
+        hardware_needed="Disconnect/reconnect USB on Pi; verify readiness card shows correct park state immediately",
+    ),
+    EvidenceGapItem(
+        id="BUG-016", priority="P1", milestone="M1",
+        description="Unpark returns HTTP 200 but UI label stays PARKED",
+        mock_tested_by="tests/unit/adapters/onstep/test_onstep_mount.py",
+        hardware_needed="Press Unpark on real mount; confirm label transitions PARKED→UNPARKED within 10 s",
+    ),
+    EvidenceGapItem(
+        id="BUG-010", priority="P1", milestone="M3",
+        description="Focuser log says not available then later available — connect ordering issue with stale serial bytes",
+        mock_tested_by="tests/unit/adapters/onstep/test_onstep_focuser.py::TestConnectRetry",
+        hardware_needed="Cold-start Pi with mount and focuser; confirm focuser shows available on first Connect All",
+    ),
+    EvidenceGapItem(
+        id="BUG-013", priority="P1", milestone="M3",
+        description="Setup check fails to move mount — second stale ACK byte exhausts retry and leaves serial=None",
+        mock_tested_by="tests/unit/adapters/onstep/test_onstep_mount.py::TestConnectRetry",
+        hardware_needed="Run Setup Check Wizard on Pi immediately after cold boot; confirm all mount steps execute",
+    ),
+    EvidenceGapItem(
+        id="BUG-019", priority="P1", milestone="M2",
+        description="Focuser nudge returns 409 conflict; rapid +20 presses mostly rejected",
+        mock_tested_by="tests/unit/services/test_hardware_coordinator.py",
+        hardware_needed="Press focuser +10 button 5× rapidly on real hardware; verify each press produces movement within 2 s",
     ),
 ]

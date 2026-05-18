@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (M6-001–006 performance targets; R7-005+M0-008 milestone dashboard; M6-009 storage-full simulation)
+**Last updated:** 2026-05-19 (R7-006 evidence-gap report; M6-001–006 performance targets; R7-005+M0-008 milestone dashboard)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -549,7 +549,8 @@
 - [ ] R7-004 Record evidence: STOP during slew, STOP during focuser move, shutdown during motion, reconnect, setup check, full observing workflow `[P0 · Hardware]`
 - [x] R7-005 Add product-owner milestone dashboard `[P2 · Product]`
   - *Done:* `GET /api/milestones` returns milestone completion stats (`id`, `name`, `total`, `done`, `open`, `hardware_blocked`, `status`) and top-10 risk items; status logic: green=no open non-hardware tasks, yellow=P2/P3 open or only hardware-blocked, red=P0/P1 open non-hardware; "Milestone Dashboard" card added to Stage 1 UI showing color-coded progress bars and top-risk list; `MILESTONE_REGISTRY` and `RISK_REGISTRY` in `domain/milestones.py`; 25 tests (domain + API).
-- [ ] R7-006 Add done-without-evidence report `[P2 · Process]`
+- [x] R7-006 Add done-without-evidence report `[P2 · Process]`
+  - *Done:* `EvidenceGapItem` dataclass + `EVIDENCE_GAPS` registry (8 items, P0 before P1) in `domain/milestones.py`; `GET /api/evidence-gaps` returns `{items, count}` with `id`, `priority`, `description`, `milestone`, `mock_tested_by`, `hardware_needed`; 13 new tests added to milestone test files.
 
 ### Milestone M6 tasks
 

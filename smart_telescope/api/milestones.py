@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from ..domain.milestones import MILESTONE_REGISTRY, RISK_REGISTRY
+from ..domain.milestones import EVIDENCE_GAPS, MILESTONE_REGISTRY, RISK_REGISTRY
 
 router = APIRouter()
 
@@ -40,3 +40,20 @@ def get_milestones() -> dict[str, Any]:
         for r in RISK_REGISTRY[:10]
     ]
     return {"milestones": milestones, "top_risks": top_risks}
+
+
+@router.get("/api/evidence-gaps")
+def get_evidence_gaps() -> dict[str, Any]:
+    """Return done items that were verified only with mocks, not real hardware."""
+    items = [
+        {
+            "id": g.id,
+            "priority": g.priority,
+            "description": g.description,
+            "milestone": g.milestone,
+            "mock_tested_by": g.mock_tested_by,
+            "hardware_needed": g.hardware_needed,
+        }
+        for g in EVIDENCE_GAPS
+    ]
+    return {"items": items, "count": len(items)}

@@ -5,8 +5,10 @@ from __future__ import annotations
 import pytest
 
 from smart_telescope.domain.milestones import (
+    EVIDENCE_GAPS,
     MILESTONE_REGISTRY,
     RISK_REGISTRY,
+    EvidenceGapItem,
     MilestoneSummary,
     RiskItem,
 )
@@ -121,3 +123,45 @@ class TestRiskRegistry:
     def test_all_risk_ids_are_unique(self) -> None:
         ids = [r.id for r in RISK_REGISTRY]
         assert len(ids) == len(set(ids))
+
+
+# ── EVIDENCE_GAPS ─────────────────────────────────────────────────────────────
+
+
+class TestEvidenceGaps:
+    def test_registry_is_not_empty(self) -> None:
+        assert len(EVIDENCE_GAPS) > 0
+
+    def test_all_items_are_p0_or_p1(self) -> None:
+        for g in EVIDENCE_GAPS:
+            assert g.priority in ("P0", "P1"), (
+                f"{g.id}: unexpected priority {g.priority!r}"
+            )
+
+    def test_all_ids_are_unique(self) -> None:
+        ids = [g.id for g in EVIDENCE_GAPS]
+        assert len(ids) == len(set(ids))
+
+    def test_all_items_have_non_empty_mock_tested_by(self) -> None:
+        for g in EVIDENCE_GAPS:
+            assert isinstance(g.mock_tested_by, str) and g.mock_tested_by, (
+                f"{g.id}: empty mock_tested_by"
+            )
+
+    def test_all_items_have_non_empty_hardware_needed(self) -> None:
+        for g in EVIDENCE_GAPS:
+            assert isinstance(g.hardware_needed, str) and g.hardware_needed, (
+                f"{g.id}: empty hardware_needed"
+            )
+
+    def test_p0_items_come_before_p1(self) -> None:
+        priorities = [g.priority for g in EVIDENCE_GAPS]
+        last_p0 = max(
+            (i for i, p in enumerate(priorities) if p == "P0"), default=-1
+        )
+        first_p1 = min(
+            (i for i, p in enumerate(priorities) if p == "P1"), default=len(priorities)
+        )
+        assert last_p0 < first_p1 or first_p1 == len(priorities), (
+            "P1 entry appears before P0 entry in EVIDENCE_GAPS"
+        )

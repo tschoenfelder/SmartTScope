@@ -68,3 +68,39 @@ class TestMilestonesEndpoint:
         required = {"id", "priority", "description", "milestone", "tags"}
         for r in client.get("/api/milestones").json()["top_risks"]:
             assert required <= r.keys(), f"risk {r.get('id')!r} missing fields"
+
+
+# ── /api/evidence-gaps ────────────────────────────────────────────────────────
+
+
+class TestEvidenceGapsEndpoint:
+    def test_returns_200(self) -> None:
+        assert client.get("/api/evidence-gaps").status_code == 200
+
+    def test_response_has_items_and_count(self) -> None:
+        body = client.get("/api/evidence-gaps").json()
+        assert "items" in body
+        assert "count" in body
+
+    def test_count_matches_items_length(self) -> None:
+        body = client.get("/api/evidence-gaps").json()
+        assert body["count"] == len(body["items"])
+
+    def test_each_item_has_required_fields(self) -> None:
+        required = {"id", "priority", "description", "milestone",
+                    "mock_tested_by", "hardware_needed"}
+        for g in client.get("/api/evidence-gaps").json()["items"]:
+            assert required <= g.keys(), f"gap {g.get('id')!r} missing fields"
+
+    def test_all_priorities_are_p0_or_p1(self) -> None:
+        for g in client.get("/api/evidence-gaps").json()["items"]:
+            assert g["priority"] in ("P0", "P1"), (
+                f"{g['id']}: unexpected priority {g['priority']!r}"
+            )
+
+    def test_all_ids_unique(self) -> None:
+        ids = [g["id"] for g in client.get("/api/evidence-gaps").json()["items"]]
+        assert len(ids) == len(set(ids))
+
+    def test_items_list_is_not_empty(self) -> None:
+        assert len(client.get("/api/evidence-gaps").json()["items"]) > 0

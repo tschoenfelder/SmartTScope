@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from smart_telescope.domain.histogram import HistogramStats, analyze, histogram_bins
+from smart_telescope.domain.histogram import HistogramStats, analyze, histogram_bins, histogram_bins_focused
 
 
 def _uniform(value: float, shape: tuple[int, int] = (64, 64), dtype: type = np.float32) -> np.ndarray:
@@ -166,3 +166,35 @@ class TestHistogramBins:
         arr = _ramp()
         _, edges = histogram_bins(arr)
         assert all(isinstance(e, float) for e in edges)
+
+
+# ── histogram_bins_focused ──────────────────────────────────────────────────────
+
+class TestHistogramBinsFocused:
+    def test_returns_three_tuple_with_correct_lengths(self) -> None:
+        counts, edges, adu_hi = histogram_bins_focused(_ramp(), bit_depth=12, n_bins=64)
+        assert len(counts) == 64
+        assert len(edges) == 65
+        assert isinstance(adu_hi, float)
+
+    def test_dark_frame_zooms_to_1000_minimum(self) -> None:
+        arr = _uniform(0.0)
+        _, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
+        assert adu_hi == pytest.approx(1000.0)
+
+    def test_dim_frame_clamps_to_1000_not_adc_fraction(self) -> None:
+        # p99.9 ≈ 200 ADU → 200*1.3=260, but minimum is 1000; old code gave ~3276
+        arr = _uniform(200.0)
+        _, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
+        assert adu_hi == pytest.approx(1000.0)
+        assert adu_hi < 3000.0  # must be tighter than the old adc_max*0.05 floor
+
+    def test_bright_frame_uses_p999_range(self) -> None:
+        # 4000*1.3=5200 exceeds 12-bit adc_max=4095 → clipped to 4095
+        arr = _uniform(4000.0)
+        _, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
+        assert adu_hi == pytest.approx(4095.0)
+
+    def test_n_bins_controls_count(self) -> None:
+        counts, _, _ = histogram_bins_focused(_ramp(), bit_depth=12, n_bins=128)
+        assert len(counts) == 128

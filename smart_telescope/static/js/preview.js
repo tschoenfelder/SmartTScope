@@ -285,6 +285,7 @@ function _connectWs() {
                 const showLow = !!(msg.low_bin_counts && msg.low_bin_counts.length);
                 lowWrap.style.display = showLow ? '' : 'none';
                 if (showLow) {
+                  _updateLowLabel(msg.low_adu_hi, msg.low_bin_counts.length);
                   try {
                     showHistogram('s3-histogram-low', null, msg.stats, msg.low_bin_counts, msg.low_bin_edges, msg.low_adu_hi);
                   } catch (_) {}
@@ -351,6 +352,13 @@ function _connectWs() {
      Histogram widget — shared across stages (AGT-2-2)
 ══════════════════════════════════════════════════════════════════════ */
 
+function _updateLowLabel(lowAduHi, nBins) {
+    const el = document.getElementById('s3-hist-low-label');
+    if (!el) return;
+    const binSz = Math.round(lowAduHi / nBins);
+    el.textContent = `0 – ${Math.round(lowAduHi)} ADU — pedestal detail (${binSz} ADU/bin)`;
+}
+
 /**
    * Render a raw linear histogram on *canvasId* using data from the API.
    * Also populates *statsId* text line when provided.
@@ -395,10 +403,11 @@ function showHistogram(canvasId, statsId, stats, binCounts, binEdges, histAduHi)
       ctx.fillRect(0, 0, x4k, barH);
     }
 
-    // Draw bars (log scale for dynamic range)
+    // Draw bars (log scale for dynamic range); non-zero bins always get ≥1px
     ctx.fillStyle = 'rgba(170,195,235,0.85)';
     for (let i = 0; i < n; i++) {
-      const h = Math.round(Math.log1p(binCounts[i]) / logPeak * barH);
+      const hRaw = Math.log1p(binCounts[i]) / logPeak * barH;
+      const h = binCounts[i] > 0 ? Math.max(1, Math.round(hRaw)) : 0;
       if (h > 0) ctx.fillRect(i * bw, barH - h, Math.max(1, bw - 0.5), h);
     }
 
@@ -500,12 +509,22 @@ function showHistogram(canvasId, statsId, stats, binCounts, binEdges, histAduHi)
 
     ctx.textAlign = 'left';
 
+    // Range + block-size label — drawn inside canvas top-right corner
+    const binSize = Math.round(histAduMax / n);
+    const rangeLabel = histAduMax >= 1000
+      ? `0–${(histAduMax / 1000).toFixed(histAduMax < 10000 ? 1 : 0)}k ADU · ${binSize} ADU/bin`
+      : `0–${Math.round(histAduMax)} ADU · ${binSize} ADU/bin`;
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(130,155,195,0.75)';
+    ctx.textAlign = 'right';
+    ctx.fillText(rangeLabel, CW - 3, 9);
+    ctx.textAlign = 'left';
+
     // Full stats text line (below canvas) — show ADU values + bin size
     if (statsId) {
       const el = document.getElementById(statsId);
       if (el) {
         const fmt = f => Math.round(f * adcMax);
-        const binSize = Math.round(histAduMax / n);
         el.textContent =
           `block:${binSize} ADU  ` +
           `p50:${fmt(stats.p50)}  ` +
@@ -553,6 +572,7 @@ async function _fetchAndDrawHistogram() {
       const lowWrap = document.getElementById('s3-hist-low-wrap');
       if (lowWrap && d.low_bin_counts?.length) {
         lowWrap.style.display = '';
+        _updateLowLabel(d.low_adu_hi, d.low_bin_counts.length);
         try {
           showHistogram('s3-histogram-low', null, d, d.low_bin_counts, d.low_bin_edges, d.low_adu_hi);
         } catch (_) {}

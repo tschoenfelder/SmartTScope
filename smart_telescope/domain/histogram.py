@@ -109,10 +109,9 @@ def histogram_bins_focused(
     amax = _adc_max(bit_depth)
     flat = pixels.astype(np.float64, copy=False).ravel()
     p999_adu = float(np.percentile(flat, 99.9))
-    adu_hi = float(np.clip(
-        max(p999_adu * 1.3, amax * 0.05, 1000.0),
-        1.0, amax,
-    ))
+    # Minimum 1000 ADU avoids zooming in on pure sensor noise; no adc_max floor
+    # so dim images (p99.9 < 770 ADU) still zoom to 1000 instead of 3000+.
+    adu_hi = float(np.clip(max(p999_adu * 1.3, 1000.0), 1.0, amax))
     hi_normed = adu_hi / amax
     normed = flat / amax
     counts, edges = np.histogram(normed, bins=n_bins, range=(0.0, hi_normed))

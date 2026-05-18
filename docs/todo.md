@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-18 (BUG-011/012/016 park-unpark state propagation — poll_now() + JS loop — 2544 tests pass)
+**Last updated:** 2026-05-19 (BUG-004/021 histogram zoom + min bar height + dynamic low-range label — 2570 tests pass)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -238,8 +238,12 @@
   - *Done (R5-004):* `_expand()` using `Path.expanduser()` was added for all path globals (`STARS_CFG`, `HORIZON_DAT`, `STORAGE_DIR`, `IMAGE_ROOT`, `APP_STATE_DIR`); `STARS_CFG` default also constructed via `Path.home()` so tilde is never stored literally; verified by 4 new `TestExpandPath` tests in `test_readiness.py`
 - [x] BUG-009 Cooling controls offered in setup page for cameras that don't support cooling `[P2 · UI · Source: Items_to_fix_20260514]`
   - *Done:* `onCoolingCamChange(role)` added — fetches `/api/cameras/{idx}/capabilities` for the selected train's camera and shows/hides the cooling card based on `has_tec`; called on select `onchange`, on "Connect All", and at page init; replaces the old "any camera has TEC" heuristic
-- [ ] BUG-010 Focuser log says not available, then later says available — connect ordering issue `[P1 · Hardware · Source: Items_to_fix_20260514]`
-- [ ] BUG-013 Setup check fails to move mount at all `[P1 · Hardware · Source: Items_to_fix_20260514]`
+- [x] BUG-010 Focuser log says not available, then later says available — connect ordering issue `[P1 · Hardware · Source: Items_to_fix_20260514]`
+  - *Acceptance:* focuser `is_available` reflects true hardware state after `connect()` even when serial buffer has stale bytes from mount init
+  - *Done:* `OnStepFocuser.connect()` retries `:FA#` up to 3× with 300 ms gap; breaks on first `"1"`; logs each attempt; only warns when all attempts fail. Handles stale bytes left by `:GVP#` or `disable_tracking()` during `mount.connect()`. 4 new tests in `test_onstep_focuser.py::TestConnectRetry` — first-attempt success (no retry), 0→1 retry, exhausted (3×"0"), empty→"1".
+- [x] BUG-013 Setup check fails to move mount at all `[P1 · Hardware · Source: Items_to_fix_20260514]`
+  - *Root cause:* `OnStepMount.connect()` made only a single stale-ACK retry; a second stale byte from a previous session's `disable_tracking()` exhausted the retry and closed the serial port. With `_serial = None`, all subsequent `get_state()` calls returned `UNKNOWN`, and the setup check wizard silently skipped all mount movement tests.
+  - *Done:* `OnStepMount.connect()` retries `:GVP#` up to 3× with 300 ms gap + input buffer flush each time; only fails after all attempts exhausted; accepts any response containing "on"+"step" (case-insensitive); also accepts `'On-Step#On-Step'` doubled responses seen in the field. Setup check JS message changed from silent "state unknown — skipped" to "mount not connected — use Connect All to reconnect". 5 new tests in `test_onstep_mount.py::TestConnectRetry`.
 - [x] BUG-017 Focuser linked to guide cam on status page; config requires it linked to main camera 678M `[P1 · Hardware · Source: Items_to_fix_20260514]`
   - *Done (R4-005):* Focuser cam select now populated via `_loadSelectFromTrains()` filtered to `has_focuser=true`; guide cam train has `has_focuser=false` so it never appears in focuser controls
 - [x] BUG-003 Startup shows both cameras under focuser section but not under cooling, polar alignment, or preview `[P1 · UI · Source: Items_to_fix_20260513]`
@@ -328,8 +332,10 @@
   - *Acceptance:* error states cause, current safety state, and recommended next action
 - [x] BUG-015 HOME, PARK, UNPARK, STOP buttons should be grouped together `[P3 · UI · Source: Items_to_fix_20260514]`
 - [ ] BUG-002 AG checkbox vs Autogain button layout confusing; AF button below histogram, autogain at bottom `[P3 · UI · Source: Items_to_fix_20260513]`
-- [ ] BUG-004 Histogram should show detail below ADU 1000 and current block size above `[P3 · UI · Source: Items_to_fix_20260513]`
-- [ ] BUG-021 Histogram not filled at small values `[P3 · UI · Source: Items_to_fix_20260514]`
+- [x] BUG-004 Histogram should show detail below ADU 1000 and current block size above `[P3 · UI · Source: Items_to_fix_20260513]`
+  - *Done:* `showHistogram()` now draws `0–Xk ADU · N ADU/bin` as a text overlay inside the canvas top-right; `s3-hist-low-label` given an id and updated dynamically by `_updateLowLabel()` on each draw (was hardcoded "5 ADU/bin", now shows real bin size)
+- [x] BUG-021 Histogram not filled at small values `[P3 · UI · Source: Items_to_fix_20260514]`
+  - *Done:* `histogram_bins_focused` no longer uses `adc_max×0.05` floor — dim images (p99.9=200 ADU) now zoom to 1000 ADU range instead of 3276, filling the canvas 3× better; JS bar rendering uses `Math.max(1, Math.round(hRaw))` for non-zero bins so every bin with any pixels shows at least 1px
 
 ### Milestone M4 tasks
 
@@ -492,8 +498,9 @@
   - *Done (UX4-004):* Mount strip starts visible; STOP button visible on all stages.
 - [x] R6-006 Browser smoke tests: setup, preview, mount, focuser, stop `[P1 · Tests]`
   - *Done:* `tests/unit/api/test_smoke.py` — 39 tests covering HTML page load, readiness API shape, mount status (state/stale/watchdog fields), focuser status (available/position/moving), emergency STOP (always 200, mount_stopped true/false, calls stop once), optical trains list, version endpoint; all mock-based, no hardware.
-- [ ] R6-007 Add `FocusRunConfig` policy object; clean focus sub-boundary so focus options touch only focus domain `[P2 · Runtime]`
+- [x] R6-007 Add `FocusRunConfig` policy object; clean focus sub-boundary so focus options touch only focus domain `[P2 · Runtime]`
   - *Acceptance:* focus options (step size, frame count, timeout) carried in a `FocusRunConfig` object passed top-down; changes to focus options touch only focus domain, focus service, one API shape, and focused tests; session/mount internals not touched
+  - *Done:* `FocusRunConfig` added to `domain/autofocus.py` with `to_params()` factory; `StageContext` 5 flat fields → `focus_config: FocusRunConfig`; `VerticalSliceRunner` 5 flat params → `focus_config`; `api/session.py` builds `FocusRunConfig` from Query params; `conftest.py` updated; `stage_stack` mid-refocus deduplication; 12 new tests in `tests/unit/domain/test_focus_run_config.py`; 2565 tests pass
 
 ### Milestone M5 tasks
 

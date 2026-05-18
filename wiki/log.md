@@ -4,6 +4,58 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — BUG-004 + BUG-021 — Histogram zoom and bar rendering fixes
+
+**What changed:**
+- `smart_telescope/domain/histogram.py`: `histogram_bins_focused` no longer applies an `adc_max×0.05` floor to `adu_hi`. Minimum is now 1000 ADU (was up to 3276 for 12-bit-in-16-bit cameras). Dim images (p99.9 = 200 ADU) now get a 0–1000 ADU histogram instead of 0–3276, filling the canvas 3× better.
+- `smart_telescope/static/js/preview.js`: `showHistogram()` draws `0–Xk ADU · N ADU/bin` as a small text overlay in the canvas top-right corner (BUG-004: block size above). Bar rendering now uses `Math.max(1, Math.round(hRaw))` when `binCounts[i] > 0` — every non-zero bin shows at least 1px (BUG-021). New `_updateLowLabel()` helper updates `s3-hist-low-label` element with the real bin size on each draw.
+- `smart_telescope/static/index.html`: Low histogram label div given `id="s3-hist-low-label"`; hardcoded wrong "5 ADU/bin" text replaced with plain "pedestal detail" (JS fills in the real value).
+- `tests/unit/domain/test_histogram.py`: 5 new tests in `TestHistogramBinsFocused` — return shape, dark frame minimum, dim frame tighter zoom, bright frame clips to adc_max, n_bins parameter.
+
+**Tests:** 2570 pass (87% coverage)
+
+---
+
+## 2026-05-18 — R6-007 — FocusRunConfig policy object
+
+**What changed:**
+- `smart_telescope/domain/autofocus.py`: Added `FocusRunConfig` dataclass with fields `range_steps`, `step_size`, `exposure_s`, `backlash_steps`, `skip`; `to_params()` converts to `AutofocusParams`
+- `smart_telescope/workflow/stages.py`: `StageContext` 5 flat autofocus fields replaced with `focus_config: FocusRunConfig`; `stage_autofocus` and `stage_stack` (mid-refocus) both call `ctx.focus_config.to_params()` — eliminating the duplicate `AutofocusParams` construction; 4 unused `_types.py` constant imports removed
+- `smart_telescope/workflow/runner.py`: `VerticalSliceRunner.__init__()` 5 flat params replaced with `focus_config: FocusRunConfig | None = None`; refocus-tracker condition uses `focus_config.skip`
+- `smart_telescope/api/session.py`: Imported `FocusRunConfig`; `session_run()` bundles 5 Query params into a `FocusRunConfig` before passing to runner (HTTP API shape unchanged)
+- `tests/conftest.py`: `make_stage_ctx` and `make_unit_runner` accept `focus_config: FocusRunConfig | None = None` instead of 5 flat params
+- `tests/unit/domain/test_focus_run_config.py`: 12 new tests — defaults, `to_params()` field mapping, `skip` exclusion, invalid step raises
+- 2 updated tests in `test_runner_stages.py`: use `FocusRunConfig` instead of flat params
+
+**Tests:** 2565 pass (87% coverage)
+
+---
+
+## 2026-05-18 — BUG-013 — Mount connect retry + setup check actionable message
+
+**What changed:**
+- `smart_telescope/adapters/onstep/mount.py`: `connect()` now retries `:GVP#` up to 3 times (300 ms + buffer flush each attempt) before concluding the port is not OnStep. Handles the field-observed failure pattern where a stale `'1'` ACK from `disable_tracking()` (left from a previous session) caused the old single-retry to exhaust and close the serial port, leaving `_serial = None` and all subsequent state queries returning `UNKNOWN`.
+- `smart_telescope/static/js/setup.js`: Mount RA and DEC setup check steps now show "mount not connected — use Connect All to reconnect" instead of the cryptic "state is 'unknown' — skipped" when the mount is unavailable.
+- `tests/unit/adapters/onstep/test_onstep_mount.py`: 5 new tests in `TestConnectRetry` — first-attempt success (no sleep), stale-ACK retry succeeds, all-retries-exhausted returns False, empty response accepted, doubled product string accepted.
+
+**Source:** `resources/hlrequirements/Items_to_fix_20260514.txt` BUG-013
+
+**Tests:** 2553 pass (87% coverage)
+
+---
+
+## 2026-05-18 — BUG-010 — Focuser connect retry (serial buffer stale bytes)
+
+**What changed:**
+- `smart_telescope/adapters/onstep/focuser.py`: `connect()` now retries `:FA#` up to 3 times (300 ms apart) before concluding focuser unavailable. Handles stale bytes left in the serial input buffer by `mount.connect()` (`:GVP#` product query + `disable_tracking()`) that caused the first `:FA#` reply to be garbled.
+- `tests/unit/adapters/onstep/test_onstep_focuser.py`: 4 new tests in `TestConnectRetry` — first-attempt hit (no sleep), 0→1 retry, all-retries-exhausted, empty-reply→available.
+
+**Source:** `resources/hlrequirements/Items_to_fix_20260514.txt` BUG-010
+
+**Tests:** 2548 pass (87% coverage)
+
+---
+
 ## 2026-05-18 — BUG-011/012/016 — Park/unpark state propagation fix
 
 **What changed:**

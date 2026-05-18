@@ -4,6 +4,21 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — M5-013 — Dawn auto-park
+
+**What changed:**
+- `smart_telescope/domain/solar.py`: Added `ASTRONOMICAL_DAWN_ALT_DEG = -18.0` constant and `sun_altitude_now(lat, lon)` function (calls `sun_position_now()` → `compute_altaz()`).
+- `smart_telescope/services/dawn_watcher.py` (new): `DawnWatcher` background service; polls sun altitude every 60 s; issues `mount.park()` + `device_state.poll_now()` exactly once when alt ≥ −18°; exposes `get_status() → DawnStatus`; thread-safe `start()`/`stop()` lifecycle.
+- `smart_telescope/runtime.py`: Added `dawn_watcher: DawnWatcher` field; started in `connect_devices()` using `config.OBSERVER_LAT/LON`; stopped in `shutdown()` and `reset_for_tests()`.
+- `smart_telescope/api/dawn.py` (new): `GET /api/dawn` returns sun altitude, is_dawn flag, parked_at_dawn flag, and parked_at UTC timestamp.
+- `smart_telescope/app.py`: Registered dawn router.
+- `tests/unit/domain/test_solar.py`: Added `TestSunAltitudeNow` (3 tests) and import of `sun_altitude_now`.
+- `tests/unit/services/test_dawn_watcher.py` (new): 9 tests covering status before start, park trigger, no-repark guard, stop, idle status, error isolation.
+
+**Tests:** 2585 pass (87% coverage)
+
+---
+
 ## 2026-05-19 — R7-001/002/003 — Release readiness checklists; M0 backlog audit
 
 **What changed:**

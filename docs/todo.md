@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (R7-001/002/003 release readiness checklists; M0-002–007 backlog audit)
+**Last updated:** 2026-05-19 (M5-013 dawn auto-park; R7-001/002/003 release readiness checklists)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -524,8 +524,9 @@
 - [ ] M5-010 Save output image and session log `[P1 · Imaging]`
 - [ ] M5-011 Stop/recover safely `[P0 · Hardware]`
 - [ ] M5-012 Verify reconnect and shutdown behavior `[P1 · Hardware]`
-- [ ] M5-013 Dawn auto-park: auto-park when astronomical dawn approaches (end-of-night behaviour) `[P2 · Product]`
+- [x] M5-013 Dawn auto-park: auto-park when astronomical dawn approaches (end-of-night behaviour) `[P2 · Product]`
   - *Acceptance:* system parks mount automatically at astronomical dawn (sun at −18°); user notified; hardware stays connected after park for diagnostics/retry
+  - *Done:* `DawnWatcher` background service polls sun altitude every 60 s; parks once when alt ≥ −18°; `GET /api/dawn` returns status; `sun_altitude_now()` added to `domain/solar.py`; 12 tests
 
 **Quality gate:** Full workflow demonstrated on real hardware. Emergency stop tested during workflow. Logs useful without shell investigation. Product owner signs off against visible checklist.
 

@@ -1,4 +1,4 @@
-"""Solar exclusion gate — prevent accidental slews toward the Sun."""
+"""Solar exclusion gate and dawn detection utilities."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from astropy.coordinates import SkyCoord, get_sun
 from astropy.time import Time
 
 SOLAR_EXCLUSION_DEG: float = 10.0
+ASTRONOMICAL_DAWN_ALT_DEG: float = -18.0
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,14 @@ def angular_separation_deg(
     c1 = SkyCoord(ra=ra1_h * u.hourangle, dec=dec1_d * u.deg)
     c2 = SkyCoord(ra=ra2_h * u.hourangle, dec=dec2_d * u.deg)
     return float(c1.separation(c2).deg)
+
+
+def sun_altitude_now(observer_lat: float, observer_lon: float) -> float:
+    """Return current Sun altitude in degrees at the observer's location."""
+    from .visibility import compute_altaz
+    sun = sun_position_now()
+    alt, _ = compute_altaz(sun.ra_hours, sun.dec_deg, observer_lat, observer_lon)
+    return alt
 
 
 def is_solar_target(

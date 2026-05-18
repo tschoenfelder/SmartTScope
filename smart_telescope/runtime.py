@@ -20,6 +20,7 @@ from .ports.stacker import StackerPort
 from .ports.storage import StoragePort
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
+from .services.dawn_watcher import DawnWatcher
 from .services.device_state import DeviceStateService
 from .services.job_manager import JobManager
 
@@ -144,6 +145,7 @@ class RuntimeContext:
         self.coordinator     = HardwareCommandCoordinator()
         self.cooling_service = CoolingService()
         self.device_state    = DeviceStateService()
+        self.dawn_watcher    = DawnWatcher()
         self.job_manager     = JobManager()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
@@ -180,6 +182,13 @@ class RuntimeContext:
                 assert self._mount is not None
                 self.device_state.start(self._mount)
                 self.device_state.poll_now()  # BUG-012: populate cache immediately at startup
+                from . import config as _cfg
+                self.dawn_watcher.start(
+                    self._mount,
+                    self.device_state,
+                    _cfg.OBSERVER_LAT,
+                    _cfg.OBSERVER_LON,
+                )
 
     def shutdown(self) -> None:
         """Stop moving hardware, stop polling, then close all connections.
@@ -189,6 +198,7 @@ class RuntimeContext:
         """
         self.job_manager.cancel_all()
         self.cooling_service.stop()
+        self.dawn_watcher.stop()
         self.device_state.stop()
         if self._focuser is not None:
             with contextlib.suppress(Exception):
@@ -227,6 +237,7 @@ class RuntimeContext:
 
     def reset_for_tests(self) -> None:
         """Clear all cached singletons for test isolation."""
+        self.dawn_watcher.stop()
         self.device_state.stop()
         self._camera = None
         self._mount = None
@@ -240,6 +251,7 @@ class RuntimeContext:
         self.coordinator     = HardwareCommandCoordinator()
         self.cooling_service = CoolingService()
         self.device_state    = DeviceStateService()
+        self.dawn_watcher    = DawnWatcher()
         self.job_manager     = JobManager()
         with self.session_lock:
             self._active_runner = None

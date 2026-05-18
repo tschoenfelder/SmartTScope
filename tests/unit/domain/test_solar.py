@@ -1,12 +1,14 @@
-"""Unit tests for solar exclusion gate."""
+"""Unit tests for solar exclusion gate and dawn detection."""
 
 import pytest
 
 from smart_telescope.domain.solar import (
+    ASTRONOMICAL_DAWN_ALT_DEG,
     SOLAR_EXCLUSION_DEG,
     SolarPosition,
     angular_separation_deg,
     is_solar_target,
+    sun_altitude_now,
     sun_position_now,
 )
 
@@ -70,6 +72,35 @@ class TestIsSolarTarget:
     def test_returns_separation(self) -> None:
         _, sep = is_solar_target(_SUN.ra_hours, _SUN.dec_deg - 20.0, sun=_SUN)
         assert sep == pytest.approx(20.0, abs=0.01)
+
+
+class TestSunAltitudeNow:
+    def test_returns_float(self, mocker) -> None:
+        mocker.patch(
+            "smart_telescope.domain.solar.sun_position_now",
+            return_value=SolarPosition(ra_hours=6.0, dec_deg=23.0),
+        )
+        mocker.patch(
+            "smart_telescope.domain.visibility.compute_altaz",
+            return_value=(-20.0, 90.0),
+        )
+        alt = sun_altitude_now(50.0, 8.0)
+        assert isinstance(alt, float)
+
+    def test_returns_mocked_altitude(self, mocker) -> None:
+        mocker.patch(
+            "smart_telescope.domain.solar.sun_position_now",
+            return_value=SolarPosition(ra_hours=6.0, dec_deg=23.0),
+        )
+        mocker.patch(
+            "smart_telescope.domain.visibility.compute_altaz",
+            return_value=(-19.5, 90.0),
+        )
+        alt = sun_altitude_now(50.0, 8.0)
+        assert alt == pytest.approx(-19.5)
+
+    def test_dawn_constant_is_minus_18(self) -> None:
+        assert ASTRONOMICAL_DAWN_ALT_DEG == pytest.approx(-18.0)
 
 
 class TestSunPositionNow:

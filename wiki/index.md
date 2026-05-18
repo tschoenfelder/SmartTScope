@@ -31,6 +31,12 @@ Table of contents for the SmartTelescope knowledge base.
 - [vertical-slice-mvp](vertical-slice-mvp.md) — End-to-end MVP slice: power-on → align → GoTo M42 → recenter → stack 10 frames → save
 - [quickstart](quickstart.md) — First-time setup guide: Raspberry Pi OS Trixie (Debian 13), ToupTek camera, ASTAP, no libcamera
 
+## Release readiness
+
+- [operational-acceptance-checklist](../docs/operational-acceptance-checklist.md) — 10-step field checklist: connect → setup check → solar gate → GoTo → autofocus → STOP → stack → shutdown
+- [hardware-test-log-template](../docs/hardware-test-log-template.md) — Append-only evidence log with six required items (E-001 to E-006) for R7-004 release gate
+- [release-checklist](../docs/release-checklist.md) — Go/no-go gate: backlog, hardware evidence, acceptance, tests, clean install, performance, sign-off
+
 ## Architecture
 
 - [job-manager](job-manager.md) — `JobManager` service: resource ownership model, `submit()`/`claim()`/`release()` modes, cancellation, timeout policy

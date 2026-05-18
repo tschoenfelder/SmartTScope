@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — R7-001/002/003 — Release readiness checklists; M0 backlog audit
+
+**What changed:**
+- `docs/operational-acceptance-checklist.md` (new): 10-section field checklist covering power-on, connect all, readiness dashboard, setup check, solar safety gate, GoTo/plate-solve alignment, autofocus, emergency STOP (< 1 s), preview/stack, and shutdown; includes sign-off table
+- `docs/hardware-test-log-template.md` (new): append-only evidence log defining six required evidence items (E-001 STOP during slew, E-002 STOP during focuser move, E-003 shutdown during motion, E-004 reconnect, E-005 setup check, E-006 full workflow); structured entry template with date, commit, steps, result, log extract
+- `docs/release-checklist.md` (new): 8-section go/no-go gate with BLOCKER items; covers backlog gate (all P0/P1 closed or deferred), hardware evidence gate (all 6 E-items pass), operational acceptance, test suite (≥80% coverage), clean install, performance targets, documentation, product-owner sign-off table and deferred items register
+- `wiki/index.md`: new "Release readiness" section linking all three documents
+- `docs/todo.md`: R7-001/002/003 marked done; M0-002 through M0-007 marked done (backlog audit confirmed all work already completed)
+
+---
+
 ## 2026-05-19 — BUG-004 + BUG-021 — Histogram zoom and bar rendering fixes
 
 **What changed:**

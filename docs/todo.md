@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (BUG-004/021 histogram zoom + min bar height + dynamic low-range label — 2570 tests pass)
+**Last updated:** 2026-05-19 (R7-001/002/003 release readiness checklists; M0-002–007 backlog audit)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -35,12 +35,18 @@
 
 - [x] M0-001 Create one authoritative maintained backlog `[P1 · Process]`
   - *Done:* `docs/todo.md` is the established authoritative backlog (NEXT-002); all field bugs and architecture items imported and prioritized with acceptance criteria on every P0/P1 item.
-- [ ] M0-002 Import field bugs from Items_to_fix_20260513.txt and Items_to_fix_20260514.txt `[P1 · Process]`
-- [ ] M0-003 Import open items from task docs and architecture review `[P1 · Process]`
-- [ ] M0-004 Deduplicate overlapping issues `[P1 · Process]`
-- [ ] M0-005 Assign priority to every imported item `[P1 · Process]`
-- [ ] M0-006 Add acceptance criteria to every P0/P1 item `[P1 · Process]`
-- [ ] M0-007 Link every backlog item to source document `[P2 · Process]`
+- [x] M0-002 Import field bugs from Items_to_fix_20260513.txt and Items_to_fix_20260514.txt `[P1 · Process]`
+  - *Done:* All field bugs from both files imported with BUG-IDs, priorities, and source annotations throughout this backlog.
+- [x] M0-003 Import open items from task docs and architecture review `[P1 · Process]`
+  - *Done:* All items from `development-state-review-2026-05-17.md` and architecture plan imported and categorised.
+- [x] M0-004 Deduplicate overlapping issues `[P1 · Process]`
+  - *Done:* Overlapping field bugs and architecture items consolidated; duplicates noted inline where applicable.
+- [x] M0-005 Assign priority to every imported item `[P1 · Process]`
+  - *Done:* Every backlog item carries a P0–P3 priority tag.
+- [x] M0-006 Add acceptance criteria to every P0/P1 item `[P1 · Process]`
+  - *Done:* All P0/P1 items have Acceptance and Done notes recorded.
+- [x] M0-007 Link every backlog item to source document `[P2 · Process]`
+  - *Done:* Field bugs carry `Source: Items_to_fix_YYYYMMDD` annotations; architecture items reference the plan document.
 - [ ] M0-008 Add product-owner top-10 risk view `[P2 · Process]`
 
 **Quality gate:** Every open field bug has a backlog ID. Every P0/P1 item has acceptance criteria. Product owner can see top risks on one page.
@@ -531,9 +537,12 @@
 
 ### R7 — Operational Evidence and Release Gate
 
-- [ ] R7-001 Define operational acceptance checklist `[P1 · Process]`
-- [ ] R7-002 Define hardware test log template `[P1 · Process]`
-- [ ] R7-003 Define release go/no-go checklist `[P1 · Process]`
+- [x] R7-001 Define operational acceptance checklist `[P1 · Process]`
+  - *Done:* `docs/operational-acceptance-checklist.md` — 10-section field checklist covering power-on, connect all, readiness dashboard, setup check, solar gate, GoTo/plate-solve, autofocus, emergency STOP, stack, shutdown, sign-off table
+- [x] R7-002 Define hardware test log template `[P1 · Process]`
+  - *Done:* `docs/hardware-test-log-template.md` — append-only log with six required evidence items (E-001 through E-006) and structured entry template (date, commit, steps, result, log extract)
+- [x] R7-003 Define release go/no-go checklist `[P1 · Process]`
+  - *Done:* `docs/release-checklist.md` — 8-section gate checklist with BLOCKER items, backlog gate, hardware evidence gate, clean install gate, performance targets, sign-off table, deferred items register
 - [ ] R7-004 Record evidence: STOP during slew, STOP during focuser move, shutdown during motion, reconnect, setup check, full observing workflow `[P0 · Hardware]`
 - [ ] R7-005 Add product-owner milestone dashboard `[P2 · Product]`
 - [ ] R7-006 Add done-without-evidence report `[P2 · Process]`

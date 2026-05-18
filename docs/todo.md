@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (M6-009 storage-full simulation; COL-022 hardware self-test; M5-013 dawn auto-park)
+**Last updated:** 2026-05-19 (R7-005+M0-008 milestone dashboard; M6-009 storage-full simulation; COL-022 hardware self-test; M5-013 dawn auto-park)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -47,7 +47,8 @@
   - *Done:* All P0/P1 items have Acceptance and Done notes recorded.
 - [x] M0-007 Link every backlog item to source document `[P2 · Process]`
   - *Done:* Field bugs carry `Source: Items_to_fix_YYYYMMDD` annotations; architecture items reference the plan document.
-- [ ] M0-008 Add product-owner top-10 risk view `[P2 · Process]`
+- [x] M0-008 Add product-owner top-10 risk view `[P2 · Process]`
+  - *Done (R7-005):* Top-10 risk items included in `/api/milestones` response; rendered in the Milestone Dashboard card on Stage 1.
 
 **Quality gate:** Every open field bug has a backlog ID. Every P0/P1 item has acceptance criteria. Product owner can see top risks on one page.
 
@@ -546,7 +547,8 @@
 - [x] R7-003 Define release go/no-go checklist `[P1 · Process]`
   - *Done:* `docs/release-checklist.md` — 8-section gate checklist with BLOCKER items, backlog gate, hardware evidence gate, clean install gate, performance targets, sign-off table, deferred items register
 - [ ] R7-004 Record evidence: STOP during slew, STOP during focuser move, shutdown during motion, reconnect, setup check, full observing workflow `[P0 · Hardware]`
-- [ ] R7-005 Add product-owner milestone dashboard `[P2 · Product]`
+- [x] R7-005 Add product-owner milestone dashboard `[P2 · Product]`
+  - *Done:* `GET /api/milestones` returns milestone completion stats (`id`, `name`, `total`, `done`, `open`, `hardware_blocked`, `status`) and top-10 risk items; status logic: green=no open non-hardware tasks, yellow=P2/P3 open or only hardware-blocked, red=P0/P1 open non-hardware; "Milestone Dashboard" card added to Stage 1 UI showing color-coded progress bars and top-risk list; `MILESTONE_REGISTRY` and `RISK_REGISTRY` in `domain/milestones.py`; 25 tests (domain + API).
 - [ ] R7-006 Add done-without-evidence report `[P2 · Process]`
 
 ### Milestone M6 tasks

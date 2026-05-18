@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — R7-005 + M0-008 — Milestone dashboard and risk view
+
+**What changed:**
+- `smart_telescope/domain/milestones.py` (new): `MilestoneSummary` frozen dataclass with computed `status` (green/yellow/red); `RiskItem` frozen dataclass; `MILESTONE_REGISTRY` (8 milestones M0–M6 + COL) and `RISK_REGISTRY` (10 open P0/P1 items, P0 first).
+- `smart_telescope/api/milestones.py` (new): `GET /api/milestones` returns `{milestones, top_risks}`.
+- `smart_telescope/app.py`: registered milestones router.
+- `smart_telescope/static/index.html`: "Milestone Dashboard" card added to Stage 1 (below readiness).
+- `smart_telescope/static/js/setup.js`: `_renderMilestones()` + `refreshMilestones()` — color-coded progress bars per milestone, top-risk list with priority badges.
+- `smart_telescope/static/js/app.js`: `refreshMilestones()` called at page init.
+- `tests/unit/domain/test_milestones.py` (new): 16 tests — status logic, registry invariants.
+- `tests/unit/api/test_milestones.py` (new): 9 tests — HTTP contract, field presence, sorting.
+
+**Tests:** 25 pass
+
+---
+
 ## 2026-05-19 — M6-009 — Storage-full simulation tests
 
 **What changed:**

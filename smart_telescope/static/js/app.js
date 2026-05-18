@@ -161,6 +161,7 @@ initSiteConfig();
 loadVersion();
 refreshMount();
 refreshReadiness();
+refreshMilestones();
 refreshHealth();
 setInterval(refreshReadiness, 30_000);
 setInterval(refreshHealth, 10_000);

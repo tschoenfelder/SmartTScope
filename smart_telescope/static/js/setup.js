@@ -122,6 +122,75 @@ async function refreshReadiness() {
     } catch (_) {}
 }
 
+/* ── Milestone Dashboard (R7-005 / M0-008) ──────────────────────────────── */
+
+function _milestoneDotCls(status) {
+    if (status === 'green')  return 'dot-green';
+    if (status === 'yellow') return 'dot-yellow';
+    return 'dot-red';
+}
+
+function _renderMilestones(data) {
+    const body = document.getElementById('s1-milestones-body');
+    const dot  = document.getElementById('s1-milestones-dot');
+    if (!body) return;
+
+    // Overall dot: red if any red, yellow if any yellow, else green
+    if (dot) {
+        const hasRed    = data.milestones.some(m => m.status === 'red');
+        const hasYellow = data.milestones.some(m => m.status === 'yellow');
+        dot.className = 'dot ' + (hasRed ? 'dot-red' : hasYellow ? 'dot-yellow' : 'dot-green');
+    }
+
+    const rows = data.milestones.map(m => {
+        const pct = m.total > 0 ? Math.round(100 * m.done / m.total) : 100;
+        const barColor = m.status === 'green' ? 'var(--success)'
+                       : m.status === 'yellow' ? 'var(--warning)' : 'var(--danger)';
+        return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;border-bottom:1px solid var(--border)">
+          <span class="dot ${_milestoneDotCls(m.status)}" style="width:7px;height:7px;flex-shrink:0"></span>
+          <span style="font-size:0.82rem;width:2.8rem;flex-shrink:0;font-weight:600">${escHtml(m.id)}</span>
+          <span style="font-size:0.80rem;flex:1;color:var(--muted)">${escHtml(m.name)}</span>
+          <span style="font-size:0.78rem;color:var(--muted);width:4.5rem;text-align:right;flex-shrink:0">${m.done}/${m.total}</span>
+          <div style="width:60px;height:6px;border-radius:3px;background:var(--border);flex-shrink:0;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px"></div>
+          </div>
+        </div>`;
+    });
+
+    const riskPriBadge = p => {
+        const c = p === 'P0' ? 'var(--danger)' : 'var(--warning)';
+        return `<span style="font-size:0.68rem;font-weight:700;color:${c};border:1px solid ${c};
+                             border-radius:3px;padding:0 0.3rem;flex-shrink:0">${escHtml(p)}</span>`;
+    };
+    const risks = data.top_risks.map(r =>
+        `<div style="display:flex;align-items:flex-start;gap:0.4rem;padding:0.25rem 0;
+                     border-bottom:1px solid var(--border);font-size:0.80rem">
+          ${riskPriBadge(r.priority)}
+          <span style="color:var(--muted);flex-shrink:0;min-width:4.5rem">${escHtml(r.id)}</span>
+          <span style="flex:1">${escHtml(r.description)}</span>
+        </div>`
+    );
+
+    body.innerHTML =
+        `<div style="margin-bottom:0.4rem">${rows.join('')}</div>` +
+        (risks.length
+            ? `<div style="font-size:0.75rem;font-weight:600;color:var(--muted);
+                          padding:0.3rem 0 0.2rem;letter-spacing:0.04em">TOP RISKS</div>` +
+              risks.join('')
+            : '');
+}
+
+async function refreshMilestones() {
+    try {
+        const d = await (await fetch('/api/milestones')).json();
+        _renderMilestones(d);
+    } catch (e) {
+        const body = document.getElementById('s1-milestones-body');
+        if (body) body.innerHTML =
+            `<span style="color:var(--danger);font-size:0.82rem">Load failed: ${escHtml(String(e))}</span>`;
+    }
+}
+
 async function refreshHealth() {
     try {
       const d = await (await fetch('/api/status')).json();

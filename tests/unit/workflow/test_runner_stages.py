@@ -11,6 +11,7 @@ Pattern:
         stage_initialize_mount(ctx, make_log())
     assert exc.value.stage == "initialize_mount"
 """
+import errno
 from unittest.mock import Mock, patch
 
 import pytest
@@ -619,6 +620,59 @@ class TestStageSave:
         ctx = make_stage_ctx(stacker=stacker_mock, storage=storage_mock)
         stage_save(ctx, make_log())
         assert stored["completed_at"] is not None
+
+
+# ── Runner storage-full simulation (M6-009) ───────────────────────────────
+
+
+class TestRunnerStorageFull:
+    """End-to-end runner tests with a storage layer that simulates disk-full."""
+
+    def _full_storage(self) -> Mock:
+        sto = Mock(spec=__import__("smart_telescope.ports.storage", fromlist=["StoragePort"]).StoragePort)
+        sto.has_free_space.return_value = False
+        return sto
+
+    def test_disk_full_sets_failure_stage(self):
+        sto = Mock()
+        sto.has_free_space.return_value = False
+        runner = make_unit_runner(storage=sto)
+        log = runner.run("test-sid")
+        assert log.failure_stage == "save"
+
+    def test_disk_full_failure_reason_mentions_disk(self):
+        sto = Mock()
+        sto.has_free_space.return_value = False
+        runner = make_unit_runner(storage=sto)
+        log = runner.run("test-sid")
+        reason_lower = (log.failure_reason or "").lower()
+        assert "disk" in reason_lower or "full" in reason_lower
+
+    def test_disk_full_image_path_not_set(self):
+        sto = Mock()
+        sto.has_free_space.return_value = False
+        runner = make_unit_runner(storage=sto)
+        log = runner.run("test-sid")
+        assert log.saved_image_path is None
+
+    def test_save_image_oserror_sets_failure_stage(self):
+        sto = Mock()
+        sto.has_free_space.return_value = True
+        sto.save_image.side_effect = OSError(errno.ENOSPC, "No space left on device")
+        runner = make_unit_runner(storage=sto)
+        log = runner.run("test-sid")
+        assert log.failure_stage == "save"
+
+    def test_partial_save_image_path_preserved_when_log_write_fails(self):
+        sto = Mock()
+        sto.has_free_space.return_value = True
+        sto.save_image.return_value = "/data/result.png"
+        sto.save_log.side_effect = OSError(errno.ENOSPC, "No space left on device")
+        runner = make_unit_runner(storage=sto)
+        log = runner.run("test-sid")
+        assert log.failure_stage == "save"
+        assert log.saved_image_path == "/data/result.png"
+        assert log.saved_log_path is None
 
 
 # ── Runner orchestration ───────────────────────────────────────────────────

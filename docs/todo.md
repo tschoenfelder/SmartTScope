@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (COL-022 hardware self-test; M5-013 dawn auto-park)
+**Last updated:** 2026-05-19 (M6-009 storage-full simulation; COL-022 hardware self-test; M5-013 dawn auto-park)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -559,7 +559,8 @@
 - [ ] M6-006 Define Pi thermal ceiling target `[P2 · Process]`
 - [ ] M6-007 Run long session reliability test `[P1 · Hardware]`
 - [ ] M6-008 Run Pi thermal test `[P2 · Hardware]`
-- [ ] M6-009 Run storage-full simulation `[P2 · Tests]`
+- [x] M6-009 Run storage-full simulation `[P2 · Tests]`
+  - *Done:* `DiskStorage` raises `OSError(ENOSPC)` on write failure; `stage_save()` raises `WorkflowError("save", "Disk full…")` when `has_free_space()` is False; runner wraps unexpected `OSError` from `save_image`/`save_log` into `WorkflowError`; partial-save scenario (image written, log write fails) preserves `saved_image_path`; 8 tests in `test_disk_storage.py` and `test_runner_stages.py` all pass.
 - [ ] M6-010 Run network reconnect simulation `[P1 · Hardware]`
 - [ ] M6-011 Verify clean Pi install from scratch `[P1 · Hardware]`
 - [ ] M6-012 Produce release notes and known issues `[P1 · Process]`

@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — M6-009 — Storage-full simulation tests
+
+**What changed:**
+- `smart_telescope/adapters/disk_storage/storage.py`: `save_image()` and `save_log()` propagate `OSError` (e.g. `ENOSPC`) from the underlying `write_bytes`/`write_text` call; no partial file is left on failure.
+- `smart_telescope/workflow/stages.py`: `stage_save()` raises `WorkflowError("save", "Disk full…")` when `storage.has_free_space()` is False; unexpected `OSError` from save calls is wrapped by the runner into `WorkflowError`.
+- `tests/unit/adapters/disk_storage/test_disk_storage.py`: Added `TestDiskFullWriteFailure` (3 tests) — ENOSPC propagation for image and log writes, and no-partial-file guarantee.
+- `tests/unit/workflow/test_runner_stages.py`: Added `TestRunnerStorageFull` (5 tests) — disk-full failure stage/reason, no image path on disk-full, OSError from save_image wrapped into WorkflowError, partial-save image path preserved when log write fails.
+
+**Tests:** 99 pass
+
+---
+
 ## 2026-05-19 — COL-022 — Hardware self-test page
 
 **What changed:**

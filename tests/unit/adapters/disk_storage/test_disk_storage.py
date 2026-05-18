@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import errno
 import io
+import pytest
 import json
 import re
 from datetime import UTC, datetime
@@ -160,6 +162,42 @@ class TestSaveLog:
         log: dict[str, Any] = {"final_state": "SAVED", "target": {"name": "M42"}}
         path = s.save_log(log, "abcd1234-xxxx")
         assert Path(path).exists()
+
+
+# ── storage-full simulation (M6-009) ─────────────────────────────────────────
+
+
+class TestDiskFullWriteFailure:
+    """Simulate OS-level write failures (ENOSPC) to verify error propagation."""
+
+    def test_save_image_propagates_oserror(self, tmp_path: Path, mocker) -> None:
+        s = DiskStorage(tmp_path)
+        mocker.patch(
+            "pathlib.Path.write_bytes",
+            side_effect=OSError(errno.ENOSPC, "No space left on device"),
+        )
+        with pytest.raises(OSError):
+            s.save_image(_fits_bytes(), "sess-0001")
+
+    def test_save_log_propagates_oserror(self, tmp_path: Path, mocker) -> None:
+        s = DiskStorage(tmp_path)
+        mocker.patch(
+            "pathlib.Path.write_text",
+            side_effect=OSError(errno.ENOSPC, "No space left on device"),
+        )
+        with pytest.raises(OSError):
+            s.save_log(_session_log(), "abcd1234-xxxx")
+
+    def test_save_image_oserror_leaves_no_partial_file(self, tmp_path: Path, mocker) -> None:
+        s = DiskStorage(tmp_path)
+        mocker.patch(
+            "pathlib.Path.write_bytes",
+            side_effect=OSError(errno.ENOSPC, "No space left on device"),
+        )
+        with pytest.raises(OSError):
+            s.save_image(_fits_bytes(), "sess-0001")
+        # nothing should be written when write_bytes fails
+        assert list(tmp_path.glob("*.png")) == []
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

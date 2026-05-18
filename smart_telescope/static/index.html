@@ -1295,6 +1295,44 @@
     <div class="toolbar"><h2>Collimation</h2></div>
     <div id="s4-status" class="status-line"></div>
 
+    <!-- ── Hardware Self-Test (COL-022) ── -->
+    <div class="card" id="s4-selftest-card" style="margin-bottom:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s4-st-dot"></span>
+        Hardware Self-Test
+        <span style="font-size:0.72rem;color:var(--muted);margin-left:0.5rem">verify camera · mount · focuser before starting wizard</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+        <tr>
+          <td style="padding:0.3rem 0;width:6rem;color:var(--muted)">Camera</td>
+          <td><button class="secondary" onclick="selftestCamera()" style="padding:0.2rem 0.7rem;font-size:0.82rem">Test</button></td>
+          <td style="padding-left:0.75rem"><span id="s4-st-camera-result" style="color:var(--muted)">—</span></td>
+        </tr>
+        <tr>
+          <td style="padding:0.3rem 0;color:var(--muted)">Mount</td>
+          <td>
+            <span style="display:flex;gap:0.35rem">
+              <button class="secondary" onclick="selftestMount('n')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="North">▲</button>
+              <button class="secondary" onclick="selftestMount('s')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="South">▼</button>
+              <button class="secondary" onclick="selftestMount('e')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="East">▶</button>
+              <button class="secondary" onclick="selftestMount('w')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="West">◀</button>
+            </span>
+          </td>
+          <td style="padding-left:0.75rem"><span id="s4-st-mount-result" style="color:var(--muted)">—</span></td>
+        </tr>
+        <tr>
+          <td style="padding:0.3rem 0;color:var(--muted)">Focuser</td>
+          <td>
+            <span style="display:flex;gap:0.35rem">
+              <button class="secondary" onclick="selftestFocuser(10)"  style="padding:0.2rem 0.5rem;font-size:0.82rem">+10</button>
+              <button class="secondary" onclick="selftestFocuser(-10)" style="padding:0.2rem 0.5rem;font-size:0.82rem">−10</button>
+            </span>
+          </td>
+          <td style="padding-left:0.75rem"><span id="s4-st-focuser-result" style="color:var(--muted)">—</span></td>
+        </tr>
+      </table>
+    </div>
+
     <!-- ── Collimation Wizard (COL-020) ── -->
     <div class="card" id="s4-wizard-card" style="margin-bottom:1rem">
       <div class="card-title">

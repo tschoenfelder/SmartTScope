@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (M5-013 dawn auto-park; R7-001/002/003 release readiness checklists)
+**Last updated:** 2026-05-19 (COL-022 hardware self-test; M5-013 dawn auto-park)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -405,7 +405,8 @@
   - *Done:* Wizard card added to Stage 4 with 5-phase progress strip, instruction text, recommendation block, Start/Pause/Resume/Cancel/Reset action buttons, contextual Remeasure/Finish-Phase/Accept/Adjust-More buttons, error display; polls `/api/collimation/status` every 2 s when active; star clicks in SELECT_STAR state route to `/api/collimation/next` with ra/dec.
 - [x] COL-021 Add overlay visibility test mode (crosshair, test circles, screw labels) `[P2 · Collimation · UI]`
   - *Done:* `_drawCollimOverlay()` draws donut outer/inner circles (blue/green), error vector (red arrow), and spike crossing crosshair on `s4-bahtinov-svg` overlay; polled from `/api/collimation/overlay` alongside status poll.
-- [ ] COL-022 Add hardware self-test page (camera stream, mount pulse guide, focuser small step) `[P2 · Collimation · UI]`
+- [x] COL-022 Add hardware self-test page (camera stream, mount pulse guide, focuser small step) `[P2 · Collimation · UI]`
+  - *Done:* Self-test card added before the wizard in Stage 4; 3 API endpoints (`POST /api/collimation/selftest/{camera,mount,focuser}`); camera returns frame dimensions + peak ADU; mount fires a 500 ms guide pulse N/S/E/W; focuser moves ±10 steps and shows position delta (no-op message when unavailable); 14 tests in `test_collimation_selftest.py`
 
 ### Phase 4 — Mount and Focuser Control
 

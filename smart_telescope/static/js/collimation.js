@@ -232,6 +232,61 @@ async function collimSelectStar(ra, dec) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+     Hardware Self-Test (COL-022)
+══════════════════════════════════════════════════════════════════════ */
+
+function _stResult(id, ok, text) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = ok ? 'var(--green)' : 'var(--red, #f85149)';
+    const dot = document.getElementById('s4-st-dot');
+    if (dot && ok) dot.className = 'dot dot-green';
+}
+
+async function selftestCamera() {
+    const el = document.getElementById('s4-st-camera-result');
+    if (el) { el.textContent = 'capturing…'; el.style.color = 'var(--muted)'; }
+    try {
+      const r = await apiPost('/api/collimation/selftest/camera');
+      _stResult('s4-st-camera-result', true,
+        `${r.width}×${r.height} px  peak ${r.peak_adu} ADU`);
+    } catch (err) {
+      _stResult('s4-st-camera-result', false, err.message);
+    }
+}
+
+async function selftestMount(dir) {
+    const el = document.getElementById('s4-st-mount-result');
+    if (el) { el.textContent = 'sending pulse…'; el.style.color = 'var(--muted)'; }
+    try {
+      const r = await apiPost('/api/collimation/selftest/mount',
+                              { direction: dir, duration_ms: 500 });
+      _stResult('s4-st-mount-result', true,
+        `${dir.toUpperCase()} pulse ${r.duration_ms} ms — ok`);
+    } catch (err) {
+      _stResult('s4-st-mount-result', false, err.message);
+    }
+}
+
+async function selftestFocuser(steps) {
+    const el = document.getElementById('s4-st-focuser-result');
+    if (el) { el.textContent = 'moving…'; el.style.color = 'var(--muted)'; }
+    try {
+      const r = await apiPost('/api/collimation/selftest/focuser', { steps });
+      if (!r.ok) {
+        _stResult('s4-st-focuser-result', false, r.message || 'not available');
+        return;
+      }
+      const delta = r.position_after - r.position_before;
+      _stResult('s4-st-focuser-result', true,
+        `${r.position_before} → ${r.position_after}  (Δ${delta >= 0 ? '+' : ''}${delta})`);
+    } catch (err) {
+      _stResult('s4-st-focuser-result', false, err.message);
+    }
+}
+
 /* Collimation overlay on s4-bahtinov-svg (COL-021) */
 function _drawCollimOverlay(d) {
     const svg = document.getElementById('s4-bahtinov-svg');

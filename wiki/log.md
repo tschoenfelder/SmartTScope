@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — COL-022 — Hardware self-test page
+
+**What changed:**
+- `smart_telescope/api/collimation.py`: 3 new endpoints under `/api/collimation/selftest/`: `POST /camera` (captures 1 frame, returns width/height/peak_adu or 503), `POST /mount` (fires guide pulse N/S/E/W 500 ms, validates direction, returns ok or 503), `POST /focuser` (moves ±steps, returns before/after position; returns `ok:false` message when focuser unavailable; 422 on zero steps).
+- `smart_telescope/static/index.html`: New "Hardware Self-Test" card before the Collimation Wizard card in Stage 4 — table with Camera/Mount/Focuser rows, test buttons, and per-row result spans.
+- `smart_telescope/static/js/collimation.js`: `selftestCamera()`, `selftestMount(dir)`, `selftestFocuser(steps)` async functions; `_stResult()` helper updates result span with green/red colouring; dot turns green on first success.
+- `tests/unit/api/test_collimation_selftest.py` (new): 14 tests — 4 camera, 5 mount, 5 focuser; covers ok paths, error paths (503/422), unavailable focuser, and default-body acceptance.
+
+**Tests:** 2599 pass (87% coverage)
+
+---
+
 ## 2026-05-19 — M5-013 — Dawn auto-park
 
 **What changed:**

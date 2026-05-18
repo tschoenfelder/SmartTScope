@@ -6,6 +6,24 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class FocusRunConfig:
+    """Policy object carrying all focus-run options; passed top-down from API to stage."""
+    range_steps:    int   = 200
+    step_size:      int   = 20
+    exposure_s:     float = 3.0
+    backlash_steps: int   = 0
+    skip:           bool  = False
+
+    def to_params(self) -> "AutofocusParams":
+        return AutofocusParams(
+            range_steps=self.range_steps,
+            step_size=self.step_size,
+            exposure=self.exposure_s,
+            backlash_steps=self.backlash_steps,
+        )
+
+
+@dataclass
 class AutofocusParams:
     """Parameters for a single autofocus run."""
     range_steps:    int   # total sweep width; positions span [current - range/2, current + range/2]

@@ -10,11 +10,11 @@ from __future__ import annotations
 import math
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from .. import config as _cfg
-from ..domain.autofocus import AutofocusParams
+from ..domain.autofocus import FocusRunConfig
 from ..domain.frame import FitsFrame
 from ..domain.frame_quality import FrameQualityEntry, FrameQualityFilter
 from ..domain.refocus import RefocusConfig, RefocusTracker
@@ -29,10 +29,6 @@ from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 from .autofocus import run_autofocus
 from ._types import (
-    AUTOFOCUS_BACKLASH_STEPS,
-    AUTOFOCUS_EXPOSURE_S,
-    AUTOFOCUS_RANGE_STEPS,
-    AUTOFOCUS_STEP_SIZE,
     CENTERING_TOLERANCE_ARCMIN,
     M42_DEC,
     M42_RA,
@@ -70,11 +66,7 @@ class StageContext:
     preview_exposure_s: float = PREVIEW_EXPOSURE_S
     preview_frames: int = PREVIEW_FRAMES
     wide_field_search_radius_deg: float = WIDE_FIELD_SEARCH_RADIUS_DEG
-    autofocus_range_steps: int = AUTOFOCUS_RANGE_STEPS
-    autofocus_step_size: int = AUTOFOCUS_STEP_SIZE
-    autofocus_exposure_s: float = AUTOFOCUS_EXPOSURE_S
-    autofocus_backlash_steps: int = AUTOFOCUS_BACKLASH_STEPS
-    skip_autofocus: bool = False
+    focus_config: FocusRunConfig = field(default_factory=FocusRunConfig)
     refocus_tracker: RefocusTracker | None = None        # None = triggers disabled
     frame_quality_filter: FrameQualityFilter | None = None  # None = accept all frames
 
@@ -164,17 +156,11 @@ def stage_recenter(ctx: StageContext, log: SessionLog) -> None:
 
 
 def stage_autofocus(ctx: StageContext, log: SessionLog) -> None:
-    if ctx.skip_autofocus:
+    if ctx.focus_config.skip:
         return
     ctx.on_transition(log, SessionState.FOCUSING)
-    params = AutofocusParams(
-        range_steps=ctx.autofocus_range_steps,
-        step_size=ctx.autofocus_step_size,
-        exposure=ctx.autofocus_exposure_s,
-        backlash_steps=ctx.autofocus_backlash_steps,
-    )
     try:
-        result = run_autofocus(ctx.focuser, ctx.camera, params)
+        result = run_autofocus(ctx.focuser, ctx.camera, ctx.focus_config.to_params())
     except RuntimeError as exc:
         raise WorkflowError("autofocus", str(exc)) from exc
     log.autofocus_best_position = result.best_position
@@ -217,14 +203,8 @@ def stage_stack(ctx: StageContext, log: SessionLog) -> None:
             trigger = ctx.refocus_tracker.check(altitude=alt, temperature=last_frame_temp)
             if trigger.should_refocus:
                 ctx.on_transition(log, SessionState.FOCUSING)
-                params = AutofocusParams(
-                    range_steps=ctx.autofocus_range_steps,
-                    step_size=ctx.autofocus_step_size,
-                    exposure=ctx.autofocus_exposure_s,
-                    backlash_steps=ctx.autofocus_backlash_steps,
-                )
                 try:
-                    run_autofocus(ctx.focuser, ctx.camera, params)
+                    run_autofocus(ctx.focuser, ctx.camera, ctx.focus_config.to_params())
                     ctx.refocus_tracker.record_focus(altitude=alt, temperature=last_frame_temp)
                     log.refocus_count += 1
                 except RuntimeError as exc:

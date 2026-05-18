@@ -16,6 +16,7 @@ _log = logging.getLogger(__name__)
 from pydantic import BaseModel
 
 from .. import config as _config
+from ..domain.autofocus import FocusRunConfig
 from ..adapters.astap.solver import catalog_search_paths as _catalog_search_paths
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
@@ -268,11 +269,13 @@ def session_run(
                 stack_exposure_s=exposure,
                 stack_depth=stack_depth,
                 preview_exposure_s=preview_exposure,
-                autofocus_range_steps=autofocus_range,
-                autofocus_step_size=autofocus_step,
-                autofocus_exposure_s=autofocus_exposure,
-                autofocus_backlash_steps=autofocus_backlash,
-                skip_autofocus=skip_autofocus,
+                focus_config=FocusRunConfig(
+                    range_steps=autofocus_range,
+                    step_size=autofocus_step,
+                    exposure_s=autofocus_exposure,
+                    backlash_steps=autofocus_backlash,
+                    skip=skip_autofocus,
+                ),
                 enable_refocus_triggers=enable_refocus,
                 refocus_temp_delta_c=refocus_temp_delta,
                 refocus_alt_delta_deg=refocus_alt_delta,

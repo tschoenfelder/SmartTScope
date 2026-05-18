@@ -29,7 +29,7 @@ from smart_telescope.workflow.runner import (
     SOLVE_MAX_ATTEMPTS,
     WorkflowError,
 )
-from smart_telescope.domain.autofocus import AutofocusResult
+from smart_telescope.domain.autofocus import AutofocusResult, FocusRunConfig
 from smart_telescope.workflow.stages import (
     _wait_for_slew,
     stage_align,
@@ -413,7 +413,7 @@ class TestStageAutofocus:
 
     def test_skip_flag_short_circuits(self):
         with patch("smart_telescope.workflow.stages.run_autofocus") as mock_af:
-            ctx = make_stage_ctx(skip_autofocus=True)
+            ctx = make_stage_ctx(focus_config=FocusRunConfig(skip=True))
             stage_autofocus(ctx, make_log())
         mock_af.assert_not_called()
 
@@ -430,7 +430,7 @@ class TestStageAutofocus:
 
     def test_params_forwarded_from_ctx(self):
         with patch("smart_telescope.workflow.stages.run_autofocus", return_value=_af_result()) as mock_af:
-            ctx = make_stage_ctx(autofocus_range_steps=400, autofocus_step_size=40, autofocus_exposure_s=5.0)
+            ctx = make_stage_ctx(focus_config=FocusRunConfig(range_steps=400, step_size=40, exposure_s=5.0))
             stage_autofocus(ctx, make_log())
         _, _, params = mock_af.call_args.args
         assert params.range_steps == 400

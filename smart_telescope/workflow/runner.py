@@ -24,6 +24,7 @@ from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
 from .. import config as _cfg
+from ..domain.autofocus import FocusRunConfig
 from ..domain.frame_quality import FrameQualityConfig, FrameQualityFilter
 from ..domain.refocus import RefocusConfig, RefocusTracker
 from ._types import (
@@ -94,11 +95,7 @@ class VerticalSliceRunner:
         stack_depth: int = 10,
         preview_exposure_s: float = 5.0,
         preview_frames: int = 3,
-        autofocus_range_steps: int = 200,
-        autofocus_step_size: int = 20,
-        autofocus_exposure_s: float = 3.0,
-        autofocus_backlash_steps: int = 0,
-        skip_autofocus: bool = False,
+        focus_config: FocusRunConfig | None = None,
         enable_refocus_triggers: bool = True,
         refocus_temp_delta_c: float = 1.0,
         refocus_alt_delta_deg: float = 5.0,
@@ -124,11 +121,7 @@ class VerticalSliceRunner:
         self._stack_depth = stack_depth
         self._preview_exposure_s = preview_exposure_s
         self._preview_frames = preview_frames
-        self._autofocus_range_steps = autofocus_range_steps
-        self._autofocus_step_size = autofocus_step_size
-        self._autofocus_exposure_s = autofocus_exposure_s
-        self._autofocus_backlash_steps = autofocus_backlash_steps
-        self._skip_autofocus = skip_autofocus
+        self._focus_config = focus_config if focus_config is not None else FocusRunConfig()
         self._enable_refocus_triggers = enable_refocus_triggers
         self._refocus_config = RefocusConfig(
             temp_delta_c=refocus_temp_delta_c,
@@ -178,14 +171,10 @@ class VerticalSliceRunner:
             stack_depth=self._stack_depth,
             preview_exposure_s=self._preview_exposure_s,
             preview_frames=self._preview_frames,
-            autofocus_range_steps=self._autofocus_range_steps,
-            autofocus_step_size=self._autofocus_step_size,
-            autofocus_exposure_s=self._autofocus_exposure_s,
-            autofocus_backlash_steps=self._autofocus_backlash_steps,
-            skip_autofocus=self._skip_autofocus,
+            focus_config=self._focus_config,
             refocus_tracker=(
                 RefocusTracker(self._refocus_config)
-                if self._enable_refocus_triggers and not self._skip_autofocus
+                if self._enable_refocus_triggers and not self._focus_config.skip
                 else None
             ),
             frame_quality_filter=(

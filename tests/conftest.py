@@ -14,6 +14,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
+from smart_telescope.domain.autofocus import FocusRunConfig
 from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.domain.session import SessionLog
 from smart_telescope.domain.states import SessionState
@@ -165,6 +166,7 @@ def make_unit_runner(
     storage: Mock | None = None,
     focuser: Mock | None = None,
     optical_profile=C8_NATIVE,
+    focus_config: FocusRunConfig | None = None,
 ) -> VerticalSliceRunner:
     cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
     return VerticalSliceRunner(
@@ -175,6 +177,7 @@ def make_unit_runner(
         storage=sto,
         focuser=foc,
         optical_profile=optical_profile,
+        focus_config=focus_config,
     )
 
 
@@ -194,11 +197,7 @@ def make_stage_ctx(
     stack_depth: int = 10,
     preview_exposure_s: float = 5.0,
     preview_frames: int = 3,
-    autofocus_range_steps: int = 200,
-    autofocus_step_size: int = 20,
-    autofocus_exposure_s: float = 3.0,
-    autofocus_backlash_steps: int = 0,
-    skip_autofocus: bool = False,
+    focus_config: FocusRunConfig | None = None,
     frame_quality_filter=None,
 ) -> StageContext:
     cam, mnt, slv, stk, sto, foc = _default_mocks(camera, mount, solver, stacker, storage, focuser)
@@ -222,10 +221,6 @@ def make_stage_ctx(
         stack_depth=stack_depth,
         preview_exposure_s=preview_exposure_s,
         preview_frames=preview_frames,
-        autofocus_range_steps=autofocus_range_steps,
-        autofocus_step_size=autofocus_step_size,
-        autofocus_exposure_s=autofocus_exposure_s,
-        autofocus_backlash_steps=autofocus_backlash_steps,
-        skip_autofocus=skip_autofocus,
+        focus_config=focus_config if focus_config is not None else FocusRunConfig(),
         frame_quality_filter=frame_quality_filter,
     )

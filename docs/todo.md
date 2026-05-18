@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (R7-005+M0-008 milestone dashboard; M6-009 storage-full simulation; COL-022 hardware self-test; M5-013 dawn auto-park)
+**Last updated:** 2026-05-19 (M6-001–006 performance targets; R7-005+M0-008 milestone dashboard; M6-009 storage-full simulation)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -553,12 +553,18 @@
 
 ### Milestone M6 tasks
 
-- [ ] M6-001 Define unattended session duration target `[P2 · Process]`
-- [ ] M6-002 Define preview latency target `[P2 · Process]`
-- [ ] M6-003 Define stop-response time target `[P1 · Process]`
-- [ ] M6-004 Define centering accuracy target `[P2 · Process]`
-- [ ] M6-005 Define plate solve success rate target `[P2 · Process]`
-- [ ] M6-006 Define Pi thermal ceiling target `[P2 · Process]`
+- [x] M6-001 Define unattended session duration target `[P2 · Process]`
+  - *Done:* 6 hours; in `domain/performance_targets.py` + `GET /api/performance-targets`
+- [x] M6-002 Define preview latency target `[P2 · Process]`
+  - *Done:* ≤ 2 s per frame; in `domain/performance_targets.py`
+- [x] M6-003 Define stop-response time target `[P1 · Process]`
+  - *Done:* ≤ 500 ms (aligns with POD-002 cancel-latency decision); in `domain/performance_targets.py`
+- [x] M6-004 Define centering accuracy target `[P2 · Process]`
+  - *Done:* ≤ 30 arcsec RMS after one plate-solve/recenter cycle; in `domain/performance_targets.py`
+- [x] M6-005 Define plate solve success rate target `[P2 · Process]`
+  - *Done:* ≥ 90% first-attempt under clear dark-sky conditions with full ASTAP catalog; in `domain/performance_targets.py`
+- [x] M6-006 Define Pi thermal ceiling target `[P2 · Process]`
+  - *Done:* ≤ 75°C sustained (5°C headroom below Pi 5 throttle point of 80°C); in `domain/performance_targets.py`
 - [ ] M6-007 Run long session reliability test `[P1 · Hardware]`
 - [ ] M6-008 Run Pi thermal test `[P2 · Hardware]`
 - [x] M6-009 Run storage-full simulation `[P2 · Tests]`

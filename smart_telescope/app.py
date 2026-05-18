@@ -22,6 +22,7 @@ async def _lifespan(app: FastAPI):
 
 from .api.dawn import router as dawn_router
 from .api.milestones import router as milestones_router
+from .api.performance_targets import router as performance_targets_router
 from .api.readiness import router as readiness_router
 from .api.autogain import router as autogain_router
 from .api.collimation import router as collimation_router
@@ -57,6 +58,7 @@ async def serial_exception_handler(request: Request, exc: SerialException) -> JS
     return JSONResponse(status_code=503, content={"detail": "Mount serial connection lost — reconnect the USB cable and restart"})
 app.include_router(dawn_router)
 app.include_router(milestones_router)
+app.include_router(performance_targets_router)
 app.include_router(readiness_router)
 app.include_router(autogain_router)
 app.include_router(collimation_router)

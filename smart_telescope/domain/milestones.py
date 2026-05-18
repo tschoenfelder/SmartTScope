@@ -50,7 +50,7 @@ class RiskItem:
 MILESTONE_REGISTRY: list[MilestoneSummary] = [
     MilestoneSummary(
         id="M0", name="Project Control Restored",
-        total=8, done=7, hardware_blocked=0,
+        total=8, done=8, hardware_blocked=0,
         p0_open=0, p1_open=0,
     ),
     MilestoneSummary(
@@ -80,8 +80,12 @@ MILESTONE_REGISTRY: list[MilestoneSummary] = [
     ),
     MilestoneSummary(
         id="M6", name="Field Reliability and Release Readiness",
-        total=16, done=5, hardware_blocked=5,
-        p0_open=1, p1_open=2,
+        # R7: 001-006 (6) + M6: 001-012 (12) = 18 total
+        # Done: R7-001/002/003/005 + M6-001..006 + M6-009 = 11
+        # Open: R7-004(P0 Hw), R7-006(P2), M6-007(P1 Hw), M6-008(P2 Hw),
+        #        M6-010(P1 Hw), M6-011(P1 Hw), M6-012(P1) = 7
+        total=18, done=11, hardware_blocked=5,
+        p0_open=1, p1_open=4,
     ),
     MilestoneSummary(
         id="COL", name="Collimation Assistant",

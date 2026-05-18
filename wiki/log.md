@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — M6-001–006 — Performance targets defined
+
+**What changed:**
+- `smart_telescope/domain/performance_targets.py` (new): `PerformanceTarget` + `PerformanceTargets` frozen dataclasses; `TARGETS` singleton with all 6 targets — session duration (6 h), preview latency (≤ 2 s), STOP response (≤ 500 ms), centering accuracy (≤ 30 arcsec), plate-solve success rate (≥ 90%), Pi thermal ceiling (≤ 75°C).
+- `smart_telescope/api/performance_targets.py` (new): `GET /api/performance-targets` returns each target as `{value, unit, rationale}`.
+- `smart_telescope/app.py`: registered performance_targets router.
+- `tests/unit/domain/test_performance_targets.py` (new): 12 tests — field presence, positive values, unit/rationale strings, safety sanity checks (STOP ≤ 1000 ms, Pi < 80°C).
+- `tests/unit/api/test_performance_targets.py` (new): 7 tests — HTTP contract, all keys present, positive numbers, unit strings.
+
+**Tests:** 19 pass
+
+---
+
 ## 2026-05-19 — R7-005 + M0-008 — Milestone dashboard and risk view
 
 **What changed:**

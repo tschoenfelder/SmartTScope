@@ -1183,6 +1183,7 @@
             <div class="preview-overlay" id="s3-preview-overlay"></div>
           </div>
 
+          <!-- Row 1: camera settings + display toggles + solve/focus actions -->
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
             <label>Cam</label>
             <select id="preview-cam-select" style="font-size:0.8rem;max-width:16ch"
@@ -1214,22 +1215,26 @@
             <button id="preview-af-btn" onclick="runPreviewAutofocus()" disabled
                     style="padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Focuser not connected">AF</button>
-            <span style="margin-left:0.6rem;font-size:0.78rem;color:var(--muted);
-                         border-left:1px solid var(--muted);padding-left:0.6rem">AG:</span>
-            <label style="margin-left:0.3rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer"
-                   title="Live: server adjusts exposure (≤4 s) and gain after every frame while streaming — display only, does not change capture settings">
+            <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem"></span>
+            <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.4rem"></span>
+          </div>
+          <!-- Row 2: auto-gain controls — two distinct modes clearly separated -->
+          <div style="display:flex;align-items:center;gap:0.35rem;margin-top:0.35rem;flex-wrap:wrap">
+            <span style="font-size:0.78rem;font-weight:600;color:var(--muted);
+                         min-width:5.5rem">Auto-gain:</span>
+            <label style="display:flex;align-items:center;gap:0.25rem;cursor:pointer;font-size:0.82rem"
+                   title="Adjust live: server tweaks exposure (≤4 s) and gain after every preview frame — display only, does not change the capture settings below">
               <input type="checkbox" id="preview-autogain-chk" style="width:auto"
-                     onchange="previewSendParams()">Live
+                     onchange="previewSendParams()">Adjust live
             </label>
+            <span style="color:var(--border);font-size:0.9rem;padding:0 0.1rem">│</span>
             <button id="autogain-run-btn" onclick="autoGainRun()"
-                    style="margin-left:0.3rem;padding:0.15rem 0.5rem;font-size:0.78rem"
-                    title="One-shot: run several test exposures and suggest optimal exposure and gain settings">Find Best</button>
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="Find Best: run several test exposures and suggest optimal exposure + gain settings">Find Best</button>
             <button id="autogain-cancel-btn" onclick="autoGainCancel()"
                     style="padding:0.15rem 0.5rem;font-size:0.78rem;display:none"
                     class="secondary">Cancel</button>
-            <span id="autogain-status-badge" style="font-size:0.78rem;margin-left:0.3rem"></span>
-            <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.25rem"></span>
-            <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.5rem"></span>
+            <span id="autogain-status-badge" style="font-size:0.78rem"></span>
           </div>
           <div id="s3-hist-panel" style="display:none;margin-top:0.5rem">
             <canvas id="s3-histogram" class="hist-canvas" width="400" height="100"></canvas>

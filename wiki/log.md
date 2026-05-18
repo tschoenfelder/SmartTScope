@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — BUG-002 — Autogain layout clarification
+
+**What changed:**
+- `smart_telescope/static/index.html`: Split the Stage 3 Live Preview controls from one dense row into two rows. Row 1 retains camera settings (Cam/Exp/Gain/Off), display toggles (Str/Hist), Solve, AF, frame count, and camera adapter label. Row 2 is a dedicated "Auto-gain:" row with "Adjust live" checkbox (tooltip clarified), a vertical separator, "Find Best" button, Cancel, and status badge. All element IDs unchanged — no JS edits required.
+
+**Tests:** 43 smoke tests pass
+
+---
+
 ## 2026-05-19 — R7-006 — Done-without-evidence report
 
 **What changed:**

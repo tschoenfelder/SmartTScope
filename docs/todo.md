@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (R7-006 evidence-gap report; M6-001–006 performance targets; R7-005+M0-008 milestone dashboard)
+**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -338,7 +338,8 @@
   - *Done:* `mount_home` now returns `"Home slew failed — check mount is tracking and powered (<detail>)"`
   - *Acceptance:* error states cause, current safety state, and recommended next action
 - [x] BUG-015 HOME, PARK, UNPARK, STOP buttons should be grouped together `[P3 · UI · Source: Items_to_fix_20260514]`
-- [ ] BUG-002 AG checkbox vs Autogain button layout confusing; AF button below histogram, autogain at bottom `[P3 · UI · Source: Items_to_fix_20260513]`
+- [x] BUG-002 AG checkbox vs Autogain button layout confusing; AF button below histogram, autogain at bottom `[P3 · UI · Source: Items_to_fix_20260513]`
+  - *Done:* Split the single dense controls row into two rows: Row 1 = camera settings + display toggles (Str/Hist) + Solve + AF + status spans; Row 2 = "Auto-gain:" label + "Adjust live" checkbox (with clarified tooltip) + `│` separator + "Find Best" button + Cancel + status badge. No JS changes — all element IDs preserved.
 - [x] BUG-004 Histogram should show detail below ADU 1000 and current block size above `[P3 · UI · Source: Items_to_fix_20260513]`
   - *Done:* `showHistogram()` now draws `0–Xk ADU · N ADU/bin` as a text overlay inside the canvas top-right; `s3-hist-low-label` given an id and updated dynamically by `_updateLowLabel()` on each draw (was hardcoded "5 ADU/bin", now shows real bin size)
 - [x] BUG-021 Histogram not filled at small values `[P3 · UI · Source: Items_to_fix_20260514]`

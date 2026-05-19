@@ -13,7 +13,7 @@ from .. import config
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..ports.solver import SolverPort
-from .deps import get_preview_camera, get_solver
+from .deps import get_preview_camera, get_solver, resolve_camera_index
 
 router = APIRouter(prefix="/api/solver")
 
@@ -28,6 +28,7 @@ class SolveRequest(BaseModel):
     exposure:     float = Field(default=5.0, gt=0.0, le=60.0)
     gain:         int   = Field(default=100, ge=100, le=3200)
     camera_index: int   = Field(default=0, ge=0, le=7)
+    camera_role:  str | None = Field(default=None)
     pixel_scale:  float | None = Field(default=None, gt=0.0)
 
 
@@ -57,7 +58,7 @@ async def solver_solve(
     solver: SolverPort = Depends(get_solver),
 ) -> SolveResponse:
     """Capture one frame and plate-solve it, returning RA/Dec/PA."""
-    camera = get_preview_camera(body.camera_index)
+    camera = get_preview_camera(resolve_camera_index(body.camera_index, body.camera_role))
     if hasattr(camera, "set_gain"):
         camera.set_gain(body.gain)  # type: ignore[union-attr]
     scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC

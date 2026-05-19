@@ -108,6 +108,7 @@ def _progress_fn(job: _JobState):
 
 class BiasRequest(BaseModel):
     camera_index: int = Field(default=0, ge=0, le=7)
+    camera_role:  str | None = Field(default=None)
     n_frames: int = Field(default=32, ge=1, le=200)
     gain: int | None = Field(default=None, ge=0, le=5000)
     offset: int | None = Field(default=None, ge=0, le=255)
@@ -116,6 +117,7 @@ class BiasRequest(BaseModel):
 
 class DarkRequest(BaseModel):
     camera_index: int = Field(default=0, ge=0, le=7)
+    camera_role:  str | None = Field(default=None)
     exposure_ms: float = Field(ge=1.0, le=3_600_000.0, description="Dark exposure in milliseconds")
     n_frames: int = Field(default=20, ge=1, le=200)
     gain: int | None = Field(default=None, ge=0, le=5000)
@@ -125,6 +127,7 @@ class DarkRequest(BaseModel):
 
 class FlatRequest(BaseModel):
     camera_index: int = Field(default=0, ge=0, le=7)
+    camera_role:  str | None = Field(default=None)
     optical_train: str = Field(min_length=1, max_length=64, description="Optical train profile ID")
     filter_id: str = Field(default="none", max_length=32, description="Filter identifier or 'none'")
     n_frames: int = Field(default=15, ge=1, le=200)
@@ -161,7 +164,7 @@ def start_bias(req: BiasRequest) -> JobStartedResponse:
     Poll GET /api/calibration/status/{job_id} for progress.
     """
     image_root = _get_image_root()
-    camera = _get_camera(req.camera_index)
+    camera = _get_camera(deps.resolve_camera_index(req.camera_index, req.camera_role))
     cg = _resolve_cg(req.conversion_gain)
     job = _register_job(req.n_frames)
     cal_index = CalibrationIndex.load(image_root)
@@ -204,7 +207,7 @@ def start_dark(req: DarkRequest) -> JobStartedResponse:
     (FR-TEMP-007) but does not mean the master is unusable.
     """
     image_root = _get_image_root()
-    camera = _get_camera(req.camera_index)
+    camera = _get_camera(deps.resolve_camera_index(req.camera_index, req.camera_role))
     cg = _resolve_cg(req.conversion_gain)
     job = _register_job(req.n_frames)
     cal_index = CalibrationIndex.load(image_root)
@@ -250,7 +253,7 @@ def start_flat(req: FlatRequest) -> JobStartedResponse:
     (35–40 % or 60–70 %) — the master is still usable.
     """
     image_root = _get_image_root()
-    camera = _get_camera(req.camera_index)
+    camera = _get_camera(deps.resolve_camera_index(req.camera_index, req.camera_role))
     cg = _resolve_cg(req.conversion_gain)
     job = _register_job(req.n_frames)
     cal_index = CalibrationIndex.load(image_root)
@@ -317,6 +320,7 @@ def get_job_status(job_id: str) -> JobStatusResponse:
 
 class BpmRequest(BaseModel):
     camera_index: int  = Field(default=0, ge=0, le=7)
+    camera_role:  str | None = Field(default=None)
     n_frames: int      = Field(default=20, ge=5, le=200)
     gain: int | None   = Field(default=None, ge=0, le=5000)
     offset: int | None = Field(default=None, ge=0, le=255)
@@ -339,7 +343,7 @@ def start_bpm(req: BpmRequest) -> JobStartedResponse:
     Poll GET /api/calibration/status/{job_id} for progress and final stats.
     """
     image_root = _get_image_root()
-    camera = _get_camera(req.camera_index)
+    camera = _get_camera(deps.resolve_camera_index(req.camera_index, req.camera_role))
     cg = _resolve_cg(req.conversion_gain)
     job = _register_job(req.n_frames)
     cal_index = CalibrationIndex.load(image_root)
@@ -412,6 +416,7 @@ def _match_result(index: CalibrationIndex, cal_type: str, criteria: dict[str, An
 @router.get("/match", response_model=CalibrationMatchResponse)
 def get_calibration_match(
     camera_index: int   = Query(default=0, ge=0, le=7),
+    camera_role: str | None = Query(default=None),
     gain: int           = Query(ge=0, le=5000),
     offset: int         = Query(default=0, ge=0, le=255),
     conversion_gain: str = Query(default="LCG"),
@@ -429,7 +434,7 @@ def get_calibration_match(
     - ``NOT_FOUND`` — no master exists for this camera/type combination.
     """
     image_root = _get_image_root()
-    camera = _get_camera(camera_index)
+    camera = _get_camera(deps.resolve_camera_index(camera_index, camera_role))
 
     try:
         camera_model  = camera.get_logical_name()

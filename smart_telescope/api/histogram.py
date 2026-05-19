@@ -42,6 +42,7 @@ class HistogramResponse(BaseModel):
 @router.post("/analyze", response_model=HistogramResponse)
 async def analyze_histogram(
     camera_index: int = Query(default=0, ge=0, le=7),
+    camera_role: str | None = Query(default=None),
     exposure: float = Query(default=2.0, gt=0.0, le=60.0),
     gain: int = Query(default=100, ge=0),
     bit_depth: int = Query(default=12, ge=8, le=16),
@@ -49,7 +50,7 @@ async def analyze_histogram(
 ) -> HistogramResponse:
     """Capture one frame and return its histogram statistics and bin data."""
     try:
-        camera = deps.get_preview_camera(camera_index)
+        camera = deps.get_preview_camera(deps.resolve_camera_index(camera_index, camera_role))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

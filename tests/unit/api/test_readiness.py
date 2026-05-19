@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 import smart_telescope.config as _config_mod
 from smart_telescope.app import app
 from smart_telescope.config import ConfigError, _expand, check_load_error
-from smart_telescope.services.readiness import Level, ReadinessService
+from smart_telescope.services.readiness import Level, ReadinessItem, ReadinessService
 
 client = TestClient(app)
 
@@ -47,6 +47,11 @@ class TestReadinessEndpoint:
         d = client.get("/api/readiness").json()
         assert "overall" in d
         assert "can_observe" in d
+        assert "can_preview" in d
+        assert "can_goto" in d
+        assert "can_solve" in d
+        assert "can_autofocus" in d
+        assert "can_save" in d
         assert "mode" in d
         assert "items" in d
         assert "checked_at" in d
@@ -126,14 +131,6 @@ class TestStorageCheck:
 
 class TestAstapCheck:
     def test_red_when_astap_not_found(self) -> None:
-        with patch("smart_telescope.services.readiness.ReadinessService._check_astap") as m:
-            from smart_telescope.services.readiness import ReadinessItem
-            m.return_value = [
-                ReadinessItem(key="astap_exe", label="ASTAP", level=Level.RED, message="not found"),
-                ReadinessItem(key="astap_catalog", label="Catalog", level=Level.RED, message="cannot check"),
-            ]
-            items = ReadinessService()._check_astap()
-            # just ensure the method returns a list of 2 items in real code
         with patch("smart_telescope.adapters.astap.solver.find_astap", return_value=None):
             items = ReadinessService()._check_astap()
         assert len(items) == 2
@@ -346,3 +343,82 @@ class TestHardwareMode:
         rt._hardware_mode = "real"
         rt.reset_for_tests()
         assert rt.hardware_mode == "mock"
+
+
+class TestCapabilityFlags:
+    def _item(self, key: str, level: Level) -> ReadinessItem:
+        return ReadinessItem(key=key, label=key, level=level, message="")
+
+    def test_all_flags_true_when_no_red_items(self) -> None:
+        items = [
+            self._item("camera", Level.GREEN),
+            self._item("mount", Level.GREEN),
+            self._item("astap_exe", Level.GREEN),
+            self._item("astap_catalog", Level.GREEN),
+            self._item("focuser", Level.GREEN),
+            self._item("storage", Level.GREEN),
+        ]
+        flags = ReadinessService._capability_flags(items)
+        assert flags["can_preview"] is True
+        assert flags["can_goto"] is True
+        assert flags["can_solve"] is True
+        assert flags["can_autofocus"] is True
+        assert flags["can_save"] is True
+
+    def test_camera_red_blocks_preview_not_goto(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("camera", Level.RED)])
+        assert flags["can_preview"] is False
+        assert flags["can_goto"] is True
+
+    def test_mount_red_blocks_goto_not_preview(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("mount", Level.RED)])
+        assert flags["can_goto"] is False
+        assert flags["can_preview"] is True
+
+    def test_astap_exe_red_blocks_solve(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("astap_exe", Level.RED)])
+        assert flags["can_solve"] is False
+
+    def test_astap_catalog_red_blocks_solve(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("astap_catalog", Level.RED)])
+        assert flags["can_solve"] is False
+
+    def test_focuser_yellow_does_not_block_autofocus(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("focuser", Level.YELLOW)])
+        assert flags["can_autofocus"] is True
+
+    def test_focuser_red_blocks_autofocus(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("focuser", Level.RED)])
+        assert flags["can_autofocus"] is False
+
+    def test_storage_red_blocks_save(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("storage", Level.RED)])
+        assert flags["can_save"] is False
+
+    def test_storage_yellow_does_not_block_save(self) -> None:
+        flags = ReadinessService._capability_flags([self._item("storage", Level.YELLOW)])
+        assert flags["can_save"] is True
+
+    def test_astap_missing_blocks_solve_only(self) -> None:
+        items = [
+            self._item("astap_exe", Level.RED),
+            self._item("astap_catalog", Level.RED),
+            self._item("camera", Level.GREEN),
+            self._item("mount", Level.GREEN),
+        ]
+        flags = ReadinessService._capability_flags(items)
+        assert flags["can_solve"] is False
+        assert flags["can_preview"] is True
+        assert flags["can_goto"] is True
+
+    def test_mount_fail_allows_camera_preview(self) -> None:
+        items = [self._item("mount", Level.RED), self._item("camera", Level.GREEN)]
+        flags = ReadinessService._capability_flags(items)
+        assert flags["can_goto"] is False
+        assert flags["can_preview"] is True
+
+    def test_camera_fail_allows_mount_controls(self) -> None:
+        items = [self._item("camera", Level.RED), self._item("mount", Level.GREEN)]
+        flags = ReadinessService._capability_flags(items)
+        assert flags["can_preview"] is False
+        assert flags["can_goto"] is True

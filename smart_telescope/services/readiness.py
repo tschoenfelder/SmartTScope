@@ -12,7 +12,7 @@ Checks (in display order):
   focuser       — focuser available (YELLOW if unavailable)
 
 The overall level is the worst of all items.
-can_observe is True when overall is not RED.
+can_observe is True when overall is not RED and hardware mode is 'real'.
 """
 
 from __future__ import annotations
@@ -41,14 +41,34 @@ class ReadinessItem(BaseModel):
 
 
 class ReadinessReport(BaseModel):
-    overall:     Level
-    can_observe: bool
-    mode:        str
-    items:       list[ReadinessItem]
-    checked_at:  str
+    overall:       Level
+    can_observe:   bool
+    can_preview:   bool
+    can_goto:      bool
+    can_solve:     bool
+    can_autofocus: bool
+    can_save:      bool
+    mode:          str
+    items:         list[ReadinessItem]
+    checked_at:    str
 
 
 class ReadinessService:
+    @staticmethod
+    def _capability_flags(items: list[ReadinessItem]) -> dict[str, bool]:
+        """Derive per-feature capability flags from readiness items.
+
+        Only RED items block a capability; YELLOW = degraded but functional.
+        """
+        red = {i.key for i in items if i.level == Level.RED}
+        return {
+            "can_preview":   "camera"       not in red,
+            "can_goto":      "mount"        not in red,
+            "can_solve":     "astap_exe"    not in red and "astap_catalog" not in red,
+            "can_autofocus": "focuser"      not in red,
+            "can_save":      "storage"      not in red,
+        }
+
     def check(self) -> ReadinessReport:
         mode = self._get_hardware_mode()
         mode_item = self._check_mode(mode)
@@ -69,11 +89,17 @@ class ReadinessService:
         else:
             overall = Level.GREEN
 
-        can_observe = overall != Level.RED and mode == "real"
+        can_observe = overall != Level.RED and mode == "real"  # mode-gated: simulator/mock cannot observe
 
+        flags = self._capability_flags(items)
         return ReadinessReport(
             overall=overall,
             can_observe=can_observe,
+            can_preview=flags["can_preview"],
+            can_goto=flags["can_goto"],
+            can_solve=flags["can_solve"],
+            can_autofocus=flags["can_autofocus"],
+            can_save=flags["can_save"],
             mode=mode,
             items=items,
             checked_at=datetime.now(timezone.utc).isoformat(),

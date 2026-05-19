@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup)
+**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup; POD-004/009/010 camera role API)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -604,7 +604,8 @@
   - *Decision:* **< 1 s** — applies to mount slew abort and focuser stop. Used as acceptance bar for BUG-001 and the safety regression checklist.
 - [x] POD-003 What state may the UI show after command acceptance but before hardware confirmation?
   - *Decision:* **Show spinner / pending indicator** — after a Park/Unpark/Home/GoTo command is accepted, the label shows a loading state until `DeviceStateService` confirms the new hardware state. Adds a UX task: see UX-PENDING-001 below.
-- [ ] POD-004 Is SDK camera index acceptable anywhere outside diagnostics?
+- [x] POD-004 Is SDK camera index acceptable anywhere outside diagnostics?
+  - *Decision:* SDK camera index is NOT acceptable in the product UI (enforced by R4). SDK camera index IS accepted in API request bodies for backward compatibility — `camera_role` is preferred. In Stage 6 diagnostics, `sdk_index` from camera scan results is shown and used (by design).
 - [x] POD-005 Which failures may block the whole app, and which must degrade locally?
   - *Decision:* Per-feature isolation: camera RED → `can_preview=false`, mount RED → `can_goto=false`, ASTAP RED → `can_solve=false`, focuser RED → `can_autofocus=false`, storage RED → `can_save=false`. YELLOW items degrade, not block. `can_observe` requires all five plus `mode=real`.
   - *Done:* `ReadinessService._capability_flags()` + 5 new fields in `ReadinessReport`; 12 new tests in `TestCapabilityFlags`; blocked-capability chip row in readiness card.
@@ -614,9 +615,11 @@
   - *Decision:* Pi hardware/app logs + saved FITS/output image + session JSON log. Evidence folder: one directory with timestamped app log, session JSON, and saved output image from a real hardware session.
 - [x] POD-008 Which requirements are deferred beyond MVP?
   - *Decision:* Defer ISS tracking, multi-target queue, advanced calibration frames wizard, and deep collimation algorithm phases to post-MVP. Minimal collimation wizard UI shell (start/status/overlay) is part of the MVP demo.
-- [ ] POD-009 Concrete performance targets: preview latency, solve time, centering accuracy, Pi thermal ceiling?
-- [ ] POD-010 Should SDK camera indices be forbidden in API request bodies, or only hidden in the UI? `[P2 · Process]`
-  - *Context:* R4 removed indices from product UI; some API endpoints still accept index directly. Decision needed for API contract (affects R4-008 and any client tooling).
+- [x] POD-009 Concrete performance targets: preview latency, solve time, centering accuracy, Pi thermal ceiling?
+  - *Decision (M6-001..006):* 6-hour unattended session; ≤2 s preview latency; ≤500 ms STOP response; ≤30 arcsec centering accuracy; ≥90% plate-solve success rate; ≤75°C Pi thermal ceiling. All targets tracked in `domain/performance_targets.py` and `GET /api/performance-targets`.
+- [x] POD-010 Should SDK camera indices be forbidden in API request bodies, or only hidden in the UI? `[P2 · Process]`
+  - *Decision:* `camera_role` is the preferred parameter for all product-facing API endpoints. `camera_index` is accepted for backward compatibility. New product UI code must use `camera_role`; diagnostic code may use `camera_index` directly.
+  - *Done:* `deps.resolve_camera_index()` helper; `camera_role` added to solver/solve, calibration/bias|dark|flat|bpm|match, histogram/analyze; frontend setup.js/session.js/preview.js updated to send `camera_role` directly; 11 new tests in `TestResolveCameraIndex`, `TestSolverAcceptsCameraRole`, `TestHistogramAcceptsCameraRole`.
 
 ### UX-PENDING-001 — Command-pending indicator in mount/focuser UI `[P1 · UI]`
 

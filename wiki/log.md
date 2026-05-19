@@ -4,6 +4,23 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — POD-010 — Camera role resolution in API endpoints
+
+**What changed:**
+- `smart_telescope/api/deps.py`: Added `resolve_camera_index(camera_index, camera_role)` helper — returns `camera_index` when no role given; resolves role via `OpticalTrainRegistry` when provided; raises HTTP 422 for unknown roles.
+- `smart_telescope/api/solver.py`: `SolveRequest` accepts optional `camera_role`.
+- `smart_telescope/api/calibration.py`: `BiasRequest`, `DarkRequest`, `FlatRequest`, `BpmRequest` accept optional `camera_role`; `GET /api/calibration/match` accepts `camera_role` Query param.
+- `smart_telescope/api/histogram.py`: `POST /api/histogram/analyze` accepts `camera_role` Query param.
+- `smart_telescope/static/js/setup.js`: Calibration and histogram calls now send `camera_role` directly; `_calSharedParams()` returns `camRole` instead of `camIdx`.
+- `smart_telescope/static/js/session.js`: `solveFrame()` sends `camera_role` directly.
+- `smart_telescope/static/js/preview.js`: `_fetchAndDrawHistogram()` sends `camera_role` directly.
+- `tests/unit/api/test_camera_role_resolution.py`: 11 new tests.
+- `docs/todo.md`: POD-004, POD-009, POD-010 marked done.
+
+**Tests:** ≥2688 passed
+
+---
+
 ## 2026-05-19 — M5-001 — Guided startup
 
 **What changed:**

@@ -33,6 +33,7 @@ Table of contents for the SmartTelescope knowledge base.
 
 ## Release readiness
 
+- [release-notes-v0.1](../docs/release-notes-v0.1.md) — First MVP release notes: features, known issues, hardware-blocked items, deferred scope, install/upgrade path
 - [operational-acceptance-checklist](../docs/operational-acceptance-checklist.md) — 10-step field checklist: connect → setup check → solar gate → GoTo → autofocus → STOP → stack → shutdown
 - [hardware-test-log-template](../docs/hardware-test-log-template.md) — Append-only evidence log with six required items (E-001 to E-006) for R7-004 release gate
 - [release-checklist](../docs/release-checklist.md) — Go/no-go gate: backlog, hardware evidence, acceptance, tests, clean install, performance, sign-off

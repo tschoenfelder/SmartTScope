@@ -1,0 +1,1 @@
+"""Collimation assistant service."""

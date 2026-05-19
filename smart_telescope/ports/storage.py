@@ -11,7 +11,7 @@ class StoragePort(ABC):
         ...
 
     @abstractmethod
-    def save_log(self, session_log: dict, session_id: str) -> str:
+    def save_log(self, session_log: dict[str, object], session_id: str) -> str:
         """Persist the session log JSON. Returns the absolute path written.
         Note: the stored dict will not contain its own log path (inherent self-reference).
         """

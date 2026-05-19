@@ -4,7 +4,7 @@
 
 **Sources**: SmartTelescope.md
 
-**Last updated**: 2026-04-19
+**Last updated**: 2026-05-02
 
 ---
 
@@ -34,7 +34,7 @@ Despite the MVP+ tag, the source explicitly elevates autofocus to near-mandatory
 Common approaches for automated focus quality measurement:
 - **FWHM** (Full Width at Half Maximum) — measures star size in pixels
 - **HFR** (Half-Flux Radius) — similar, used by many open-source tools
-- **Bahtinov mask analysis** — diffraction pattern-based, high precision, usually manual-assisted
+- **Bahtinov mask analysis** — diffraction spike pattern; see [[bahtinov-analyzer]] for the full algorithm and two-layer `BahtinovAnalyzer` / `FocusController` design now specified for SmartTScope
 
 A motorized focuser is required to run a fully automated focus routine. Without one, only assisted (not automated) focus is possible.
 
@@ -48,6 +48,7 @@ Even after a good initial focus, these events should prompt a refocus:
 
 ## Related pages
 
+- [[bahtinov-analyzer]]
 - [[hardware-platform]]
 - [[requirements]]
 - [[plate-solving]]

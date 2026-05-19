@@ -48,12 +48,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "raw/SmartTelescope.md",
+                "file": "resources/Onstep/main@onstep.groups.io  Wiki.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "SmartTelescope"
+              "title": "main@onstep.groups.io  Wiki"
             }
           }
         ]
@@ -218,19 +218,24 @@
       "bases:Neue Base erstellen": false
     }
   },
-  "active": "d30059c3ab826236",
+  "active": "daaf8d1af23dce2a",
   "lastOpenFiles": [
+    "tests/unit/api/__pycache__/test_focuser.cpython-313-pytest-9.0.3.pyc",
+    "smart_telescope/api/__pycache__/mount.cpython-313.pyc",
+    "smart_telescope/api/__pycache__/deps.cpython-313.pyc",
+    "smart_telescope/api/__pycache__/focuser.cpython-313.pyc",
+    "tests/unit/api/__pycache__/test_mount.cpython-313-pytest-9.0.3.pyc",
+    "smart_telescope/adapters/onstep/__pycache__/focuser.cpython-313.pyc",
+    "tests/unit/adapters/onstep/__pycache__/test_onstep_focuser.cpython-313-pytest-9.0.3.pyc",
+    "tests/unit/api/test_focuser.py",
+    "tests/unit/api/test_mount.py",
+    "tests/unit/adapters/onstep/test_onstep_focuser.py",
+    "smart_telescope/api/focuser.py",
+    "wiki/onstep-protocol.md",
+    "raw/SmartTelescope.md",
+    "resources/Onstep/main@onstep.groups.io  Wiki.md",
+    "wiki/requirements.md",
     "README.md",
-    "README.md.tmp.50108.1776635457328",
-    "smart_telescope/adapters/astap/solver.py.tmp.50108.1776634234884",
-    "smart_telescope/adapters/replay/__pycache__/__init__.cpython-310.pyc",
-    "smart_telescope/adapters/replay/__pycache__/camera.cpython-310.pyc",
-    "smart_telescope/adapters/replay/__pycache__",
-    "smart_telescope/adapters/astap/__pycache__/solver.cpython-310.pyc",
-    "smart_telescope/adapters/astap/__pycache__/__init__.cpython-310.pyc",
-    "smart_telescope/adapters/astap/__pycache__",
-    "tests/integration/__pycache__/test_real_solver_replay.cpython-310-pytest-9.0.3.pyc",
-    "tests/integration/test_real_solver_replay.py",
     "tests/fixtures/README.md",
     "wiki/vertical-slice-mvp.md",
     "wiki/requirements-review.md",
@@ -240,13 +245,10 @@
     "wiki/vaonis-vespera.md",
     "wiki/log.md",
     "wiki/index.md",
-    "wiki/requirements.md",
     "wiki/live-stacking.md",
     "wiki/plate-solving.md",
     "wiki/seestar-s50.md",
     "wiki/smart-telescope.md",
-    "raw/SmartTelescope.md",
-    "raw/SmartTelescope.md",
     "Willkommen.md"
   ]
 }

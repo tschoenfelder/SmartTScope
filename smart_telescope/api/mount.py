@@ -1,0 +1,476 @@
+"""Mount control API — GET status, POST unpark/track/stop/goto/park/goto_sky."""
+
+from __future__ import annotations
+
+import contextlib
+import dataclasses
+import logging
+import math
+import time
+
+from astropy.coordinates import EarthLocation
+from astropy.time import Time
+import astropy.units as u
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from .. import config
+from ..domain.solar import is_solar_target
+from ..ports.mount import MountPort, MountState
+from ..ports.solver import SolverPort
+from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
+from ..services.device_state import DeviceStateService
+from ..services import mount_operations as mount_ops
+from ..workflow.goto_center import goto_and_center
+from . import deps
+
+_log = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/mount")
+
+
+@router.get("/config")
+def mount_config_view() -> dict:
+    """Return observer location and mount limit settings."""
+    return {
+        "observer_lat": config.OBSERVER_LAT,
+        "observer_lon": config.OBSERVER_LON,
+        "mount_min_alt_deg": config.MOUNT_MIN_ALT_DEG,
+        "mount_max_alt_deg": config.MOUNT_MAX_ALT_DEG,
+        "mount_ha_east_limit_h": config.MOUNT_HA_EAST_LIMIT_H,
+        "mount_ha_west_limit_h": config.MOUNT_HA_WEST_LIMIT_H,
+    }
+
+
+def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
+    """Raise HTTPException(400) if the target violates mount position limits."""
+    ha, alt_deg = _compute_ha_alt(ra_hours, dec_deg)
+
+    if ha < config.MOUNT_HA_EAST_LIMIT_H:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "hour_angle_east",
+            "ha_hours": round(ha, 3), "limit_hours": config.MOUNT_HA_EAST_LIMIT_H,
+        })
+    if ha > config.MOUNT_HA_WEST_LIMIT_H:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "counterweight_up",
+            "ha_hours": round(ha, 3), "limit_hours": config.MOUNT_HA_WEST_LIMIT_H,
+        })
+    if alt_deg < config.MOUNT_MIN_ALT_DEG:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "below_horizon",
+            "altitude_deg": round(alt_deg, 2), "limit_deg": config.MOUNT_MIN_ALT_DEG,
+        })
+    if alt_deg > config.MOUNT_MAX_ALT_DEG:
+        raise HTTPException(status_code=400, detail={
+            "error": "mount_limit", "reason": "zenith_exclusion",
+            "altitude_deg": round(alt_deg, 2), "limit_deg": config.MOUNT_MAX_ALT_DEG,
+        })
+
+
+class MountStatus(BaseModel):
+    state: str
+    ra: float | None
+    dec: float | None
+    ha: float | None        # hour angle in hours, normalised [-12, +12]
+    alt: float | None       # altitude in degrees
+    park_ra: float | None = None   # stored park position (hours)
+    park_dec: float | None = None  # stored park position (degrees)
+    home_ra: float | None = None   # home RA = LST (HA=0, Dec 89°)
+    home_dec: float | None = None  # always 89.0°
+    stale: bool = False            # True if the cached state may be outdated
+    # R2-003: last command tracking
+    last_command: str | None = None
+    last_command_age_s: float | None = None
+    last_command_error: str | None = None
+    # M1-004: hardware watchdog
+    watchdog_warning: str | None = None
+
+
+def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
+    """Return (ha_hours, alt_deg) for the given RA/Dec at the configured site."""
+    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
+    ha = lst_hours - ra_hours
+    ha = ((ha + 12.0) % 24.0) - 12.0
+    lat_r = math.radians(config.OBSERVER_LAT)
+    dec_r = math.radians(dec_deg)
+    ha_r  = math.radians(ha * 15.0)
+    sin_alt = (math.sin(lat_r) * math.sin(dec_r)
+               + math.cos(lat_r) * math.cos(dec_r) * math.cos(ha_r))
+    alt_deg = math.degrees(math.asin(max(-1.0, min(1.0, sin_alt))))
+    return round(ha, 4), round(alt_deg, 2)
+
+
+def _safe_goto(
+    mount: MountPort,
+    coordinator: HardwareCommandCoordinator,
+    ra: float,
+    dec: float,
+) -> None:
+    """Issue a goto via the service layer; map domain exceptions to HTTP."""
+    try:
+        mount_ops.safe_goto(mount, coordinator, ra, dec)
+    except mount_ops.MountSlewingError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CommandConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+class GotoRequest(BaseModel):
+    ra: float
+    dec: float
+
+
+def _get_lst() -> float | None:
+    with contextlib.suppress(Exception):
+        loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+        return round(Time.now().sidereal_time("apparent", longitude=loc.lon).hour, 4)
+    return None
+
+
+@router.get("/status", response_model=MountStatus)
+def mount_status(
+    mount: MountPort = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> MountStatus:
+    # Prefer background-poll cache to avoid hammering the serial bus on every UI poll.
+    # Fall back to a direct query only if the poller has not run yet.
+    observed = device_state.get_mount_state()
+    if observed is not None:
+        state = observed.state
+        ra    = observed.ra
+        dec   = observed.dec
+        stale = observed.is_stale()
+    else:
+        state = mount.get_state()
+        ra    = None
+        dec   = None
+        stale = False
+        if state != MountState.UNKNOWN:
+            with contextlib.suppress(Exception):
+                pos = mount.get_position()
+                if pos:
+                    ra  = pos.ra
+                    dec = pos.dec
+
+    ha: float | None  = None
+    alt: float | None = None
+    if ra is not None and dec is not None:
+        with contextlib.suppress(Exception):
+            ha, alt = _compute_ha_alt(ra, dec)
+
+    park_pos = None
+    with contextlib.suppress(Exception):
+        park_pos = mount.get_park_position()
+
+    lst = _get_lst()
+
+    cmd, cmd_at, cmd_err = device_state.get_last_command()
+    cmd_age = round(time.monotonic() - cmd_at, 1) if cmd_at is not None else None
+
+    return MountStatus(
+        state=state.name.lower(),
+        ra=ra,
+        dec=dec,
+        ha=ha,
+        alt=alt,
+        park_ra=park_pos.ra if park_pos else None,
+        park_dec=park_pos.dec if park_pos else None,
+        home_ra=lst,
+        home_dec=89.0 if lst is not None else None,
+        stale=stale,
+        last_command=cmd,
+        last_command_age_s=cmd_age,
+        last_command_error=cmd_err,
+        watchdog_warning=device_state.get_watchdog_warning(),
+    )
+
+
+@router.post("/unpark")
+def mount_unpark(
+    mount:        MountPort          = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("unpark")
+    try:
+        mount_ops.unpark_sequence(mount, device_state)
+    except RuntimeError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=500, detail="Unpark failed") from exc
+    return {"ok": True}
+
+
+@router.post("/track")
+def mount_track(
+    mount:        MountPort          = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("track")
+    try:
+        mount_ops.track_sequence(mount)
+    except RuntimeError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@router.post("/stop")
+def mount_stop(
+    mount:        MountPort          = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("stop")
+    mount.stop()
+    return {"ok": True}
+
+
+@router.post("/goto")
+def mount_goto(
+    body:         GotoRequest,
+    mount:        MountPort          = Depends(deps.get_mount),
+    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+    confirm_solar: bool = Query(default=False),
+) -> dict[str, bool]:
+    if not confirm_solar:
+        blocked, sep = is_solar_target(body.ra, body.dec)
+        if blocked:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
+            )
+    _check_mount_limits(body.ra, body.dec)
+    device_state.record_command(f"goto ra={body.ra:.4f}h dec={body.dec:.2f}°")
+    _safe_goto(mount, coordinator, body.ra, body.dec)
+    return {"ok": True}
+
+
+class SyncRequest(BaseModel):
+    ra: float
+    dec: float
+
+
+@router.post("/sync")
+def mount_sync(
+    body: SyncRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Tell the mount it is currently pointing at the given RA/Dec."""
+    ok = mount.sync(body.ra, body.dec)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Mount sync failed")
+    return {"ok": True}
+
+
+@router.post("/home")
+def mount_home(
+    mount:        MountPort          = Depends(deps.get_mount),
+    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict:
+    """Slew to the celestial pole (RA = current LST, Dec = 85°, HA = 0).
+
+    Sets the mount to its starting position pointing at the polar region.
+    Auto-unparks if necessary.  Bypasses position limits — the pole is
+    always at altitude ≈ observer latitude, well within any sane limit set.
+    Uses Dec=85° (not 89°) to stay within OnStep's zenith exclusion zone.
+    """
+    device_state.record_command("home")
+    try:
+        ra_hours, dec_deg = mount_ops.home_sequence(mount, coordinator)
+    except mount_ops.MountSlewingError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=409, detail="Mount is slewing — stop it before homing") from exc
+    except RuntimeError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Home slew failed — check mount is tracking and powered ({exc})",
+        ) from exc
+    except CommandConflictError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True, "ra": ra_hours, "dec": dec_deg}
+
+
+@router.post("/park")
+def mount_park(
+    mount:        MountPort          = Depends(deps.get_mount),
+    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
+    device_state.record_command("park")
+    try:
+        mount_ops.park_sequence(mount, coordinator, device_state)
+    except mount_ops.MountSlewingError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before parking") from exc
+    except CommandConflictError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        device_state.record_command_error(str(exc))
+        raise HTTPException(status_code=500, detail="Park failed") from exc
+    return {"ok": True}
+
+
+class GuideRequest(BaseModel):
+    direction: str = Field(pattern=r"^[nsewNSEW]$")
+    duration_ms: int = Field(default=500, ge=1, le=9999)
+
+
+@router.post("/guide")
+def mount_guide(
+    body: GuideRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Send a fixed-duration guide pulse — no stop command required."""
+    ok = mount.guide(body.direction.lower(), body.duration_ms)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Guide pulse failed")
+    return {"ok": True}
+
+
+class AlignStartRequest(BaseModel):
+    num_stars: int = Field(default=1, ge=1, le=9)
+
+
+@router.post("/align/start")
+def mount_align_start(
+    body: AlignStartRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Begin n-star alignment sequence."""
+    ok = mount.start_alignment(body.num_stars)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Alignment start failed")
+    return {"ok": True}
+
+
+@router.post("/align/accept")
+def mount_align_accept(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+    """Accept current pointing as the next alignment star."""
+    ok = mount.accept_alignment_star()
+    if not ok:
+        raise HTTPException(status_code=500, detail="Accept alignment star failed")
+    return {"ok": True}
+
+
+@router.post("/align/save")
+def mount_align_save(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+    """Write the computed pointing model to EEPROM."""
+    ok = mount.save_alignment()
+    if not ok:
+        raise HTTPException(status_code=500, detail="Save alignment failed")
+    return {"ok": True}
+
+
+@router.post("/disable_tracking")
+def mount_disable_tracking(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+    ok = mount.disable_tracking()
+    if not ok:
+        raise HTTPException(status_code=500, detail="Disable tracking failed")
+    return {"ok": True}
+
+
+class SkyPosition(BaseModel):
+    ra: float
+    dec: float
+    elevation_deg: float
+    lst_hours: float
+
+
+class GotoAndCenterRequest(BaseModel):
+    ra:               float
+    dec:              float
+    exposure:         float      = Field(default=5.0, gt=0.0, le=60.0)
+    pixel_scale:      float | None = Field(default=None, gt=0.0)
+    tolerance_arcmin: float      = Field(default=2.0, gt=0.0)
+    max_iterations:   int        = Field(default=3, ge=1, le=5)
+    camera_index:     int        = Field(default=0, ge=0, le=7)
+
+
+class GotoAndCenterResponse(BaseModel):
+    success:       bool
+    final_ra:      float
+    final_dec:     float
+    iterations:    int
+    offset_arcmin: float
+    error:         str | None = None
+
+
+@router.post("/goto_and_center", response_model=GotoAndCenterResponse)
+async def mount_goto_and_center(
+    body:        GotoAndCenterRequest,
+    mount:       MountPort  = Depends(deps.get_mount),
+    solver:      SolverPort = Depends(deps.get_solver),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    confirm_solar: bool = Query(default=False),
+) -> GotoAndCenterResponse:
+    """Goto target, plate-solve, sync, and refine until centered."""
+    if not confirm_solar:
+        blocked, sep = is_solar_target(body.ra, body.dec)
+        if blocked:
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
+            )
+    _check_mount_limits(body.ra, body.dec)
+
+    try:
+        with coordinator.mount_command(timeout=0):
+            if mount.is_slewing():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Mount is currently slewing — stop it before centering",
+                )
+            camera = deps.get_preview_camera(body.camera_index)
+            scale  = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
+            result = await goto_and_center(
+                mount, camera, solver,
+                body.ra, body.dec,
+                pixel_scale=scale,
+                exposure=body.exposure,
+                tolerance_arcmin=body.tolerance_arcmin,
+                max_iterations=body.max_iterations,
+            )
+    except CommandConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Another mount GoTo is in progress — try again after it completes",
+        ) from exc
+    return GotoAndCenterResponse(**dataclasses.asdict(result))
+
+
+@router.post("/goto_sky", response_model=SkyPosition)
+def mount_goto_sky(
+    elevation: float = Query(default=80.0, ge=60.0, le=89.0),
+    mount: MountPort = Depends(deps.get_mount),
+    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+) -> SkyPosition:
+    """Slew to the local meridian at the requested elevation.
+
+    Uses the configured observer location (OBSERVER_LAT / OBSERVER_LON) and
+    the current UTC time to compute RA = LST, Dec = lat − (90° − elevation).
+    Auto-unparks the mount if it is currently parked.
+    """
+    if mount.get_state() == MountState.PARKED:
+        if not mount.unpark():
+            raise HTTPException(status_code=500, detail="Auto-unpark before sky slew failed")
+
+    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
+    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
+    dec_deg: float   = config.OBSERVER_LAT - (90.0 - elevation)
+    ra_hours: float  = lst_hours
+
+    blocked, sep = is_solar_target(ra_hours, dec_deg)
+    if blocked:
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
+        )
+
+    _safe_goto(mount, coordinator, ra_hours, dec_deg)
+    return SkyPosition(ra=ra_hours, dec=dec_deg, elevation_deg=elevation, lst_hours=lst_hours)

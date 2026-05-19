@@ -1,0 +1,5 @@
+fastapi>=0.111
+uvicorn[standard]>=0.29
+astropy>=6.0
+numpy>=1.26
+pillow>=10.0

@@ -1,0 +1,343 @@
+# Add a colimation support tool
+- Should be in sequence after mount is connected and has been focussed and aligned to celestrial pole
+- Take an Image with the camera connected to C8 asking the user to add a bahtinov mask.
+- Add an algorithm, that will identify on the brightest object in an image and identify it‘s three crossing lines and detect how fare these lines are from crossing in the same Point
+  - A robust algorithm for this is:
+    - on the Image taken:
+      - find brightest star-like object and center by using mount
+      - crop region of interest around it
+      - suppress background and star core
+      - detect linear spike pixels
+      - fit three dominant lines
+      - compute their pairwise intersections
+      - calculate how far the intersections differ
+  - Display the findign with an arrow within an image overlay constantly
+  - Ask user to quit or adjust. Recenter object whenever adijustment has been done or object Moves out of center
+
+1. Locate the brightest real object
+
+Do not simply take the brightest pixel. That may be a hot pixel or cosmic ray.
+
+Algorithm
+Convert image to grayscale / luminance.
+Estimate background level.
+Subtract background.
+Threshold significant bright regions.
+Find connected components.
+Select the component with the largest weighted brightness.
+
+Example criterion:
+
+score = total_flux × sqrt(area)
+
+This avoids selecting a single hot pixel.
+
+Output
+brightest_object_center = (x0, y0)
+brightest_object_radius = r
+2. Crop a region around the object
+
+Use a square ROI around the detected object.
+
+roi_size = 6 × estimated_object_radius
+
+or for telescope images:
+
+roi_size = 200 px to 600 px
+
+depending on camera resolution and focal length.
+
+ROI = image[y0 - h : y0 + h, x0 - h : x0 + h]
+3. Preprocess the ROI
+
+The goal is to keep the three line structures but reduce noise and the saturated star core.
+
+Recommended steps:
+
+1. subtract local background
+2. apply mild Gaussian blur
+3. optionally mask saturated central core
+4. normalize intensity
+5. threshold remaining bright structures
+
+For a Bahtinov image, the star core may dominate, so mask the center:
+
+mask out pixels with distance from center < core_radius
+
+Example:
+
+core_radius = 5 px to 20 px
+4. Detect candidate line pixels
+
+Two practical approaches are possible.
+
+Option A — Hough transform
+
+Good if the spikes are clear.
+
+edges = Canny(ROI)
+lines = HoughLinesP(edges)
+
+Then group detected lines by angle.
+
+Option B — weighted point cloud + RANSAC
+
+More robust for noisy astro images.
+
+candidate_pixels = all pixels above threshold
+weight = pixel brightness
+fit lines using RANSAC
+remove inliers
+repeat until 3 dominant lines are found
+
+For your SmartTScope use case, I would prefer RANSAC or weighted Hough, because real telescope frames may contain noise, saturation, seeing blur, and imperfect spikes.
+
+5. Fit the three lines
+
+Represent each line in normal form:
+
+a x + b y + c = 0
+
+with:
+
+sqrt(a² + b²) = 1
+
+This representation is useful because the perpendicular distance from a point to the line is simply:
+
+distance = |a x + b y + c|
+
+For each of the three spike groups, fit a line using weighted least squares or RANSAC.
+
+Result:
+
+L1 = (a1, b1, c1)
+L2 = (a2, b2, c2)
+L3 = (a3, b3, c3)
+6. Calculate pairwise intersections
+
+For two lines:
+
+L1: a1 x + b1 y + c1 = 0
+L2: a2 x + b2 y + c2 = 0
+
+the intersection is:
+
+D = a1 b2 - a2 b1
+
+x = (b1 c2 - b2 c1) / D
+y = (c1 a2 - c2 a1) / D
+
+If D is close to zero, the lines are nearly parallel and the result is invalid.
+
+Calculate:
+
+P12 = intersection(L1, L2)
+P13 = intersection(L1, L3)
+P23 = intersection(L2, L3)
+
+If the three lines cross in the same point, these three intersection points should be almost identical.
+
+7. Measure how far the lines are from one common crossing point
+
+Define the common estimated crossing point as:
+
+Pc = mean(P12, P13, P23)
+
+Then calculate:
+
+error_rms = sqrt(
+    (dist(P12, Pc)² + dist(P13, Pc)² + dist(P23, Pc)²) / 3
+)
+
+Also useful:
+
+error_max = max(
+    dist(P12, Pc),
+    dist(P13, Pc),
+    dist(P23, Pc)
+)
+
+Interpretation:
+
+Error	Meaning
+0 px	perfect common crossing
+1–3 px	very good
+3–10 px	usable, but not perfect
+>10 px	likely out of focus, bad detection, or distorted spikes
+
+For a Bahtinov mask, the most useful focus metric is often slightly different:
+
+P_outer = intersection of the two outer spikes
+focus_error = signed perpendicular distance from P_outer to the middle spike
+
+That is:
+
+focus_error_px = a_mid * P_outer.x + b_mid * P_outer.y + c_mid
+
+Because a_mid² + b_mid² = 1, this directly gives the error in pixels.
+
+8. Identify the middle Bahtinov line
+
+For three detected lines, sort them by angle.
+
+Bahtinov spikes usually form:
+
+outer spike 1
+middle spike
+outer spike 2
+
+The middle spike is the one whose angle lies between the other two angle groups, or the one whose distance to the expected center is between both outer structures.
+
+For focus evaluation:
+
+L_outer_1, L_outer_2 = the two symmetric outer lines
+L_middle = the line between them
+
+P_outer = intersection(L_outer_1, L_outer_2)
+
+focus_error_px = signed_distance(P_outer, L_middle)
+
+If:
+
+focus_error_px ≈ 0
+
+then the three spikes cross correctly.
+
+9. Complete algorithm in pseudocode
+def analyze_brightest_object_crossing_lines(image):
+    gray = convert_to_grayscale(image)
+
+    background = estimate_background(gray)
+    corrected = gray - background
+    corrected = clip_to_positive(corrected)
+
+    objects = detect_bright_connected_components(corrected)
+
+    brightest_object = select_object_with_highest_flux_score(objects)
+
+    x0, y0 = brightest_object.centroid
+    roi = crop_around(gray, x0, y0, size=400)
+
+    roi_bg = estimate_background(roi)
+    roi_corrected = roi - roi_bg
+    roi_corrected = gaussian_blur(roi_corrected, sigma=1.0)
+
+    roi_corrected = mask_star_core(
+        roi_corrected,
+        center=(roi.width / 2, roi.height / 2),
+        radius=12,
+    )
+
+    candidate_pixels = threshold_bright_spike_pixels(roi_corrected)
+
+    candidate_lines = detect_lines(candidate_pixels)
+
+    line_groups = group_lines_by_angle(candidate_lines, expected_groups=3)
+
+    fitted_lines = []
+
+    for group in line_groups:
+        line = fit_weighted_line(group.pixels, group.weights)
+        fitted_lines.append(line)
+
+    L1, L2, L3 = fitted_lines
+
+    P12 = intersect(L1, L2)
+    P13 = intersect(L1, L3)
+    P23 = intersect(L2, L3)
+
+    common_point = mean_point([P12, P13, P23])
+
+    crossing_error_rms = rms_distance(
+        [P12, P13, P23],
+        common_point,
+    )
+
+    crossing_error_max = max_distance(
+        [P12, P13, P23],
+        common_point,
+    )
+
+    middle_line, outer_line_1, outer_line_2 = classify_bahtinov_lines(
+        fitted_lines,
+    )
+
+    outer_intersection = intersect(outer_line_1, outer_line_2)
+
+    focus_error_px = signed_distance_point_to_line(
+        outer_intersection,
+        middle_line,
+    )
+
+    return {
+        "object_center_px": (x0, y0),
+        "lines": fitted_lines,
+        "pairwise_intersections": [P12, P13, P23],
+        "common_crossing_point": common_point,
+        "crossing_error_rms_px": crossing_error_rms,
+        "crossing_error_max_px": crossing_error_max,
+        "focus_error_px": focus_error_px,
+    }
+Recommended output for SmartTScope
+
+For your application, I would return a structured result like this:
+
+@dataclass(frozen=True)
+class SpikeLine:
+    a: float
+    b: float
+    c: float
+    angle_deg: float
+    confidence: float
+
+
+@dataclass(frozen=True)
+class CrossingAnalysisResult:
+    object_center_px: tuple[float, float]
+    lines: list[SpikeLine]
+    common_crossing_point_px: tuple[float, float]
+    pairwise_intersections_px: list[tuple[float, float]]
+    crossing_error_rms_px: float
+    crossing_error_max_px: float
+    focus_error_px: float
+    detection_confidence: float
+
+The key values are:
+
+crossing_error_rms_px
+crossing_error_max_px
+focus_error_px
+
+For Bahtinov focusing, I would primarily use:
+
+focus_error_px
+
+and use:
+
+crossing_error_rms_px
+
+as a quality check for whether the three detected lines are geometrically consistent.
+
+Practical recommendation
+
+For SmartTScope, implement this in two layers:
+
+BahtinovAnalyzer
+    detects brightest star
+    detects three diffraction spikes
+    calculates focus/crossing error
+
+FocusController
+    calls BahtinovAnalyzer repeatedly
+    moves focuser in/out
+    stops when focus_error_px is close to zero
+
+The important design point is that the image algorithm should not directly move the focuser. It should only report:
+
+focus_error_px
+confidence
+valid / invalid
+
+The focusing logic can then decide how to react.
+and ident
+

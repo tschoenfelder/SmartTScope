@@ -1,56 +1,80 @@
-import math
-import time
+"""VerticalSliceRunner — orchestrates the 8-stage session pipeline.
+
+Stage logic lives in stages.py.  This module owns:
+  - session lifecycle (run / stop)
+  - state transitions and logging
+  - stage timestamps
+  - error wrapping
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
 import uuid
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime
 
 from ..domain.session import SessionLog, StageTimestamp
 from ..domain.states import SessionState
 from ..ports.camera import CameraPort
-from ..ports.mount import MountPort, MountState
+from ..ports.focuser import FocuserPort
+from ..ports.mount import MountPort
 from ..ports.solver import SolverPort
-from ..ports.stacker import StackerPort, StackFrame
+from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
+from .. import config as _cfg
+from ..domain.autofocus import FocusRunConfig
+from ..domain.frame_quality import FrameQualityConfig, FrameQualityFilter
+from ..domain.refocus import RefocusConfig, RefocusTracker
+from ._types import (
+    C8_BARLOW2X as C8_BARLOW2X,
+)
+from ._types import (
+    C8_NATIVE as C8_NATIVE,
+)
+from ._types import (
+    C8_REDUCER as C8_REDUCER,
+)
+from ._types import (
+    M42_DEC as M42_DEC,
+)
+from ._types import (
+    M42_RA as M42_RA,
+)
+from ._types import (
+    SOLVE_MAX_ATTEMPTS as SOLVE_MAX_ATTEMPTS,
+)
+from ._types import (
+    WIDE_FIELD_SEARCH_RADIUS_DEG as WIDE_FIELD_SEARCH_RADIUS_DEG,
+)
+from ._types import (
+    OpticalProfile as OpticalProfile,
+)
+from ._types import (
+    StateCallback as StateCallback,
+)
+from ._types import (
+    WorkflowError as WorkflowError,
+)
+from .stages import (
+    StageContext,
+    stage_align,
+    stage_autofocus,
+    stage_connect,
+    stage_goto,
+    stage_initialize_mount,
+    stage_preview,
+    stage_recenter,
+    stage_save,
+    stage_stack,
+)
 
-# Target: M42 Orion Nebula
-M42_RA = 5.5881   # hours  (05h 35m 17.3s)
-M42_DEC = -5.391  # degrees (−05° 23′ 28″)
-
-CENTERING_TOLERANCE_ARCMIN = 2.0
-MAX_RECENTER_ITERATIONS = 3
-SOLVE_MAX_ATTEMPTS = 2
-PREVIEW_FRAMES = 3
-STACK_DEPTH = 10
-PREVIEW_EXPOSURE_S = 5.0
-STACK_EXPOSURE_S = 30.0
-SLEW_TIMEOUT_S = 120.0
-SLEW_POLL_INTERVAL_S = 2.0
-
-StateCallback = Callable[[SessionState], None]
+logger = logging.getLogger(__name__)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-@dataclass
-class OpticalProfile:
-    name: str
-    pixel_scale_arcsec: float  # hint passed to plate solver
-
-
-# Built-in profiles for the C8 platform
-C8_NATIVE   = OpticalProfile("C8-native",   pixel_scale_arcsec=0.38)
-C8_REDUCER  = OpticalProfile("C8-reducer",  pixel_scale_arcsec=0.60)
-C8_BARLOW2X = OpticalProfile("C8-barlow2x", pixel_scale_arcsec=0.19)
-
-
-class WorkflowError(Exception):
-    def __init__(self, stage: str, reason: str) -> None:
-        self.stage = stage
-        self.reason = reason
-        super().__init__(f"[{stage}] {reason}")
+    return datetime.now(UTC)
 
 
 class VerticalSliceRunner:
@@ -61,32 +85,111 @@ class VerticalSliceRunner:
         solver: SolverPort,
         stacker: StackerPort,
         storage: StoragePort,
+        focuser: FocuserPort,
         optical_profile: OpticalProfile = C8_NATIVE,
-        on_state_change: Optional[StateCallback] = None,
+        on_state_change: StateCallback | None = None,
+        target_name: str = "M42",
+        target_ra: float = M42_RA,
+        target_dec: float = M42_DEC,
+        stack_exposure_s: float = 30.0,
+        stack_depth: int = 10,
+        preview_exposure_s: float = 5.0,
+        preview_frames: int = 3,
+        focus_config: FocusRunConfig | None = None,
+        enable_refocus_triggers: bool = True,
+        refocus_temp_delta_c: float = 1.0,
+        refocus_alt_delta_deg: float = 5.0,
+        refocus_elapsed_min: float = 30.0,
+        enable_frame_quality: bool = True,
+        frame_quality_min_snr: float = 0.3,
+        frame_quality_baseline_frames: int = 3,
     ) -> None:
         self._camera = camera
         self._mount = mount
         self._solver = solver
         self._stacker = stacker
         self._storage = storage
+        self._focuser = focuser
         self._profile = optical_profile
         self._on_state_change = on_state_change
+        self._stop_event = threading.Event()
+        self._current_log: SessionLog | None = None
+        self._target_name = target_name
+        self._target_ra = target_ra
+        self._target_dec = target_dec
+        self._stack_exposure_s = stack_exposure_s
+        self._stack_depth = stack_depth
+        self._preview_exposure_s = preview_exposure_s
+        self._preview_frames = preview_frames
+        self._focus_config = focus_config if focus_config is not None else FocusRunConfig()
+        self._enable_refocus_triggers = enable_refocus_triggers
+        self._refocus_config = RefocusConfig(
+            temp_delta_c=refocus_temp_delta_c,
+            altitude_delta_deg=refocus_alt_delta_deg,
+            elapsed_min=refocus_elapsed_min,
+        )
+        self._enable_frame_quality = enable_frame_quality
+        self._frame_quality_config = FrameQualityConfig(
+            min_snr_factor=frame_quality_min_snr,
+            baseline_frames=frame_quality_baseline_frames,
+        )
 
-    def run(self) -> SessionLog:
+    @property
+    def current_log(self) -> SessionLog | None:
+        return self._current_log
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._mount.stop()
+
+    def run(self, session_id: str | None = None) -> SessionLog:
+        self._stop_event.clear()
         log = SessionLog(
-            session_id=str(uuid.uuid4()),
-            target_name="M42",
-            target_ra=M42_RA,
-            target_dec=M42_DEC,
+            session_id=session_id or str(uuid.uuid4()),
+            target_name=self._target_name,
+            target_ra=self._target_ra,
+            target_dec=self._target_dec,
             optical_config=self._profile.name,
             started_at=_now(),
         )
+        self._current_log = log
         self._transition(log, SessionState.IDLE)
 
+        ctx = StageContext(
+            camera=self._camera,
+            mount=self._mount,
+            solver=self._solver,
+            stacker=self._stacker,
+            storage=self._storage,
+            focuser=self._focuser,
+            profile=self._profile,
+            stop_event=self._stop_event,
+            on_transition=self._transition,
+            target_ra=self._target_ra,
+            target_dec=self._target_dec,
+            stack_exposure_s=self._stack_exposure_s,
+            stack_depth=self._stack_depth,
+            preview_exposure_s=self._preview_exposure_s,
+            preview_frames=self._preview_frames,
+            focus_config=self._focus_config,
+            refocus_tracker=(
+                RefocusTracker(self._refocus_config)
+                if self._enable_refocus_triggers and not self._focus_config.skip
+                else None
+            ),
+            frame_quality_filter=(
+                FrameQualityFilter(self._frame_quality_config)
+                if self._enable_frame_quality
+                else None
+            ),
+        )
+
         try:
-            for stage_name, stage_fn in self._stage_pipeline():
+            for stage_name, stage_fn in self._pipeline(ctx):
                 try:
+                    self._start_stage(log, stage_name)
                     stage_fn(log)
+                    self._finish_stage(log, stage_name)
                 except WorkflowError:
                     raise
                 except Exception as exc:
@@ -98,160 +201,31 @@ class VerticalSliceRunner:
         finally:
             if log.completed_at is None:
                 log.completed_at = _now()
-            self._mount.disconnect()
-            self._camera.disconnect()
 
         return log
 
-    # --- pipeline ---
+    # ── Pipeline ─────────────────────────────────────────────────────────────
 
-    def _stage_pipeline(self) -> list:
+    def _pipeline(
+        self, ctx: StageContext
+    ) -> list[tuple[str, Callable[[SessionLog], None]]]:
         return [
-            ("connect",          self._stage_connect),
-            ("initialize_mount", self._stage_initialize_mount),
-            ("align",            self._stage_align),
-            ("goto",             self._stage_goto),
-            ("recenter",         self._stage_recenter),
-            ("preview",          self._stage_preview),
-            ("stack",            self._stage_stack),
-            ("save",             self._stage_save),
+            ("connect",          lambda log: stage_connect(ctx, log)),
+            ("initialize_mount", lambda log: stage_initialize_mount(ctx, log)),
+            ("align",            lambda log: stage_align(ctx, log)),
+            ("goto",             lambda log: stage_goto(ctx, log)),
+            ("recenter",         lambda log: stage_recenter(ctx, log)),
+            ("autofocus",        lambda log: stage_autofocus(ctx, log)),
+            ("preview",          lambda log: stage_preview(ctx, log)),
+            ("stack",            lambda log: stage_stack(ctx, log)),
+            ("save",             lambda log: stage_save(ctx, log)),
         ]
 
-    # --- stages ---
-
-    def _stage_connect(self, log: SessionLog) -> None:
-        self._start_stage(log, "connect")
-        if not self._camera.connect():
-            raise WorkflowError("connect", "Camera failed to connect")
-        if not self._mount.connect():
-            raise WorkflowError("connect", "Mount failed to connect")
-        self._finish_stage(log, "connect")
-        self._transition(log, SessionState.CONNECTED)
-
-    def _stage_initialize_mount(self, log: SessionLog) -> None:
-        self._start_stage(log, "initialize_mount")
-        state = self._mount.get_state()
-        if state == MountState.AT_LIMIT:
-            raise WorkflowError("initialize_mount", "Mount is at a hardware limit — resolve before continuing")
-        if state == MountState.PARKED:
-            if not self._mount.unpark():
-                raise WorkflowError("initialize_mount", "Unpark command rejected by mount")
-        if not self._mount.enable_tracking():
-            raise WorkflowError("initialize_mount", "Could not enable sidereal tracking")
-        self._finish_stage(log, "initialize_mount")
-        self._transition(log, SessionState.MOUNT_READY)
-
-    def _stage_align(self, log: SessionLog) -> None:
-        self._start_stage(log, "align")
-        exposures = [5.0, 10.0]
-        for exposure in exposures[:SOLVE_MAX_ATTEMPTS]:
-            log.plate_solve_attempts += 1
-            frame = self._camera.capture(exposure)
-            result = self._solver.solve(frame.data, self._profile.pixel_scale_arcsec)
-            if result.success:
-                if not self._mount.sync(result.ra, result.dec):
-                    raise WorkflowError("align", "Mount sync after plate solve failed")
-                self._finish_stage(log, "align")
-                self._transition(log, SessionState.ALIGNED)
-                return
-        raise WorkflowError(
-            "align",
-            f"Plate solve failed after {SOLVE_MAX_ATTEMPTS} attempts — check sky conditions and polar alignment",
-        )
-
-    def _stage_goto(self, log: SessionLog) -> None:
-        self._start_stage(log, "goto")
-        if not self._mount.goto(M42_RA, M42_DEC):
-            raise WorkflowError("goto", "GoTo command rejected by mount")
-        # Poll until slew completes — is_slewing() returning True immediately after goto is normal.
-        self._wait_for_slew("goto")
-        self._finish_stage(log, "goto")
-        self._transition(log, SessionState.SLEWED)
-
-    def _stage_recenter(self, log: SessionLog) -> None:
-        self._start_stage(log, "recenter")
-        for i in range(1, MAX_RECENTER_ITERATIONS + 1):
-            log.centering_iterations = i
-            frame = self._camera.capture(10.0)
-            result = self._solver.solve(frame.data, self._profile.pixel_scale_arcsec)
-            if not result.success:
-                raise WorkflowError("recenter", f"Plate solve failed during recentering (iteration {i})")
-            offset = _angular_offset_arcmin(result.ra, result.dec, M42_RA, M42_DEC)
-            log.centering_offset_arcmin = round(offset, 2)
-            if offset <= CENTERING_TOLERANCE_ARCMIN:
-                log.centering_state = SessionState.CENTERED.name
-                self._finish_stage(log, "recenter")
-                self._transition(log, SessionState.CENTERED)
-                return
-            if i < MAX_RECENTER_ITERATIONS:
-                if not self._mount.goto(M42_RA, M42_DEC):
-                    raise WorkflowError("recenter", f"Correction slew rejected by mount (iteration {i})")
-                self._wait_for_slew("recenter")
-
-        # Tolerance not met after all iterations — degrade gracefully, do not abort
-        log.centering_state = SessionState.CENTERING_DEGRADED.name
-        log.warnings.append(
-            f"Centering: exceeded {MAX_RECENTER_ITERATIONS} iterations; "
-            f"final offset {log.centering_offset_arcmin:.1f} arcmin — continuing in degraded mode"
-        )
-        self._finish_stage(log, "recenter")
-        self._transition(log, SessionState.CENTERING_DEGRADED)
-
-    def _stage_preview(self, log: SessionLog) -> None:
-        self._start_stage(log, "preview")
-        self._transition(log, SessionState.PREVIEWING)
-        for _ in range(PREVIEW_FRAMES):
-            self._camera.capture(PREVIEW_EXPOSURE_S)
-            # Real implementation: auto-stretch and push via WebSocket
-        self._finish_stage(log, "preview")
-
-    def _stage_stack(self, log: SessionLog) -> None:
-        self._start_stage(log, "stack")
-        self._transition(log, SessionState.STACKING)
-        self._stacker.reset()
-        for i in range(1, STACK_DEPTH + 1):
-            frame = self._camera.capture(STACK_EXPOSURE_S)
-            stacked = self._stacker.add_frame(StackFrame(data=frame.data, frame_number=i))
-            log.frames_integrated = stacked.frames_integrated
-            log.frames_rejected = stacked.frames_rejected
-            # Real implementation: push updated stack via WebSocket
-        self._finish_stage(log, "stack")
-        self._transition(log, SessionState.STACK_COMPLETE)
-
-    def _stage_save(self, log: SessionLog) -> None:
-        self._start_stage(log, "save")
-        if not self._storage.has_free_space():
-            raise WorkflowError("save", "Disk full — cannot save session artifacts")
-        stacked = self._stacker.get_current_stack()
-
-        # Save image first — path is then available before log serialization.
-        image_path = self._storage.save_image(stacked.data, log.session_id)
-        log.saved_image_path = image_path
-
-        # Record completion time and finish stage timestamp before serializing,
-        # so the stored log contains complete timestamps.
-        log.completed_at = _now()
-        self._finish_stage(log, "save")
-        self._transition(log, SessionState.SAVED)
-
-        # Serialize now: state=SAVED, completed_at set, image_path known, save stage complete.
-        # saved_log_path is intentionally absent from the stored dict (inherent self-reference).
-        log_path = self._storage.save_log(log.to_dict(), log.session_id)
-        log.saved_log_path = log_path
-
-    # --- helpers ---
-
-    def _wait_for_slew(self, stage: str) -> None:
-        """Poll mount until slewing stops or timeout. Raises WorkflowError on timeout."""
-        elapsed = 0.0
-        while self._mount.is_slewing():
-            time.sleep(SLEW_POLL_INTERVAL_S)
-            elapsed += SLEW_POLL_INTERVAL_S
-            if elapsed >= SLEW_TIMEOUT_S:
-                raise WorkflowError(stage, f"Slew timed out after {SLEW_TIMEOUT_S:.0f}s")
+    # ── Orchestration helpers ─────────────────────────────────────────────────
 
     def _transition(self, log: SessionLog, state: SessionState) -> None:
         log.state = state
+        logger.info("session=%s state=%s", log.session_id, state.name)
         if self._on_state_change:
             self._on_state_change(state)
 
@@ -263,11 +237,3 @@ class VerticalSliceRunner:
             if ts.stage == name and ts.completed_at is None:
                 ts.completed_at = _now()
                 return
-
-
-def _angular_offset_arcmin(ra1: float, dec1: float, ra2: float, dec2: float) -> float:
-    """Approximate angular separation in arcminutes (small-angle, equatorial coords)."""
-    dec_rad = math.radians((dec1 + dec2) / 2)
-    dra_deg = (ra1 - ra2) * 15 * math.cos(dec_rad)
-    ddec_deg = dec1 - dec2
-    return math.sqrt(dra_deg ** 2 + ddec_deg ** 2) * 60

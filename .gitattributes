@@ -1,0 +1,11 @@
+# Normalise line endings to LF in the repository
+* text=auto
+
+# GitHub Actions workflow files must use LF — CRLF causes 'workflow file issue'
+.github/workflows/*.yml text eol=lf
+
+# Python source and config
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.json text eol=lf

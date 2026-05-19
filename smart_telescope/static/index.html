@@ -1,0 +1,1908 @@
+﻿﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartTelescope</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0d1117;
+      --surface:      #161b22;
+      --border:       #30363d;
+      --text:         #e6edf3;
+      --muted:        #8b949e;
+      --accent:       #388bfd;
+      --accent-hi:    #58a6ff;
+      --success:      #3fb950;
+      --warning:      #d29922;
+      --danger:       #f85149;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── header ── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 0.875rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    header h1 { font-size: 1.125rem; font-weight: 600; }
+    .pill {
+      font-size: 0.7rem;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.15rem 0.55rem;
+    }
+
+    /* ── stage navigation bar ── */
+    #stage-bar {
+      display: flex;
+      align-items: stretch;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1rem;
+      overflow-x: auto;
+      gap: 0;
+    }
+    .stage-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.1rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .stage-btn:hover:not(:disabled) { color: var(--text); }
+    .stage-btn.active {
+      color: var(--accent-hi);
+      border-bottom-color: var(--accent-hi);
+    }
+    .stage-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .stage-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--border);
+      font-size: 0.72rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .stage-btn.active .stage-num { background: var(--accent); color: #fff; }
+    .stage-btn.done .stage-num   { background: var(--success); color: #fff; }
+
+    /* ── compact mount strip (always visible — global STOP + mount state) ── */
+    #mount-strip {
+      display: none;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.35rem 2rem;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.78rem;
+    }
+    #mount-strip.visible { display: flex; }
+    #ms-radec { font-family: ui-monospace, monospace; color: var(--muted); }
+
+    /* ── stage panels ── */
+    .stage-panel { display: none; }
+    .stage-panel.active { display: block; }
+
+    /* ── main layout ── */
+    main {
+      padding: 1.5rem 2%;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    /* ── two-column grid (stages 3 & 4) ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .two-col { grid-template-columns: 1fr; }
+    }
+
+    /* ── section ── */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .toolbar h2 { font-size: 1rem; font-weight: 600; flex: 1; }
+
+    /* ── buttons ── */
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.45rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hi); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.danger { background: var(--danger); }
+    button.danger:hover:not(:disabled) { background: #ff6b63; }
+    button.secondary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    button.secondary:hover:not(:disabled) { border-color: var(--accent); }
+
+    /* ── status line ── */
+    .status-line {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      min-height: 1.25rem;
+    }
+    .status-line.error { color: var(--danger); }
+
+    /* ── card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+    }
+    .card + .card { margin-top: 1rem; }
+
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 1rem;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--success); }
+    .dot-yellow { background: var(--warning); }
+    .dot-red    { background: var(--danger);  }
+    .dot-grey   { background: var(--muted);   }
+
+    /* ── state badge ── */
+    .state-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      margin-left: auto;
+    }
+    .state-parked   { background: rgba(139,148,158,0.15); color: var(--muted); }
+    .state-unparked { background: rgba(210,153,34,0.15);  color: var(--warning); }
+    .state-tracking { background: rgba(63,185,80,0.15);   color: var(--success); }
+    .state-slewing  { background: rgba(56,139,253,0.15);  color: var(--accent-hi); }
+    .state-unknown  { background: rgba(139,148,158,0.15); color: var(--muted); }
+    .state-at_limit { background: rgba(248,81,73,0.15);   color: var(--danger); }
+    .state-error    { background: rgba(248,81,73,0.15);   color: var(--error); }
+    .state-pending  { background: rgba(56,139,253,0.12);  color: var(--accent-hi); border: 1px solid rgba(56,139,253,0.25); }
+
+    /* ── tonight target list (M4-002) ── */
+    .tonight-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 0.4rem; border-radius: 4px; cursor: pointer; font-size: 0.82rem;
+    }
+    .tonight-row:hover { background: rgba(56,139,253,0.07); }
+    .tonight-name { flex: 1; }
+    .tonight-type-chip {
+      font-size: 0.64rem; padding: 0.08rem 0.35rem; border-radius: 3px;
+      background: rgba(56,139,253,0.12); color: var(--accent-hi);
+      text-transform: uppercase; font-weight: 600; white-space: nowrap;
+    }
+    .tonight-alt {
+      font-family: ui-monospace, monospace; color: var(--muted);
+      font-size: 0.76rem; min-width: 2.5rem; text-align: right;
+    }
+
+    /* ── observation pipeline steps (UX2-002) ── */
+    .s5-step {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 0.3rem; flex: 0 0 auto; min-width: 3rem;
+    }
+    .s5-step-circle {
+      width: 1.6rem; height: 1.6rem; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.68rem; font-weight: 700;
+      border: 2px solid var(--border); background: var(--surface); color: var(--muted);
+      transition: border-color 0.3s, background 0.3s, color 0.3s;
+    }
+    .s5-step-label {
+      font-size: 0.62rem; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--muted);
+      text-align: center; transition: color 0.3s;
+    }
+    .s5-step-line {
+      flex: 1; height: 2px; background: var(--border);
+      margin-top: 0.775rem; transition: background 0.3s;
+    }
+    .s5-step.step-active .s5-step-circle { border-color: var(--accent); color: var(--accent-hi); background: rgba(56,139,253,0.1); }
+    .s5-step.step-active .s5-step-label  { color: var(--accent-hi); }
+    .s5-step.step-done   .s5-step-circle { border-color: var(--success); color: var(--success); background: rgba(63,185,80,0.1); }
+    .s5-step.step-done   .s5-step-label  { color: var(--success); }
+    .s5-step.step-failed .s5-step-circle { border-color: var(--danger); color: var(--danger); background: rgba(248,81,73,0.1); }
+    .s5-step.step-failed .s5-step-label  { color: var(--danger); }
+    .s5-step-line.line-done              { background: var(--success); }
+
+    /* ── params grid ── */
+    .params {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.75rem 1.5rem;
+    }
+    .param { display: flex; flex-direction: column; gap: 0.2rem; }
+    .param-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .param-value { font-size: 0.875rem; }
+    .mono { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.8rem; }
+
+    /* ── controls row ── */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      padding-top: 0.875rem;
+      border-top: 1px solid var(--border);
+      align-items: center;
+    }
+    .controls-spacer { flex: 1; }
+
+    /* ── input row ── */
+    .input-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+    input[type="number"], input[type="text"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.85rem;
+      padding: 0.4rem 0.65rem;
+      width: 9ch;
+      outline: none;
+    }
+    input[type="number"]:focus, input[type="text"]:focus { border-color: var(--accent); }
+    /* Compact preview inputs — suppress spinner arrows so the full ch width is text space;
+       keyboard arrows and direct typing remain fully functional. */
+    #preview-exposure::-webkit-inner-spin-button,
+    #preview-exposure::-webkit-outer-spin-button,
+    #preview-gain::-webkit-inner-spin-button,
+    #preview-gain::-webkit-outer-spin-button,
+    #preview-offset::-webkit-inner-spin-button,
+    #preview-offset::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    #preview-exposure, #preview-gain, #preview-offset { -moz-appearance: textfield; }
+    label { font-size: 0.8rem; color: var(--muted); }
+
+    /* ── stage nav row ── */
+    .stage-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── catalog dropdown ── */
+    .catalog-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      z-index: 100;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      min-width: 260px;
+      max-height: 220px;
+      overflow-y: auto;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+    .catalog-item {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+      padding: 0.45rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .catalog-item:hover { background: rgba(56,139,253,0.12); }
+    .catalog-item .ci-name   { font-weight: 600; min-width: 3.5ch; }
+    .catalog-item .ci-common { color: var(--muted); flex: 1; }
+    .catalog-item .ci-coords { color: var(--muted); font-size: 0.75rem; font-family: monospace; }
+
+    /* ── nudge buttons ── */
+    .nudge-group { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+    button.nudge { padding: 0.4rem 0.6rem; font-size: 0.78rem; min-width: 2.8rem; }
+
+    /* ── star list ── */
+    .star-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-height: 240px;
+      overflow-y: auto;
+      margin-top: 0.5rem;
+    }
+    .star-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .star-item:hover    { background: rgba(56,139,253,0.12); }
+    .star-item.selected { background: rgba(56,139,253,0.20); outline: 1px solid rgba(56,139,253,0.4); border-radius: 4px; }
+    .star-item .si-name   { font-weight: 600; min-width: 8ch; }
+    .star-item .si-common { color: var(--muted); flex: 1; font-size: 0.78rem; }
+    .star-item .si-coords { color: var(--muted); font-size: 0.72rem; font-family: monospace; }
+    .tracking-badge {
+      font-size: 0.65rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      background: rgba(139,148,158,0.15);
+      color: var(--muted);
+    }
+    .tracking-sidereal  { background: rgba(63,185,80,0.1);  color: var(--success); }
+    .tracking-lunar     { background: rgba(210,153,34,0.1); color: var(--warning); }
+    .tracking-satellite { background: rgba(56,139,253,0.1); color: var(--accent-hi); }
+
+    /* ── features ── */
+    .features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 1rem;
+      padding-top: 0.875rem;
+      border-top: 1px solid var(--border);
+    }
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.2rem 0.55rem;
+      border-radius: 4px;
+      background: rgba(56,139,253,0.12);
+      color: var(--accent-hi);
+      border: 1px solid rgba(56,139,253,0.25);
+    }
+
+    /* ── camera grid ── */
+    .camera-grid { display: grid; gap: 1rem; }
+
+    /* ── preview panel ── */
+    .preview-frame {
+      position: relative;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .preview-frame.large { min-height: 400px; }
+    .preview-frame img { max-width: 100%; display: block; }
+    .preview-placeholder {
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 2rem;
+      text-align: center;
+      pointer-events: none;
+    }
+    .preview-overlay {
+      position: absolute;
+      top: 0.5rem; right: 0.5rem;
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.5);
+      font-family: ui-monospace, monospace;
+    }
+    .ws-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .ws-live       { background: var(--success); }
+    .ws-connecting { background: var(--warning); animation: pulse 1s ease infinite; }
+    .ws-stopped    { background: var(--muted); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── histogram widget ── */
+    .hist-canvas {
+      display: block;
+      width: 100%;
+      height: 100px;
+      border-radius: 4px;
+      background: #111;
+    }
+    .hist-stats {
+      font-size: 0.70rem;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 0.15rem;
+      line-height: 1.3;
+    }
+
+    /* ── spinner ── */
+    .spin {
+      display: inline-block;
+      width: 13px; height: 13px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.55s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── placeholder card (coming soon) ── */
+    .placeholder-card {
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── advanced-mode toggle — hides .adv-only in beginner mode ── */
+    .adv-only { display: none !important; }
+    body.advanced-mode .adv-only { display: flex !important; }
+
+    /* ── visibility badges (custom targets) ── */
+    .vis-badge { font-size: 0.62rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 3px; flex-shrink: 0; }
+    .vis-now   { background: rgba(63,185,80,0.15);  color: var(--success); }
+    .vis-later { background: rgba(210,153,34,0.15); color: var(--warning); }
+
+    /* ── collimation wizard phase strip ── */
+    .wiz-phases { display: flex; font-size: 0.72rem; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; margin-bottom: 0.75rem; }
+    .wiz-phase { flex: 1; padding: 0.28rem 0.3rem; text-align: center; background: var(--bg); color: var(--muted); border-right: 1px solid var(--border); }
+    .wiz-phase:last-child { border-right: none; }
+    .wiz-phase.wiz-done   { background: rgba(63,185,80,0.1);  color: var(--success); }
+    .wiz-phase.wiz-active { background: rgba(56,139,253,0.15); color: var(--accent-hi); font-weight: 600; }
+    .wiz-phase.wiz-fail   { background: rgba(248,81,73,0.12);  color: var(--danger); }
+
+    /* ── guide pad (3×3 grid N/S/E/W) ── */
+    .guide-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 2.8rem);
+      grid-template-rows: repeat(3, 2.8rem);
+      gap: 0.2rem;
+      width: fit-content;
+    }
+    .guide-btn {
+      width: 2.8rem; height: 2.8rem;
+      padding: 0;
+      font-size: 1.1rem;
+      line-height: 1;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SmartTelescope</h1>
+  <span class="pill">v0.1</span>
+  <button id="adv-toggle" class="pill"
+          onclick="toggleAdvancedMode()"
+          title="Show/hide manual mount and focuser controls"
+          style="cursor:pointer;margin-left:auto;border:1px solid var(--border);background:var(--surface);color:var(--muted);padding:0.2rem 0.7rem">
+    Advanced
+  </button>
+</header>
+
+<!-- ── Stage navigation bar ──────────────────────────────────────────────── -->
+<nav id="stage-bar">
+  <button class="stage-btn active" id="stage-btn-1" onclick="goToStage(1)">
+    <span class="stage-num" id="stage-num-1">1</span>
+    Startup
+  </button>
+  <button class="stage-btn" id="stage-btn-2" onclick="goToStage(2)" disabled>
+    <span class="stage-num" id="stage-num-2">2</span>
+    Alignment
+  </button>
+  <button class="stage-btn" id="stage-btn-3" onclick="goToStage(3)" disabled>
+    <span class="stage-num" id="stage-num-3">3</span>
+    GoTo &amp; Solve
+  </button>
+  <button class="stage-btn" id="stage-btn-4" onclick="goToStage(4)" disabled>
+    <span class="stage-num" id="stage-num-4">4</span>
+    Collimation
+  </button>
+  <button class="stage-btn" id="stage-btn-5" onclick="goToStage(5)" disabled>
+    <span class="stage-num" id="stage-num-5">5</span>
+    Session
+  </button>
+</nav>
+
+<!-- ── Compact mount strip (always visible — global STOP, mount state on 2–5) -->
+<div id="mount-strip" class="visible">
+  <span class="dot dot-grey" id="ms-dot"></span>
+  <span id="ms-state" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">—</span>
+  <span id="ms-radec">—</span>
+  <span id="ms-haalt" style="font-family:ui-monospace,monospace;color:var(--muted);font-size:0.78rem"></span>
+  <span style="flex:1"></span>
+  <button class="danger" style="padding:0.3rem 0.75rem;font-size:0.78rem"
+          onclick="mountEmergencyStop()">■ Stop</button>
+</div>
+
+<main>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 1 — Startup                                                   -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel active" id="s1">
+
+    <!-- System Readiness (UX1) -->
+    <div class="card" id="s1-readiness-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-readiness-dot"></span>
+        System Readiness
+        <span style="flex:1"></span>
+        <span id="s1-readiness-badge"
+              style="font-size:0.72rem;font-weight:600;padding:0.15rem 0.6rem;
+                     border-radius:999px;background:var(--surface);border:1px solid var(--border)">
+          Checking…
+        </span>
+        <span id="s1-readiness-mode"
+              style="display:none;font-size:0.68rem;font-weight:600;padding:0.1rem 0.5rem;
+                     border-radius:999px;background:var(--surface);border:1px solid var(--border);
+                     margin-left:0.3rem">
+        </span>
+        <button onclick="refreshReadiness()"
+                style="padding:0.1rem 0.45rem;font-size:0.72rem;margin-left:0.4rem"
+                title="Re-check readiness">↺</button>
+      </div>
+      <div id="s1-readiness-items" style="margin-top:0.25rem"></div>
+      <div id="s1-readiness-caps" style="padding-top:0.4rem;display:flex;flex-wrap:wrap;align-items:center"></div>
+    </div>
+
+    <!-- Milestone Dashboard (R7-005 / M0-008) -->
+    <div class="card" id="s1-milestones-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-milestones-dot"></span>
+        Milestone Dashboard
+        <span style="flex:1"></span>
+        <button onclick="refreshMilestones()"
+                style="padding:0.1rem 0.45rem;font-size:0.72rem;margin-left:0.4rem"
+                title="Refresh milestone status">↺</button>
+      </div>
+      <div id="s1-milestones-body" style="margin-top:0.25rem;font-size:0.82rem;color:var(--muted)">Loading…</div>
+    </div>
+
+    <!-- Observer & Time -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-green"></span>
+        Observer &amp; Time
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">UTC</span>
+          <span class="param-value mono" id="clock-utc">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Local Sidereal Time</span>
+          <span class="param-value mono" id="clock-lst">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Observer Lat</span>
+          <span class="param-value mono" id="site-lat">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Observer Lon</span>
+          <span class="param-value mono" id="site-lon">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hardware Connection -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="connect-dot"></span>
+        Hardware Connection
+      </div>
+      <div id="connect-status-grid" class="params" style="min-height:1.5rem;margin-bottom:0.75rem"></div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+        <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
+        <button id="setup-check-btn" onclick="runSetupCheck()" disabled class="secondary"
+                title="Verify hardware is responding — focuser nudge, mount RA+DEC slew, camera capture + plate solve">Setup Check</button>
+      </div>
+    </div>
+
+    <!-- Setup Check Wizard -->
+    <div id="setup-check-panel" style="display:none;margin-top:0.75rem" class="card">
+      <div class="card-title">Setup Check</div>
+      <div id="setup-check-steps" style="font-size:0.85rem;line-height:1.9"></div>
+      <div style="margin-top:0.75rem">
+        <button id="setup-check-close" class="secondary"
+                onclick="document.getElementById('setup-check-panel').style.display='none'"
+                disabled>Close</button>
+      </div>
+    </div>
+
+    <!-- Camera Cooling (ATR585M and other TEC cameras) — hidden until TEC camera detected -->
+    <div class="card" style="margin-top:0.75rem;display:none" id="s1-cooling-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-cooling-dot"></span>
+        Camera Cooling
+        <span style="flex:1"></span>
+        <span id="s1-cooling-badge"
+              style="font-size:0.72rem;padding:0.1rem 0.5rem;border-radius:999px;
+                     background:var(--surface);border:1px solid var(--border)">—</span>
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Camera</span>
+          <span class="param-value">
+            <select id="s1-cooling-cam-select"
+                    onchange="onCoolingCamChange(this.value)"
+                    style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--border);
+                           border-radius:3px;padding:0 4px;font-size:0.78rem">
+              <option value="0">CAM0</option>
+            </select>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Target</span>
+          <span class="param-value" style="display:flex;align-items:center;gap:0.4rem">
+            <input type="number" id="s1-cooling-target" value="-10" min="-10" max="10" step="1"
+                   style="width:4.5ch;background:var(--bg);color:var(--text);
+                          border:1px solid var(--border);border-radius:3px;
+                          padding:0.1rem 0.3rem;font-size:0.82rem">
+            <span style="color:var(--muted)">°C</span>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Sensor Temp</span>
+          <span class="param-value mono" id="s1-cooling-temp">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">TEC Power</span>
+          <span class="param-value" style="display:flex;flex-direction:column;gap:3px;width:100%">
+            <div style="display:flex;align-items:center;gap:0.4rem">
+              <div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">
+                <div id="s1-cooling-power-fill"
+                     style="height:100%;width:0%;border-radius:4px;background:var(--success);
+                            transition:width 0.4s,background 0.4s"></div>
+              </div>
+              <span id="s1-cooling-power-pct" class="mono"
+                    style="font-size:0.78rem;min-width:3.5ch;text-align:right">—</span>
+            </div>
+            <div id="s1-cooling-countdown"
+                 style="font-size:0.72rem;color:var(--muted);display:none"></div>
+          </span>
+        </div>
+        <div class="param" id="s1-cooling-warn-row" style="display:none">
+          <span class="param-label">Warning</span>
+          <span class="param-value" style="color:var(--warning);font-size:0.8rem"
+                id="s1-cooling-warn-msg"></span>
+        </div>
+      </div>
+      <div style="margin-top:0.6rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button id="s1-cooling-enable-btn" onclick="coolingEnable()">Enable Cooling</button>
+        <button id="s1-cooling-disable-btn" onclick="coolingDisable()"
+                style="display:none;background:var(--surface)">Disable Cooling</button>
+      </div>
+    </div>
+
+    <!-- Mount -->
+    <div id="s1-mount-status" class="status-line" style="margin-top:1rem"></div>
+    <div id="s1-mount-card"></div>
+
+    <!-- Mount Limits -->
+    <div class="card" style="margin-top:0.75rem">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Mount Limits
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Current HA</span>
+          <span class="param-value mono" id="current-ha">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Current Alt</span>
+          <span class="param-value mono" id="current-alt">—</span>
+        </div>
+        <div style="grid-column:1/-1;border-top:1px solid var(--border);margin:0.15rem 0"></div>
+        <div class="param">
+          <span class="param-label">Alt min (horizon)</span>
+          <span class="param-value mono" id="limit-alt-min">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Alt max (zenith excl.)</span>
+          <span class="param-value mono" id="limit-alt-max">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">HA east limit</span>
+          <span class="param-value mono" id="limit-ha-east">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">HA west limit</span>
+          <span class="param-value mono" id="limit-ha-west">—</span>
+        </div>
+      </div>
+      <p style="font-size:0.75rem;color:var(--muted);margin-top:0.75rem;line-height:1.5">
+        All GoTo commands are checked against these limits. Configure via environment variables
+        (<code>MOUNT_MIN_ALT_DEG</code>, <code>MOUNT_MAX_ALT_DEG</code>,
+        <code>MOUNT_HA_EAST_LIMIT_H</code>, <code>MOUNT_HA_WEST_LIMIT_H</code>).
+      </p>
+    </div>
+
+    <!-- Focuser status -->
+    <div class="card" style="margin-top:0.75rem" id="s1-focuser-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-focuser-dot"></span>
+        Focuser
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Status</span>
+          <span class="param-value" id="s1-focuser-status-text">—</span>
+        </div>
+        <div class="param" id="s1-focuser-pos-row" style="display:none">
+          <span class="param-label">Position</span>
+          <span class="param-value mono" id="s1-focuser-pos">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Autofocus cam</span>
+          <span class="param-value" style="display:flex;align-items:center;gap:0.4rem">
+            <select id="s1-focuser-cam-select"
+                    onchange="_focusCamRole = this.value"
+                    style="flex:1;background:var(--bg);color:var(--fg);border:1px solid var(--border);
+                           border-radius:3px;padding:0 4px;font-size:0.78rem">
+              <option value="0">Scanning…</option>
+            </select>
+            <button onclick="loadFocuserCameras()"
+                    style="padding:0.1rem 0.4rem;font-size:0.72rem"
+                    title="Re-scan cameras">↺</button>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- System Health -->
+    <div class="card" style="margin-top:0.75rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-health-dot"></span>
+        System Health
+        <span style="flex:1"></span>
+        <span id="s1-health-ts" style="font-size:0.7rem;color:var(--muted)">—</span>
+      </div>
+      <div class="params" id="s1-health-params">
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <span></span>
+      <button id="s1-proceed-btn" onclick="s1Proceed()" disabled>Proceed to Alignment →</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 2 — Polar Alignment                                           -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s2">
+
+    <div class="toolbar"><h2>Polar Alignment</h2></div>
+    <div id="s2-status" class="status-line"></div>
+
+    <!-- Step 1: Home -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Step 1 — Move to Home Position
+      </div>
+      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:1rem">
+        Slew the mount to its home position (pointing near the celestial pole, Dec&nbsp;89°, HA&nbsp;0).
+        This positions the scope for the star alignment.
+      </p>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <button id="s2-home-btn" onclick="s2Home()">Slew to Home (Dec 89°)</button>
+        <span id="s2-home-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- Step 2: Choose alignment star count and start -->
+    <div class="card" id="s2-setup-card" style="margin-top:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s2-setup-dot"></span>
+        Step 2 — Configure Star Alignment
+      </div>
+      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem">
+        OnStep builds a pointing model from 1–3 stars. More stars correct polar-axis
+        misalignment and cone error across the whole sky.
+      </p>
+      <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem">
+        <span style="font-size:0.85rem">Stars:</span>
+        <label style="font-size:0.85rem"><input type="radio" name="s2-nstars" value="1" checked> 1-star</label>
+        <label style="font-size:0.85rem"><input type="radio" name="s2-nstars" value="2"> 2-star</label>
+        <label style="font-size:0.85rem"><input type="radio" name="s2-nstars" value="3"> 3-star</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <button id="s2-start-btn" onclick="s2StartAlign()">Start Alignment</button>
+        <span id="s2-setup-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- Step 3: Per-star alignment loop (hidden until started) -->
+    <div class="card" id="s2-star-card" style="margin-top:1rem;display:none">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Step 3 — Center Alignment Star
+        <span id="s2-star-counter" style="margin-left:auto;font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div>
+          <label style="font-size:0.82rem;display:block;margin-bottom:0.25rem">Select star</label>
+          <select id="s2-star-select" style="min-width:16rem"></select>
+        </div>
+        <button id="s2-goto-btn" onclick="s2GotoStar()">GoTo</button>
+        <span id="s2-goto-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+      <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+        Use guide pulses to centre the star precisely, then accept:
+      </p>
+      <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:0.75rem">
+        <div class="guide-pad">
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('n')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('n')" ontouchend="s2GuideStop()">▲</button>
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('w')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('w')" ontouchend="s2GuideStop()">◀</button>
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('e')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('e')" ontouchend="s2GuideStop()">▶</button>
+          <div></div>
+          <button class="guide-btn" onmousedown="s2GuideStart('s')" onmouseup="s2GuideStop()"
+                  ontouchstart="s2GuideStart('s')" ontouchend="s2GuideStop()">▼</button>
+          <div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.82rem">
+          <label>Pulse&nbsp;ms</label>
+          <input type="number" id="s2-guide-ms" value="500" min="50" max="9999" style="width:5.5rem">
+        </div>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <button id="s2-accept-btn" onclick="s2AcceptStar()"
+                style="background:var(--success);border-color:var(--success)">Accept Star</button>
+        <span id="s2-accept-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- Step 4: Save model (hidden until all stars accepted) -->
+    <div class="card" id="s2-save-card" style="margin-top:1rem;display:none">
+      <div class="card-title">
+        <span class="dot dot-green"></span>
+        Step 4 — Save Alignment Model
+      </div>
+      <p style="color:var(--muted);font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem">
+        All alignment stars accepted. Save the pointing model to EEPROM so it
+        survives a power cycle.
+      </p>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <button id="s2-save-btn" onclick="s2SaveAlign()">Save to EEPROM</button>
+        <span id="s2-save-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- PA: pre-start safety checklist -->
+    <div class="card" style="margin-top:1rem" id="pa-checklist-card">
+      <div class="card-title">
+        <span class="dot" id="pa-chk-dot" style="background:var(--muted)"></span>
+        Polar Alignment — Pre-Start Checklist
+      </div>
+      <p style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem">
+        Confirm every item before starting the measurement run.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:0.35rem;font-size:0.85rem;margin-bottom:0.9rem">
+        <label><input type="checkbox" id="pa-chk-home">    Mount is mechanically in HOME (counterweight down, scope near Polaris)</label>
+        <label><input type="checkbox" id="pa-chk-north">   Telescope points roughly toward Polaris / northern celestial pole</label>
+        <label><input type="checkbox" id="pa-chk-clutch">  Clutches are locked</label>
+        <label><input type="checkbox" id="pa-chk-camera">  Camera is connected and live</label>
+        <label><input type="checkbox" id="pa-chk-focus">   Focus is good enough for plate solving</label>
+        <label><input type="checkbox" id="pa-chk-cables">  Cables have enough slack for RA rotation</label>
+        <label><input type="checkbox" id="pa-chk-collision"> No expected collision during planned RA movement</label>
+        <label><input type="checkbox" id="pa-chk-stable">  Tripod and mount head are mechanically stable</label>
+        <label><input type="checkbox" id="pa-chk-screws">  ALT/AZ fine-adjustment screws are accessible</label>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        <button id="pa-chk-btn" onclick="paConfirmChecklist()">Confirm Checklist</button>
+        <span id="pa-chk-status" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+    </div>
+
+    <!-- PA: measurement controls -->
+    <div class="card" style="margin-top:1rem" id="pa-measure-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="pa-dot"></span>
+        Polar Alignment Measurement
+      </div>
+      <p style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem">
+        The mount slews to three RA positions (Dec&nbsp;89°) and plate-solves each frame.
+        The detected rotation axis is compared to the true pole to give ALT / AZ corrections.
+      </p>
+      <div class="controls" style="flex-wrap:wrap;gap:0.5rem 0.75rem">
+        <label>RA step</label>
+        <input type="number" id="pa-ra-step" value="1.0" min="0.2" max="3.0" step="0.1"
+               style="width:4.5ch" title="RA rotation between positions (hours)">
+        <label>h</label>
+        <label style="margin-left:0.5rem">Exp</label>
+        <input type="number" id="pa-exposure" value="5" min="1" max="60" step="1"
+               style="width:4ch">
+        <label>s</label>
+        <label style="margin-left:0.5rem">Gain</label>
+        <input type="number" id="pa-gain" value="100" min="100" max="3200" step="100"
+               style="width:5ch">
+        <label style="margin-left:0.5rem">Cam</label>
+        <select id="pa-cam-select" style="font-size:0.8rem;max-width:16ch"
+                onchange="onPaCamChange(this.value)"></select>
+        <label style="margin-left:0.5rem">Target</label>
+        <select id="pa-precision" style="font-size:0.8rem">
+          <option value="30">Rough visual (30′)</option>
+          <option value="10">Basic tracking (10′)</option>
+          <option value="5">Guided imaging (5′)</option>
+          <option value="2" selected>Good imaging (2′)</option>
+          <option value="1">High precision (1′)</option>
+          <option value="0.5">Very high (30″)</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-top:0.75rem;flex-wrap:wrap">
+        <button id="pa-measure-btn" onclick="paMeasure()">Measure</button>
+        <button id="pa-cancel-btn" class="danger" onclick="paCancel()" disabled
+                style="padding:0.35rem 0.75rem">Cancel</button>
+        <span id="pa-step-label" style="font-size:0.82rem;color:var(--muted)"></span>
+      </div>
+      <div id="pa-progress-wrap" style="margin-top:0.6rem;display:none">
+        <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+          <div id="pa-progress-bar"
+               style="height:100%;background:var(--accent);width:0%;transition:width 0.4s"></div>
+        </div>
+      </div>
+      <div id="pa-warning-msg" style="display:none;margin-top:0.5rem;font-size:0.82rem;color:var(--warning)"></div>
+    </div>
+
+    <!-- PA: coarse alignment required -->
+    <div class="card" style="margin-top:1rem;display:none;border-color:var(--warning)" id="pa-coarse-card">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Coarse Alignment Required
+      </div>
+      <p id="pa-coarse-msg" style="font-size:0.85rem;line-height:1.55;margin-bottom:0.75rem"></p>
+      <p style="color:var(--muted);font-size:0.82rem;margin-bottom:0.75rem">
+        Manually reposition the tripod or mount head, then press <strong>Measure</strong> again.
+      </p>
+    </div>
+
+    <!-- PA: camera fallback offered -->
+    <div class="card" style="margin-top:1rem;display:none;border-color:var(--warning)" id="pa-fallback-card">
+      <div class="card-title">
+        <span class="dot dot-yellow"></span>
+        Plate Solve Failures — Use Guide Camera?
+      </div>
+      <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.75rem">
+        The main camera failed to plate solve twice. You can retry with a guide / fallback camera.
+      </p>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.82rem">Guide cam index</label>
+        <input type="number" id="pa-fallback-cam" value="1" min="0" max="7" style="width:3.5ch">
+        <button id="pa-fallback-btn" onclick="paFallback()">Use Guide Camera</button>
+      </div>
+    </div>
+
+    <!-- PA: results -->
+    <div class="card" style="margin-top:1rem;display:none" id="pa-results-card">
+      <div class="card-title">
+        <span class="dot dot-green"></span>
+        Polar Error — Results
+      </div>
+      <div class="params" style="margin-bottom:0.75rem">
+        <div class="param">
+          <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Detected pole</span>
+          <span></span>
+        </div>
+        <div class="param">
+          <span class="param-label">RA</span>
+          <span class="param-value mono" id="pa-pole-ra">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Dec</span>
+          <span class="param-value mono" id="pa-pole-dec">—</span>
+        </div>
+        <div class="param" style="margin-top:0.4rem">
+          <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Corrections needed</span>
+          <span></span>
+        </div>
+        <div class="param">
+          <span class="param-label">ALT error</span>
+          <span class="param-value" id="pa-alt-error">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">AZ error</span>
+          <span class="param-value" id="pa-az-error">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Total</span>
+          <span class="param-value" id="pa-total-error">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Quality</span>
+          <span class="param-value" id="pa-quality">—</span>
+        </div>
+      </div>
+      <div id="pa-verdict" style="margin-bottom:0.75rem;font-size:0.85rem;font-weight:500"></div>
+
+      <!-- live adjustment sub-section -->
+      <div style="border-top:1px solid var(--border);padding-top:0.75rem;margin-top:0.5rem">
+        <p style="font-size:0.82rem;color:var(--muted);margin-bottom:0.6rem">
+          Adjust the ALT/AZ screws physically. Press <strong>Start Live Adjustment</strong> to
+          continuously capture and re-solve while you turn the screws — no slewing occurs.
+        </p>
+        <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+          <button id="pa-live-btn" onclick="paLive()">Start Live Adjustment</button>
+          <button id="pa-refine-btn" class="secondary" onclick="paRefine()"
+                  style="padding:0.35rem 0.75rem">Second Run</button>
+          <span id="pa-live-label" style="font-size:0.82rem;color:var(--muted)"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(1)">← Back</button>
+      <button onclick="s2Done()">Done / Skip →</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 3 — GoTo & Plate Solve                                        -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s3">
+
+    <div class="toolbar"><h2>GoTo &amp; Plate Solve</h2></div>
+    <div id="s3-status" class="status-line"></div>
+
+    <div class="two-col">
+
+      <!-- ── Left: Targets ── -->
+      <div>
+        <!-- Custom Targets -->
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Custom Targets
+            <button id="s3-star-goto-btn" class="secondary" disabled
+                    style="padding:0.15rem 0.45rem;font-size:0.73rem"
+                    onclick="starGotoSelected()" title="GoTo selected target">GoTo</button>
+            <button id="s3-star-center-btn" class="secondary" disabled
+                    style="padding:0.15rem 0.45rem;font-size:0.73rem"
+                    onclick="starCenterSelected()" title="GoTo + plate-solve until centred">&#x2316;</button>
+            <button class="secondary" style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:auto"
+                    onclick="loadStars()">Reload</button>
+          </div>
+          <div id="s3-stars-status" class="status-line" style="margin-bottom:0.5rem;min-height:auto"></div>
+          <div id="s3-star-list" class="star-list"></div>
+        </div>
+
+        <!-- Catalog Search + GoTo -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            GoTo
+          </div>
+          <div class="input-row" style="margin-top:0">
+            <input type="text" id="catalog-query" placeholder="M42, Orion…" style="width:12ch"
+                   oninput="catalogSearch()" autocomplete="off">
+            <label style="display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+              <input type="checkbox" id="catalog-observable" onchange="catalogSearch()">
+              <span>Observable</span>
+            </label>
+            <span id="catalog-results" style="position:relative"></span>
+          </div>
+          <div class="input-row">
+            <label>RA</label>
+            <input type="number" id="goto-ra" step="0.001" placeholder="h" style="width:9ch">
+            <label>Dec</label>
+            <input type="number" id="goto-dec" step="0.001" placeholder="°" style="width:9ch">
+            <button onclick="mountGoto()">GoTo</button>
+            <button id="s3-center-btn" class="secondary" onclick="mountGotoAndCenter()"
+                    title="GoTo then plate-solve + sync until centred">&#x2316;&nbsp;Center</button>
+          </div>
+          <div id="s3-center-status" class="status-line"
+               style="margin-top:0.2rem;min-height:1rem;font-size:0.8rem"></div>
+        </div>
+      </div>
+
+      <!-- ── Right: Live Preview + Solve ── -->
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Live Preview
+            <span id="s3-ws-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">
+              <span class="ws-dot ws-stopped"></span>Stopped
+            </span>
+          </div>
+
+          <div class="preview-frame" id="s3-preview-frame">
+            <div class="preview-placeholder" id="s3-preview-ph">Press Start to begin</div>
+            <img id="s3-preview-img" alt="" style="display:none">
+            <div class="preview-overlay" id="s3-preview-overlay"></div>
+          </div>
+
+          <!-- Row 1: camera settings + display toggles + solve/focus actions -->
+          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
+            <label>Cam</label>
+            <select id="preview-cam-select" style="font-size:0.8rem;max-width:16ch"
+                    title="Preview camera"
+                    onchange="onPreviewCamChange(this.value)"></select>
+            <label style="margin-left:0.4rem">Exp</label>
+            <input type="number" id="preview-exposure" value="2" min="0.0001" max="1000" step="any"
+                   style="width:10ch" onchange="previewSendParams()">
+            <label>s</label>
+            <label style="margin-left:0.4rem">Gain</label>
+            <input type="number" id="preview-gain" value="100" min="100" max="15000" step="100"
+                   style="width:8ch" onchange="previewSendParams()">
+            <label style="margin-left:0.4rem">Off</label>
+            <input type="number" id="preview-offset" value="0" min="0" max="10000" step="1"
+                   style="width:8ch" title="Camera black level / offset (0–10000)"
+                   onchange="previewSendParams()">
+            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
+              <input type="checkbox" id="preview-stretch-chk" style="width:auto" checked
+                     title="Auto-stretch: percentile clip to fill display range"
+                     onchange="previewSendParams()">Str
+            </label>
+            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.2rem;cursor:pointer">
+              <input type="checkbox" id="preview-hist-chk" style="width:auto"
+                     onchange="previewHistToggle(this.checked)">Hist
+            </label>
+            <button id="solve-btn" onclick="solveFrame()"
+                    style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="Plate-solve current frame">Solve</button>
+            <button id="preview-af-btn" onclick="runPreviewAutofocus()" disabled
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="Focuser not connected">AF</button>
+            <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem"></span>
+            <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.4rem"></span>
+          </div>
+          <!-- Row 2: auto-gain controls — two distinct modes clearly separated -->
+          <div style="display:flex;align-items:center;gap:0.35rem;margin-top:0.35rem;flex-wrap:wrap">
+            <span style="font-size:0.78rem;font-weight:600;color:var(--muted);
+                         min-width:5.5rem">Auto-gain:</span>
+            <label style="display:flex;align-items:center;gap:0.25rem;cursor:pointer;font-size:0.82rem"
+                   title="Adjust live: server tweaks exposure (≤4 s) and gain after every preview frame — display only, does not change the capture settings below">
+              <input type="checkbox" id="preview-autogain-chk" style="width:auto"
+                     onchange="previewSendParams()">Adjust live
+            </label>
+            <span style="color:var(--border);font-size:0.9rem;padding:0 0.1rem">│</span>
+            <button id="autogain-run-btn" onclick="autoGainRun()"
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem"
+                    title="Find Best: run several test exposures and suggest optimal exposure + gain settings">Find Best</button>
+            <button id="autogain-cancel-btn" onclick="autoGainCancel()"
+                    style="padding:0.15rem 0.5rem;font-size:0.78rem;display:none"
+                    class="secondary">Cancel</button>
+            <span id="autogain-status-badge" style="font-size:0.78rem"></span>
+          </div>
+          <div id="s3-hist-panel" style="display:none;margin-top:0.5rem">
+            <canvas id="s3-histogram" class="hist-canvas" width="400" height="100"></canvas>
+            <div id="s3-hist-stats" class="hist-stats"></div>
+            <div id="s3-hist-low-wrap" style="display:none;margin-top:4px">
+              <div id="s3-hist-low-label" style="font-size:0.7rem;color:var(--muted);margin-bottom:2px">0 – 1000 ADU — pedestal detail</div>
+              <canvas id="s3-histogram-low" class="hist-canvas" width="400" height="70"></canvas>
+            </div>
+          </div>
+
+          <div id="s3-focus-row" style="display:none;align-items:center;gap:0.3rem;margin-top:0.6rem">
+            <span style="font-size:0.78rem;color:var(--muted);margin-right:0.2rem">Focus</span>
+            <button class="secondary" onclick="previewNudge(-20)"
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">−20</button>
+            <button class="secondary" onclick="previewNudge(-2)"
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">−2</button>
+            <button class="secondary" onclick="previewNudge(-1)"
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">−1</button>
+            <button class="secondary" onclick="previewNudge(1)"
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">+1</button>
+            <button class="secondary" onclick="previewNudge(2)"
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.2rem">+2</button>
+            <button class="secondary" onclick="previewNudge(20)"
+                    style="padding:0.2rem 0.45rem;font-size:0.78rem;min-width:2.6rem">+20</button>
+            <span id="s3-focus-pos" style="font-size:0.78rem;color:var(--muted);margin-left:0.4rem"></span>
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap;align-items:center">
+            <button id="preview-start-btn" onclick="previewStart()">Start</button>
+            <button id="preview-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+          </div>
+          <div id="autogain-result-row" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
+               border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6">
+            <span id="autogain-result-text"></span>
+            <button id="autogain-apply-btn" onclick="autoGainApply()"
+                    style="margin-left:0.8rem;padding:0.15rem 0.55rem;font-size:0.78rem;display:none"
+                    title="Copy auto-gain settings to exposure/gain inputs">Apply</button>
+          </div>
+
+          <!-- Diagnostic prompt (shown when NO_SIGNAL detected) -->
+          <div id="autogain-diag-prompt" style="display:none;margin-top:0.5rem;padding:0.5rem 0.7rem;
+               border-radius:4px;border:1px solid var(--warn,#f5a623);font-size:0.82rem;background:var(--bg)">
+            <b>No usable signal within normal exposure.</b>
+            Run diagnostic at up to 10 s?
+            <div style="margin-top:0.4rem;display:flex;gap:0.5rem">
+              <button id="autogain-diag-yes-btn" onclick="autoGainDiagnostic()"
+                      style="padding:0.18rem 0.6rem;font-size:0.8rem">Run diagnostic</button>
+              <button class="secondary" onclick="autoGainDiagDismiss()"
+                      style="padding:0.18rem 0.6rem;font-size:0.8rem">Dismiss</button>
+            </div>
+          </div>
+          <div id="autogain-diag-result" style="display:none;margin-top:0.5rem;padding:0.4rem 0.7rem;
+               border-radius:4px;border:1px solid var(--muted);font-size:0.82rem;background:var(--bg)">
+            <b id="autogain-diag-title"></b>
+            <p id="autogain-diag-msg" style="margin:0.25rem 0 0"></p>
+          </div>
+
+          <div id="solve-result" style="display:none;margin-top:0.75rem;padding:0.4rem 0.6rem;
+               border-radius:4px;background:var(--bg);font-size:0.8rem;
+               font-family:ui-monospace,monospace;line-height:1.6"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(2)">← Back</button>
+      <button id="s3-proceed-btn" onclick="goToStage(4)" disabled
+              title="Complete a GoTo first">→ Proceed to Collimation</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 4 — Collimation (Bahtinov mask)                              -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s4">
+
+    <div class="toolbar"><h2>Collimation</h2></div>
+    <div id="s4-status" class="status-line"></div>
+
+    <!-- ── Hardware Self-Test (COL-022) ── -->
+    <div class="card" id="s4-selftest-card" style="margin-bottom:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s4-st-dot"></span>
+        Hardware Self-Test
+        <span style="font-size:0.72rem;color:var(--muted);margin-left:0.5rem">verify camera · mount · focuser before starting wizard</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+        <tr>
+          <td style="padding:0.3rem 0;width:6rem;color:var(--muted)">Camera</td>
+          <td><button class="secondary" onclick="selftestCamera()" style="padding:0.2rem 0.7rem;font-size:0.82rem">Test</button></td>
+          <td style="padding-left:0.75rem"><span id="s4-st-camera-result" style="color:var(--muted)">—</span></td>
+        </tr>
+        <tr>
+          <td style="padding:0.3rem 0;color:var(--muted)">Mount</td>
+          <td>
+            <span style="display:flex;gap:0.35rem">
+              <button class="secondary" onclick="selftestMount('n')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="North">▲</button>
+              <button class="secondary" onclick="selftestMount('s')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="South">▼</button>
+              <button class="secondary" onclick="selftestMount('e')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="East">▶</button>
+              <button class="secondary" onclick="selftestMount('w')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="West">◀</button>
+            </span>
+          </td>
+          <td style="padding-left:0.75rem"><span id="s4-st-mount-result" style="color:var(--muted)">—</span></td>
+        </tr>
+        <tr>
+          <td style="padding:0.3rem 0;color:var(--muted)">Focuser</td>
+          <td>
+            <span style="display:flex;gap:0.35rem">
+              <button class="secondary" onclick="selftestFocuser(10)"  style="padding:0.2rem 0.5rem;font-size:0.82rem">+10</button>
+              <button class="secondary" onclick="selftestFocuser(-10)" style="padding:0.2rem 0.5rem;font-size:0.82rem">−10</button>
+            </span>
+          </td>
+          <td style="padding-left:0.75rem"><span id="s4-st-focuser-result" style="color:var(--muted)">—</span></td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ── Collimation Wizard (COL-020) ── -->
+    <div class="card" id="s4-wizard-card" style="margin-bottom:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s4-wiz-dot"></span>
+        Collimation Wizard
+        <span id="s4-wiz-badge" class="state-badge state-unknown" style="margin-left:0.5rem">Idle</span>
+      </div>
+      <div class="wiz-phases">
+        <div class="wiz-phase" id="wiz-ph-1">Prepare</div>
+        <div class="wiz-phase" id="wiz-ph-2">Acquire</div>
+        <div class="wiz-phase" id="wiz-ph-3">Rough</div>
+        <div class="wiz-phase" id="wiz-ph-4">Fine</div>
+        <div class="wiz-phase" id="wiz-ph-5">Validate</div>
+      </div>
+      <div id="s4-wiz-instruction"
+           style="font-size:0.88rem;min-height:2.5em;margin-bottom:0.6rem;line-height:1.45;color:var(--text)">
+        Ready. Click Start to begin the collimation wizard.
+      </div>
+      <!-- Screw recommendation (rough/fine guidance phases) -->
+      <div id="s4-wiz-recommendation"
+           style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;
+                  padding:0.45rem 0.75rem;margin-bottom:0.6rem;font-size:0.85rem;line-height:1.5">
+        <span style="color:var(--muted);font-size:0.74rem;text-transform:uppercase;letter-spacing:0.04em">Adjust</span><br>
+        <span id="s4-wiz-rec-screw" style="font-weight:600"></span>
+        <span id="s4-wiz-rec-dir"></span>
+        <span id="s4-wiz-rec-size" style="color:var(--muted);font-size:0.8rem;margin-left:0.4rem"></span>
+        <span id="s4-wiz-rec-confidence" style="color:var(--muted);font-size:0.75rem;margin-left:0.6rem"></span>
+      </div>
+      <div id="s4-wiz-error" class="status-line error" style="display:none;min-height:auto;margin-bottom:0.5rem"></div>
+      <div class="controls">
+        <button id="s4-wiz-start-btn"  onclick="collimStart()">Start</button>
+        <button id="s4-wiz-pause-btn"  onclick="collimPause()"   class="secondary" style="display:none">Pause</button>
+        <button id="s4-wiz-resume-btn" onclick="collimResume()"  class="secondary" style="display:none">Resume</button>
+        <button id="s4-wiz-cancel-btn" onclick="collimCancel()"  class="secondary" style="display:none">Cancel</button>
+        <button id="s4-wiz-retry-btn"  onclick="collimRetry()"   class="secondary" style="display:none">Reset</button>
+        <span class="controls-spacer"></span>
+        <button id="s4-wiz-next-btn"   onclick="collimNext(false)" style="display:none">Next</button>
+        <button id="s4-wiz-finish-btn" onclick="collimNext(true)"  style="display:none">Finish Phase</button>
+        <button id="s4-wiz-accept-btn" onclick="collimAccept(true)"  style="display:none">Accept</button>
+        <button id="s4-wiz-more-btn"   onclick="collimAccept(false)" class="secondary" style="display:none">Adjust More</button>
+      </div>
+    </div>
+
+    <div class="two-col">
+
+      <!-- ── Left: Bright stars + Focuser ── -->
+      <div>
+        <!-- Bright star selector -->
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Bright Stars
+            <span style="font-size:0.7rem;color:var(--muted);margin-left:0.5rem">mag ≤ 3</span>
+          </div>
+          <div id="s4-stars-status" class="status-line" style="margin-bottom:0.5rem;min-height:auto"></div>
+          <div id="s4-star-list" class="star-list"></div>
+        </div>
+
+        <!-- Guide pad for centering -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Centre Star
+          </div>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+            After GoTo, nudge the star to the frame centre before checking the Bahtinov pattern.
+          </p>
+          <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
+            <div class="guide-pad">
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('n','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('n','s4-guide-ms')" ontouchend="guideStop()">▲</button>
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('w','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('w','s4-guide-ms')" ontouchend="guideStop()">◀</button>
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('e','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('e','s4-guide-ms')" ontouchend="guideStop()">▶</button>
+              <div></div>
+              <button class="guide-btn" onmousedown="guideStart('s','s4-guide-ms')" onmouseup="guideStop()"
+                      ontouchstart="guideStart('s','s4-guide-ms')" ontouchend="guideStop()">▼</button>
+              <div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.82rem">
+              <label>Pulse&nbsp;ms</label>
+              <input type="number" id="s4-guide-ms" value="200" min="50" max="9999" style="width:5.5rem">
+            </div>
+          </div>
+        </div>
+
+        <!-- Focuser -->
+        <div id="s4-focuser-status" class="status-line" style="margin-top:1rem;margin-bottom:0.25rem"></div>
+        <div id="s4-focuser-card"></div>
+
+        <!-- Calibration: Bias + Dark -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Calibration
+          </div>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+            Cover the camera or scope cap before capturing.
+          </p>
+
+          <!-- Shared gain / offset row -->
+          <div class="controls" style="flex-wrap:wrap;gap:0.4rem 0.6rem;margin-bottom:0.5rem">
+            <label>Gain</label>
+            <input type="number" id="s4-cal-gain" value="100" min="0" max="5000"
+                   style="width:6ch" title="Applied to both bias and dark">
+            <label>Offset</label>
+            <input type="number" id="s4-cal-offset" value="0" min="0" max="255"
+                   style="width:5ch">
+          </div>
+
+          <!-- Bias row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.3rem;border-top:1px solid var(--border)">
+            <label style="white-space:nowrap;min-width:6ch">Bias</label>
+            <input type="number" id="s4-bias-nframes" value="32" min="1" max="200"
+                   style="width:5ch" title="16 minimum, 32 recommended">
+            <label>fr</label>
+            <button id="s4-bias-btn" onclick="prepareBias()" style="margin-left:auto">Prepare</button>
+            <span id="s4-bias-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="s4-bias-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Dark row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);flex-wrap:wrap">
+            <label style="white-space:nowrap;min-width:6ch">Dark</label>
+            <input type="number" id="s4-dark-nframes" value="20" min="1" max="200"
+                   style="width:5ch" title="Number of dark frames">
+            <label>fr</label>
+            <input type="number" id="s4-dark-exp" value="120" min="0.001" max="3600"
+                   style="width:6ch" title="Dark exposure in seconds">
+            <label>s</label>
+            <button id="s4-dark-btn" onclick="prepareDark()" style="margin-left:auto">Prepare</button>
+            <span id="s4-dark-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="s4-dark-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Flat row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border);flex-wrap:wrap">
+            <label style="white-space:nowrap;min-width:6ch">Flat</label>
+            <input type="number" id="s4-flat-nframes" value="15" min="1" max="200"
+                   style="width:5ch" title="Number of flat frames">
+            <label>fr</label>
+            <input type="number" id="s4-flat-init-exp" value="1" min="0.001" max="3600"
+                   style="width:5ch" title="Initial exposure for auto-tune (s)">
+            <label>s</label>
+            <input type="text" id="s4-flat-train" value="C8_NATIVE_ATR585M" maxlength="64"
+                   style="width:14ch;font-size:0.82rem" title="Optical train profile ID">
+            <input type="text" id="s4-flat-filter" value="none" maxlength="32"
+                   style="width:6ch;font-size:0.82rem" title="Filter ID (or 'none')">
+            <button id="s4-flat-btn" onclick="prepareFlat()" style="margin-left:auto">Prepare</button>
+            <span id="s4-flat-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0.3rem 0 0;line-height:1.35">
+            Flat quality depends on optical train, filter, camera orientation, dust, and focus.
+            Rotation and focus are not tracked. Retake flats if orientation, filter, or focus changed.
+          </p>
+          <div id="s4-flat-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Bad Pixel Map row -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+            <label style="white-space:nowrap;min-width:6ch">BPM</label>
+            <input type="number" id="s4-bpm-nframes" value="20" min="5" max="200"
+                   style="width:5ch" title="Number of bias frames for bad pixel detection (≥ 5)">
+            <label>fr</label>
+            <label style="font-size:0.78rem;color:var(--muted);margin-left:0.2rem"
+                   title="Hot/dead threshold in sigma">σ</label>
+            <input type="number" id="s4-bpm-sigma" value="5" min="1" max="20" step="0.5"
+                   style="width:4ch" title="Hot / dead pixel sigma threshold (default 5)">
+            <button id="s4-bpm-btn" onclick="prepareBpm()" style="margin-left:auto"
+                    title="Capture bias frames at minimum exposure and flag bad pixels">Generate BPM</button>
+            <span id="s4-bpm-progress" style="font-size:0.82rem;color:var(--muted)"></span>
+          </div>
+          <div id="s4-bpm-status" class="status-line" style="margin-top:0.2rem;min-height:auto"></div>
+
+          <!-- Calibration match status (FR-CAL-060 / FR-CAL-070) -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">
+            <span style="font-size:0.82rem;font-weight:500">Library status</span>
+            <button id="s4-cal-match-btn" onclick="checkCalibrationMatch()"
+                    style="padding:0.2rem 0.6rem;font-size:0.78rem;margin-left:auto">Check</button>
+          </div>
+          <div id="s4-cal-match-badges" style="display:none;margin-top:0.35rem;font-size:0.82rem">
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap" id="s4-cal-match-row"></div>
+          </div>
+          <div id="s4-cal-match-detail" style="display:none;margin-top:0.3rem;font-size:0.78rem;color:var(--muted);line-height:1.4"></div>
+        </div>
+
+        <!-- Guide Camera Auto Gain -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-title">
+            <span class="dot dot-grey" id="guide-ag-dot"></span>
+            Guide Camera Auto Gain
+          </div>
+          <p style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem">
+            Optimises exposure and gain for guide-star detectability (FR-GUIDE-001).
+          </p>
+          <div class="controls" style="flex-wrap:wrap;gap:0.4rem 0.6rem;margin-bottom:0.5rem">
+            <label>Cam idx</label>
+            <input type="number" id="guide-ag-cam-idx" value="1" min="0" max="7"
+                   style="width:4ch" title="Camera SDK index for the guide camera">
+            <label style="margin-left:0.4rem">Model</label>
+            <select id="guide-ag-model" style="font-size:0.8rem">
+              <option value="GPCMOS02000KPA">GPCMOS02000KPA (IMX290)</option>
+              <option value="OAG_678M">OAG_678M (IMX678)</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button id="guide-ag-run-btn" onclick="guideAgRun()"
+                    style="padding:0.22rem 0.7rem;font-size:0.82rem">Auto Gain</button>
+            <button id="guide-ag-cancel-btn" onclick="guideAgCancel()"
+                    style="display:none;padding:0.22rem 0.7rem;font-size:0.82rem"
+                    class="secondary">Cancel</button>
+            <span id="guide-ag-status-badge" style="font-size:0.8rem;display:none"></span>
+          </div>
+          <div id="guide-ag-result" style="display:none;margin-top:0.5rem;padding:0.4rem 0.6rem;
+               border-radius:4px;background:var(--bg);font-size:0.82rem;line-height:1.6">
+            <span id="guide-ag-result-text"></span>
+            <span id="guide-ag-locked-badge" style="display:none;margin-left:0.5rem;
+                  background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:0.76rem">
+              Locked
+            </span>
+            <button id="guide-ag-reuse-btn" onclick="guideAgRun()" style="display:none;
+                    margin-left:0.5rem;padding:0.15rem 0.55rem;font-size:0.78rem"
+                    title="Run again — last-good settings used as starting point">Reuse</button>
+          </div>
+
+          <!-- Guide monitoring controls (FR-GUIDE-002) -->
+          <div style="border-top:1px solid var(--border);margin-top:0.75rem;padding-top:0.6rem">
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+              <span style="font-size:0.82rem;font-weight:500">5-min Monitor</span>
+              <button id="guide-mon-start-btn" onclick="guideMonStart()"
+                      style="padding:0.18rem 0.55rem;font-size:0.78rem">Start</button>
+              <button id="guide-mon-stop-btn" onclick="guideMonStop()"
+                      style="display:none;padding:0.18rem 0.55rem;font-size:0.78rem"
+                      class="secondary">Stop</button>
+              <span id="guide-mon-dot" class="dot dot-grey" style="margin-left:0.2rem"></span>
+            </div>
+            <div id="guide-mon-status-row" style="display:none;margin-top:0.4rem;font-size:0.8rem;line-height:1.5">
+              <span id="guide-mon-status-badge"
+                    style="border-radius:3px;padding:1px 5px;font-size:0.76rem;background:var(--muted);color:#fff"></span>
+              <span id="guide-mon-settings" style="color:var(--muted);margin-left:0.5rem"></span>
+              <span id="guide-mon-time" style="color:var(--muted);margin-left:0.5rem;font-size:0.74rem"></span>
+            </div>
+            <div id="guide-mon-warn" style="display:none;margin-top:0.25rem;font-size:0.78rem;
+                 color:var(--warn,#f5a623)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Right: Large preview ── -->
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Bahtinov Preview
+            <span id="s4-ws-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">
+              <span class="ws-dot ws-stopped"></span>Stopped
+            </span>
+          </div>
+
+          <div class="preview-frame large" id="s4-preview-frame">
+            <div class="preview-placeholder" id="s4-preview-ph">
+              Press Start — the live feed from Stage 3 carries over
+            </div>
+            <img id="s4-preview-img" alt="" style="display:none;max-width:100%;max-height:600px">
+            <div class="preview-overlay" id="s4-preview-overlay"></div>
+            <svg id="s4-bahtinov-svg" style="position:absolute;top:0;left:0;pointer-events:none;display:none" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+
+          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
+            <label>Exp</label>
+            <input type="number" id="s4-exposure" value="0.5" min="0.1" max="30" step="0.1"
+                   style="width:7ch">
+            <label>s</label>
+            <label style="margin-left:0.4rem">Gain</label>
+            <input type="number" id="s4-gain" value="100" min="100" max="3200" step="100"
+                   style="width:6ch">
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center">
+            <button id="s4-start-btn" onclick="s4PreviewStart()">Start</button>
+            <button id="s4-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+            <button id="s4-analyze-btn" onclick="bahtinovAnalyze()" style="margin-left:auto" disabled>Analyze</button>
+          </div>
+          <!-- Bahtinov analysis results -->
+          <div id="s4-bahtinov-result" style="display:none;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">
+            <div id="s4-bahtinov-error-line" style="font-size:0.95rem;font-weight:600;margin-bottom:0.4rem"></div>
+            <div class="params" style="font-size:0.82rem">
+              <div class="param">
+                <span class="param-label">Crossing RMS</span>
+                <span class="param-value mono" id="s4-bahtinov-rms">—</span>
+              </div>
+              <div class="param">
+                <span class="param-label">Confidence</span>
+                <span class="param-value mono" id="s4-bahtinov-conf">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(3)">← Back</button>
+      <button onclick="s4Done()">→ Proceed to Session</button>
+    </div>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <!-- STAGE 5 — Observation Session                                       -->
+  <!-- ════════════════════════════════════════════════════════════════════ -->
+  <section class="stage-panel" id="s5">
+
+    <div class="toolbar"><h2>Observation Session</h2></div>
+
+    <!-- M4-002: Visible Tonight — target recommendations -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s5-tonight-dot"></span>
+        Visible Tonight
+        <button onclick="s5LoadTargets()"
+                style="padding:0.2rem 0.6rem;font-size:0.75rem;margin-left:auto">
+          ↻ Refresh
+        </button>
+      </div>
+      <div id="s5-tonight-list" style="min-height:2rem">
+        <span style="color:var(--muted);font-size:0.8rem">Loading…</span>
+      </div>
+      <div id="s5-tonight-status" class="status-line" style="min-height:0;margin-top:0.25rem"></div>
+    </div>
+
+    <!-- Session Setup & Control -->
+    <div id="s5-session-status" class="status-line"></div>
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s5-session-dot"></span>
+        Start Observation
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Target</span>
+          <span class="param-value">
+            <input type="text" id="s5-target" value="M42"
+                   autocomplete="off" spellcheck="false" style="width:10ch">
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Profile</span>
+          <span class="param-value">
+            <select id="s5-profile"
+                    style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:0.25rem 0.4rem;font-size:0.9rem">
+              <option value="c8_native">C8 Native (f/10)</option>
+              <option value="c8_reducer">C8 + 0.63× reducer</option>
+              <option value="c8_barlow2x">C8 + 2× Barlow</option>
+            </select>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Exposure</span>
+          <span class="param-value">
+            <input type="number" id="s5-exposure" value="30" min="1" max="300" step="1"
+                   style="width:6ch"> s
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Stack depth</span>
+          <span class="param-value">
+            <input type="number" id="s5-stack-depth" value="10" min="1" max="100" step="1"
+                   style="width:6ch"> frames
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Skip autofocus</span>
+          <span class="param-value">
+            <input type="checkbox" id="s5-skip-af">
+          </span>
+        </div>
+      </div>
+      <!-- Calibration readiness row (FR-CAL-060 / FR-CAL-070) -->
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.6rem;font-size:0.82rem">
+        <span style="color:var(--muted)">Calibration</span>
+        <span id="s5-cal-badges" style="display:flex;gap:0.4rem;flex-wrap:wrap"></span>
+        <button onclick="s5CheckCalibration()"
+                style="padding:0.15rem 0.5rem;font-size:0.75rem;margin-left:auto">Check</button>
+      </div>
+      <div id="s5-cal-detail" style="display:none;font-size:0.75rem;color:var(--muted);margin-top:0.25rem;line-height:1.4"></div>
+
+      <div class="controls" style="margin-top:0.75rem">
+        <button id="s5-start-btn" onclick="s5StartSession()">&#x25B6;&nbsp;Start Session</button>
+        <button id="s5-stop-btn" class="danger" onclick="s5StopSession()" disabled>&#x25A0;&nbsp;Stop</button>
+      </div>
+
+      <!-- Live run status — shown while / after a session runs -->
+      <div id="s5-run-status" style="display:none;margin-top:1.1rem">
+
+        <!-- UX2-002: Pipeline step strip -->
+        <div style="display:flex;align-items:flex-start;margin-bottom:1rem">
+          <div class="s5-step" id="s5-step-1">
+            <div class="s5-step-circle" id="s5-sc-1">1</div>
+            <div class="s5-step-label">Connect</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-1"></div>
+          <div class="s5-step" id="s5-step-2">
+            <div class="s5-step-circle" id="s5-sc-2">2</div>
+            <div class="s5-step-label">GoTo</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-2"></div>
+          <div class="s5-step" id="s5-step-3">
+            <div class="s5-step-circle" id="s5-sc-3">3</div>
+            <div class="s5-step-label">Centre</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-3"></div>
+          <div class="s5-step" id="s5-step-4">
+            <div class="s5-step-circle" id="s5-sc-4">4</div>
+            <div class="s5-step-label">Focus</div>
+          </div>
+          <div class="s5-step-line" id="s5-sl-4"></div>
+          <div class="s5-step" id="s5-step-5">
+            <div class="s5-step-circle" id="s5-sc-5">5</div>
+            <div class="s5-step-label">Capture</div>
+          </div>
+        </div>
+
+        <!-- UX2-004: Recovery panel — shown on FAILED -->
+        <div id="s5-recovery-banner"
+             style="display:none;background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.2);border-radius:6px;padding:0.75rem 1rem;margin-bottom:0.75rem">
+          <div style="font-size:0.82rem;font-weight:600;color:var(--danger);margin-bottom:0.25rem">Session failed</div>
+          <div id="s5-recovery-reason" style="font-size:0.8rem;color:var(--text);margin-bottom:0.4rem"></div>
+          <div id="s5-recovery-action" style="font-size:0.75rem;color:var(--muted);margin-bottom:0.6rem"></div>
+          <button onclick="s5StartSession()" style="font-size:0.8rem;padding:0.2rem 0.6rem">&#x21BA;&nbsp;Retry</button>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem">
+          <span style="font-size:0.78rem;color:var(--muted)">Phase</span>
+          <span id="s5-state-badge" class="state-badge state-unknown">—</span>
+          <span id="s5-frames-text"
+                style="font-size:0.82rem;color:var(--muted);margin-left:auto"></span>
+        </div>
+        <div id="s5-progress-bar-wrap"
+             style="background:var(--border);border-radius:4px;height:5px;overflow:hidden;margin-bottom:0.75rem;display:none">
+          <div id="s5-progress-bar"
+               style="height:100%;background:var(--accent);transition:width 0.4s;width:0%"></div>
+        </div>
+        <div class="params" style="font-size:0.82rem">
+          <div class="param" id="s5-centering-row" style="display:none">
+            <span class="param-label">Centring offset</span>
+            <span class="param-value mono" id="s5-centering-val">—</span>
+          </div>
+          <div class="param" id="s5-rejected-row" style="display:none">
+            <span class="param-label">Frames rejected</span>
+            <span class="param-value mono" id="s5-rejected-val">—</span>
+          </div>
+          <div class="param" id="s5-calibrated-row" style="display:none">
+            <span class="param-label">Calibration</span>
+            <span class="param-value">
+              <span id="s5-calibrated-badge"
+                    style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 6px;font-size:0.78rem">
+                Calibrated
+              </span>
+            </span>
+          </div>
+          <div class="param" id="s5-refocus-row" style="display:none">
+            <span class="param-label">Refocus count</span>
+            <span class="param-value mono" id="s5-refocus-val">—</span>
+          </div>
+        </div>
+        <ul id="s5-warnings-list"
+            style="margin-top:0.5rem;list-style:none;padding:0;font-size:0.78rem;color:var(--warning);display:none"></ul>
+        <!-- Live stack viewer — shown once the first frame is integrated -->
+        <div id="s5-stack-preview" style="display:none;margin-top:1rem">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem">
+            <span style="font-size:0.78rem;color:var(--muted)">Live Stack</span>
+            <span id="s5-stack-ws-status" style="font-size:0.72rem"></span>
+          </div>
+          <div class="preview-frame large">
+            <div class="preview-placeholder" id="s5-stack-ph">Waiting for first integrated frame…</div>
+            <img id="s5-stack-img" alt="" style="display:none;max-width:100%;max-height:600px">
+          </div>
+        </div>
+        <div id="s5-saved-path"
+             style="margin-top:0.75rem;font-size:0.82rem;color:var(--success);display:none"></div>
+      </div>
+    </div>
+
+    <!-- Sky Shot -->
+    <div id="s5-skyshot-status" class="status-line"></div>
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="skyshot-dot"></span>
+        Meridian Sky Position
+      </div>
+      <div class="params">
+        <div class="param">
+          <span class="param-label">Target elevation</span>
+          <span class="param-value">
+            <input type="number" id="skyshot-elevation" value="80" min="60" max="89" step="1"
+                   style="width:6ch" oninput="updateElevationLabel()">
+            <span id="elevation-label" style="font-size:0.78rem;color:var(--muted)"> °</span>
+          </span>
+        </div>
+        <div class="param">
+          <span class="param-label">Computed RA</span>
+          <span class="param-value mono" id="skyshot-ra">—</span>
+        </div>
+        <div class="param">
+          <span class="param-label">Computed Dec</span>
+          <span class="param-value mono" id="skyshot-dec">—</span>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="skyshot-goto-btn" onclick="skyGoto()">GoTo Sky</button>
+        <button id="skyshot-snap-btn" onclick="skySnap()" class="secondary" disabled>Snap</button>
+        <button id="skyshot-park-btn" onclick="skyPark()" class="secondary">Park after Snap</button>
+        <span class="controls-spacer"></span>
+        <span id="skyshot-snap-count" style="font-size:0.78rem;color:var(--muted)"></span>
+      </div>
+      <div class="preview-frame" id="skyshot-frame" style="margin-top:1rem;display:none">
+        <div class="preview-placeholder" id="skyshot-placeholder">Snap to capture a frame</div>
+        <img id="skyshot-img" alt="" style="display:none">
+      </div>
+    </div>
+
+    <!-- Cameras -->
+    <div class="card" style="margin-top:1.5rem">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Connected Cameras
+        <button id="scan-btn" onclick="scan()"
+                style="padding:0.3rem 0.75rem;font-size:0.8rem;margin-left:auto">Scan</button>
+      </div>
+      <div id="s5-camera-status" class="status-line" style="margin-bottom:0.5rem;min-height:auto"></div>
+      <div id="s5-camera-grid" class="camera-grid"></div>
+    </div>
+
+    <div class="stage-nav">
+      <button class="secondary" onclick="goToStage(4)">← Back</button>
+      <span></span>
+    </div>
+  </section>
+
+</main>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/setup.js"></script>
+<script src="/static/js/mount.js"></script>
+<script src="/static/js/collimation.js"></script>
+<script src="/static/js/focuser.js"></script>
+<script src="/static/js/preview.js"></script>
+<script src="/static/js/session.js"></script>
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>

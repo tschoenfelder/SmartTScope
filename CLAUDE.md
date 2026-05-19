@@ -1,17 +1,14 @@
-- # LLM Wiki
+- # SmartTScope
     
 
-- A personal knowledge base maintained by Claude Code.
-    
-- Based on Andrej Karpathy's LLM Wiki pattern.
+- A software to steer a Celestron C8 telescope.
     
 
 - ## Purpose
     
 
-- This wiki is a structured, interlinked knowledge base for planning a SmartTelescope application.
+- This software shall allow handling the complex hardware setup in a smart way allowing the user to get great pictures of moon, planets, stars, deep space objects and even the ISS.
     
-- Claude maintains the wiki. The human curates sources, asks questions, and guides the analysis.
     
 
 - ## Folder structure
@@ -21,8 +18,12 @@
     
 - raw/ -- source documents (immutable -- never modify these)
     
-- wiki/ -- markdown pages maintained by Claude
+- docs/ -- markdown pages maintained by Claude
+
+- resources/ -- external information or adapters to be used by this project
     
+- resources/hlrequirements -- high level requirements. Integrate into the todo list when asked by the user
+
 - wiki/index.md -- table of contents for the entire wiki
     
 - wiki/log.md -- append-only record of all operations
@@ -33,116 +34,34 @@
 - ## Ingest workflow
     
 
-- When the user adds a new source to `raw/` and asks you to ingest it:
+- When the user adds a new source to `resources/hlrequirements/` or `docs/` and asks you to ingest it:
     
 
-- 1. Read the full source document
+- 1. Read the full document
     
 - 2. Discuss key takeaways with the user before writing anything
     
-- 3. Create a summary page in `wiki/` named after the source
-    
-- 4. Create or update concept pages for each major idea or entity
-    
-- 5. Add wiki-links ([[page-name]]) to connect related pages
-    
-- 6. Update `wiki/index.md` with new pages and one-line descriptions
-    
-- 7. Append an entry to `wiki/log.md` with the date, source name, and what changed
-    
+- 3. Create or update an prioritized existing todo list `todo.md` in `docs/`
 
-- A single source may touch 10-15 wiki pages. That is normal.
-    
+- 4. Plan the development of the top todos by defining test cases
 
-- ## Page format
-    
+- 5. Request user approval
 
-- Every wiki page should follow this structure:
+- 6. Develop the next todo until the tests pass
     
+- 7. Append an entry to `wiki/log.md` with the date, source name, and what changed and update the todo list
 
-- ```markdown
-    
-- # Page Title
-    
+- 8. ask user for pushing to git and push git in case
 
-- **Summary**: One to two sentences describing this page.
     
+- ## Code
 
-- **Sources**: List of raw source files this page draws from.
-    
+- 1. Develop based on Python 3.13
 
-- **Last updated**: Date of most recent update.
-    
+- 2. Application to run under a Raspberry 5 based on Trixie 64
 
-- ---
-    
-
-- Main content goes here. Use clear headings and short paragraphs.
-    
-
-- Link to related concepts using [[wiki-links]] throughout the text.
-    
-
-- ## Related pages
-    
-
-- - [[related-concept-1]]
-    
-- - [[related-concept-2]]
-    
-- ```
-    
-
-- ## Citation rules
-    
-
-- - Every factual claim should reference its source file
-    
-- - Use the format (source: filename.pdf) after the claim
-    
-- - If two sources disagree, note the contradiction explicitly
-    
-- - If a claim has no source, mark it as needing verification
-    
-
-- ## Question answering
-    
-
-- When the user asks a question:
-    
-
-- 1. Read `wiki/index.md` first to find relevant pages
-    
-- 2. Read those pages and synthesize an answer
-    
-- 3. Cite specific wiki pages in your response
-    
-- 4. If the answer is not in the wiki, say so clearly
-    
-- 5. If the answer is valuable, offer to save it as a new wiki page
-    
-
-- Good answers should be filed back into the wiki so they compound over time.
-    
-
-- ## Lint
-    
-
-- When the user asks you to lint or audit the wiki:
-    
-
-- - Check for contradictions between pages
-    
-- - Find orphan pages (no inbound links from other pages)
-    
-- - Identify concepts mentioned in pages that lack their own page
-    
-- - Flag claims that may be outdated based on newer sources
-    
-- - Check that all pages follow the page format above
-    
-- - Report findings as a numbered list with suggested fixes
-    
+- 1. Testing under Windows 11 using mock devices
+- 
 
 - ## Rules
     

@@ -4,7 +4,7 @@
 
 **Sources**: SmartTelescope.md, requirements-review (2026-04-19)
 
-**Last updated**: 2026-04-19
+**Last updated**: 2026-05-02
 
 ---
 
@@ -66,6 +66,7 @@ Requirements are derived from the [[smart-telescope]] category definition and be
 |---|---|---|
 | Focus aid — live FWHM/HFR or Bahtinov feedback | MVP | |
 | Electronic [[autofocus]] — star-size metric, backlash handling | **MVP** | Promoted from MVP+: Vaonis ships live autofocus as standard; C8 focal length is unforgiving |
+| **Bahtinov mask collimation tool** — automated spike detection, crossing-error metric, live overlay, user-guided focuser loop | **MVP+** | New (2026-05-02). Two-layer design: `BahtinovAnalyzer` (image only) + `FocusController` (hardware). See [[bahtinov-analyzer]] |
 | Optical train awareness — pixel scale, FOV, solve profiles per config | **MVP** | Promoted from MVP+: foundational for correct solving, framing, and warnings |
 | Refocus triggers — temp drift, filter change, altitude, elapsed time | **MVP+** | Promoted from Full |
 
@@ -167,6 +168,17 @@ Requirements are derived from the [[smart-telescope]] category definition and be
 | Local-first operation — define which functions remain available offline | MVP | *(needs AC: offline function list)* |
 | Power-loss handling during capture — defined safe state, file integrity after interruption | **MVP** | **New** — was missing from v1 |
 | Safe remote update mechanism — versioned updates with rollback | MVP+ | |
+
+## 14. Process requirements
+
+> **New section (2026-04-30)** — These govern how changes are tracked and communicated. They apply to all requirement and implementation work.
+
+| Requirement | Tag | Notes |
+|---|---|---|
+| **Documentation gate**: a change is not considered done until the corresponding documentation (wiki page, API contract, quickstart, or inline help) is updated | **MVP** | Applies to all sprints; documentation lag is a quality debt |
+| **Release traceability**: each requirement carries a "Planned for release" field and a "Implemented in release" field; both are kept current | **MVP** | Enables stakeholder visibility and retrospective audit |
+
+> **Immediate action**: add "Planned" and "Implemented" columns to all requirement tables in §§1–13. Until then, track release info in the sprint log.
 
 ---
 

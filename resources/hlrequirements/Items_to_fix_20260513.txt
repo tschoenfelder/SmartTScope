@@ -1,0 +1,37 @@
+# to be checked and proposal generated
+- Cancel button whilst autogain in progress doesn't stop for quiet a long time
+- Preview shows ⚠ AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR after autogain cancel
+  - unclear, why this has been caused. This appeared after dtating cancelled
+  - why we have a check box AG and and a button Autogain? The AF button is blow the histogram, the autogain at the bottom. Fix this clustering 
+  - Log states INFO     smart_telescope.adapters.onstep.focuser: OnStepFocuser.move(): steps=22628, but focuser seemingly not addressed. UI continues to state position 22628, even iof log entry suggest a movement
+- Startup shows both camera under focuser section, but not under cooling nor Polar alignment measurement nor preview screen
+- histogram should show detailed histogram below 1000 and the current block size above
+- On any part of the app crashing, that other functionalities have to continue
+  - Especially physical moving parts have to stay under control all the time
+    - Mount and focuser should be requested to move specific count of steps only
+	- No new step command, if the previous one has been confirmed to be finished
+	- Log to file and notifiy user when mount / focuser are slower than required by SMartTScope
+  - Ensure buttons with STOP functionalities will always be handle in time if pressed
+- Add a test functionality to allow the final syste, to check if everything is connected and working
+  - Might be focuser to move + and - steps, as long as focuser value stays in range [0 .. max taking from focuser config]
+  - Might be moving RA by 10 degrees, asking user for confirmation and move 10 degrees back (without hiting the mount)
+  - Perform same for DEC axis (without hiting the mount)
+  - Take an image with all cameras and try plate solve. Check, if the ones showing data point to roughly same area in sky
+  - Move then to home, user should confirm
+  - This should be a basic check after installing the application newly, not being required each time.
+  - May be a button next to the 'Connect All' being enabled after all systems are connected
+- Support frame types
+  - Generation of bias and dark frames
+    - Used to 
+	  - remove thermal/electronic exposure signal and identify hot pixels
+      - Creating bad pixel maps
+	  - Estimate once the optimal black level / offset to be used
+	  - Reduce the impact of dark frames not being taken with same exposure, gain and temperatures like lights
+  - Generation of flats frames
+    - Generate for different temperatures, if camera is cooled
+	- Using all filters if available
+	- Spanning several exposure times matching expected light frame settings
+  - Generation of master frames with obvious file naming
+  - Generate bad pixel map per camera
+  - Supporting frames should not be taken as part of the normal light recording session, as no automatic cover exists. user should drive recording of flats in case he sees this necessary.
+  

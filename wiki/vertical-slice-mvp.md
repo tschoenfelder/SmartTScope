@@ -19,7 +19,7 @@ This slice is the first shippable proof-of-concept. It is not a demo and not a p
 ## Slice scenario
 
 **Fixed inputs** (hardcoded for this slice):
-- Optical config: C8 native (2032 mm, sensor pixel scale ~0.20 arcsec/px — exact value depends on camera)
+- Optical config: C8 native (2032 mm, pixel scale hint 0.38 arcsec/px — matches `C8_NATIVE` profile in `runner.py`)
 - Target: M42 (Orion Nebula) — large, bright, always a good first target
 - Sub-exposure: 30 seconds
 - Stack depth: 10 frames

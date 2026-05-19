@@ -1,0 +1,629 @@
+"""Unit tests for /api/calibration endpoints (AGT-3-1, AGT-3-2, AGT-3-4)."""
+from __future__ import annotations
+
+import io
+import time
+from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+import pytest
+from astropy.io import fits
+from fastapi.testclient import TestClient
+
+from smart_telescope.api import calibration as cal_mod
+from smart_telescope.app import app
+
+client = TestClient(app)
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _write_fits(path: Path, value: int = 150) -> None:
+    pixels = np.full((32, 32), value, dtype=np.uint16)
+    hdu = fits.PrimaryHDU(data=pixels)
+    buf = io.BytesIO()
+    hdu.writeto(buf)
+    path.write_bytes(buf.getvalue())
+
+
+def _wait_for_job(job_id: str, timeout: float = 5.0, interval: float = 0.05) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        resp = client.get(f"/api/calibration/status/{job_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["status"] in ("done", "failed"):
+            return data
+        time.sleep(interval)
+    raise TimeoutError(f"Job {job_id} did not finish within {timeout}s")
+
+
+# ── POST /api/calibration/bias ────────────────────────────────────────────────
+
+
+class TestBiasStart:
+    def setup_method(self) -> None:
+        cal_mod._reset_jobs()
+
+    def test_returns_202(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            resp = client.post("/api/calibration/bias", json={"n_frames": 2})
+        assert resp.status_code == 202
+
+    def test_returns_job_id(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            data = client.post("/api/calibration/bias", json={"n_frames": 2}).json()
+        assert "job_id" in data
+        assert len(data["job_id"]) > 0
+
+    def test_503_when_image_root_not_configured(self) -> None:
+        with patch.object(cal_mod, "config") as mock_cfg:
+            mock_cfg.IMAGE_ROOT = ""
+            resp = client.post("/api/calibration/bias", json={})
+        assert resp.status_code == 503
+
+    def test_422_on_invalid_conversion_gain(self, tmp_path: Path) -> None:
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            resp = client.post(
+                "/api/calibration/bias",
+                json={"n_frames": 2, "conversion_gain": "INVALID"},
+            )
+        assert resp.status_code == 422
+
+
+# ── GET /api/calibration/status/{job_id} ─────────────────────────────────────
+
+
+class TestJobStatus:
+    def setup_method(self) -> None:
+        cal_mod._reset_jobs()
+
+    def test_404_for_unknown_job(self) -> None:
+        resp = client.get("/api/calibration/status/nonexistent-id")
+        assert resp.status_code == 404
+
+    def test_job_completes_successfully(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            resp = client.post("/api/calibration/bias", json={"n_frames": 1})
+        job_id = resp.json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "done"
+
+    def test_done_job_has_result_path(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/bias", json={"n_frames": 1}).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["result_path"] is not None
+        assert result["result_path"].endswith(".fits")
+
+    def test_job_fails_on_zero_pixels(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "zero.fits"
+        pixels = np.zeros((32, 32), dtype=np.uint16)
+        hdu = fits.PrimaryHDU(data=pixels)
+        buf = io.BytesIO()
+        hdu.writeto(buf)
+        fits_path.write_bytes(buf.getvalue())
+
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/bias", json={"n_frames": 1}).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "failed"
+        assert result["error"] is not None
+
+    def test_frames_done_increments(self, tmp_path: Path) -> None:
+        """frames_done should reach n_frames when done."""
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/bias", json={"n_frames": 3}).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["frames_done"] == 3
+
+
+# ── POST /api/calibration/dark ────────────────────────────────────────────────
+
+
+class TestDarkStart:
+    def setup_method(self) -> None:
+        cal_mod._reset_jobs()
+
+    def _start_dark(self, tmp_path: Path, **extra) -> str:
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            payload = {"n_frames": 1, "exposure_ms": 2000.0, **extra}
+            resp = client.post("/api/calibration/dark", json=payload)
+        return resp
+
+    def test_returns_202(self, tmp_path: Path) -> None:
+        assert self._start_dark(tmp_path).status_code == 202
+
+    def test_returns_job_id(self, tmp_path: Path) -> None:
+        data = self._start_dark(tmp_path).json()
+        assert "job_id" in data
+
+    def test_503_when_image_root_not_configured(self) -> None:
+        with patch.object(cal_mod, "config") as mock_cfg:
+            mock_cfg.IMAGE_ROOT = ""
+            resp = client.post("/api/calibration/dark", json={"exposure_ms": 1000.0})
+        assert resp.status_code == 503
+
+    def test_422_on_invalid_conversion_gain(self, tmp_path: Path) -> None:
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+
+        fits_path = tmp_path / "f.fits"
+        _write_fits(fits_path)
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            resp = client.post(
+                "/api/calibration/dark",
+                json={"exposure_ms": 2000.0, "n_frames": 1, "conversion_gain": "BAD"},
+            )
+        assert resp.status_code == 422
+
+    def test_dark_job_completes(self, tmp_path: Path) -> None:
+        job_id = self._start_dark(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert result["status"] == "done"
+
+    def test_dark_result_path_is_fits(self, tmp_path: Path) -> None:
+        job_id = self._start_dark(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert result["result_path"].endswith(".fits")
+
+    def test_dark_job_fails_on_saturated_pixels(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "sat.fits"
+        pixels = np.full((32, 32), 65535, dtype=np.uint16)
+        hdu = fits.PrimaryHDU(data=pixels)
+        buf = io.BytesIO()
+        hdu.writeto(buf)
+        fits_path.write_bytes(buf.getvalue())
+
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post(
+                "/api/calibration/dark", json={"n_frames": 1, "exposure_ms": 2000.0}
+            ).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "failed"
+
+    def test_status_response_has_warnings_field(self, tmp_path: Path) -> None:
+        job_id = self._start_dark(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert "warnings" in result
+        assert isinstance(result["warnings"], list)
+
+
+# ── POST /api/calibration/flat ────────────────────────────────────────────────
+
+
+def _write_flat_fits(path: Path, p50_fraction: float = 0.50) -> None:
+    value = int(max(1, min(65534, p50_fraction * 65535)))
+    pixels = np.full((32, 32), value, dtype=np.uint16)
+    hdu = fits.PrimaryHDU(data=pixels)
+    buf = io.BytesIO()
+    hdu.writeto(buf)
+    path.write_bytes(buf.getvalue())
+
+
+class TestFlatStart:
+    def setup_method(self) -> None:
+        cal_mod._reset_jobs()
+
+    def _start_flat(self, tmp_path: Path, **extra) -> "requests.Response":
+        fits_path = tmp_path / "f.fits"
+        _write_flat_fits(fits_path, p50_fraction=0.50)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            payload = {
+                "n_frames": 1,
+                "optical_train": "C8_NATIVE_ATR585M",
+                "filter_id": "none",
+                **extra,
+            }
+            return client.post("/api/calibration/flat", json=payload)
+
+    def test_returns_202(self, tmp_path: Path) -> None:
+        assert self._start_flat(tmp_path).status_code == 202
+
+    def test_returns_job_id(self, tmp_path: Path) -> None:
+        assert "job_id" in self._start_flat(tmp_path).json()
+
+    def test_503_when_image_root_not_configured(self) -> None:
+        with patch.object(cal_mod, "config") as mock_cfg:
+            mock_cfg.IMAGE_ROOT = ""
+            resp = client.post("/api/calibration/flat",
+                               json={"optical_train": "X", "filter_id": "none"})
+        assert resp.status_code == 503
+
+    def test_flat_job_completes(self, tmp_path: Path) -> None:
+        job_id = self._start_flat(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert result["status"] == "done"
+
+    def test_flat_result_path_is_fits(self, tmp_path: Path) -> None:
+        job_id = self._start_flat(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert result["result_path"].endswith(".fits")
+
+    def test_warnings_field_is_list(self, tmp_path: Path) -> None:
+        job_id = self._start_flat(tmp_path).json()["job_id"]
+        result = _wait_for_job(job_id)
+        assert isinstance(result["warnings"], list)
+
+    def test_warn_zone_flat_still_succeeds(self, tmp_path: Path) -> None:
+        """p50=37% is in the warn zone but should not be rejected."""
+        fits_path = tmp_path / "warn.fits"
+        _write_flat_fits(fits_path, p50_fraction=0.37)
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/flat", json={
+                "n_frames": 1, "optical_train": "C8_NATIVE_ATR585M", "filter_id": "none",
+            }).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "done"
+        assert len(result["warnings"]) > 0
+
+    def test_flat_fails_on_zero_pixels(self, tmp_path: Path) -> None:
+        fits_path = tmp_path / "zero.fits"
+        pixels = np.zeros((32, 32), dtype=np.uint16)
+        hdu = fits.PrimaryHDU(data=pixels)
+        buf = io.BytesIO()
+        hdu.writeto(buf)
+        fits_path.write_bytes(buf.getvalue())
+
+        from smart_telescope.adapters.replay.camera import ReplayCamera
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = ReplayCamera([str(fits_path)])
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = CalibrationIndex(tmp_path)
+            job_id = client.post("/api/calibration/flat", json={
+                "n_frames": 1, "optical_train": "C8_NATIVE_ATR585M", "filter_id": "none",
+            }).json()["job_id"]
+
+        result = _wait_for_job(job_id)
+        assert result["status"] == "failed"
+
+
+# ── GET /api/calibration/match ────────────────────────────────────────────────
+
+
+class TestCalibrationMatch:
+    """Tests for the /api/calibration/match endpoint (AGT-3-4)."""
+
+    _BASE_PARAMS = "gain=300&offset=10&conversion_gain=HCG&bit_depth=12"
+
+    def _make_camera(self, model: str = "ATR585M", serial: str = "SN001"):
+        from smart_telescope.adapters.mock.camera import MockCamera
+        cam = MockCamera()
+        cam.get_logical_name  = lambda: model   # type: ignore[method-assign]
+        cam.get_serial_number = lambda: serial  # type: ignore[method-assign]
+        return cam
+
+    def _index_with_bias(self, tmp_path: Path, **overrides) -> "CalibrationIndex":
+        from smart_telescope.domain.calibration_store import CalibrationIndex, make_entry
+        idx = CalibrationIndex(tmp_path)
+        kw = dict(gain=300, offset=10, conversion_gain="HCG", bit_depth=12, frame_count=20)
+        kw.update(overrides)
+        idx.add(make_entry(tmp_path, "bias", "ATR585M", "SN001", **kw))
+        return idx
+
+    def _index_with_dark(self, tmp_path: Path, **overrides) -> "CalibrationIndex":
+        from smart_telescope.domain.calibration_store import CalibrationIndex, make_entry
+        idx = CalibrationIndex(tmp_path)
+        kw = dict(gain=300, offset=10, conversion_gain="HCG", bit_depth=12,
+                  frame_count=20, exposure_ms=120_000.0)
+        kw.update(overrides)
+        idx.add(make_entry(tmp_path, "dark", "ATR585M", "SN001", **kw))
+        return idx
+
+    def test_returns_200(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = self._make_camera()
+        idx = CalibrationIndex(tmp_path)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            resp = client.get(f"/api/calibration/match?{self._BASE_PARAMS}")
+        assert resp.status_code == 200
+
+    def test_empty_index_all_not_found(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+        from smart_telescope.domain.calibration_store import CalibrationIndex
+
+        cam = self._make_camera()
+        idx = CalibrationIndex(tmp_path)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(f"/api/calibration/match?{self._BASE_PARAMS}").json()
+        assert d["bias"]["status"] == "NOT_FOUND"
+        assert d["dark"]["status"] == "NOT_FOUND"
+        assert d["flat"]["status"] == "NOT_FOUND"
+
+    def test_exact_bias_match(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_bias(tmp_path)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(f"/api/calibration/match?{self._BASE_PARAMS}").json()
+        assert d["bias"]["status"] == "MATCHED"
+        assert d["bias"]["mismatches"] == []
+
+    def test_partial_bias_gain_mismatch(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_bias(tmp_path, gain=200)  # index has gain=200
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(f"/api/calibration/match?{self._BASE_PARAMS}").json()
+        assert d["bias"]["status"] == "PARTIAL"
+        fields = [m["field"] for m in d["bias"]["mismatches"]]
+        assert "gain" in fields
+
+    def test_exact_dark_match(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_dark(tmp_path)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(
+                f"/api/calibration/match?{self._BASE_PARAMS}&exposure_ms=120000"
+            ).json()
+        assert d["dark"]["status"] == "MATCHED"
+
+    def test_dark_exposure_mismatch(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_dark(tmp_path, exposure_ms=10_000.0)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(
+                f"/api/calibration/match?{self._BASE_PARAMS}&exposure_ms=120000"
+            ).json()
+        assert d["dark"]["status"] == "PARTIAL"
+        assert any(m["field"] == "exposure_ms" for m in d["dark"]["mismatches"])
+
+    def test_dark_temperature_within_tolerance(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_dark(tmp_path, temperature_c=-8.0)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(
+                f"/api/calibration/match?{self._BASE_PARAMS}&exposure_ms=120000&temperature_c=-10"
+            ).json()
+        assert d["dark"]["status"] == "MATCHED"
+        assert not any(m["field"] == "temperature_c" for m in d["dark"]["mismatches"])
+
+    def test_dark_temperature_outside_tolerance(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_dark(tmp_path, temperature_c=0.0)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(
+                f"/api/calibration/match?{self._BASE_PARAMS}&exposure_ms=120000&temperature_c=-10"
+            ).json()
+        assert d["dark"]["status"] == "PARTIAL"
+        assert any(m["field"] == "temperature_c" for m in d["dark"]["mismatches"])
+
+    def test_no_image_root_returns_503(self) -> None:
+        from smart_telescope.api import deps
+        from smart_telescope.adapters.mock.camera import MockCamera
+        cam = MockCamera()
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+        ):
+            mock_cfg.IMAGE_ROOT = ""
+            resp = client.get(f"/api/calibration/match?{self._BASE_PARAMS}")
+        assert resp.status_code == 503
+
+    def test_response_includes_entry_for_matched(self, tmp_path: Path) -> None:
+        from smart_telescope.api import deps
+
+        cam = self._make_camera()
+        idx = self._index_with_bias(tmp_path)
+        with (
+            patch.object(deps, "get_preview_camera", return_value=cam),
+            patch.object(cal_mod, "config") as mock_cfg,
+            patch.object(cal_mod, "CalibrationIndex") as mock_idx_cls,
+        ):
+            mock_cfg.IMAGE_ROOT = str(tmp_path)
+            mock_idx_cls.load.return_value = idx
+            d = client.get(f"/api/calibration/match?{self._BASE_PARAMS}").json()
+        assert d["bias"]["entry"] is not None
+        assert d["bias"]["entry"]["cal_type"] == "bias"

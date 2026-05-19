@@ -1,15 +1,20 @@
+import logging
+
 from ...ports.mount import MountPort, MountPosition, MountState
+
+_log = logging.getLogger(__name__)
 
 
 class MockMount(MountPort):
     def __init__(
         self,
         fail_connect: bool = False,
-        initial_state: MountState = MountState.PARKED,
+        initial_state: MountState = MountState.UNKNOWN,
         fail_unpark: bool = False,
         fail_goto: bool = False,
         at_limit: bool = False,
     ) -> None:
+        _log.warning("MockMount initialised — no real mount hardware; all operations are simulated")
         self._fail_connect = fail_connect
         self._state = MountState.AT_LIMIT if at_limit else initial_state
         self._fail_unpark = fail_unpark
@@ -17,7 +22,9 @@ class MockMount(MountPort):
         self._position = MountPosition(ra=0.0, dec=0.0)
 
     def connect(self) -> bool:
-        return not self._fail_connect
+        ok = not self._fail_connect
+        _log.warning("MockMount.connect(): returning %s (simulated)", ok)
+        return ok
 
     def get_state(self) -> MountState:
         return self._state
@@ -47,6 +54,29 @@ class MockMount(MountPort):
 
     def is_slewing(self) -> bool:
         return False  # mocks resolve instantly
+
+    def stop(self) -> None:
+        self._state = MountState.UNPARKED
+
+    def park(self) -> bool:
+        self._state = MountState.PARKED
+        return True
+
+    def disable_tracking(self) -> bool:
+        self._state = MountState.UNPARKED
+        return True
+
+    def guide(self, direction: str, duration_ms: int) -> bool:
+        return direction.lower() in ("n", "s", "e", "w")
+
+    def start_alignment(self, num_stars: int) -> bool:
+        return True
+
+    def accept_alignment_star(self) -> bool:
+        return True
+
+    def save_alignment(self) -> bool:
+        return True
 
     def disconnect(self) -> None:
         self._state = MountState.PARKED

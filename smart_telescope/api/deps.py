@@ -26,6 +26,8 @@ Adapter selection priority (documented in RuntimeContext._build_adapters):
 
 from __future__ import annotations
 
+from fastapi import HTTPException
+
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
@@ -100,3 +102,20 @@ def get_optical_train_registry() -> OpticalTrainRegistry:
 def reset() -> None:
     """Reset all cached singletons (used in tests)."""
     get_runtime().reset_for_tests()
+
+
+def resolve_camera_index(camera_index: int, camera_role: str | None) -> int:
+    """Resolve camera_role → camera_index when role is provided; otherwise pass camera_index through.
+
+    Raises HTTPException 422 if camera_role is provided but not found in the registry.
+    """
+    if not camera_role:
+        return camera_index
+    registry = get_optical_train_registry()
+    train = registry.by_camera_role(camera_role)
+    if train is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"camera_role {camera_role!r} not found in optical train registry",
+        )
+    return train.camera_index

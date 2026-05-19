@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — M5-001 — Guided startup
+
+**What changed:**
+- `smart_telescope/static/index.html`: `s1-proceed-btn` now starts `disabled`.
+- `smart_telescope/static/js/setup.js`: `connectAll()` enables/disables `s1-proceed-btn` based on `mountOk`; catch block resets `proceedBtn.disabled = true` and `_mountConnected = false` on failure.
+- `smart_telescope/static/js/mount.js`: `s1Proceed()` no longer calls `unlockStage(2)` — Stage 2 unlock belongs to `connectAll()` only.
+- `tests/unit/api/test_smoke.py`: Added `test_s1_proceed_btn_starts_disabled` (regex-based).
+- `docs/todo.md`: M5-001, M5-003, M5-004 marked done.
+
+**Tests:** 44 smoke tests pass
+
+---
+
 ## 2026-05-19 — POD-005 — Failure isolation policy
 
 **What changed:**

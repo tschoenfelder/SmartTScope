@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy)
+**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -513,10 +513,13 @@
 
 ### Milestone M5 tasks
 
-- [ ] M5-001 Guided startup `[P1 · Product]`
+- [x] M5-001 Guided startup `[P1 · Product]`
+  - *Done:* `s1-proceed-btn` starts `disabled`; `connectAll()` enables it only when `mountOk`; `s1Proceed()` no longer bypasses `unlockStage(2)`. Guided flow: readiness card (auto-load) → Connect All → Proceed to Alignment.
 - [ ] M5-002 Connect all configured devices `[P1 · Hardware]`
-- [ ] M5-003 Show readiness dashboard `[P1 · UI]`
-- [ ] M5-004 Select target `[P1 · Product]`
+- [x] M5-003 Show readiness dashboard `[P1 · UI]`
+  - *Done (UX1):* Readiness card with red/yellow/green items, repair hints, hardware-mode badge, and capability chip row auto-loads on page open. Implemented across R5 / UX1 series.
+- [x] M5-004 Select target `[P1 · Product]`
+  - *Done (M4-002):* "Visible Tonight" card in Stage 5 lists Messier objects above 20° sorted by altitude; clicking any row sets the session target. Manual RA/Dec entry also available in the GoTo card.
 - [x] M5-005 Enforce solar safety gate `[P0 · Hardware]`
   - *Acceptance:* solar exclusion enforced at ALL GoTo entry points: direct GoTo, catalog target launch, guided session launch, sky slew; test shows rejection for Sun coordinates from each entry point
   - *Done:* `is_solar_target()` called in `mount_goto`, `mount_goto_and_center`, `mount_goto_sky`, and `session_run`; each returns HTTP 403 with `solar_exclusion` detail; catalog tonight marks `solar_safe` flag; `confirm_solar=true` bypass available; tests in `test_mount.py` and `test_session.py`

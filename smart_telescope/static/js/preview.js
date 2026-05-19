@@ -560,9 +560,9 @@ async function _fetchAndDrawHistogram() {
     if (!_histEnabled || _reconnect) return;  // skip when WS is active or reconnecting
     const exposure = parseFloat(document.getElementById('preview-exposure')?.value) || 2.0;
     const gain     = parseInt(document.getElementById('preview-gain')?.value, 10)   || 100;
-    const camIdx   = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
+    const camRole  = document.getElementById('preview-cam-select')?.value || 'main';
     const params   = new URLSearchParams({
-      camera_index: camIdx, exposure, gain, bit_depth: 12, n_bins: 256,
+      camera_role: camRole, exposure, gain, bit_depth: 12, n_bins: 256,
     });
     try {
       const r = await fetch(`/api/histogram/analyze?${params}`, { method: 'POST' });

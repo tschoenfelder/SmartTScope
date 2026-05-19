@@ -63,13 +63,13 @@ async function solveFrame() {
     const result   = document.getElementById('solve-result');
     const exposure = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
     const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
-    const camIdx   = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
+    const camRole  = document.getElementById('preview-cam-select')?.value || 'main';
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Solving…';
     result.style.display = 'none';
     setStatus('s3-status', '');
     try {
-      const data = await apiPost('/api/solver/solve', { exposure, gain, camera_index: camIdx });
+      const data = await apiPost('/api/solver/solve', { exposure, gain, camera_role: camRole });
       if (data.success) {
         result.style.display = '';
         result.innerHTML =

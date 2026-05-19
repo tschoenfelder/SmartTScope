@@ -252,7 +252,7 @@ function s4Done() {
 
 function _calSharedParams() {
     return {
-      camIdx : _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main'),
+      camRole: document.getElementById('preview-cam-select')?.value || 'main',
       gain   : parseInt(document.getElementById('s4-cal-gain').value,    10) || 100,
       offset : parseInt(document.getElementById('s4-cal-offset').value,  10) || 0,
     };
@@ -291,11 +291,11 @@ async function prepareBias() {
     btn.innerHTML = '<span class="spin"></span>…';
     document.getElementById('s4-bias-progress').textContent = '';
     setStatus('s4-bias-status', '');
-    const { camIdx, gain, offset } = _calSharedParams();
+    const { camRole, gain, offset } = _calSharedParams();
     const nFrames = parseInt(document.getElementById('s4-bias-nframes').value, 10) || 32;
     try {
       const { job_id } = await apiPost('/api/calibration/bias',
-        { camera_index: camIdx, n_frames: nFrames, gain, offset });
+        { camera_role: camRole, n_frames: nFrames, gain, offset });
       _pollCalJob(job_id, 's4-bias-btn', 's4-bias-progress', 's4-bias-status', 'Prepare');
     } catch (err) {
       setStatus('s4-bias-status', `Failed to start: ${err}`, true);
@@ -310,7 +310,7 @@ async function prepareFlat() {
     btn.innerHTML = '<span class="spin"></span>…';
     document.getElementById('s4-flat-progress').textContent = '';
     setStatus('s4-flat-status', '');
-    const { camIdx, gain, offset } = _calSharedParams();
+    const { camRole, gain, offset } = _calSharedParams();
     const nFrames  = parseInt(document.getElementById('s4-flat-nframes').value,    10) || 15;
     const initExpS = parseFloat(document.getElementById('s4-flat-init-exp').value) || 1.0;
     const train    = (document.getElementById('s4-flat-train').value  || '').trim();
@@ -321,7 +321,7 @@ async function prepareFlat() {
     }
     try {
       const { job_id } = await apiPost('/api/calibration/flat', {
-        camera_index: camIdx, n_frames: nFrames,
+        camera_role: camRole, n_frames: nFrames,
         initial_exposure_s: initExpS,
         optical_train: train, filter_id: filter,
         gain, offset,
@@ -340,13 +340,13 @@ async function prepareDark() {
     btn.innerHTML = '<span class="spin"></span>…';
     document.getElementById('s4-dark-progress').textContent = '';
     setStatus('s4-dark-status', '');
-    const { camIdx, gain, offset } = _calSharedParams();
+    const { camRole, gain, offset } = _calSharedParams();
     const nFrames   = parseInt(document.getElementById('s4-dark-nframes').value,  10) || 20;
     const expS      = parseFloat(document.getElementById('s4-dark-exp').value) || 120.0;
     const exposureMs = expS * 1000.0;
     try {
       const { job_id } = await apiPost('/api/calibration/dark',
-        { camera_index: camIdx, n_frames: nFrames, exposure_ms: exposureMs, gain, offset });
+        { camera_role: camRole, n_frames: nFrames, exposure_ms: exposureMs, gain, offset });
       _pollCalJob(job_id, 's4-dark-btn', 's4-dark-progress', 's4-dark-status', 'Prepare');
     } catch (err) {
       setStatus('s4-dark-status', `Failed to start: ${err}`, true);
@@ -361,12 +361,12 @@ async function prepareBpm() {
     btn.innerHTML = '<span class="spin"></span>…';
     document.getElementById('s4-bpm-progress').textContent = '';
     setStatus('s4-bpm-status', '');
-    const { camIdx, gain, offset } = _calSharedParams();
+    const { camRole, gain, offset } = _calSharedParams();
     const nFrames = parseInt(document.getElementById('s4-bpm-nframes').value, 10) || 20;
     const sigma   = parseFloat(document.getElementById('s4-bpm-sigma').value) || 5.0;
     try {
       const { job_id } = await apiPost('/api/calibration/bpm',
-        { camera_index: camIdx, n_frames: nFrames, gain, offset,
+        { camera_role: camRole, n_frames: nFrames, gain, offset,
           hot_sigma: sigma, dead_sigma: sigma });
       _pollCalJob(job_id, 's4-bpm-btn', 's4-bpm-progress', 's4-bpm-status', 'Generate BPM',
         (result) => {
@@ -404,12 +404,12 @@ async function checkCalibrationMatch() {
     btn.disabled = true;
     btn.textContent = '…';
 
-    const { camIdx, gain, offset } = _calSharedParams();
+    const { camRole, gain, offset } = _calSharedParams();
     const expS      = parseFloat(document.getElementById('s4-dark-exp').value) || 120.0;
     const train     = (document.getElementById('s4-flat-train').value  || '').trim() || null;
     const filter    = (document.getElementById('s4-flat-filter').value || 'none').trim() || null;
 
-    const params = new URLSearchParams({ gain, offset, camera_index: camIdx });
+    const params = new URLSearchParams({ gain, offset, camera_role: camRole });
     if (expS)   params.set('exposure_ms', String(expS * 1000));
     if (train)  params.set('optical_train', train);
     if (filter) params.set('filter_id', filter);
@@ -456,7 +456,7 @@ async function s5CheckCalibration() {
     const detailEl = document.getElementById('s5-cal-detail');
     if (!badgesEl) return;
 
-    const camIdx = _trainCamIdx(document.getElementById('preview-cam-select')?.value || 'main');
+    const camRole = document.getElementById('preview-cam-select')?.value || 'main';
     const gain   = parseInt(document.getElementById('s4-cal-gain')?.value,  10) || 100;
     const offset = parseInt(document.getElementById('s4-cal-offset')?.value, 10) || 0;
     // Use the session exposure (science frame) for dark matching
@@ -465,7 +465,7 @@ async function s5CheckCalibration() {
     const train  = (document.getElementById('s5-profile')?.value || '').trim() || null;
     const filter = (document.getElementById('s4-flat-filter')?.value || 'none').trim() || null;
 
-    const params = new URLSearchParams({ gain, offset, camera_index: camIdx });
+    const params = new URLSearchParams({ gain, offset, camera_role: camRole });
     if (expS)   params.set('exposure_ms', String(expS * 1000));
     if (train)  params.set('optical_train', train);
     if (filter) params.set('filter_id', filter);

@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets)
+**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -573,7 +573,8 @@
   - *Done:* `DiskStorage` raises `OSError(ENOSPC)` on write failure; `stage_save()` raises `WorkflowError("save", "Disk full…")` when `has_free_space()` is False; runner wraps unexpected `OSError` from `save_image`/`save_log` into `WorkflowError`; partial-save scenario (image written, log write fails) preserves `saved_image_path`; 8 tests in `test_disk_storage.py` and `test_runner_stages.py` all pass.
 - [ ] M6-010 Run network reconnect simulation `[P1 · Hardware]`
 - [ ] M6-011 Verify clean Pi install from scratch `[P1 · Hardware]`
-- [ ] M6-012 Produce release notes and known issues `[P1 · Process]`
+- [x] M6-012 Produce release notes and known issues `[P1 · Process]`
+  - *Done:* `docs/release-notes-v0.1.md` — features (M0–M6 + Collimation), performance targets, known issues, hardware-blocked items, deferred scope, install/upgrade path
 
 **Quality gate:** Long session completes or fails gracefully. Thermal limits not exceeded. Storage-full behavior does not corrupt session data. Reconnect behavior defined and verified. Release installable from clean state.
 
@@ -601,8 +602,9 @@
 - [x] POD-003 What state may the UI show after command acceptance but before hardware confirmation?
   - *Decision:* **Show spinner / pending indicator** — after a Park/Unpark/Home/GoTo command is accepted, the label shows a loading state until `DeviceStateService` confirms the new hardware state. Adds a UX task: see UX-PENDING-001 below.
 - [ ] POD-004 Is SDK camera index acceptable anywhere outside diagnostics?
-- [ ] POD-005 Which failures may block the whole app, and which must degrade locally?
-  - *Guidance (decision pending):* ASTAP missing → blocks observing only; mount serial failure → allows camera preview + diagnostics; camera failure → allows mount controls + diagnostics. Formal isolation policy needed before M5.
+- [x] POD-005 Which failures may block the whole app, and which must degrade locally?
+  - *Decision:* Per-feature isolation: camera RED → `can_preview=false`, mount RED → `can_goto=false`, ASTAP RED → `can_solve=false`, focuser RED → `can_autofocus=false`, storage RED → `can_save=false`. YELLOW items degrade, not block. `can_observe` requires all five plus `mode=real`.
+  - *Done:* `ReadinessService._capability_flags()` + 5 new fields in `ReadinessReport`; 12 new tests in `TestCapabilityFlags`; blocked-capability chip row in readiness card.
 - [x] POD-006 What is the minimum successful demo workflow?
   - *Decision:* **Guided single-target session** — Pick target → GoTo → plate-solve & center → autofocus → stack 10 frames → save. That is the MVP demo.
 - [x] POD-007 What evidence is required for product-owner sign-off?

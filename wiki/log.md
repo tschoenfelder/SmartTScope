@@ -4,6 +4,29 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-19 — POD-005 — Failure isolation policy
+
+**What changed:**
+- `smart_telescope/services/readiness.py`: Added `_capability_flags(items)` static method + 5 new fields to `ReadinessReport` (`can_preview`, `can_goto`, `can_solve`, `can_autofocus`, `can_save`). RED items block the relevant capability; YELLOW = degraded, functional. Updated module docstring and added inline comment to `can_observe` computation.
+- `tests/unit/api/test_readiness.py`: Added `TestCapabilityFlags` (12 tests covering all POD-005 isolation scenarios and YELLOW-does-not-block cases).
+- `smart_telescope/static/js/setup.js` + `index.html`: Blocked-capability chip row in readiness card; null guard in `_renderReadiness`; chip div hidden when all capabilities are available.
+- `docs/todo.md`: POD-005 marked done with formal decision recorded.
+
+**Tests:** 2676 passed
+
+---
+
+## 2026-05-19 — M6-012 — Release notes v0.1
+
+**What changed:**
+- Created `docs/release-notes-v0.1.md` covering: milestone status table (M0–M6 + Collimation), all implemented features by milestone, performance targets table, known issues (hardware-blocked and open software), deferred post-MVP scope, and install/upgrade path.
+- `docs/todo.md`: marked M6-012 done.
+- `wiki/index.md`: added release-notes-v0.1 link under Release readiness.
+
+**Tests:** 2664 passed, 87.56% coverage
+
+---
+
 ## 2026-05-19 — BUG-002 — Autogain layout clarification
 
 **What changed:**

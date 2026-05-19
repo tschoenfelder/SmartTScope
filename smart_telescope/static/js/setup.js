@@ -75,6 +75,7 @@ function _levelStyle(level) {
 }
 
 function _renderReadiness(r) {
+    if (!r || !r.overall) return;
     const dot    = document.getElementById('s1-readiness-dot');
     const badge  = document.getElementById('s1-readiness-badge');
     const items  = document.getElementById('s1-readiness-items');
@@ -113,6 +114,32 @@ function _renderReadiness(r) {
       </div>`;
     });
     items.innerHTML = rows.join('');
+
+    // Capability chip row — only shown when at least one flag is false
+    const chipEl = document.getElementById('s1-readiness-caps');
+    if (chipEl) {
+        const caps = [
+            { key: 'can_preview',   label: 'Preview' },
+            { key: 'can_goto',      label: 'GoTo' },
+            { key: 'can_solve',     label: 'Solve' },
+            { key: 'can_autofocus', label: 'Autofocus' },
+            { key: 'can_save',      label: 'Save' },
+        ];
+        const blocked = caps.filter(c => r[c.key] === false);
+        if (blocked.length === 0) {
+            chipEl.innerHTML = '';
+            chipEl.style.display = 'none';
+        } else {
+            chipEl.style.display = 'flex';
+            chipEl.innerHTML =
+                '<span style="font-size:0.72rem;color:var(--muted);margin-right:0.35rem">Blocked:</span>' +
+                blocked.map(c =>
+                    `<span style="font-size:0.72rem;background:var(--danger-bg,rgba(220,50,50,.12));` +
+                    `color:var(--danger);border:1px solid var(--danger);border-radius:3px;` +
+                    `padding:0 0.35rem;margin-right:0.25rem">${escHtml(c.label)}</span>`
+                ).join('');
+        }
+    }
 }
 
 async function refreshReadiness() {

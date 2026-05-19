@@ -901,6 +901,8 @@ async function connectAll() {
       if (camOk)   unlockStage(5);
       const scBtn = document.getElementById('setup-check-btn');
       if (scBtn) scBtn.disabled = !(mountOk && camOk);
+      const proceedBtn = document.getElementById('s1-proceed-btn');
+      if (proceedBtn) proceedBtn.disabled = !mountOk;
 
       // Probe focuser only when mount connected (focuser shares mount serial port)
       const focuserDot  = document.getElementById('s1-focuser-dot');
@@ -949,6 +951,9 @@ async function connectAll() {
     } catch (err) {
       if (dot) dot.className = 'dot dot-red';
       setStatus('s1-mount-status', 'Connect All failed: ' + err, true);
+      const proceedBtn = document.getElementById('s1-proceed-btn');
+      if (proceedBtn) proceedBtn.disabled = true;
+      _mountConnected = false;
     } finally {
       btn.disabled  = false;
       btn.innerHTML = 'Connect All';

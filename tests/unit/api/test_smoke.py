@@ -86,6 +86,16 @@ class TestSetupSmoke:
             resp = client.get(f"/static/js/{module}.js")
             assert resp.status_code == 200, f"{module}.js not served"
 
+    def test_s1_proceed_btn_starts_disabled(self) -> None:
+        import re
+        resp = client.get("/")
+        text = resp.text
+        match = re.search(r'<button[^>]*id="s1-proceed-btn"[^>]*>', text)
+        assert match is not None, "s1-proceed-btn not found in index.html"
+        assert 'disabled' in match.group(0), (
+            "s1-proceed-btn must start disabled — Stage 2 is only unlocked after mount connects"
+        )
+
     def test_readiness_returns_200(self):
         assert client.get("/api/readiness").status_code == 200
 

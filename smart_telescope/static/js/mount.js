@@ -256,7 +256,6 @@ async function mountHome() {
 }
 
 function s1Proceed() {
-    unlockStage(2);
     goToStage(2);
 }
 

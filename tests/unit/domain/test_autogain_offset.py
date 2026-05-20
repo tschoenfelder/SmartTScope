@@ -18,7 +18,9 @@ from smart_telescope.services.camera_offset_service import CameraOffsetService
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _make_offset_service() -> MagicMock:
-    return MagicMock(spec=CameraOffsetService)
+    svc = MagicMock(spec=CameraOffsetService)
+    svc.get_offset.return_value = None  # no configured offset by default
+    return svc
 
 
 def _frame(mean_frac: float) -> MagicMock:
@@ -121,3 +123,42 @@ def test_apply_not_called_when_offset_service_is_none():
     )
     # Just verify it returned a valid result
     assert result is not None
+
+
+def test_cur_offset_initialized_from_offset_service_when_no_last_good():
+    """When no last_good, cur_offset should start from offset_service, not 0."""
+    from smart_telescope.ports.camera import CaptureAbortedError
+
+    offset_svc = MagicMock(spec=CameraOffsetService)
+    offset_svc.get_offset.return_value = 150  # configured offset
+    offset_svc.apply.return_value = None
+
+    mock_cam = MagicMock()
+    mock_cam.get_logical_name.return_value = "G3M678M"
+    mock_cam.get_bit_depth.return_value = 16
+    mock_cam.get_conversion_gain.return_value = ConversionGain.LCG
+    # Make capture fail immediately so we only get one iteration
+    mock_cam.capture.side_effect = CaptureAbortedError("abort for test")
+    mock_cam.get_capabilities.return_value = MagicMock(
+        supports_hcg=True, supports_lcg=True, supports_hdr=False,
+        min_gain=100, max_gain=3200,
+        min_exposure_ms=0.05, max_exposure_ms=60000,
+        bit_depth=16,
+    )
+
+    AutoGainService.run_one_shot(
+        camera=mock_cam,
+        profile=ATR585M,
+        offset_service=offset_svc,
+    )
+
+    # set_black_level should have been called with 150 (configured), not 0
+    set_black_level_calls = [
+        c.args[0] for c in mock_cam.set_black_level.call_args_list
+    ]
+    assert 150 in set_black_level_calls, (
+        f"Expected set_black_level(150) from configured offset, got {set_black_level_calls}"
+    )
+    assert 0 not in set_black_level_calls, (
+        f"set_black_level was called with 0 — default offset overrode configured value: {set_black_level_calls}"
+    )

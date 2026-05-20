@@ -183,6 +183,13 @@ class AutoGainService:
                 cur_gain = gain_min
             cur_offset = 0
 
+        # Use configured offset as default when no last_good
+        if offset_service is not None and last_good is None:
+            _logical_name = camera.get_logical_name()
+            _configured = offset_service.get_offset(_logical_name, cg)
+            if _configured is not None:
+                cur_offset = _configured
+
         # Step 4: offset from calibration bias stats when no last_good
         if calibration_stats is not None and last_good is None:
             suggested_offset = int(calibration_stats.black_level * adc_max)

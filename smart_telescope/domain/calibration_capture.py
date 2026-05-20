@@ -147,6 +147,20 @@ def prepare_bias(
     """Capture *n_frames* bias frames and stack into a master bias FITS.
 
     Raises BiasValidationError if the stacked histogram fails the floor check.
+
+    Args:
+        camera: Camera port to capture frames from.
+        n_frames: Number of bias frames to capture and stack.
+        image_root: Root directory for storing master FITS files.
+        cal_index: Calibration index to register the new entry in.
+        gain: Camera gain override; current camera value used if None.
+        offset: Black-level override; current camera value used if None.
+        conversion_gain: Conversion-gain mode to set before capture.
+        progress: Optional callback invoked after each frame (frames_done, total).
+        offset_service: When provided, ``apply()`` is called after
+            ``set_conversion_gain()`` to enforce the configured sensor
+            black-level for the active gain mode.  Ignored when
+            ``conversion_gain`` is None.
     """
     if n_frames < 1:
         raise ValueError("n_frames must be >= 1")
@@ -222,6 +236,21 @@ def prepare_dark(
 
     Raises DarkValidationError if the stacked histogram fails the floor or
     saturation check.
+
+    Args:
+        camera: Camera port to capture frames from.
+        exposure_ms: Exposure time in milliseconds for each dark frame.
+        n_frames: Number of dark frames to capture and stack.
+        image_root: Root directory for storing master FITS files.
+        cal_index: Calibration index to register the new entry in.
+        gain: Camera gain override; current camera value used if None.
+        offset: Black-level override; current camera value used if None.
+        conversion_gain: Conversion-gain mode to set before capture.
+        progress: Optional callback invoked after each frame (frames_done, total).
+        offset_service: When provided, ``apply()`` is called after
+            ``set_conversion_gain()`` to enforce the configured sensor
+            black-level for the active gain mode.  Ignored when
+            ``conversion_gain`` is None.
     """
     if n_frames < 1:
         raise ValueError("n_frames must be >= 1")
@@ -381,6 +410,23 @@ def prepare_flat(
     35–40 % or 60–70 % warn zone).
 
     Raises FlatValidationError for out-of-range p50 or clipping failures.
+
+    Args:
+        camera: Camera port to capture frames from.
+        optical_train: Identifier for the optical train (telescope + focuser etc.).
+        filter_id: Identifier for the filter in use.
+        n_frames: Number of flat frames to capture and stack.
+        image_root: Root directory for storing master FITS files.
+        cal_index: Calibration index to register the new entry in.
+        initial_exposure_s: Starting exposure in seconds for auto-tune.
+        gain: Camera gain override; current camera value used if None.
+        offset: Black-level override; current camera value used if None.
+        conversion_gain: Conversion-gain mode to set before capture.
+        progress: Optional callback invoked after each frame (frames_done, total).
+        offset_service: When provided, ``apply()`` is called after
+            ``set_conversion_gain()`` to enforce the configured sensor
+            black-level for the active gain mode.  Ignored when
+            ``conversion_gain`` is None.
     """
     if n_frames < 1:
         raise ValueError("n_frames must be >= 1")

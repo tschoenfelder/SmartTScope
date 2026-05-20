@@ -92,6 +92,11 @@ def test_prepare_bias_applies_offset_after_gain_change(tmp_path):
     offset_svc = MagicMock(spec=CameraOffsetService)
     idx_mock = MagicMock()
 
+    # Track call order
+    call_order: list[str] = []
+    cam.set_conversion_gain.side_effect = lambda cg: call_order.append("set_gain")
+    offset_svc.apply.side_effect = lambda c: call_order.append("apply")
+
     calibration_capture.prepare_bias(
         cam, 2, tmp_path, idx_mock,
         gain=100,
@@ -102,6 +107,8 @@ def test_prepare_bias_applies_offset_after_gain_change(tmp_path):
 
     cam.set_conversion_gain.assert_called_with(ConversionGain.HCG)
     offset_svc.apply.assert_called_with(cam)
+    assert call_order.index("set_gain") < call_order.index("apply"), \
+        "set_conversion_gain must be called before offset_service.apply()"
 
 
 def test_prepare_dark_applies_offset_after_gain_change(tmp_path):
@@ -109,6 +116,11 @@ def test_prepare_dark_applies_offset_after_gain_change(tmp_path):
     cam = _mock_camera()
     offset_svc = MagicMock(spec=CameraOffsetService)
     idx_mock = MagicMock()
+
+    # Track call order
+    call_order: list[str] = []
+    cam.set_conversion_gain.side_effect = lambda cg: call_order.append("set_gain")
+    offset_svc.apply.side_effect = lambda c: call_order.append("apply")
 
     calibration_capture.prepare_dark(
         cam, 50.0, 2, tmp_path, idx_mock,
@@ -120,6 +132,8 @@ def test_prepare_dark_applies_offset_after_gain_change(tmp_path):
 
     cam.set_conversion_gain.assert_called_with(ConversionGain.HCG)
     offset_svc.apply.assert_called_with(cam)
+    assert call_order.index("set_gain") < call_order.index("apply"), \
+        "set_conversion_gain must be called before offset_service.apply()"
 
 
 def _make_flat_frame(bit_depth: int = 16):
@@ -146,6 +160,11 @@ def test_prepare_flat_applies_offset_after_gain_change(tmp_path):
     offset_svc = MagicMock(spec=CameraOffsetService)
     idx_mock = MagicMock()
 
+    # Track call order
+    call_order: list[str] = []
+    cam.set_conversion_gain.side_effect = lambda cg: call_order.append("set_gain")
+    offset_svc.apply.side_effect = lambda c: call_order.append("apply")
+
     calibration_capture.prepare_flat(
         cam, "main-train", "none", 2, tmp_path, idx_mock,
         gain=100,
@@ -156,6 +175,8 @@ def test_prepare_flat_applies_offset_after_gain_change(tmp_path):
 
     cam.set_conversion_gain.assert_called_with(ConversionGain.HCG)
     offset_svc.apply.assert_called_with(cam)
+    assert call_order.index("set_gain") < call_order.index("apply"), \
+        "set_conversion_gain must be called before offset_service.apply()"
 
 
 def test_offset_not_called_when_service_is_none(tmp_path):
@@ -171,7 +192,7 @@ def test_offset_not_called_when_service_is_none(tmp_path):
         conversion_gain=ConversionGain.LCG,
         offset_service=None,
     )
-    # No exception == pass
+    cam.set_black_level.assert_not_called()
 
 
 def test_offset_not_called_when_no_conversion_gain(tmp_path):
@@ -182,6 +203,44 @@ def test_offset_not_called_when_no_conversion_gain(tmp_path):
 
     calibration_capture.prepare_bias(
         cam, 1, tmp_path, idx_mock,
+        gain=100,
+        offset=None,
+        conversion_gain=None,
+        offset_service=offset_svc,
+    )
+
+    cam.set_conversion_gain.assert_not_called()
+    offset_svc.apply.assert_not_called()
+
+
+def test_dark_offset_not_called_when_no_conversion_gain(tmp_path):
+    """prepare_dark: offset_service.apply() is not called when conversion_gain=None."""
+    cam = _mock_camera()
+    offset_svc = MagicMock(spec=CameraOffsetService)
+    idx_mock = MagicMock()
+
+    calibration_capture.prepare_dark(
+        cam, 50.0, 1, tmp_path, idx_mock,
+        gain=100,
+        offset=None,
+        conversion_gain=None,
+        offset_service=offset_svc,
+    )
+
+    cam.set_conversion_gain.assert_not_called()
+    offset_svc.apply.assert_not_called()
+
+
+def test_flat_offset_not_called_when_no_conversion_gain(tmp_path):
+    """prepare_flat: offset_service.apply() is not called when conversion_gain=None."""
+    cam = _mock_camera()
+    cam.capture.return_value = _make_flat_frame()
+    cam.get_exposure_ms.return_value = 1000.0
+    offset_svc = MagicMock(spec=CameraOffsetService)
+    idx_mock = MagicMock()
+
+    calibration_capture.prepare_flat(
+        cam, "main-train", "none", 1, tmp_path, idx_mock,
         gain=100,
         offset=None,
         conversion_gain=None,

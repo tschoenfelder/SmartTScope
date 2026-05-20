@@ -4,6 +4,21 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-20 — Camera ID Mapping / Camera Offset / Bias Estimation (CID/CO/COE)
+
+**What changed:**
+- `docs/todo.md`: Three new P1 sections added — CID (camera ID mapping), CO (camera offset config), COE (camera offset estimation wizard).
+- `docs/superpowers/plans/2026-05-20-camera-id-mapping.md`: Full TDD plan for name-based camera config (CID-001..007).
+- `docs/superpowers/plans/2026-05-20-camera-offset-config.md`: Full TDD plan for `[camera_offsets]` config + `CameraOffsetService` (CO-001..008).
+- `docs/superpowers/plans/2026-05-20-camera-offset-estimation.md`: Full TDD plan for bias-frame offset estimation wizard in Stage 6 (COE-001..006).
+
+**Source documents ingested:**
+- `resources/hlrequirements/camera_id list.md`
+- `resources/hlrequirements/camera_offset.md`
+- `resources/hlrequirements/camera_offset_estimation.md`
+
+---
+
 ## 2026-05-19 — POD-010 — Camera role resolution in API endpoints
 
 **What changed:**
@@ -1922,6 +1937,25 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
 **Test result:** 2416 passed.
 
 - `docs/todo.md`: BUG-002b, BUG-015 marked complete.
+
+---
+
+## 2026-05-21 — Camera ID Mapping + Camera Offset Configuration
+
+**Sources:** `resources/hlrequirements/camera_id list.md`, `resources/hlrequirements/camera_offset.md`
+
+**Camera ID Mapping (CID-001..005):**
+- `config.py`: `_parse_cameras()` accepts `str|int`; `CAMERAS`, `TOUPTEK_INDEX`, `CAMERA_SERIALS` globals
+- `CameraNameResolver`: case-insensitive substring + serial verification; wired into `runtime._build_adapters()`
+- `templates/config.toml`: `[cameras]` now uses model name as default; `[camera_serials]` block added
+
+**Camera Offset Configuration (CO-001..006):**
+- `config.py`: `_parse_camera_offsets()` and `CAMERA_OFFSETS`
+- `CameraOffsetService`: lookup by model+gain (bidirectional substring); `apply()` sets `set_black_level`
+- `RuntimeContext`: `_apply_camera_offsets()` called in `connect_devices()` and `get_preview_camera()`
+- `AutoGainService.run_one_shot()`: `offset_service` param; `cur_offset` seeded from configured value
+- `calibration_capture.py`: `offset_service` param on `prepare_bias/dark/flat`; API passes `rt.camera_offset_service`
+- `templates/config.toml`: `[camera_offsets]` section with defaults for G3M678M/ATR585M (150) and GPCMOS02000KPA (10)
 
 ---
 

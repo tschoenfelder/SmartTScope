@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-19 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup; POD-004/009/010 camera role API)
+**Last updated:** 2026-05-21 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup; POD-004/009/010 camera role API; CID-001..005 camera name resolver; CO-001..006 camera offset auto-apply)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -580,6 +580,62 @@
   - *Done:* `docs/release-notes-v0.1.md` — features (M0–M6 + Collimation), performance targets, known issues, hardware-blocked items, deferred scope, install/upgrade path
 
 **Quality gate:** Long session completes or fails gracefully. Thermal limits not exceeded. Storage-full behavior does not corrupt session data. Reconnect behavior defined and verified. Release installable from clean state.
+
+---
+
+## Camera ID Mapping
+
+*Source: `resources/hlrequirements/camera_id list.md`*  
+*Plan: `docs/superpowers/plans/2026-05-20-camera-id-mapping.md`*
+
+- [x] CID-001 Parse `[cameras]` role values as `str | int` in config.py `[P1 · Config]`
+  - *Done:* _parse_cameras() accepts str|int; CAMERAS and TOUPTEK_INDEX globals added
+- [x] CID-002 Add `[camera_serials]` section parsing in config.py `[P1 · Config]`
+  - *Done:* _parse_camera_serials() and CAMERA_SERIALS added to config.py
+- [x] CID-003 Implement `CameraNameResolver` — name-to-index lookup with serial verification `[P1 · Runtime]`
+  - *Done:* CameraNameResolver in smart_telescope/services/camera_name_resolver.py — substring match + serial verification
+- [x] CID-004 Wire `CameraNameResolver` into `runtime._build_adapters()` `[P1 · Runtime]`
+  - *Done:* CameraNameResolver.resolve() wired into runtime._build_adapters(); ToupcamCamera receives resolved SDK index
+- [x] CID-005 Update config.toml template with name-based examples + `[camera_serials]` block `[P1 · Docs]`
+  - *Done:* templates/config.toml updated with [cameras] name examples and [camera_serials] block
+- [ ] CID-006 Verify camera identification on real hardware — G3M678M and ATR585M resolve correctly `[P1 · Hardware]`
+- [ ] CID-007 Post-release: detect newly connected cameras not in config and offer to add them `[P3 · Future]`
+
+---
+
+## Camera Offset Configuration
+
+*Source: `resources/hlrequirements/camera_offset.md`*  
+*Plan: `docs/superpowers/plans/2026-05-20-camera-offset-config.md`*
+
+- [x] CO-001 Add `_parse_camera_offsets()` and `CAMERA_OFFSETS` global to config.py `[P1 · Config]`
+  - *Done:* _parse_camera_offsets() and CAMERA_OFFSETS added to config.py
+- [x] CO-002 Implement `CameraOffsetService` — lookup and apply black-level per model+gain `[P1 · Runtime]`
+  - *Done:* CameraOffsetService in smart_telescope/services/camera_offset_service.py — bidirectional substring match, apply() sets black level
+- [x] CO-003 Apply offset in `RuntimeContext.connect_devices()` after adapters built `[P1 · Runtime]`
+  - *Done:* _apply_camera_offsets() in RuntimeContext; called in connect_devices() and get_preview_camera()
+- [x] CO-004 Inject `CameraOffsetService` into `AutoGainService` — apply after gain change `[P1 · Runtime]`
+  - *Done:* offset_service param added to AutoGainService.run_one_shot(); cur_offset initialized from configured offset when no last_good
+- [x] CO-005 Inject `CameraOffsetService` into `calibration_capture` functions `[P1 · Runtime]`
+  - *Done:* offset_service param added to prepare_bias/dark/flat in calibration_capture.py; API passes rt.camera_offset_service
+- [x] CO-006 Update `templates/config.toml` with `[camera_offsets]` defaults `[P1 · Config]`
+  - *Done:* templates/config.toml updated with [camera_offsets] section (G3M678M/ATR585M=150, GPCMOS02000KPA=10)
+- [ ] CO-007 Verify offset applied on real hardware: G3M678M LCG→150, HCG→150 confirmed `[P1 · Hardware]`
+- [ ] CO-008 Verify GPCMOS02000KPA offset applied correctly (LCG/HCG = 10) `[P1 · Hardware]`
+
+---
+
+## Camera Offset Estimation Wizard
+
+*Source: `resources/hlrequirements/camera_offset_estimation.md`*  
+*Plan: `docs/superpowers/plans/2026-05-20-camera-offset-estimation.md`*
+
+- [ ] COE-001 Domain models: `BiasFrameStats`, `OffsetSweepPoint`, `BiasEstimationResult`, `analyze_frame` `[P1 · Domain]`
+- [ ] COE-002 `BiasEstimationService` — capture frames + sweep offset values `[P1 · Service]`
+- [ ] COE-003 API endpoints: `POST /api/bias_estimation/start`, `GET /api/bias_estimation/status/{id}` `[P1 · API]`
+- [ ] COE-004 Frontend wizard card in Stage 6: sweep table, recommendation, TOML snippet `[P1 · UI]`
+- [ ] COE-005 Verify wizard on real hardware: G3M678M LCG sweep produces expected recommendation `[P1 · Hardware]`
+- [ ] COE-006 Verify wizard on real hardware: GPCMOS02000KPA LCG sweep `[P1 · Hardware]`
 
 ---
 

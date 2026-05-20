@@ -128,6 +128,27 @@ require_refocus_before_final_fine_hint  = true
 [collimation.daylight_mechanical_alignment]
 enabled = false
 
+# ── Camera sensor offsets (black level) ──────────────────────────────────────
+# The offset (black level) prevents low-signal pixels from clipping to zero.
+# SmartTScope applies the value automatically when a camera connects or its
+# gain mode changes.  Use the Offset Estimation wizard (Setup & Diagnostics)
+# to find optimal values for a new camera.
+#
+# Note: GPCMOS02000KPA and CMOS02000KPA refer to the same camera model;
+# matching is case-insensitive and uses substring comparison.
+
+[camera_offsets.G3M678M]
+lcg = 150
+hcg = 150
+
+[camera_offsets.GPCMOS02000KPA]
+lcg = 10
+hcg = 10
+
+[camera_offsets.ATR585M]
+lcg = 150
+hcg = 150
+
 # Focuser settings for the collimation assistant
 [collimation.focuser]
 min_position               = 0

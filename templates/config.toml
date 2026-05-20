@@ -14,19 +14,31 @@ gps_port         = ""   # e.g. "/dev/ttyUSB_GPS0"          (future use)
 dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
 
 [cameras]
-# Map camera roles to ToupTek SDK indices (0-based, order in which the OS
-# enumerates USB devices).  Only "main" is required; comment out unused roles.
+# Cameras can be identified by model name (recommended) or by SDK enumeration
+# index (0-based, backward compatible).
 #
-# Typical two-camera setup (678M imaging + dedicated guide cam):
-#   main  = 0   # 678M at C8
-#   guide = 1   # guide cam on 180×50 guide scope
+# Model-name form (recommended) — the app scans connected cameras at startup
+# and finds the one whose SDK display name matches (case-insensitive substring).
+# The serial number in [camera_serials] is verified when present.
 #
-# Three-camera setup (ATR585M at C8, 678M as OAG alongside guide scope):
-#   main  = 0   # ATR585M at C8
-#   guide = 1   # guide cam on 180×50 guide scope
-#   atr   = 2   # 678M now used as OAG — override "main" profile accordingly
+# Typical two-camera setup:
+#   main  = "G3M678M"    # 678M imaging camera at C8
+#   guide = "ATR585M"    # guide cam on 180×50 guide scope
 #
-main  = 0   # primary imaging camera
+# Legacy integer-index form (still works, but fragile — index shifts on USB reconnect):
+#   main = 0
+#
+main  = "G3M678M"   # primary imaging camera
+
+# ── Camera serial numbers (optional but recommended) ─────────────────────────
+# Verified at startup to ensure each name resolves to the correct physical camera.
+# Find serial numbers in Setup & Diagnostics (Stage 6) → Camera Scan.
+# If a serial mismatches, startup fails with a descriptive error.
+
+[camera_serials]
+G3M678M        = "tp-4-2-11-0547-14bc"
+ATR585M        = "tp-4-1-10-0547-157c"
+GPCMOS02000KPA = "tp-3-4-23-0547-1367"
 
 # ── Optical hardware inventory ────────────────────────────────────────────────
 # Define each physical telescope once, then build optical trains from them.

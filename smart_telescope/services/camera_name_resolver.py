@@ -40,28 +40,16 @@ class CameraNameResolver:
         # Numeric shortcut (backward compat)
         try:
             idx = int(name_or_index)
-            if devices is not None:
-                # Explicit device list supplied (e.g. in tests) — validate bounds.
-                if idx >= len(devices):
-                    raise RuntimeError(
-                        f"Camera index {idx} out of range — "
-                        f"found {len(devices)} device(s): {self._names(devices)}"
-                    )
-            else:
-                # Try to enumerate live devices; skip bounds-check if SDK unavailable.
-                try:
-                    devs = self._enumerate()
-                    if idx >= len(devs):
-                        raise RuntimeError(
-                            f"Camera index {idx} out of range — "
-                            f"found {len(devs)} device(s): {self._names(devs)}"
-                        )
-                except ImportError:
-                    _log.debug(
-                        "CameraNameResolver: toupcam SDK not available — "
-                        "skipping bounds-check for numeric index %d",
-                        idx,
-                    )
+            devs = devices if devices is not None else self._enumerate()
+            # Only validate bounds when the device list is non-empty (i.e. enumeration
+            # succeeded and returned real results).  An empty list from a live call means
+            # the SDK is unavailable or no camera is connected yet; in that case we trust
+            # the caller-supplied index and let ToupcamCamera raise at open-time.
+            if devs and idx >= len(devs):
+                raise RuntimeError(
+                    f"Camera index {idx} out of range — "
+                    f"found {len(devs)} device(s): {self._names(devs)}"
+                )
             _log.info("CameraNameResolver: index=%d (no name-based lookup)", idx)
             return idx
         except (ValueError, TypeError):
@@ -103,8 +91,13 @@ class CameraNameResolver:
         )
 
     def _enumerate(self) -> list[Any]:
-        import toupcam as _tc
-        return list(_tc.Toupcam.EnumV2())
+        """Return live device list, or empty list when toupcam SDK is unavailable."""
+        try:
+            import toupcam as _tc
+            return list(_tc.Toupcam.EnumV2())
+        except ImportError:
+            _log.debug("toupcam SDK not available — device enumeration skipped")
+            return []
 
     def _get_serial(self, device: Any) -> str:
         """Read serial from device stub (used in tests) or production device."""

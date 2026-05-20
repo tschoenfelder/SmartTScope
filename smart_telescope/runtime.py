@@ -54,10 +54,12 @@ def _build_adapters(
     cam_mode: str
     if main_index_str:
         from .adapters.touptek.camera import ToupcamCamera
-        camera = ToupcamCamera(index=int(main_index_str))
+        from .services.camera_name_resolver import CameraNameResolver
+        sdk_index = CameraNameResolver().resolve(main_index_str, config.CAMERA_SERIALS)
+        camera = ToupcamCamera(index=sdk_index)
         cam_mode = "real"
         role_label = "TOUPTEK_INDEX env" if os.environ.get("TOUPTEK_INDEX") else "[cameras] main"
-        _log.warning("Adapter selected: ToupcamCamera(index=%s)  [%s]", main_index_str, role_label)
+        _log.warning("Adapter selected: ToupcamCamera(index=%s)  [%s]", sdk_index, role_label)
     elif sim_dir:
         from pathlib import Path
         from .adapters.simulator.camera import SimulatorCamera

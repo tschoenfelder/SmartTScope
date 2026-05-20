@@ -40,12 +40,28 @@ class CameraNameResolver:
         # Numeric shortcut (backward compat)
         try:
             idx = int(name_or_index)
-            devs = devices if devices is not None else self._enumerate()
-            if idx >= len(devs):
-                raise RuntimeError(
-                    f"Camera index {idx} out of range — "
-                    f"found {len(devs)} device(s): {self._names(devs)}"
-                )
+            if devices is not None:
+                # Explicit device list supplied (e.g. in tests) — validate bounds.
+                if idx >= len(devices):
+                    raise RuntimeError(
+                        f"Camera index {idx} out of range — "
+                        f"found {len(devices)} device(s): {self._names(devices)}"
+                    )
+            else:
+                # Try to enumerate live devices; skip bounds-check if SDK unavailable.
+                try:
+                    devs = self._enumerate()
+                    if idx >= len(devs):
+                        raise RuntimeError(
+                            f"Camera index {idx} out of range — "
+                            f"found {len(devs)} device(s): {self._names(devs)}"
+                        )
+                except ImportError:
+                    _log.debug(
+                        "CameraNameResolver: toupcam SDK not available — "
+                        "skipping bounds-check for numeric index %d",
+                        idx,
+                    )
             _log.info("CameraNameResolver: index=%d (no name-based lookup)", idx)
             return idx
         except (ValueError, TypeError):

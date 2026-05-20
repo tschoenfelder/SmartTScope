@@ -42,15 +42,16 @@ def test_apply_camera_offsets_includes_preview_cameras(monkeypatch):
     preview_cam = MagicMock()
     preview_cam.get_logical_name.return_value = "MockCam"
     preview_cam.get_conversion_gain.return_value = ConversionGain.LCG
-    ctx._preview_cameras = {"solver": preview_cam}
+    ctx._preview_cameras = {1: preview_cam}
 
     ctx._apply_camera_offsets()
 
     preview_cam.set_black_level.assert_called_once_with(10)
 
 
-def test_apply_camera_offsets_exception_does_not_propagate(monkeypatch):
+def test_apply_camera_offsets_exception_does_not_propagate(monkeypatch, caplog):
     """A failing apply() is logged as warning but does not raise."""
+    import logging
     monkeypatch.setattr(cfg, "CAMERA_OFFSETS", {})
 
     from smart_telescope.runtime import RuntimeContext
@@ -62,4 +63,7 @@ def test_apply_camera_offsets_exception_does_not_propagate(monkeypatch):
     ctx._camera = broken_cam
     ctx._preview_cameras = {}
 
-    ctx._apply_camera_offsets()  # must not raise
+    with caplog.at_level(logging.WARNING, logger="smart_telescope.runtime"):
+        ctx._apply_camera_offsets()  # must not raise
+
+    assert any("camera offset apply failed" in r.message.lower() for r in caplog.records)

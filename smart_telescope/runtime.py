@@ -183,7 +183,7 @@ class RuntimeContext:
             try:
                 self.camera_offset_service.apply(cam)
             except Exception as exc:
-                _log.warning("Camera offset apply failed: %s", exc)
+                _log.warning("Camera offset apply failed: %s", exc, exc_info=True)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -276,6 +276,7 @@ class RuntimeContext:
         self.device_state    = DeviceStateService()
         self.dawn_watcher    = DawnWatcher()
         self.job_manager     = JobManager()
+        self.camera_offset_service = CameraOffsetService.from_config()
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None
@@ -316,6 +317,10 @@ class RuntimeContext:
                     raise RuntimeError(f"Camera {index} failed to connect")
                 self._preview_cameras[index] = cam
                 _log.info("get_preview_camera(%d): connected → %s", index, cam.get_logical_name())
+                try:
+                    self.camera_offset_service.apply(cam)
+                except Exception as exc:
+                    _log.warning("Camera offset apply failed for preview camera: %s", exc, exc_info=True)
             return self._preview_cameras[index]
 
         if index not in self._preview_cameras:
@@ -327,6 +332,10 @@ class RuntimeContext:
                     raise RuntimeError(f"Camera {index}: connect() returned False")
                 self._preview_cameras[index] = cam
                 _log.info("get_preview_camera(%d): auto-detect connected → %s", index, cam.get_logical_name())
+                try:
+                    self.camera_offset_service.apply(cam)
+                except Exception as exc:
+                    _log.warning("Camera offset apply failed for preview camera: %s", exc, exc_info=True)
             except (ImportError, RuntimeError) as exc:
                 _log.warning("get_preview_camera(%d): SDK unavailable (%s) — falling back to %s",
                              index, exc, type(self._camera).__name__)

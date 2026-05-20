@@ -78,18 +78,29 @@ DEW_CONTROL_PORT: str = _get("hardware", "dew_control_port", "")
 # hardware.touptek_index mapped to the "main" role so existing installs keep
 # working without a config change.
 
-def _parse_cameras() -> dict[str, int]:
+def _parse_cameras() -> dict[str, str | int]:
+    """Parse [cameras] section; values may be int (SDK index) or str (model name)."""
     section = _cfg.get("cameras", {})
     if section:
-        return {role: int(idx) for role, idx in section.items()}
+        result: dict[str, str | int] = {}
+        for role, val in section.items():
+            result[role] = int(val) if isinstance(val, (int, float)) else str(val)
+        return result
     legacy = _get("hardware", "touptek_index", "")
     if legacy:
         return {"main": int(legacy)}
     return {}
 
-CAMERAS: dict[str, int] = _parse_cameras()
-# Backward-compat alias used by env-var override logic in deps.py.
+CAMERAS: dict[str, str | int] = _parse_cameras()
+# Backward-compat: TOUPTEK_INDEX may now be a model-name string (e.g. "G3M678M") or "0".
 TOUPTEK_INDEX: str = str(CAMERAS["main"]) if "main" in CAMERAS else ""
+
+
+def _parse_camera_serials() -> dict[str, str]:
+    """Parse [camera_serials] section: model_name -> serial_number."""
+    return {str(k): str(v) for k, v in _cfg.get("camera_serials", {}).items()}
+
+CAMERA_SERIALS: dict[str, str] = _parse_camera_serials()
 
 # ── ASTAP (TOML only — deps.py applies env-var override at runtime) ───────────
 

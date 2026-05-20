@@ -18,6 +18,7 @@ from .ports.mount import MountPort
 from .ports.solver import SolverPort
 from .ports.stacker import StackerPort
 from .ports.storage import StoragePort
+from .services.camera_offset_service import CameraOffsetService
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
@@ -149,6 +150,7 @@ class RuntimeContext:
         self.device_state    = DeviceStateService()
         self.dawn_watcher    = DawnWatcher()
         self.job_manager     = JobManager()
+        self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
         self.session_lock:    threading.Lock = threading.Lock()
@@ -164,6 +166,24 @@ class RuntimeContext:
     def hardware_mode(self) -> str:
         """Return the current hardware mode: 'real', 'simulator', or 'mock'."""
         return self._hardware_mode
+
+    # ── camera helpers ────────────────────────────────────────────────────────
+
+    def _all_cameras(self) -> list:
+        """Return list of all connected cameras (primary + preview)."""
+        cams = []
+        if self._camera is not None:
+            cams.append(self._camera)
+        cams.extend(self._preview_cameras.values())
+        return cams
+
+    def _apply_camera_offsets(self) -> None:
+        """Apply configured black-level offsets to all connected cameras."""
+        for cam in self._all_cameras():
+            try:
+                self.camera_offset_service.apply(cam)
+            except Exception as exc:
+                _log.warning("Camera offset apply failed: %s", exc)
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -181,6 +201,7 @@ class RuntimeContext:
             if not self._adapters_built:
                 self._camera, self._mount, self._focuser = _build_adapters(self)
                 self._adapters_built = True
+                self._apply_camera_offsets()
                 assert self._mount is not None
                 self.device_state.start(self._mount)
                 self.device_state.poll_now()  # BUG-012: populate cache immediately at startup

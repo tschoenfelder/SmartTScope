@@ -1,4 +1,5 @@
 # tests/unit/services/test_camera_offset_service.py
+import logging
 import pytest
 from unittest.mock import MagicMock
 from smart_telescope.services.camera_offset_service import CameraOffsetService
@@ -47,10 +48,31 @@ def test_get_offset_unknown_model_returns_none():
     assert svc.get_offset("UNKNOWN_CAM", ConversionGain.LCG) is None
 
 
+def test_get_offset_config_key_substring_of_device_name():
+    # Config key "G3M678M" is a substring of longer device name "ToupTek G3M678M USB3"
+    svc = CameraOffsetService(OFFSETS)
+    assert svc.get_offset("ToupTek G3M678M USB3", ConversionGain.LCG) == 150
+
+
 def test_get_offset_unknown_gain_mode_returns_none():
     svc = CameraOffsetService(OFFSETS)
-    # HDR not configured for G3M678M
+    # Verify model IS matched for a known gain
+    assert svc.get_offset("G3M678M", ConversionGain.LCG) == 150
+    # HDR not in config for G3M678M — gain not found returns None
     assert svc.get_offset("G3M678M", ConversionGain.HDR) is None
+
+
+def test_get_offset_warns_on_multiple_matches(caplog):
+    # Both "cam" and "camera" match device name "camera_pro"
+    multi_offsets = {
+        "cam":    {"lcg": 10},
+        "camera": {"lcg": 20},
+    }
+    svc = CameraOffsetService(multi_offsets)
+    with caplog.at_level(logging.WARNING, logger="smart_telescope.services.camera_offset_service"):
+        result = svc.get_offset("camera_pro", ConversionGain.LCG)
+    assert result == 10  # first match wins
+    assert any("multiple" in r.message.lower() for r in caplog.records)
 
 
 def test_get_offset_empty_config_returns_none():
@@ -89,7 +111,6 @@ def test_apply_unknown_camera_does_not_call_set():
 
 
 def test_apply_logs_when_no_offset_found(caplog):
-    import logging
     svc = CameraOffsetService(OFFSETS)
     cam = _mock_camera("UNKNOWN_CAMERA")
     with caplog.at_level(logging.DEBUG, logger="smart_telescope.services.camera_offset_service"):

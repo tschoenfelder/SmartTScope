@@ -28,10 +28,21 @@ class CameraOffsetService:
         """Return configured offset or None if model/mode not in config."""
         mode_key = gain_mode.name.lower()  # "lcg", "hcg", "hdr"
         name_lower = model_name.lower()
-        for config_key, modes in self._offsets.items():
-            if config_key in name_lower or name_lower in config_key:
-                return modes.get(mode_key)
-        return None
+        matches = [
+            (config_key, modes)
+            for config_key, modes in self._offsets.items()
+            if config_key in name_lower or name_lower in config_key
+        ]
+        if not matches:
+            return None
+        if len(matches) > 1:
+            keys = [m[0] for m in matches]
+            _log.warning(
+                "Multiple offset configs match model='%s': %s — using first match '%s'",
+                model_name, keys, keys[0],
+            )
+        config_key, modes = matches[0]
+        return modes.get(mode_key)
 
     def apply(self, camera: "CameraPort") -> None:
         """Read camera's logical name and gain mode, apply offset if configured."""

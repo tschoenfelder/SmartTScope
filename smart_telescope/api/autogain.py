@@ -123,6 +123,7 @@ def _worker(
             cancellation_flag=job.cancel,
             max_iterations=max_iterations,
             has_focuser=has_focuser,
+            offset_service=rt.camera_offset_service,
         )
     except Exception as exc:
         _log.error("AutoGain worker error: %s", exc)

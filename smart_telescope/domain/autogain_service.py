@@ -23,6 +23,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -33,6 +34,9 @@ from .camera_profile import CameraProfile
 from .histogram import HistogramStats, analyze as _hist_analyze
 from .last_good_settings import LastGoodSettings
 from .planet_detection import DetectedObject, detect_planet
+
+if TYPE_CHECKING:
+    from ..services.camera_offset_service import CameraOffsetService
 
 _log = logging.getLogger(__name__)
 
@@ -130,6 +134,7 @@ class AutoGainService:
         cancellation_flag: threading.Event | None = None,
         max_iterations: int = 12,
         has_focuser: bool = True,
+        offset_service: "CameraOffsetService | None" = None,
     ) -> AutoGainResult:
         """Capture and adjust until histogram is in target band or limits are reached.
 
@@ -160,6 +165,8 @@ class AutoGainService:
         cg = _select_conversion_gain(profile, mode)
         with _suppress():
             camera.set_conversion_gain(cg)
+        if offset_service is not None:
+            offset_service.apply(camera)
 
         # Step 3: starting settings from last_good or profile defaults
         if last_good is not None:

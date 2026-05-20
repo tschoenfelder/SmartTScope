@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..api import deps
+from ..runtime import get_runtime as _get_runtime
 from ..domain.bad_pixel_map import BpmValidationError, BpmStats, generate_bpm
 from ..domain.calibration_capture import (
     BiasValidationError,
@@ -175,6 +176,7 @@ def start_bias(req: BiasRequest) -> JobStartedResponse:
                 camera, req.n_frames, image_root, cal_index,
                 gain=req.gain, offset=req.offset, conversion_gain=cg,
                 progress=_progress_fn(job),
+                offset_service=_get_runtime().camera_offset_service,
             )
             cal_index.save()
             with _jobs_lock:
@@ -218,6 +220,7 @@ def start_dark(req: DarkRequest) -> JobStartedResponse:
                 camera, req.exposure_ms, req.n_frames, image_root, cal_index,
                 gain=req.gain, offset=req.offset, conversion_gain=cg,
                 progress=_progress_fn(job),
+                offset_service=_get_runtime().camera_offset_service,
             )
             cal_index.save()
             with _jobs_lock:
@@ -272,6 +275,7 @@ def start_flat(req: FlatRequest) -> JobStartedResponse:
                 offset=req.offset,
                 conversion_gain=cg,
                 progress=_progress_fn(job),
+                offset_service=_get_runtime().camera_offset_service,
             )
             cal_index.save()
             with _jobs_lock:

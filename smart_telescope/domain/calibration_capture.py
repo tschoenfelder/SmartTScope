@@ -11,10 +11,13 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from astropy.io import fits
+
+if TYPE_CHECKING:
+    from ..services.camera_offset_service import CameraOffsetService
 
 from ..domain.calibration_store import CalibrationIndex, CalibrationEntry, make_entry
 from ..domain.frame import FitsFrame
@@ -139,6 +142,7 @@ def prepare_bias(
     offset: int | None = None,
     conversion_gain: Any | None = None,
     progress: ProgressCallback | None = None,
+    offset_service: "CameraOffsetService | None" = None,
 ) -> CalibrationEntry:
     """Capture *n_frames* bias frames and stack into a master bias FITS.
 
@@ -155,6 +159,8 @@ def prepare_bias(
         camera.set_black_level(offset)
     if conversion_gain is not None:
         camera.set_conversion_gain(conversion_gain)
+        if offset_service is not None:
+            offset_service.apply(camera)
 
     eff_gain      = camera.get_gain()
     eff_offset    = camera.get_black_level()
@@ -206,6 +212,7 @@ def prepare_dark(
     offset: int | None = None,
     conversion_gain: Any | None = None,
     progress: ProgressCallback | None = None,
+    offset_service: "CameraOffsetService | None" = None,
 ) -> tuple[CalibrationEntry, str | None]:
     """Capture *n_frames* dark frames at *exposure_ms* and stack into a master dark FITS.
 
@@ -228,6 +235,8 @@ def prepare_dark(
         camera.set_black_level(offset)
     if conversion_gain is not None:
         camera.set_conversion_gain(conversion_gain)
+        if offset_service is not None:
+            offset_service.apply(camera)
 
     eff_gain      = camera.get_gain()
     eff_offset    = camera.get_black_level()
@@ -363,6 +372,7 @@ def prepare_flat(
     offset: int | None = None,
     conversion_gain: Any | None = None,
     progress: ProgressCallback | None = None,
+    offset_service: "CameraOffsetService | None" = None,
 ) -> tuple[CalibrationEntry, list[str]]:
     """Auto-tune exposure and capture *n_frames* flat frames into a master flat FITS.
 
@@ -381,6 +391,8 @@ def prepare_flat(
         camera.set_black_level(offset)
     if conversion_gain is not None:
         camera.set_conversion_gain(conversion_gain)
+        if offset_service is not None:
+            offset_service.apply(camera)
 
     eff_gain      = camera.get_gain()
     eff_offset    = camera.get_black_level()

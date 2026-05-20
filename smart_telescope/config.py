@@ -102,6 +102,21 @@ def _parse_camera_serials() -> dict[str, str]:
 
 CAMERA_SERIALS: dict[str, str] = _parse_camera_serials()
 
+# ── camera offsets ────────────────────────────────────────────────────────────
+
+
+def _parse_camera_offsets() -> dict[str, dict[str, int]]:
+    """Parse [camera_offsets.{model}] sections: model -> {lcg/hcg/hdr -> int}."""
+    section = _cfg.get("camera_offsets", {})
+    result: dict[str, dict[str, int]] = {}
+    for model_name, gain_offsets in section.items():
+        if isinstance(gain_offsets, dict):
+            result[str(model_name)] = {k.lower(): int(v) for k, v in gain_offsets.items()}
+    return result
+
+
+CAMERA_OFFSETS: dict[str, dict[str, int]] = _parse_camera_offsets()
+
 # ── ASTAP (TOML only — deps.py applies env-var override at runtime) ───────────
 
 ASTAP_PATH: str        = _get("astap", "path",        "")

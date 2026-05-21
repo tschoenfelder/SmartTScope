@@ -51,6 +51,7 @@ class BiasEstimationService:
         exp_s = caps.min_exposure_ms / 1000.0
 
         original_offset = self._camera.get_black_level()
+        original_gain = self._camera.get_conversion_gain()
         self._camera.set_conversion_gain(gain_mode)
         model = self._camera.get_logical_name()
 
@@ -65,8 +66,10 @@ class BiasEstimationService:
 
                 self._camera.set_black_level(offset)
                 frame_stats = self._capture_and_analyze(frame_count, exp_s, cancel_event)
+                if frame_stats is None:
+                    break  # cancelled
                 if not frame_stats:
-                    break  # cancelled during capture
+                    continue  # frame_count=0, skip this offset
 
                 avg = self._avg_stats(frame_stats)
                 pt = OffsetSweepPoint(
@@ -84,6 +87,7 @@ class BiasEstimationService:
                 )
         finally:
             self._camera.set_black_level(original_offset)
+            self._camera.set_conversion_gain(original_gain)
 
         return BiasEstimationResult(
             camera_model=model,
@@ -98,11 +102,13 @@ class BiasEstimationService:
         count: int,
         exp_s: float,
         cancel_event: threading.Event | None,
-    ) -> list[BiasFrameStats]:
+    ) -> list[BiasFrameStats] | None:
+        """Return list of stats, or None if cancelled before any frame was captured."""
         stats: list[BiasFrameStats] = []
         for i in range(count):
             if cancel_event and cancel_event.is_set():
-                break
+                _log.info("BiasEstimation: cancelled during frame capture at frame %d", i)
+                return None  # explicitly cancelled
             frame = self._camera.capture(exp_s)
             stats.append(analyze_frame(frame.pixels, frame_index=i))
         return stats
@@ -110,13 +116,15 @@ class BiasEstimationService:
     @staticmethod
     def _avg_stats(stats: list[BiasFrameStats]) -> BiasFrameStats:
         if not stats:
-            return BiasFrameStats(0, 0, 0, 0, 0, 0, 0, 0.0, [])
+            raise ValueError("_avg_stats called with empty list")
         n = len(stats)
         hist_len = len(stats[0].histogram) if stats[0].histogram else 256
         agg_hist = [
             sum(s.histogram[i] for s in stats if i < len(s.histogram))
             for i in range(hist_len)
         ]
+        # Note: averaging per-frame medians is an approximation; the true combined
+        # median requires all pixel data and is not computed here.
         return BiasFrameStats(
             frame_index=0,
             min_val=sum(s.min_val for s in stats) / n,

@@ -56,17 +56,19 @@ def test_estimate_returns_result_with_model_and_gain():
 def test_estimate_captures_at_minimum_exposure():
     cam = _mock_camera(min_exp_ms=0.05)
     svc = BiasEstimationService(cam)
-    svc.estimate(ConversionGain.LCG, frame_count=2, sweep_offsets=[])
+    svc.estimate(ConversionGain.LCG, frame_count=2, sweep_offsets=[0])  # changed from []
     for c in cam.capture.call_args_list:
         exp_s = c.args[0] if c.args else c.kwargs.get("exposure_seconds", 1.0)
         assert exp_s == pytest.approx(0.05 / 1000.0)
+    assert cam.capture.call_count == 2  # add explicit count check
 
 
 def test_estimate_sets_gain_mode_before_capture():
     cam = _mock_camera()
     svc = BiasEstimationService(cam)
     svc.estimate(ConversionGain.HCG, frame_count=2, sweep_offsets=[])
-    cam.set_conversion_gain.assert_called_with(ConversionGain.HCG)
+    # set_conversion_gain is called twice: once to set HCG, once to restore original
+    cam.set_conversion_gain.assert_any_call(ConversionGain.HCG)
 
 
 def test_estimate_restores_original_offset_after_sweep():
@@ -115,7 +117,7 @@ def test_sweep_uses_default_offsets_when_none():
 
 def test_estimate_respects_cancel_event():
     cancel = threading.Event()
-    cancel.set()  # cancelled immediately
+    cancel.set()  # cancelled before any iteration
     cam = _mock_camera()
     svc = BiasEstimationService(cam)
     result = svc.estimate(
@@ -123,5 +125,52 @@ def test_estimate_respects_cancel_event():
         sweep_offsets=[0, 5, 10, 20, 30],
         cancel_event=cancel,
     )
-    # Should return early — far fewer than 100 captures
-    assert cam.capture.call_count < 100
+    assert cam.capture.call_count == 0  # tightened from < 100
+    assert len(result.sweep) == 0       # no partial results
+
+
+def test_estimate_restores_offset_after_capture_exception():
+    """Camera offset is restored even if capture raises."""
+    cam = _mock_camera()
+    cam.get_black_level.return_value = 99
+    cam.capture.side_effect = RuntimeError("camera error")
+    svc = BiasEstimationService(cam)
+
+    # Should not raise (exception handled) or must propagate cleanly;
+    # either way, original offset must be restored
+    try:
+        svc.estimate(ConversionGain.LCG, frame_count=1, sweep_offsets=[0])
+    except Exception:
+        pass  # acceptable if exception propagates
+
+    last_offset_call = cam.set_black_level.call_args_list[-1]
+    assert last_offset_call.args[0] == 99, "Original offset must be restored after exception"
+
+
+def test_estimate_mid_sweep_cancellation():
+    """Cancelling after first offset completes gives partial results."""
+    cancel = threading.Event()
+    cam = _mock_camera()
+    cam.get_black_level.return_value = 0
+
+    call_num = [0]
+
+    def capture_and_maybe_cancel(exp_s):
+        call_num[0] += 1
+        if call_num[0] >= 2:
+            cancel.set()
+        return _make_frame(50.0)
+
+    cam.capture.side_effect = capture_and_maybe_cancel
+    svc = BiasEstimationService(cam)
+
+    result = svc.estimate(
+        ConversionGain.LCG, frame_count=1,
+        sweep_offsets=[0, 5, 10, 20, 30],
+        cancel_event=cancel,
+    )
+    # Should have partial results (at least 1 offset completed)
+    assert len(result.sweep) >= 1
+    # Original offset must be restored
+    last_offset_call = cam.set_black_level.call_args_list[-1]
+    assert last_offset_call.args[0] == 0

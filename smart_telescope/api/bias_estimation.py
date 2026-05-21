@@ -107,23 +107,20 @@ class BiasEstimationStatusResponse(BaseModel):
 def _get_camera_for_role(camera_role: str):
     """Resolve camera_role to a camera adapter.
 
-    Resolution order:
-    1. Try optical train registry via resolve_camera_index(0, camera_role).
-    2. Fall back to get_preview_camera(0) when the role is not in the registry
-       (typical in unit tests and minimal configs).
+    Raises HTTPException 422 if camera_role is not found in the optical train
+    registry, or HTTPException 503 if the camera fails to connect.
+    Invalid roles are NOT silently swallowed — they surface as 422 to the caller.
     """
     try:
         idx = deps.resolve_camera_index(0, camera_role)
-        return deps.get_preview_camera(idx)
-    except HTTPException as exc:
-        if exc.status_code == 422:
-            # Role not in optical train registry — use default preview camera
-            _log.debug(
-                "camera_role %r not in optical train registry, falling back to camera 0",
-                camera_role,
-            )
-            return deps.get_preview_camera(0)
+    except HTTPException:
         raise
+    except RuntimeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        return deps.get_preview_camera(idx)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -138,14 +135,12 @@ def start_bias_estimation(req: BiasEstimationRequest) -> BiasEstimationStartResp
 
     Poll GET /api/bias_estimation/status/{job_id} for results.
     """
-    try:
-        camera = _get_camera_for_role(req.camera_role)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    camera = _get_camera_for_role(req.camera_role)
 
     cg = _VALID_CG[req.gain_mode]   # already validated by Pydantic
     sweep_offsets = DEFAULT_SWEEP_OFFSETS if req.run_sweep else [0]
     job = _register_job()
+    cancel = threading.Event()
 
     def _run() -> None:
         try:
@@ -154,6 +149,7 @@ def start_bias_estimation(req: BiasEstimationRequest) -> BiasEstimationStartResp
                 gain_mode=cg,
                 frame_count=req.frame_count,
                 sweep_offsets=sweep_offsets,
+                cancel_event=cancel,
             )
             sweep_data = [
                 {

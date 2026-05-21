@@ -38,6 +38,12 @@ Table of contents for the SmartTelescope knowledge base.
 - [hardware-test-log-template](../docs/hardware-test-log-template.md) — Append-only evidence log with six required items (E-001 to E-006) for R7-004 release gate
 - [release-checklist](../docs/release-checklist.md) — Go/no-go gate: backlog, hardware evidence, acceptance, tests, clean install, performance, sign-off
 
+## Camera configuration
+
+- [camera-id-mapping plan](../docs/superpowers/plans/2026-05-20-camera-id-mapping.md) — TDD plan: name-based `[cameras]` config + `[camera_serials]` verification; `CameraNameResolver` service; backward-compat with integer indices
+- [camera-offset-config plan](../docs/superpowers/plans/2026-05-20-camera-offset-config.md) — TDD plan: `[camera_offsets]` TOML section; `CameraOffsetService`; auto-apply on connect and gain-mode change; defaults for G3M678M/ATR585M (150) and GPCMOS02000KPA (10)
+- [camera-offset-estimation plan](../docs/superpowers/plans/2026-05-20-camera-offset-estimation.md) — TDD plan: bias-frame capture wizard; `BiasEstimationService`; offset sweep 0–200; Stage 6 wizard card with sweep table and TOML snippet
+
 ## Architecture
 
 - [job-manager](job-manager.md) — `JobManager` service: resource ownership model, `submit()`/`claim()`/`release()` modes, cancellation, timeout policy

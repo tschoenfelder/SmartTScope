@@ -45,6 +45,7 @@ from .api.queue import router as queue_router
 from .api.session import router as session_router
 from .api.solver import router as solver_router
 from .api.stack import router as stack_router
+from .api.bias_estimation import router as bias_estimation_router
 
 _STATIC = Path(__file__).parent / "static"
 
@@ -81,6 +82,7 @@ app.include_router(queue_router)
 app.include_router(session_router)
 app.include_router(solver_router)
 app.include_router(stack_router)
+app.include_router(bias_estimation_router)
 
 
 @app.get("/", response_class=HTMLResponse)

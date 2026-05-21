@@ -131,9 +131,23 @@ def test_result_toml_snippet():
     assert "lcg = 150" in snippet
 
 
-def test_default_sweep_offsets_starts_at_zero():
-    assert DEFAULT_SWEEP_OFFSETS[0] == 0
+def test_default_sweep_offsets_has_expected_values():
+    assert DEFAULT_SWEEP_OFFSETS == [0, 5, 10, 20, 30, 50, 75, 100, 125, 150, 200]
 
 
-def test_default_sweep_offsets_includes_150():
-    assert 150 in DEFAULT_SWEEP_OFFSETS
+import pytest as _pytest
+
+@_pytest.mark.parametrize("gain_name,expected_key", [
+    ("LCG", "lcg"),
+    ("HCG", "hcg"),
+    ("HDR", "hdr"),
+])
+def test_result_toml_snippet_gain_mode_key(gain_name, expected_key):
+    sweep = [OffsetSweepPoint(offset=100, zero_fraction=0.0, min_val=10)]
+    result = BiasEstimationResult(
+        camera_model="TestCam", gain_mode_name=gain_name,
+        frame_count=5, mean_stats=None,
+        sweep=sweep,
+    )
+    snippet = result.toml_snippet()
+    assert f"{expected_key} = 100" in snippet

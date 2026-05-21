@@ -1,8 +1,7 @@
 """Domain models and pure analysis functions for bias-frame offset estimation."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -40,11 +39,12 @@ class BiasEstimationResult:
     camera_model: str
     gain_mode_name: str        # "LCG", "HCG", "HDR"
     frame_count: int
-    mean_stats: Any            # BiasFrameStats | None
+    mean_stats: "BiasFrameStats | None"
     sweep: list[OffsetSweepPoint]
 
     @property
     def recommended_offset(self) -> int:
+        """Return lowest safe offset (zero_fraction < ZERO_CLIP_THRESHOLD), or highest tested if none safe."""
         safe = [pt for pt in self.sweep if pt.is_safe]
         if safe:
             return min(safe, key=lambda pt: pt.offset).offset

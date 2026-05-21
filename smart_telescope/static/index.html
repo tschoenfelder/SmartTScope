@@ -1875,6 +1875,58 @@
       </div>
     </div>
 
+    <!-- Bias Estimation Wizard (COE-004) -->
+    <div class="card" id="be-card" style="margin-top:1.5rem">
+      <h3>Sensor Offset Estimation</h3>
+      <p style="color:#777;font-size:0.9em">
+        Capture bias frames to find the lowest offset that prevents pixel clipping.
+        Cover the sensor or close the shutter before running.
+      </p>
+
+      <button id="be-launch-btn" onclick="beLaunchWizard()">Open Offset Estimation Wizard</button>
+
+      <div id="be-wizard-section" style="display:none">
+        <button onclick="beHideWizard()" style="float:right">✕ Close</button>
+
+        <div style="margin:0.5em 0">
+          <label>Camera:
+            <select id="be-camera-role">
+              <option value="main">main</option>
+              <option value="guide">guide</option>
+            </select>
+          </label>
+          &nbsp;
+          <label>Gain mode:
+            <select id="be-gain-mode">
+              <option value="LCG">LCG</option>
+              <option value="HCG">HCG</option>
+              <option value="HDR">HDR</option>
+            </select>
+          </label>
+          &nbsp;
+          <label>Frames per offset:
+            <input id="be-frame-count" type="number" value="10" min="1" max="100" style="width:4em">
+          </label>
+          &nbsp;
+          <label>
+            <input id="be-run-sweep" type="checkbox" checked>
+            Run full sweep (0→200)
+          </label>
+        </div>
+
+        <button onclick="beStartEstimation()">Capture &amp; Analyze</button>
+
+        <p id="be-status" style="margin-top:0.5em"></p>
+        <table id="be-results-table" style="border-collapse:collapse;margin:0.5em 0"></table>
+        <p id="be-recommendation" style="font-weight:bold;margin:0.5em 0"></p>
+
+        <div id="be-toml-section" style="display:none;margin-top:0.5em">
+          <p>Copy this snippet to your <code>config.toml</code>:</p>
+          <pre id="be-toml-snippet" style="background:#f4f4f4;padding:0.5em;border-radius:4px"></pre>
+        </div>
+      </div>
+    </div>
+
     <!-- Cameras -->
     <div class="card" style="margin-top:1.5rem">
       <div class="card-title">
@@ -1902,6 +1954,7 @@
 <script src="/static/js/focuser.js"></script>
 <script src="/static/js/preview.js"></script>
 <script src="/static/js/session.js"></script>
+<script src="/static/js/bias_estimation.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

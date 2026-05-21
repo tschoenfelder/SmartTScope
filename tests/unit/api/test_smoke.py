@@ -82,7 +82,7 @@ class TestSetupSmoke:
         assert "goToStage" in resp.text
 
     def test_all_js_modules_served(self):
-        for module in ["api", "app", "mount", "focuser", "preview", "session", "collimation", "setup"]:
+        for module in ["api", "app", "mount", "focuser", "preview", "session", "collimation", "setup", "bias_estimation"]:
             resp = client.get(f"/static/js/{module}.js")
             assert resp.status_code == 200, f"{module}.js not served"
 

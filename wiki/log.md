@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-21 — COE-001..004 — Camera Offset Estimation Wizard complete
+
+**What changed:**
+
+- `smart_telescope/domain/bias_estimation.py` (COE-001): `ZERO_CLIP_THRESHOLD=0.001`, `BiasFrameStats`, `OffsetSweepPoint` (with `is_safe` property), `BiasEstimationResult` (`recommended_offset`, `safe`, `toml_snippet()`), `analyze_frame()`, `DEFAULT_SWEEP_OFFSETS=[0,5,10,20,30,50,75,100,125,150,200]`; 14 tests in `tests/unit/domain/test_bias_estimation.py`
+
+- `smart_telescope/services/bias_estimation_service.py` (COE-002): `BiasEstimationService.estimate()` — sets gain mode, captures frames at minimum exposure, sweeps offset values, averages stats per offset, restores original offset in `finally`, respects cancel event; 10 tests in `tests/unit/services/test_bias_estimation_service.py`
+
+- `smart_telescope/api/bias_estimation.py` (COE-003): `BiasEstimationRequest` with Pydantic `@field_validator` for gain_mode; `_JobState` registry with thread-safe dict; `POST /api/bias_estimation/start` (202, returns job_id); `GET /api/bias_estimation/status/{job_id}` (RUNNING/DONE/FAILED/CANCELLED + full result on DONE); 5 tests in `tests/unit/api/test_bias_estimation_api.py` (including runtime-restore fixture + optical train wiring); 422 for unknown camera role
+
+- `smart_telescope/static/js/bias_estimation.js` (COE-004): `beLaunchWizard`, `beHideWizard`, `beResetState`, `beStartEstimation`, `bePollStatus`; polls every 500ms; builds sweep table with safe/clipping badges; highlights recommended offset row in green; shows TOML snippet in `<pre>` block on DONE; orange warning when no safe offset found
+
+- `smart_telescope/static/index.html`: Sensor Offset Estimation card added to Stage 5 (before Connected Cameras); `<script src="/static/js/bias_estimation.js">` added
+
+- `wiki/index.md`: "Camera configuration" section added with links to CID/CO/COE plans
+
+- `docs/todo.md`: COE-001..004 marked done with acceptance notes
+
+**Tests:** 44 smoke tests pass; 32 bias estimation tests pass (domain + service + API)
+
+---
+
 ## 2026-05-20 — Camera ID Mapping / Camera Offset / Bias Estimation (CID/CO/COE)
 
 **What changed:**

@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-21 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup; POD-004/009/010 camera role API; CID-001..005 camera name resolver; CO-001..006 camera offset auto-apply)
+**Last updated:** 2026-05-21 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup; POD-004/009/010 camera role API; CID-001..005 camera name resolver; CO-001..006 camera offset auto-apply; COE-001..004 bias estimation wizard)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 
 ## Priority legend
@@ -630,10 +630,14 @@
 *Source: `resources/hlrequirements/camera_offset_estimation.md`*  
 *Plan: `docs/superpowers/plans/2026-05-20-camera-offset-estimation.md`*
 
-- [ ] COE-001 Domain models: `BiasFrameStats`, `OffsetSweepPoint`, `BiasEstimationResult`, `analyze_frame` `[P1 · Domain]`
-- [ ] COE-002 `BiasEstimationService` — capture frames + sweep offset values `[P1 · Service]`
-- [ ] COE-003 API endpoints: `POST /api/bias_estimation/start`, `GET /api/bias_estimation/status/{id}` `[P1 · API]`
-- [ ] COE-004 Frontend wizard card in Stage 6: sweep table, recommendation, TOML snippet `[P1 · UI]`
+- [x] COE-001 Domain models: `BiasFrameStats`, `OffsetSweepPoint`, `BiasEstimationResult`, `analyze_frame` `[P1 · Domain]`
+  - *Done:* `domain/bias_estimation.py` — `ZERO_CLIP_THRESHOLD=0.001`, `analyze_frame()` computes min/max/mean/median/std/zero_fraction/histogram; `OffsetSweepPoint.is_safe` property; `BiasEstimationResult.recommended_offset` picks lowest safe offset; `toml_snippet()` generates config snippet; 14 tests
+- [x] COE-002 `BiasEstimationService` — capture frames + sweep offset values `[P1 · Service]`
+  - *Done:* `services/bias_estimation_service.py` — captures at `caps.min_exposure_ms`; sets gain mode; sweeps offset values; restores original offset in `finally`; respects cancel event; 10 tests
+- [x] COE-003 API endpoints: `POST /api/bias_estimation/start`, `GET /api/bias_estimation/status/{id}` `[P1 · API]`
+  - *Done:* `api/bias_estimation.py` — Pydantic request/response models with `@field_validator` for gain_mode; async background thread with cancel event; `/start` returns 202 + job_id; `/status/{id}` returns RUNNING/DONE/FAILED/CANCELLED + full result on DONE; 5 tests
+- [x] COE-004 Frontend wizard card in Stage 6: sweep table, recommendation, TOML snippet `[P1 · UI]`
+  - *Done:* `static/js/bias_estimation.js` — `beLaunchWizard`, `beStartEstimation`, `bePollStatus`; polls every 500ms; renders sweep table with safe/clipping badges; highlights recommended row in green; shows TOML snippet in `<pre>` block. Card added to Stage 5 (before Connected Cameras) in `index.html`
 - [ ] COE-005 Verify wizard on real hardware: G3M678M LCG sweep produces expected recommendation `[P1 · Hardware]`
 - [ ] COE-006 Verify wizard on real hardware: GPCMOS02000KPA LCG sweep `[P1 · Hardware]`
 

@@ -170,6 +170,71 @@ def _parse_camera_specs() -> dict[str, CameraSpec]:
 CAMERA_SPECS: dict[str, CameraSpec] = _parse_camera_specs()
 
 
+@dataclass(frozen=True)
+class CoolingSpec:
+    default_target_c: float = -10.0
+
+
+@dataclass(frozen=True)
+class FilterWheelSpec:
+    enabled: bool = False
+    backend: str = "native"
+    model: str = ""
+    name: str = ""
+    wheel_id: str = ""
+    settle_s: float = 1.5
+    active_camera_role: str = "main"
+
+
+@dataclass(frozen=True)
+class GuidingSpec:
+    primary_role: str = "guide"
+    allow_fallback: bool = True
+    fallback_after_bad_frames: int = 3
+    max_frame_age_s: float = 2.0
+    centroid_roi_px: int = 32
+    min_peak_snr: float = 5.0
+    saturation_fraction: float = 0.98
+    measure_only: bool = True
+
+
+def _parse_cooling_spec() -> CoolingSpec:
+    section = _cfg.get("cooling", {})
+    return CoolingSpec(default_target_c=float(section.get("default_target_c", -10.0)))
+
+
+def _parse_filter_wheel_spec() -> FilterWheelSpec:
+    section = _cfg.get("filter_wheel", {})
+    return FilterWheelSpec(
+        enabled=bool(section.get("enabled", False)),
+        backend=str(section.get("backend", "native")),
+        model=str(section.get("model", "")),
+        name=str(section.get("name", "")),
+        wheel_id=str(section.get("wheel_id", "")),
+        settle_s=float(section.get("settle_s", 1.5)),
+        active_camera_role=str(section.get("active_camera_role", "main")),
+    )
+
+
+def _parse_guiding_spec() -> GuidingSpec:
+    section = _cfg.get("guiding", {})
+    return GuidingSpec(
+        primary_role=str(section.get("primary_role", "guide")),
+        allow_fallback=bool(section.get("allow_fallback", True)),
+        fallback_after_bad_frames=int(section.get("fallback_after_bad_frames", 3)),
+        max_frame_age_s=float(section.get("max_frame_age_s", 2.0)),
+        centroid_roi_px=int(section.get("centroid_roi_px", 32)),
+        min_peak_snr=float(section.get("min_peak_snr", 5.0)),
+        saturation_fraction=float(section.get("saturation_fraction", 0.98)),
+        measure_only=bool(section.get("measure_only", True)),
+    )
+
+
+COOLING: CoolingSpec = _parse_cooling_spec()
+FILTER_WHEEL: FilterWheelSpec = _parse_filter_wheel_spec()
+GUIDING: GuidingSpec = _parse_guiding_spec()
+
+
 def _parse_camera_serials() -> dict[str, str]:
     """Parse [camera_serials] section: model_name -> serial_number."""
     return {str(k): str(v) for k, v in _cfg.get("camera_serials", {}).items()}

@@ -54,6 +54,16 @@
 - 8. ask user for pushing to git and push git in case
 
     
+- ## External modules
+
+- `resources/camera_adapter/` is maintained by an external party.
+
+- - Never edit files inside `resources/camera_adapter/` directly.
+- - When a new release arrives, run `bash scripts/sync_camera_adapter.sh` to copy owned files into `smart_telescope/`.
+- - `SYNC.md` at the project root tracks the sync state, active SYNC-OVERRIDEs, and pending external requirements.
+- - If a new feature requires changes to an external-owned file, record it in `SYNC.md` under "Pending external requirements" and wait for the external party to deliver. Do NOT implement it locally.
+- - External-owned files in `smart_telescope/` are listed in `SYNC.md`. Smart_telescope-owned files (`config.py`, `runtime.py`, all `api/`) consume those APIs and are ours to modify.
+
 - ## Code
 
 - 1. Develop based on Python 3.13
@@ -61,7 +71,12 @@
 - 2. Application to run under a Raspberry 5 based on Trixie 64
 
 - 1. Testing under Windows 11 using mock devices
-- 
+
+- ## Pi deployment
+
+- - Pi runs from source at `~/astro_sw/SmartTScope/` using `bash ~/astro_sw/start.sh` (no systemd service).
+- - To update the Pi: `git fetch origin && git reset --hard origin/main`, then restart via `bash ~/astro_sw/start.sh`.
+- - Pi hardware config lives at `~/.SmartTScope/config.toml` (outside the repo — not touched by git reset).
 
 - ## Rules
     

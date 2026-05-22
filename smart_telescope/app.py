@@ -57,6 +57,14 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 async def serial_exception_handler(request: Request, exc: SerialException) -> JSONResponse:
     _log.warning("Serial I/O error on %s: %s", request.url.path, exc)
     return JSONResponse(status_code=503, content={"detail": "Mount serial connection lost — reconnect the USB cable and restart"})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    _log.error("Unhandled exception on %s: %s: %s", request.url.path, type(exc).__name__, exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
+
+
 app.include_router(dawn_router)
 app.include_router(milestones_router)
 app.include_router(performance_targets_router)

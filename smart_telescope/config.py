@@ -84,6 +84,13 @@ def _parse_cameras() -> dict[str, str | int]:
     if section:
         result: dict[str, str | int] = {}
         for role, val in section.items():
+            if isinstance(val, dict):
+                if val.get("enabled") is False:
+                    continue
+                if val.get("index") is not None:
+                    result[role] = int(val["index"])
+                # dict entries without index are handled via CAMERA_SPECS
+                continue
             result[role] = int(val) if isinstance(val, (int, float)) else str(val)
         return result
     legacy = _get("hardware", "touptek_index", "")
@@ -94,6 +101,73 @@ def _parse_cameras() -> dict[str, str | int]:
 CAMERAS: dict[str, str | int] = _parse_cameras()
 # Backward-compat: TOUPTEK_INDEX may now be a model-name string (e.g. "G3M678M") or "0".
 TOUPTEK_INDEX: str = str(CAMERAS["main"]) if "main" in CAMERAS else ""
+
+
+@dataclass(frozen=True)
+class CameraSpec:
+    role: str
+    enabled: bool = True
+    backend: str = "native"
+    model: str = ""
+    name: str = ""
+    camera_id: str = ""
+    index: int | None = None
+    capture_mode: str = "auto"
+    setup_profile: str = "default"
+    startup_delay_s: float = 0.0
+    startup_monitor_interval_s: float = 1.0
+    prime_attempts: int = 0
+    prime_timeout_s: float = 1.5
+    prime_exposure_s: float | None = None
+    gain: int = 101
+    offset_lcg: int = 0
+    offset_hcg: int = 0
+    bit_depth: int = 16
+
+    def offset_for(self, conversion_gain: str) -> int:
+        return self.offset_hcg if conversion_gain.upper() == "HCG" else self.offset_lcg
+
+
+def _camera_spec_from_dict(role: str, vals: dict) -> CameraSpec:
+    prime_exp_raw = vals.get("prime_exposure_s")
+    return CameraSpec(
+        role=role,
+        enabled=bool(vals.get("enabled", True)),
+        backend=str(vals.get("backend", "native")),
+        model=str(vals.get("model", "")),
+        name=str(vals.get("name", "")),
+        camera_id=str(vals.get("camera_id", "")),
+        index=int(vals["index"]) if vals.get("index") is not None else None,
+        capture_mode=str(vals.get("capture_mode", "auto")),
+        setup_profile=str(vals.get("setup_profile", "default")),
+        startup_delay_s=float(vals.get("startup_delay_s", 0.0)),
+        startup_monitor_interval_s=float(vals.get("startup_monitor_interval_s", 1.0)),
+        prime_attempts=int(vals.get("prime_attempts", 0)),
+        prime_timeout_s=float(vals.get("prime_timeout_s", 1.5)),
+        prime_exposure_s=float(prime_exp_raw) if prime_exp_raw is not None else None,
+        gain=int(vals.get("gain", 101)),
+        offset_lcg=int(vals.get("offset_lcg", vals.get("offset", 0))),
+        offset_hcg=int(vals.get("offset_hcg", vals.get("offset", 0))),
+        bit_depth=int(vals.get("bit_depth", 16)),
+    )
+
+
+def _parse_camera_specs() -> dict[str, CameraSpec]:
+    section = _cfg.get("cameras", {})
+    result: dict[str, CameraSpec] = {}
+    if section:
+        for role, value in section.items():
+            if isinstance(value, dict):
+                result[role] = _camera_spec_from_dict(role, value)
+            else:
+                result[role] = CameraSpec(role=role, index=int(value))
+    legacy = _get("hardware", "touptek_index", "")
+    if legacy and "main" not in result:
+        result["main"] = CameraSpec(role="main", index=int(legacy))
+    return result
+
+
+CAMERA_SPECS: dict[str, CameraSpec] = _parse_camera_specs()
 
 
 def _parse_camera_serials() -> dict[str, str]:

@@ -53,14 +53,68 @@ def _build_adapters(
 
     camera: CameraPort
     cam_mode: str
-    if main_index_str:
-        from .adapters.touptek.camera import ToupcamCamera
-        from .services.camera_name_resolver import CameraNameResolver
-        sdk_index = CameraNameResolver().resolve(main_index_str, config.CAMERA_SERIALS)
-        camera = ToupcamCamera(index=sdk_index)
-        cam_mode = "real"
-        role_label = "TOUPTEK_INDEX env" if os.environ.get("TOUPTEK_INDEX") else "[cameras] main"
-        _log.warning("Adapter selected: ToupcamCamera(index=%s)  [%s]", sdk_index, role_label)
+    main_spec = getattr(config, "CAMERA_SPECS", {}).get("main")
+    if main_spec is not None and main_spec.enabled and not os.environ.get("TOUPTEK_INDEX"):
+        if main_spec.backend.lower() != "native":
+            _log.error(
+                "Configured camera backend '%s' is not available — falling back to MockCamera.",
+                main_spec.backend,
+            )
+            camera = MockCamera()
+            cam_mode = "mock"
+        else:
+            try:
+                from .adapters.touptek.managed import SmartTouptekCamera
+                camera = SmartTouptekCamera(
+                    index=main_spec.index or 0,
+                    camera_id=main_spec.camera_id or None,
+                    model=main_spec.model or None,
+                    name=main_spec.name or None,
+                    capture_mode=main_spec.capture_mode,
+                    setup_profile=main_spec.setup_profile,
+                    startup_delay_s=main_spec.startup_delay_s,
+                    startup_monitor_interval_s=main_spec.startup_monitor_interval_s,
+                    prime_attempts=main_spec.prime_attempts,
+                    prime_timeout_s=main_spec.prime_timeout_s,
+                    prime_exposure_s=main_spec.prime_exposure_s,
+                    bit_depth=main_spec.bit_depth,
+                )
+                if not camera.connect():
+                    raise RuntimeError(
+                        f"Camera '{main_spec.model or main_spec.role}' failed to connect — no device found"
+                    )
+                camera.set_gain(main_spec.gain)
+                if main_spec.offset_hcg or main_spec.offset_lcg:
+                    camera.set_black_level(main_spec.offset_for("HCG"))
+                cam_mode = "real"
+                _log.warning(
+                    "Adapter selected: SmartTouptekCamera(role=main, model=%s)", main_spec.model or "*"
+                )
+            except Exception as exc:
+                _log.error(
+                    "Camera init failed for model=%r: %s — falling back to MockCamera. "
+                    "Check USB connection and [cameras] config.",
+                    getattr(main_spec, "model", None), exc,
+                )
+                camera = MockCamera()
+                cam_mode = "mock"
+    elif main_index_str:
+        try:
+            from .adapters.touptek.camera import ToupcamCamera
+            from .services.camera_name_resolver import CameraNameResolver
+            sdk_index = CameraNameResolver().resolve(main_index_str, config.CAMERA_SERIALS)
+            camera = ToupcamCamera(index=sdk_index)
+            cam_mode = "real"
+            role_label = "TOUPTEK_INDEX env" if os.environ.get("TOUPTEK_INDEX") else "[cameras] main"
+            _log.warning("Adapter selected: ToupcamCamera(index=%s)  [%s]", sdk_index, role_label)
+        except Exception as exc:
+            _log.error(
+                "Camera init failed for '%s': %s — falling back to MockCamera. "
+                "Check USB connection and [cameras] config.",
+                main_index_str, exc,
+            )
+            camera = MockCamera()
+            cam_mode = "mock"
     elif sim_dir:
         from pathlib import Path
         from .adapters.simulator.camera import SimulatorCamera
@@ -89,12 +143,19 @@ def _build_adapters(
             _log.error("OnStepMount.connect() failed on port %s — mount will be unavailable", onstep_port)
         else:
             _log.info("OnStepMount: connected on %s — REAL HARDWARE", onstep_port)
-            current_state = mount.get_state()
+            try:
+                current_state = mount.get_state()
+            except Exception as exc:
+                _log.warning("OnStepMount.get_state() failed after connect: %s — skipping auto-park", exc)
+                current_state = MountState.UNKNOWN
             if current_state == MountState.UNKNOWN:
                 _log.info("Mount state unknown after connect — skipping auto-park")
             elif current_state != MountState.PARKED:
                 _log.info("Auto-parking mount after connect (state was %s)", current_state.name)
-                mount.park()
+                try:
+                    mount.park()
+                except Exception as exc:
+                    _log.warning("Auto-park after connect failed: %s", exc)
             else:
                 _log.info("Mount already parked after connect")
         focuser = OnStepFocuser(mount.serial_bus)

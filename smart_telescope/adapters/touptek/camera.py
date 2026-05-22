@@ -18,6 +18,7 @@ from ...ports.camera import CameraPort, CaptureAbortedError
 
 # Event constants from toupcam SDK — stable protocol values, not imported at runtime.
 _EVENT_IMAGE        = 0x0004
+_EVENT_STILLIMAGE   = 0x0005
 _EVENT_TRIGGER_FAIL = 0x0007
 _EVENT_ERROR        = 0x0080
 _EVENT_DISCONNECTED = 0x0081
@@ -37,6 +38,12 @@ _OPTION_TEC             = 0x18  # 0=off, 1=on
 _OPTION_TECTARGET       = 0x07  # target temp × 10 (e.g. -100 = −10.0 °C)
 _OPTION_TEC_VOLTAGE     = 0x26  # current TEC voltage (0–1000, proportional to power)
 _OPTION_TEC_VOLTAGE_MAX = 0x27  # max TEC voltage rating for this model
+_OPTION_TRIGGER         = 0x0B
+_OPTION_RAW             = 0x04
+_OPTION_RGB             = 0x16
+_OPTION_FLUSH           = 0x36
+_OPTION_NOFRAME_TIMEOUT = 0x3F
+_OPTION_AUTOEXPO_TRIGGER = 0x5A
 
 
 class ToupcamCamera(CameraPort):
@@ -55,9 +62,36 @@ class ToupcamCamera(CameraPort):
             timeout; exposed for testing so tests don't wait 5 s.
     """
 
-    def __init__(self, index: int = 0, _timeout_extra: float = 5.0) -> None:
+    def __init__(
+        self,
+        index: int = 0,
+        _timeout_extra: float = 5.0,
+        camera_id: str | None = None,
+        model: str | None = None,
+        name: str | None = None,
+        capture_mode: str = "auto",
+        setup_profile: str = "default",
+        startup_delay_s: float = 0.0,
+        startup_monitor_interval_s: float = 1.0,
+        prime_attempts: int = 0,
+        prime_timeout_s: float = 1.5,
+        prime_exposure_s: float | None = None,
+        bit_depth: int = 16,
+    ) -> None:
         self._index = index
         self._timeout_extra = _timeout_extra
+        self._camera_id_hint = camera_id
+        self._model_selector = model
+        self._name_selector = name
+        self._capture_mode_requested = capture_mode
+        self._capture_mode = capture_mode
+        self._setup_profile = setup_profile
+        self._startup_delay_s = max(0.0, startup_delay_s)
+        self._startup_monitor_interval_s = max(0.1, startup_monitor_interval_s)
+        self._prime_attempts = max(0, prime_attempts)
+        self._prime_timeout_s = max(0.1, prime_timeout_s)
+        self._prime_exposure_s = prime_exposure_s
+        self._bit_depth = 16 if bit_depth > 8 else 8
         self._cam: Any = None
         self._tc: Any = None
         self._buf: ctypes.Array[ctypes.c_char] | None = None
@@ -67,9 +101,11 @@ class ToupcamCamera(CameraPort):
         self._model_flag: int = 0
         self._serial_number: str = ""
         self._logical_name: str = ""
+        self._device_id: str = ""
         self._frame_ready = threading.Event()
         self._abort = threading.Event()
         self._capture_error: Exception | None = None
+        self._last_event: int | None = None
         self._capture_lock = threading.Lock()  # prevents concurrent captures on same handle
 
     # ------------------------------------------------------------------

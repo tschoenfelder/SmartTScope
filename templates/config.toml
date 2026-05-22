@@ -13,27 +13,56 @@ onstep_port      = ""   # e.g. "/dev/ttyUSB_ONSTEP0"
 gps_port         = ""   # e.g. "/dev/ttyUSB_GPS0"          (future use)
 dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
 
-[cameras]
-# Cameras can be identified by model name (recommended) or by SDK enumeration
-# index (0-based, backward compatible).
-#
-# Model-name form (recommended) — the app scans connected cameras at startup
-# and finds the one whose SDK display name matches (case-insensitive substring).
-# The serial number in [camera_serials] is verified when present.
-#
-# Typical two-camera setup:
-#   main  = "G3M678M"    # 678M imaging camera at C8
-#   guide = "ATR585M"    # guide cam on 180×50 guide scope
-#
-# Legacy integer-index form (still works, but fragile — index shifts on USB reconnect):
-#   main = 0
-#
-main  = "G3M678M"   # primary imaging camera
+# ── Cameras ───────────────────────────────────────────────────────────────────
+# Each role (main, guide, oag, …) gets its own [cameras.<role>] table.
+# model        — SDK display-name substring, case-insensitive.
+# camera_id    — optional USB serial number for unambiguous matching.
+# backend      — "native" (ToupTek SDK) is the only supported value today.
+# capture_mode — "snap" (single-frame) | "indi-stream-trigger" (stream+SW trigger)
+# setup_profile— "default" | "indi"  (INDI-mode cameras need "indi" profile)
+# startup_delay_s — seconds to wait after Open() before issuing commands (OAG/USB-hub cameras)
+# prime_attempts  — take N throwaway frames on connect to flush sensor artefacts (0=disabled)
+# gain / offset_lcg / offset_hcg — sensor defaults; offset prevents low-signal clipping to zero
+# bit_depth    — 8 | 16
 
-# ── Camera serial numbers (optional but recommended) ─────────────────────────
-# Verified at startup to ensure each name resolves to the correct physical camera.
-# Find serial numbers in Setup & Diagnostics (Stage 6) → Camera Scan.
-# If a serial mismatches, startup fails with a descriptive error.
+[cameras.main]
+model         = "ATR585M"
+backend       = "native"
+capture_mode  = "indi-stream-trigger"
+setup_profile = "indi"
+gain          = 101
+offset_lcg    = 150
+offset_hcg    = 150
+bit_depth     = 16
+
+[cameras.guide]
+model         = "GPCMOS02000KPA"
+backend       = "native"
+capture_mode  = "snap"
+gain          = 101
+offset_lcg    = 10
+offset_hcg    = 10
+bit_depth     = 16
+
+# Uncomment the block below when the G3M678M is mounted on the OAG
+# [cameras.oag]
+# model             = "G3M678M"
+# backend           = "native"
+# capture_mode      = "indi-stream-trigger"
+# setup_profile     = "indi"
+# startup_delay_s   = 40
+# prime_attempts    = 3
+# prime_timeout_s   = 1.5
+# prime_exposure_s  = 0.001
+# gain              = 101
+# offset_lcg        = 150
+# offset_hcg        = 150
+# bit_depth         = 16
+
+# ── Camera serial numbers (optional, backward-compat) ─────────────────────────
+# Only needed when using the legacy scalar cameras format (main = "G3M678M").
+# With the [cameras.<role>] table format above, set camera_id inside each table
+# instead.  Kept here so existing installs without table-format config still work.
 
 [camera_serials]
 G3M678M        = "tp-4-2-11-0547-14bc"
@@ -127,27 +156,6 @@ require_refocus_before_final_fine_hint  = true
 # Daylight / mechanical alignment — disabled for MVP
 [collimation.daylight_mechanical_alignment]
 enabled = false
-
-# ── Camera sensor offsets (black level) ──────────────────────────────────────
-# The offset (black level) prevents low-signal pixels from clipping to zero.
-# SmartTScope applies the value automatically when a camera connects or its
-# gain mode changes.  Use the Offset Estimation wizard (Setup & Diagnostics)
-# to find optimal values for a new camera.
-#
-# Note: GPCMOS02000KPA and CMOS02000KPA refer to the same camera model;
-# matching is case-insensitive and uses substring comparison.
-
-[camera_offsets.G3M678M]
-lcg = 150
-hcg = 150
-
-[camera_offsets.GPCMOS02000KPA]
-lcg = 10
-hcg = 10
-
-[camera_offsets.ATR585M]
-lcg = 150
-hcg = 150
 
 # Focuser settings for the collimation assistant
 [collimation.focuser]

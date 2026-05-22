@@ -118,7 +118,7 @@ class SmartTouptekCamera(CameraPort):
             self._index, device = self._select_device(devices)
             if device is None:
                 listing = ", ".join(f"{i}:{d.displayname}" for i, d in enumerate(devices)) or "none"
-                # Log and return False so callers can fall back gracefully (e.g. to MockCamera).
+                # SYNC-OVERRIDE: return False instead of raising — remove after camera_adapter ships the fix.
                 _log.error(
                     "ToupTek: no camera matching index=%s, id=%r, model=%r, name=%r. Found: %s",
                     self._index, self._camera_id_hint, self._model_selector,

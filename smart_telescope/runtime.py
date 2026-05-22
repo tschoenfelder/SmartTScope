@@ -204,6 +204,8 @@ class RuntimeContext:
         self._storage: StoragePort | None = None
         self._solver: SolverPort | None = None
         self._preview_cameras: dict[int, CameraPort] = {}
+        self._role_cameras: dict[str, CameraPort] = {}
+        self._filter_wheel: object | None = None
         self._adapters_built: bool = False
         self._adapters_lock: threading.Lock = threading.Lock()
         self.coordinator     = HardwareCommandCoordinator()
@@ -260,6 +262,7 @@ class RuntimeContext:
             return
         with self._adapters_lock:
             if not self._adapters_built:
+                self._validate_camera_role_ownership(_config.CAMERA_SPECS)
                 self._camera, self._mount, self._focuser = _build_adapters(self)
                 self._adapters_built = True
                 self._apply_camera_offsets()
@@ -273,6 +276,15 @@ class RuntimeContext:
                     _cfg.OBSERVER_LAT,
                     _cfg.OBSERVER_LON,
                 )
+
+    def _validate_camera_role_ownership(self, specs: dict[str, object]) -> None:
+        if not specs:
+            return
+        try:
+            from .adapters.touptek.managed import validate_unique_camera_roles
+            validate_unique_camera_roles(specs)
+        except ImportError:
+            return
 
     def shutdown(self) -> None:
         """Stop moving hardware, stop polling, then close all connections.
@@ -298,8 +310,17 @@ class RuntimeContext:
         for cam in list(self._preview_cameras.values()):
             with contextlib.suppress(Exception):
                 cam.disconnect()
-        if self._preview_cameras:
-            _log.info("Shutdown: %d secondary camera handle(s) closed", len(self._preview_cameras))
+        for cam in list(self._role_cameras.values()):
+            with contextlib.suppress(Exception):
+                cam.disconnect()
+        if self._filter_wheel is not None:
+            with contextlib.suppress(Exception):
+                self._filter_wheel.disconnect()  # type: ignore[attr-defined]
+        if self._preview_cameras or self._role_cameras:
+            _log.info(
+                "Shutdown: %d preview + %d role camera handle(s) closed",
+                len(self._preview_cameras), len(self._role_cameras),
+            )
 
     def disconnect_devices(self) -> None:
         """Disconnect all adapters without stopping motion first.
@@ -313,10 +334,18 @@ class RuntimeContext:
         for cam in list(self._preview_cameras.values()):
             with contextlib.suppress(Exception):
                 cam.disconnect()
+        for cam in list(self._role_cameras.values()):
+            with contextlib.suppress(Exception):
+                cam.disconnect()
+        if self._filter_wheel is not None:
+            with contextlib.suppress(Exception):
+                self._filter_wheel.disconnect()  # type: ignore[attr-defined]
         self._camera = None
         self._mount = None
         self._focuser = None
         self._preview_cameras = {}
+        self._role_cameras = {}
+        self._filter_wheel = None
         self._adapters_built = False
 
     def reset_for_tests(self) -> None:
@@ -332,6 +361,8 @@ class RuntimeContext:
         self._adapters_built = False
         self._hardware_mode = "mock"
         self._preview_cameras = {}
+        self._role_cameras = {}
+        self._filter_wheel = None
         self.coordinator     = HardwareCommandCoordinator()
         self.cooling_service = CoolingService()
         self.device_state    = DeviceStateService()
@@ -408,6 +439,44 @@ class RuntimeContext:
         from . import config
         from fastapi import HTTPException
 
+        if role in config.CAMERA_SPECS and config.CAMERA_SPECS[role].enabled:
+            self.connect_devices()
+            if role == "main" and self._camera is not None:
+                return self._camera
+            if role not in self._role_cameras:
+                spec = config.CAMERA_SPECS[role]
+                if spec.backend.lower() != "native":
+                    raise HTTPException(
+                        status_code=501,
+                        detail=(
+                            f"Camera role '{role}' requests backend '{spec.backend}'. "
+                            "The MVP runtime currently supports native cameras only."
+                        ),
+                    )
+                from .adapters.touptek.managed import SmartTouptekCamera
+                cam = SmartTouptekCamera(
+                    index=spec.index or 0,
+                    camera_id=spec.camera_id or None,
+                    model=spec.model or None,
+                    name=spec.name or None,
+                    capture_mode=spec.capture_mode,
+                    setup_profile=spec.setup_profile,
+                    startup_delay_s=spec.startup_delay_s,
+                    startup_monitor_interval_s=spec.startup_monitor_interval_s,
+                    prime_attempts=spec.prime_attempts,
+                    prime_timeout_s=spec.prime_timeout_s,
+                    prime_exposure_s=spec.prime_exposure_s,
+                    bit_depth=spec.bit_depth,
+                )
+                if not cam.connect():
+                    raise RuntimeError(f"Camera role {role!r} failed to connect — no device found")
+                cam.set_gain(spec.gain)
+                if spec.offset_hcg or spec.offset_lcg:
+                    cam.set_black_level(spec.offset_for("HCG"))
+                self._role_cameras[role] = cam
+                _log.info("get_camera_by_role(%s): connected %s", role, cam.get_logical_name())
+            return self._role_cameras[role]
+
         if role not in config.CAMERAS:
             configured = list(config.CAMERAS.keys()) or ["(none)"]
             raise HTTPException(
@@ -431,6 +500,27 @@ class RuntimeContext:
         self.connect_devices()
         assert self._focuser is not None
         return self._focuser
+
+    def get_filter_wheel(self) -> object:
+        from . import config
+
+        if not config.FILTER_WHEEL.enabled:
+            raise RuntimeError("Filter wheel is disabled in config")
+        if self._filter_wheel is None:
+            spec = config.FILTER_WHEEL
+            if spec.backend.lower() != "native":
+                raise RuntimeError(f"Unsupported filter wheel backend: {spec.backend}")
+            from .adapters.touptek.filter_wheel import TouptekFilterWheel
+            wheel = TouptekFilterWheel(
+                wheel_id=spec.wheel_id or None,
+                model=spec.model or None,
+                name=spec.name or None,
+                settle_s=spec.settle_s,
+            )
+            if not wheel.connect():
+                raise RuntimeError("ToupTek filter wheel failed to connect")
+            self._filter_wheel = wheel
+        return self._filter_wheel
 
     # ── auxiliary services ────────────────────────────────────────────────────
 

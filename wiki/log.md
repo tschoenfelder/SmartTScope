@@ -4,6 +4,31 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-22 — camera_adapter integration + Pi boot fix
+
+**Source:** `resources/camera_adapter` (external module, first sync)
+
+**What changed:**
+
+- `smart_telescope/app.py`: catch-all `@app.exception_handler(Exception)` added — all unhandled 500 errors now return JSON instead of plain text (fixed browser `SyntaxError` on `/api/mount/status`)
+- `smart_telescope/config.py`: `CameraSpec` + `CAMERA_SPECS` (dict-valued `[cameras]` TOML support); `CoolingSpec`, `FilterWheelSpec`, `GuidingSpec` dataclasses + parse functions + `COOLING`, `FILTER_WHEEL`, `GUIDING` constants; `_parse_cameras()` updated to handle dict-valued entries without crashing
+- `smart_telescope/runtime.py`: `SmartTouptekCamera` code path added in `_build_adapters()` with try/except fallback to `MockCamera`; `_role_cameras`, `_filter_wheel` state; `_validate_camera_role_ownership()`; `get_camera_by_role()` upgraded to use `CAMERA_SPECS`; `get_filter_wheel()` added; shutdown/disconnect/reset updated
+- `smart_telescope/adapters/touptek/managed.py`: new file — `SmartTouptekCamera` adapter with capture modes and setup profiles; `connect()` returns `False` (SYNC-OVERRIDE) instead of raising when no device found
+- `smart_telescope/adapters/touptek/camera.py`: replaced with camera_adapter version (richer constructor: `camera_id`, `model`, `name`, `capture_mode`, `setup_profile` params)
+- `smart_telescope/adapters/touptek/filter_wheel.py`: new — `TouptekFilterWheel` adapter
+- `smart_telescope/domain/guiding.py`: new — `GuideFrame`, `GuideMeasurement`, `WouldGuidePulse`, `GuideSourceState`
+- `smart_telescope/tools/camera_loadtest.py`, `guide_measuretest.py`: new CLI stress-test tools
+- `tests/unit/services/test_guide_measurement.py`: new unit tests (skipped until `services.guide_measurement` is delivered by external party)
+- `templates/config.toml`: `[cameras]` section migrated to `[cameras.<role>]` table format; `[camera_offsets]` removed (offsets now inline per camera)
+- `scripts/sync_camera_adapter.sh`: new — copies external-owned files on each release, detects drift
+- `SYNC.md`: new — tracks sync state, SYNC-OVERRIDEs, pending external requirements
+- `docs/superpowers/specs/2026-05-22-camera-adapter-integration-design.md`: integration design spec
+- `docs/superpowers/plans/2026-05-22-camera-adapter-integration.md`: implementation plan
+
+**Pi fix:** `smart_telescope/config.py` at git `c525dd6` had `return {role: int(idx) for role, idx in section.items()}` which crashed on dict-valued `[cameras.main]` entries. Pi must `git reset --hard origin/main` then update `~/.SmartTScope/config.toml` to use `[cameras.main]` table format and restart via `bash ~/astro_sw/start.sh`.
+
+---
+
 ## 2026-05-21 — COE-001..004 — Camera Offset Estimation Wizard complete
 
 **What changed:**

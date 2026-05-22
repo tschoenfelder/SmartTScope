@@ -43,6 +43,8 @@ Table of contents for the SmartTelescope knowledge base.
 - [camera-id-mapping plan](../docs/superpowers/plans/2026-05-20-camera-id-mapping.md) — TDD plan: name-based `[cameras]` config + `[camera_serials]` verification; `CameraNameResolver` service; backward-compat with integer indices
 - [camera-offset-config plan](../docs/superpowers/plans/2026-05-20-camera-offset-config.md) — TDD plan: `[camera_offsets]` TOML section; `CameraOffsetService`; auto-apply on connect and gain-mode change; defaults for G3M678M/ATR585M (150) and GPCMOS02000KPA (10)
 - [camera-offset-estimation plan](../docs/superpowers/plans/2026-05-20-camera-offset-estimation.md) — TDD plan: bias-frame capture wizard; `BiasEstimationService`; offset sweep 0–200; Stage 6 wizard card with sweep table and TOML snippet
+- [camera-adapter integration design](../docs/superpowers/specs/2026-05-22-camera-adapter-integration-design.md) — Copy-on-release model; ownership table; sync script design; merge steps for 2026-05-22 release
+- [camera-adapter integration plan](../docs/superpowers/plans/2026-05-22-camera-adapter-integration.md) — 8-task implementation plan: new domain/tools files, camera.py replacement, config/runtime updates, sync infrastructure
 
 ## Architecture
 

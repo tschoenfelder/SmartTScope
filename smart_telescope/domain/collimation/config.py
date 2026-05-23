@@ -255,6 +255,9 @@ class CollimationConfig:
         default_factory=RoughCollimationConfig)
     fine_collimation: FineCollimationConfig = field(
         default_factory=FineCollimationConfig)
+    guiding_camera_role: str = "guide"
+    guiding_exposure_s: float = 2.0
+    guiding_cadence_s: float = 3.0
 
     @classmethod
     def from_dict(cls, d: dict) -> CollimationConfig:
@@ -278,6 +281,9 @@ class CollimationConfig:
                 d.get("rough_collimation", {})),
             fine_collimation=FineCollimationConfig.from_dict(
                 d.get("fine_collimation", {})),
+            guiding_camera_role=str(d.get("guiding_camera_role", "guide")),
+            guiding_exposure_s=float(d.get("guiding_exposure_s", 2.0)),
+            guiding_cadence_s=float(d.get("guiding_cadence_s", 3.0)),
         )
 
     def validate(self) -> None:

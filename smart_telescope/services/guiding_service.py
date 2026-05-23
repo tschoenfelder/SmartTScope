@@ -35,6 +35,8 @@ class GuidingStatus:
     latest_pulses: list[WouldGuidePulse] = field(default_factory=list)
     started_at: float | None = None
     measure_only: bool = True
+    rms_px: float = 0.0
+    last_pulse: tuple[str, int] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -45,6 +47,8 @@ class GuidingStatus:
             "latest_pulses": [p.to_dict() for p in self.latest_pulses],
             "started_at": self.started_at,
             "measure_only": self.measure_only,
+            "rms_px": self.rms_px,
+            "last_pulse": list(self.last_pulse) if self.last_pulse else None,
         }
 
 
@@ -106,6 +110,8 @@ class GuidingService:
         self._lifecycle_lock = threading.Lock()
         self._status_lock = threading.Lock()
         self._status = GuidingStatus(measure_only=measure_only)
+        self._pulses_paused: bool = False
+        self._rebaseline_requested = threading.Event()
 
     def start(
         self,
@@ -161,10 +167,27 @@ class GuidingService:
         with self._status_lock:
             return self._status
 
+    def pause_pulses(self) -> None:
+        """Suppress mount.guide() calls while keeping the measurement loop running."""
+        with self._status_lock:
+            self._pulses_paused = True
+
+    def resume_pulses(self) -> None:
+        """Re-enable mount.guide() calls after a pause_pulses() call."""
+        with self._status_lock:
+            self._pulses_paused = False
+
+    def rebaseline(self) -> None:
+        """On the next accepted measurement, adopt that position as the new target zero-point."""
+        self._rebaseline_requested.set()
+
     def _loop(self, started_at: float) -> None:
+        import math
         last_sequence: dict[str, int] = {role: 0 for role in self._managed}
         targets: dict[str, tuple[float, float]] = {}
         bad_counts: dict[str, int] = {role: 0 for role in self._managed}
+        error_history: list[float] = []   # error magnitudes for rms_px
+        last_pulse: tuple[str, int] | None = None
 
         while not self._stop_event.is_set():
             states: dict[str, GuideSourceState] = {}
@@ -201,6 +224,11 @@ class GuidingService:
                         _log.warning("centroid error role=%s seq=%s: %s", role, latest.sequence, exc)
                         bad_counts[role] += 1
                     else:
+                        # Rebaseline: clear the current target if requested so next accepted frame sets a new one
+                        if self._rebaseline_requested.is_set():
+                            targets.pop(role, None)
+                            self._rebaseline_requested.clear()
+                            target = None
                         if (
                             measurement.accepted
                             and target is None
@@ -236,12 +264,26 @@ class GuidingService:
                 else []
             )
 
-            if not self._measure_only and pulses and self._mount is not None:
+            with self._status_lock:
+                paused = self._pulses_paused
+            if not self._measure_only and not paused and pulses and self._mount is not None:
                 for pulse in pulses:
                     try:
                         self._mount.guide(pulse.direction, pulse.duration_ms)
+                        last_pulse = (pulse.direction, pulse.duration_ms)
                     except Exception as exc:
                         _log.error("mount.guide failed: %s", exc)
+
+            # Track error magnitude for rms_px using active measurement
+            if active_measurement and active_measurement.error_x is not None and active_measurement.error_y is not None:
+                mag = math.sqrt(active_measurement.error_x ** 2 + active_measurement.error_y ** 2)
+                error_history.append(mag)
+                if len(error_history) > 10:
+                    error_history.pop(0)
+            rms_px = (
+                math.sqrt(sum(e ** 2 for e in error_history) / len(error_history))
+                if len(error_history) >= 2 else 0.0
+            )
 
             with self._status_lock:
                 self._status = GuidingStatus(
@@ -252,4 +294,6 @@ class GuidingService:
                     sources=states,
                     latest_pulses=pulses,
                     started_at=started_at,
+                    rms_px=rms_px,
+                    last_pulse=last_pulse,
                 )

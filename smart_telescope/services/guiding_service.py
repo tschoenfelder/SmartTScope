@@ -103,6 +103,7 @@ class GuidingService:
         self._mount: MountPort | None = None
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._lifecycle_lock = threading.Lock()
         self._status_lock = threading.Lock()
         self._status = GuidingStatus(measure_only=measure_only)
 
@@ -113,28 +114,30 @@ class GuidingService:
         cadence_s: float = 0.5,
         mount: "MountPort | None" = None,
     ) -> None:
-        with self._status_lock:
-            if self._status.state == "running":
-                return
+        with self._lifecycle_lock:
+            with self._status_lock:
+                if self._status.state == "running":
+                    return
 
-        self._mount = mount
-        self._stop_event.clear()
-        for role, cam in role_cameras.items():
-            mc = ManagedCamera(cam, role)
-            mc.start_stream(exposure_s, cadence_s)
-            self._managed[role] = mc
+            self._mount = mount
+            self._stop_event.clear()
+            for role, cam in role_cameras.items():
+                mc = ManagedCamera(cam, role)
+                mc.start_stream(exposure_s, cadence_s)
+                self._managed[role] = mc
 
-        self._thread = threading.Thread(
-            target=self._loop, daemon=True, name="guiding-loop"
-        )
-        self._thread.start()
-
-        with self._status_lock:
-            self._status = GuidingStatus(
-                state="running",
-                measure_only=self._measure_only,
-                started_at=time.monotonic(),
+            started_at = time.monotonic()
+            self._thread = threading.Thread(
+                target=self._loop, args=(started_at,), daemon=True, name="guiding-loop"
             )
+            self._thread.start()
+
+            with self._status_lock:
+                self._status = GuidingStatus(
+                    state="running",
+                    measure_only=self._measure_only,
+                    started_at=started_at,
+                )
         _log.info(
             "GuidingService started roles=%s measure_only=%s",
             list(role_cameras),
@@ -157,7 +160,7 @@ class GuidingService:
         with self._status_lock:
             return self._status
 
-    def _loop(self) -> None:
+    def _loop(self, started_at: float) -> None:
         last_sequence: dict[str, int] = {role: 0 for role in self._managed}
         targets: dict[str, tuple[float, float]] = {}
         bad_counts: dict[str, int] = {role: 0 for role in self._managed}
@@ -178,29 +181,36 @@ class GuidingService:
                 measurement: GuideMeasurement | None = None
                 latest_frame_age: float | None = None
 
-                if latest is not None:
+                if latest is None:
+                    bad_counts[role] += 1
+                else:
                     last_sequence[role] = latest.sequence
                     frame_age = time.monotonic() - latest.captured_at_monotonic
                     latest_frame_age = frame_age
                     target = targets.get(role)
-                    measurement = self._estimator.measure(
-                        latest.frame.pixels,
-                        role=role,
-                        sequence=latest.sequence,
-                        frame_age_s=frame_age,
-                        target=target,
-                    )
-                    if (
-                        measurement.accepted
-                        and target is None
-                        and measurement.centroid_x is not None
-                        and measurement.centroid_y is not None
-                    ):
-                        targets[role] = (measurement.centroid_x, measurement.centroid_y)
-                    if measurement.accepted and frame_age <= self._max_frame_age_s:
-                        bad_counts[role] = 0
-                    else:
+                    try:
+                        measurement = self._estimator.measure(
+                            latest.frame.pixels,
+                            role=role,
+                            sequence=latest.sequence,
+                            frame_age_s=frame_age,
+                            target=target,
+                        )
+                    except Exception as exc:
+                        _log.warning("centroid error role=%s seq=%s: %s", role, latest.sequence, exc)
                         bad_counts[role] += 1
+                    else:
+                        if (
+                            measurement.accepted
+                            and target is None
+                            and measurement.centroid_x is not None
+                            and measurement.centroid_y is not None
+                        ):
+                            targets[role] = (measurement.centroid_x, measurement.centroid_y)
+                        if measurement.accepted and frame_age <= self._max_frame_age_s:
+                            bad_counts[role] = 0
+                        else:
+                            bad_counts[role] += 1
 
                 states[role] = source_state_from_measurement(
                     role,
@@ -240,5 +250,5 @@ class GuidingService:
                     fallback_reason=self._selector.reason,
                     sources=states,
                     latest_pulses=pulses,
-                    started_at=self._status.started_at,
+                    started_at=started_at,
                 )

@@ -203,7 +203,7 @@ def test_resume_pulses_restores_mount_calls():
 
 
 def test_rebaseline_resets_error_to_near_zero():
-    """After rebaseline(), the next accepted frame becomes the new zero-point."""
+    """After rebaseline(), corrections should quiet down because new target == current position."""
     from unittest.mock import MagicMock
     mock_mount = MagicMock()
     mock_mount.guide.return_value = True
@@ -219,11 +219,20 @@ def test_rebaseline_resets_error_to_near_zero():
     )
     cam = _ShiftedStarCamera()
     svc.start({"guide": cam}, exposure_s=0.01, cadence_s=0.05, mount=mock_mount)
-    time.sleep(0.3)  # lock on first centroid (x=32)
-    svc.rebaseline()  # tell loop: next frame is the new zero
-    time.sleep(0.3)  # loop adopts x=36 as new target — error resets ~0
+    time.sleep(0.3)  # lock on first centroid (x=32), corrections firing for 4px error
+
+    # Record how many guide calls happened BEFORE rebaseline
+    calls_before = mock_mount.guide.call_count
+    assert calls_before > 0, "expected corrections before rebaseline"
+
+    # Rebaseline: x=36 becomes the new zero
+    mock_mount.guide.reset_mock()
+    svc.rebaseline()
+    time.sleep(0.3)  # star is now AT the target → error ≈ 0 → corrections should stop
+
+    calls_after = mock_mount.guide.call_count
     svc.stop()
 
-    # After rebaseline the loop has a new target; pulses should quiet down
-    # We verify rebaseline didn't crash and service stopped cleanly.
-    assert svc.status().state == "idle"
+    assert calls_after < calls_before, (
+        f"expected fewer corrections after rebaseline, got {calls_after} vs {calls_before} before"
+    )

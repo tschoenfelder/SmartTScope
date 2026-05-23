@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from dataclasses import dataclass, field
@@ -127,6 +128,9 @@ class GuidingService:
 
             self._mount = mount
             self._stop_event.clear()
+            with self._status_lock:
+                self._pulses_paused = False
+            self._rebaseline_requested.clear()
             for role, cam in role_cameras.items():
                 mc = ManagedCamera(cam, role)
                 mc.start_stream(exposure_s, cadence_s)
@@ -182,7 +186,6 @@ class GuidingService:
         self._rebaseline_requested.set()
 
     def _loop(self, started_at: float) -> None:
-        import math
         last_sequence: dict[str, int] = {role: 0 for role in self._managed}
         targets: dict[str, tuple[float, float]] = {}
         bad_counts: dict[str, int] = {role: 0 for role in self._managed}
@@ -229,6 +232,7 @@ class GuidingService:
                             targets.pop(role, None)
                             self._rebaseline_requested.clear()
                             target = None
+                            error_history.clear()   # flush stale RMS data
                         if (
                             measurement.accepted
                             and target is None

@@ -78,3 +78,71 @@ def test_guiding_status_to_dict():
     assert d["state"] == "idle"
     assert "sources" in d
     assert "latest_pulses" in d
+
+
+class _ShiftedStarCamera:
+    """First frame has star at x=32; subsequent frames at x=36 (4px shift)."""
+
+    def __init__(self) -> None:
+        self._calls = 0
+
+    def capture(self, exposure_s: float):
+        from smart_telescope.domain.frame import FitsFrame
+
+        self._calls += 1
+        pixels = np.full((64, 64), 100, dtype=np.uint16)
+        x = 32 if self._calls == 1 else 36
+        pixels[32, x] = 5000
+        return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure_s)
+
+    def abort_capture(self) -> None:
+        pass
+
+
+def test_guiding_service_measure_only_false_sends_pulses_to_mount():
+    """When measure_only=False, guide pulses are forwarded to mount.guide()."""
+    from unittest.mock import MagicMock
+
+    mock_mount = MagicMock()
+    mock_mount.guide.return_value = True
+
+    svc = GuidingService.from_config(
+        primary_role="guide",
+        allow_fallback=False,
+        fallback_after_bad_frames=3,
+        max_frame_age_s=2.0,
+        centroid_config=CentroidConfig(roi_px=16, min_peak_snr=1.0),
+        controller_config=GuideControllerConfig(deadband_px=0.5, ms_per_px=100.0),
+        measure_only=False,
+    )
+    cam = _ShiftedStarCamera()
+    svc.start({"guide": cam}, exposure_s=0.01, cadence_s=0.05, mount=mock_mount)
+    time.sleep(0.5)
+    svc.stop()
+
+    mock_mount.guide.assert_called()
+
+
+def test_guiding_service_measure_only_false_mount_error_does_not_kill_loop():
+    """A raising mount.guide() is swallowed; the guide loop stays running."""
+    from unittest.mock import MagicMock
+
+    mock_mount = MagicMock()
+    mock_mount.guide.side_effect = RuntimeError("mount disconnected")
+
+    svc = GuidingService.from_config(
+        primary_role="guide",
+        allow_fallback=False,
+        fallback_after_bad_frames=3,
+        max_frame_age_s=2.0,
+        centroid_config=CentroidConfig(roi_px=16, min_peak_snr=1.0),
+        controller_config=GuideControllerConfig(deadband_px=0.5, ms_per_px=100.0),
+        measure_only=False,
+    )
+    cam = _ShiftedStarCamera()
+    svc.start({"guide": cam}, exposure_s=0.01, cadence_s=0.05, mount=mock_mount)
+    time.sleep(0.5)
+    status = svc.status()
+    svc.stop()
+
+    assert status.state == "running"

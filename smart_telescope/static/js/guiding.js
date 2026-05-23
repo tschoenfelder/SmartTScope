@@ -49,7 +49,7 @@ function _guidingUpdateCard(data) {
     srcHtml += `<span class="badge bg-${healthColor} me-1">${escHtml(role)}${active}</span>`;
     if (src.measurement && src.measurement.accepted) {
       srcHtml += ` cx=${src.measurement.centroid_x?.toFixed(1)} cy=${src.measurement.centroid_y?.toFixed(1)}`;
-      srcHtml += ` snr=${src.measurement.confidence?.toFixed(2)}`;
+      srcHtml += ` conf=${src.measurement.confidence?.toFixed(2)}`;
     }
     srcHtml += '<br>';
   }

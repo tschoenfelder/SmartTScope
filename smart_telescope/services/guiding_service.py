@@ -145,15 +145,16 @@ class GuidingService:
         )
 
     def stop(self) -> None:
-        self._stop_event.set()
-        for mc in self._managed.values():
-            mc.stop_stream()
-        if self._thread is not None:
-            self._thread.join(timeout=10.0)
-            self._thread = None
-        self._managed.clear()
-        with self._status_lock:
-            self._status = GuidingStatus(measure_only=self._measure_only)
+        with self._lifecycle_lock:
+            self._stop_event.set()
+            for mc in self._managed.values():
+                mc.stop_stream()
+            if self._thread is not None:
+                self._thread.join(timeout=10.0)
+                self._thread = None
+            self._managed.clear()
+            with self._status_lock:
+                self._status = GuidingStatus(measure_only=self._measure_only)
         _log.info("GuidingService stopped")
 
     def status(self) -> GuidingStatus:

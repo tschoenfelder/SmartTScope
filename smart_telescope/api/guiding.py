@@ -32,13 +32,16 @@ def guiding_start(
         try:
             cam = rt.get_camera_by_role(role)
             role_cameras[role] = cam
-        except HTTPException:
-            pass  # role not in config or unsupported backend
+        except (HTTPException, RuntimeError):
+            pass  # role not in config, unsupported backend, or connect failure
 
     if not role_cameras:
         raise HTTPException(status_code=422, detail="No guide-capable camera roles are configured")
 
-    mount = getattr(rt, "_mount", None)
+    try:
+        mount = rt.get_mount()
+    except Exception:
+        mount = None
     svc.start(role_cameras, exposure_s=body.exposure_s, cadence_s=body.cadence_s, mount=mount)
     return {"state": "starting", "roles": list(role_cameras)}
 

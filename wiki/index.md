@@ -17,6 +17,7 @@ Table of contents for the SmartTelescope knowledge base.
 - [hardware-platform](hardware-platform.md) — Target build: Celestron C8 + Raspberry Pi 5 + OnStep V4
 - [touptek-sdk](touptek-sdk.md) — ToupTek toupcam SDK: architecture, trigger/RAW/TEC/filter-wheel API, and adapter design
 - [onstep-protocol](onstep-protocol.md) — Full LX200 command reference for OnStep V4: mount, focuser, park, tracking, with adapter implementation notes
+- [OnStep adapter replacement requirements](../resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md) — Safety state machine (9 states), layered architecture, HOME/PARK confirmation, limit readback, LIMIT_HIT recovery; deferred pending external party + Q1–Q10 answers
 - [seestar-s50](seestar-s50.md) — ZWO Seestar S50 reference smart telescope
 - [vaonis-vespera](vaonis-vespera.md) — Vaonis Vespera Pro reference smart telescope
 
@@ -37,6 +38,20 @@ Table of contents for the SmartTelescope knowledge base.
 - [operational-acceptance-checklist](../docs/operational-acceptance-checklist.md) — 10-step field checklist: connect → setup check → solar gate → GoTo → autofocus → STOP → stack → shutdown
 - [hardware-test-log-template](../docs/hardware-test-log-template.md) — Append-only evidence log with six required items (E-001 to E-006) for R7-004 release gate
 - [release-checklist](../docs/release-checklist.md) — Go/no-go gate: backlog, hardware evidence, acceptance, tests, clean install, performance, sign-off
+
+## Guiding
+
+- [guiding requirements](../resources/hlrequirements/onstep_guiding_requirements.md) — Guide-camera processing pipeline: frame acquisition, centroid, pulse-guide corrections, CPU budgeting, GUD-001..008 todo items
+
+## Device handling
+
+- [INDI/ToupTek steering pattern](../resources/hlrequirements/INDI_Steer_pattern.md) — One adapter per device, one SDK handle per adapter, callback routing; multi-camera architecture reference
+- [ToupTek device ownership recommendation](../resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md) — Device state model (AVAILABLE/OWNED_BY_SMARTTSCOPE/EXTERNALLY_BUSY), three operating modes, FireCapture coexistence
+
+## Infrastructure
+
+- [Pi watchdog setup](../resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md) — dtparam=watchdog=on, systemd RuntimeWatchdogSec, Type=notify service pattern
+- [External heartbeat supervisor](../resources/hlrequirements/external_heartbeat_stop_supervisor.md) — Microcontroller-based STOP on Pi crash; heartbeat protocol; MicroPython examples
 
 ## Camera configuration
 

@@ -3,8 +3,9 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-21 (BUG-002 autogain layout; R7-006 evidence-gap report; M6-001–006 performance targets; M6-012 release notes; POD-005 isolation policy; M5-001/003/004 guided startup; POD-004/009/010 camera role API; CID-001..005 camera name resolver; CO-001..006 camera offset auto-apply; COE-001..004 bias estimation wizard)
+**Last updated:** 2026-05-23 (PKG-001/002 packaging fixes; GUD-001..008 guiding pipeline; deferred OnStep adapter replacement + Pi watchdog; serial numbers added to CID note)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
+**New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
 
 ## Priority legend
 
@@ -599,6 +600,8 @@
 - [x] CID-005 Update config.toml template with name-based examples + `[camera_serials]` block `[P1 · Docs]`
   - *Done:* templates/config.toml updated with [cameras] name examples and [camera_serials] block
 - [ ] CID-006 Verify camera identification on real hardware — G3M678M and ATR585M resolve correctly `[P1 · Hardware]`
+  - *Hardware serial numbers (for `~/.SmartTScope/config.toml` `[camera_serials]`):*  
+    `GPCMOS02000KPA = "tp-3-4-23-0547-1367"`, `ATR585M = "tp-4-1-10-0547-157c"`, `G3M678M = "tp-4-2-11-0547-14bc"`
 - [ ] CID-007 Post-release: detect newly connected cameras not in config and offer to add them `[P3 · Future]`
 
 ---
@@ -643,8 +646,59 @@
 
 ---
 
+## Build and Packaging
+
+*Sources: `resources/hlrequirements/development-state-review-2026-05-17.md`*
+
+- [x] PKG-001 Move `pyserial` from `[dev]` to production dependencies in `pyproject.toml` `[P1 · Build]`
+  - *Acceptance:* `pip install -e .` installs pyserial; no dev-extras required to run the app on Pi
+  - *Done:* `pyserial>=3.5` moved to `[project].dependencies`; removed duplicate from `[dev]`
+- [x] PKG-002 Fix `test_guide_measurement.py` collection error `[P1 · Tests]`
+  - *Acceptance:* `pytest --collect-only` completes with 0 errors; guide measurement tests skip cleanly until `services.guide_measurement` exists
+  - *Done:* `pytest.importorskip("smart_telescope.services.guide_measurement")` guard added; 2779 tests collected, 0 errors
+
+---
+
+## Guiding Pipeline
+
+*Source: `resources/hlrequirements/onstep_guiding_requirements.md`*
+
+Guide camera processing subsystem: acquire frames through camera adapter, measure guide-star centroid, convert pixel error to pulse-guide corrections via OnStep adapter. Runs as a non-blocking worker; does not block the main imaging workflow.
+
+**Architecture note:** The guiding subsystem is a client of the existing camera and mount adapters — it does not open hardware directly. `domain/guiding.py` domain models are already in place (from camera_adapter integration). The test file `tests/unit/services/test_guide_measurement.py` activates when GUD-002 is implemented.
+
+- [ ] GUD-001 Add `pulse_guide(direction, duration_ms)` and `is_tracking()` to `MountPort`; implement in `OnStepMount` and `MockMount` `[P1 · Runtime]`
+  - *Acceptance:* `pulse_guide("n", 500)` sends `:Mgn0500#` to OnStep and awaits ACK; `is_tracking()` returns bool from parsed `:GU#` status; both methods on MockMount are testable without hardware
+- [ ] GUD-002 Implement `smart_telescope/services/guide_measurement.py` — `CentroidConfig`, `GuideCentroidEstimator`, `GuideSourceSelector`, `MeasureOnlyGuideController`, `source_state_from_measurement` `[P1 · Service]`
+  - *Acceptance:* all tests in `tests/unit/services/test_guide_measurement.py` pass; centroid accurate to ±0.5 px on synthetic star frames
+- [ ] GUD-003 Implement `GuideWorker` service — bounded frame queue from camera adapter, per-cycle centroid, `GuideSourceState` output `[P1 · Service]`
+  - *Acceptance:* worker never blocks main event loop; drops stale frames when behind; exposes `get_status()` → `{health, centroid, snr, loop_ms, dropped_frames}`; thread-safe stop/pause/resume
+- [ ] GUD-004 Implement `GuideController` — pixel error to pulse-guide corrections with deadband and pulse clamping `[P1 · Service]`
+  - *Acceptance:* pixel error below `deadband_px` produces no pulse; pulses clamped to `pulse_min_ms`–`pulse_max_ms`; RA-only and RA+Dec modes; corrections logged with direction/duration/residual
+- [ ] GUD-005 Wire guiding config into `config.py`: `GUIDING: GuidingSpec` already parsed; expose guide camera role via `get_camera_by_role("guide")` in runtime `[P1 · Config]`
+  - *Acceptance:* `config.GUIDING.primary_role == "guide"`; `runtime.get_camera_by_role("guide")` returns guide camera; config TOML template updated with `[guiding]` section defaults
+- [ ] GUD-006 API: `POST /api/guiding/start`, `POST /api/guiding/stop`, `GET /api/guiding/status` `[P1 · API]`
+  - *Acceptance:* start returns 202 + job_id; status returns `{state, health, centroid_x, centroid_y, snr, corrections_sent, loop_ms}`; stop cancels worker within 1 s; conflicts with active session return 409
+- [ ] GUD-007 Frontend guide monitoring card: lock state badge, correction arrow indicator, SNR readout `[P2 · UI]`
+  - *Acceptance:* card shows LOCKED/SEARCHING/LOST badge; arrow shows last RA/Dec correction direction; SNR readout updates every 2 s; available in advanced mode
+- [ ] GUD-008 Verify guiding on real hardware: guide camera locks onto star, corrections visible in OnStep `[P1 · Hardware]`
+
+---
+
 ## Deferred — Post-MVP
 
+- [ ] ONSTEP-REPLACE-001 Replace OnStep adapter with layered direct-USB implementation + safety state machine (9 states: DISCONNECTED → READY_UNATTENDED) `[P1 · Hardware · Future]`
+  - *Source:* `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`
+  - *Scope:* SerialTransport, OnStepProtocolClient, OnStepStatusParser, OnStepSafetyReader, OnStepRecoveryController; HOME/PARK confirmation; direction test; limit readback; LIMIT_HIT recovery workflow; startup safety UI checklist
+  - *Blocked by:* external party delivery + answers to open questions Q1–Q10 in the requirements doc (baud rate, stable device path, HOME command behavior, limit readback support)
+- [ ] WATCHDOG-001 Enable Pi hardware watchdog and systemd service watchdog for SmartTScope `[P2 · Infrastructure · Future]`
+  - *Source:* `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`
+  - *Scope:* `dtparam=watchdog=on` in `/boot/firmware/config.txt`; systemd manager config `RuntimeWatchdogSec=10s`; convert SmartTScope from `start.sh` to systemd Type=notify service with `ExecStopPost=send_stop.py`; send STOP on service failure
+  - *Blocked by:* decision to migrate from `start.sh` to systemd
+- [ ] WATCHDOG-002 Add external heartbeat supervisor for hardware STOP on Pi crash `[P2 · Infrastructure · Future]`
+  - *Source:* `resources/hlrequirements/external_heartbeat_stop_supervisor.md`
+  - *Scope:* Pi heartbeat sender sends `HB <n>` every 1 s; external microcontroller (Pico/Arduino/ESP32) times out after 3–5 s and triggers hardware STOP output; test with Pi power loss and process kill
+  - *Blocked by:* external hardware available; WATCHDOG-001 done first
 - [ ] BUG-007 Support frame types: bias, dark, flat frames; master frames; bad pixel maps `[P2 · Imaging · Source: Items_to_fix_20260513]`
   - No automatic cover exists; user must drive frame collection manually. Defer to post-MVP.
 - [ ] BUG-006 Extended setup check: focuser move test, RA/DEC 10° test, multi-camera plate solve, home return `[P2 · Hardware · Source: Items_to_fix_20260513]`

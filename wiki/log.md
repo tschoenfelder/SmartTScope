@@ -4,6 +4,30 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-23 — requirements ingest: guiding pipeline, OnStep replacement, watchdog, packaging fixes
+
+**Sources:** 10 new files in `resources/hlrequirements/` (ingested 2026-05-23)
+
+**What changed:**
+
+- `pyproject.toml`: `pyserial>=3.5` moved from `[dev]` to production `[project].dependencies` — it is used in `adapters/onstep/mount.py` and `app.py` at runtime, not dev-only
+- `tests/unit/services/test_guide_measurement.py`: `pytest.importorskip` guard added — test collection no longer errors when `services.guide_measurement` is absent; 2779 tests collected cleanly
+- `docs/todo.md`: updated with serial numbers for all three cameras (CID-006 note); new PKG section (both items done); new GUD section (8 tasks, guiding pipeline); deferred ONSTEP-REPLACE-001 (OnStep adapter replacement, waiting for external party) and WATCHDOG-001/002 (Pi systemd + external heartbeat supervisor)
+
+**New todo sections added:**
+- `Build and Packaging` (PKG-001/002) — both complete
+- `Guiding Pipeline` (GUD-001..008) — GUD-001..007 ready to implement, GUD-008 hardware-blocked
+- `Deferred`: ONSTEP-REPLACE-001 (blocked on external party), WATCHDOG-001/002 (blocked on hardware + systemd migration decision)
+
+**Architecture reference docs ingested (no code changes):**
+- `INDI_Steer_pattern.md` — one-adapter-per-device, one-SDK-handle-per-adapter pattern
+- `SmartTScope_ToupTek_Device_Handling_Recommendation.md` — device ownership model (AVAILABLE/OWNED_BY_SMARTTSCOPE/EXTERNALLY_BUSY), three operating modes (Full Smart Telescope / Planetary External / Hybrid Safe)
+
+**Hardware serial numbers recorded (for Pi `~/.SmartTScope/config.toml`):**
+- `GPCMOS02000KPA = "tp-3-4-23-0547-1367"`, `ATR585M = "tp-4-1-10-0547-157c"`, `G3M678M = "tp-4-2-11-0547-14bc"`
+
+---
+
 ## 2026-05-22 — camera_adapter integration + Pi boot fix
 
 **Source:** `resources/camera_adapter` (external module, first sync)

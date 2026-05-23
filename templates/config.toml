@@ -189,3 +189,24 @@ fallback_error_ratio            = 0.05
 moving_window_frames   = 7
 target_residual_px     = 2.0
 poor_seeing_residual_px = 3.0
+
+# ---------------------------------------------------------------------------
+# Guiding
+# ---------------------------------------------------------------------------
+[guiding]
+# Primary guide source role: "guide" or "oag"
+primary_role              = "guide"
+# Fall back to the other guide role after this many consecutive bad frames
+allow_fallback            = true
+fallback_after_bad_frames = 3
+# Reject frames older than this (seconds)
+max_frame_age_s           = 2.0
+# Centroid ROI radius in pixels around the brightest point
+centroid_roi_px           = 32
+# Minimum peak SNR to accept a star frame
+min_peak_snr              = 5.0
+# Fraction of dtype max that counts as saturated
+saturation_fraction       = 0.98
+# true = compute corrections but do NOT send pulses to the mount (safe default)
+# Set to false only after validating measure-only output on real hardware
+measure_only              = true

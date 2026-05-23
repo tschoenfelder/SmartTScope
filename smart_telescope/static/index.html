@@ -1927,6 +1927,21 @@
       </div>
     </div>
 
+    <!-- Guide Monitor (advanced mode only) -->
+    <div class="card mb-3 adv-only" id="s5-guide-card" style="margin-top:1.5rem">
+      <div class="card-title d-flex justify-content-between align-items-center">
+        <span>Guide Monitor</span>
+        <span id="s5-guide-state-badge" class="badge bg-secondary">IDLE</span>
+      </div>
+      <div class="card-body" style="padding:0.75rem">
+        <div id="s5-guide-sources" style="margin-bottom:0.5rem"><em>Not started</em></div>
+        <div id="s5-guide-pulses" style="color:var(--muted);font-size:0.85em;margin-bottom:0.5rem"></div>
+        <div id="s5-guide-status" class="status-line"></div>
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="guidingStart()">Start Guiding</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="guidingStop()">Stop</button>
+      </div>
+    </div>
+
     <!-- Cameras -->
     <div class="card" style="margin-top:1.5rem">
       <div class="card-title">
@@ -1955,6 +1970,7 @@
 <script src="/static/js/preview.js"></script>
 <script src="/static/js/session.js"></script>
 <script src="/static/js/bias_estimation.js"></script>
+<script src="/static/js/guiding.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

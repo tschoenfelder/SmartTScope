@@ -137,27 +137,114 @@ class GuideCentroidEstimator:
         )
 
 
-# ---------------------------------------------------------------------------
-# Task 3 stubs — not yet implemented
-# ---------------------------------------------------------------------------
 
-class GuideSourceSelector:
-    """Not yet implemented — added in Task 3."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        raise NotImplementedError("GuideSourceSelector is not yet implemented (Task 3)")
+@dataclass(frozen=True)
+class GuideControllerConfig:
+    deadband_px: float = 0.5
+    max_pulse_ms: int = 2000
+    min_pulse_ms: int = 50
+    aggressiveness: float = 0.7
+    ra_only: bool = False
+    ms_per_px: float = 100.0
 
 
 class MeasureOnlyGuideController:
-    """Not yet implemented — added in Task 3."""
+    """Computes would-be guide pulses without sending them to the mount.
 
-    def __init__(self, *args, **kwargs) -> None:
-        raise NotImplementedError("MeasureOnlyGuideController is not yet implemented (Task 3)")
+    Returns a list of WouldGuidePulse — one per axis with error above deadband.
+    """
 
-    def would_pulse(self, *args, **kwargs):
-        raise NotImplementedError("MeasureOnlyGuideController is not yet implemented (Task 3)")
+    def __init__(self, config: GuideControllerConfig = GuideControllerConfig()) -> None:
+        self._cfg = config
+
+    def would_pulse(self, measurement: GuideMeasurement) -> list[WouldGuidePulse]:
+        if not measurement.accepted:
+            return []
+        pulses: list[WouldGuidePulse] = []
+
+        def _pulse(axis: str, error: float, pos_dir: str, neg_dir: str) -> None:
+            if abs(error) <= self._cfg.deadband_px:
+                return
+            raw_ms = abs(error) * self._cfg.ms_per_px * self._cfg.aggressiveness
+            clamped = min(int(raw_ms), self._cfg.max_pulse_ms)
+            clipped = raw_ms > self._cfg.max_pulse_ms
+            direction = pos_dir if error > 0 else neg_dir
+            pulses.append(
+                WouldGuidePulse(
+                    axis=axis,
+                    direction=direction,
+                    duration_ms=max(self._cfg.min_pulse_ms, clamped),
+                    reason=f"{axis}_error",
+                    clipped=clipped,
+                )
+            )
+
+        if measurement.error_x is not None:
+            _pulse("ra", measurement.error_x, "e", "w")
+        if not self._cfg.ra_only and measurement.error_y is not None:
+            _pulse("dec", measurement.error_y, "s", "n")
+
+        return pulses
 
 
-def source_state_from_measurement(*args, **kwargs) -> GuideSourceState:
-    """Not yet implemented — added in Task 3."""
-    raise NotImplementedError("source_state_from_measurement is not yet implemented (Task 3)")
+class GuideSourceSelector:
+    """Selects the active guide source from available GuideSourceState objects.
+
+    Prefers `primary_role` while healthy. Falls back to another healthy role
+    when `allow_fallback=True` and primary is `TRANSIENT_BAD`. Never silently
+    hides `HARD_FAILED` cameras.
+    """
+
+    def __init__(self, primary_role: str = "guide", allow_fallback: bool = True) -> None:
+        self._primary = primary_role
+        self._allow_fallback = allow_fallback
+        self.reason = "primary"
+
+    def select(self, states: dict[str, GuideSourceState]) -> str | None:
+        primary = states.get(self._primary)
+        if primary and primary.running and primary.health == GuideSourceHealth.HEALTHY:
+            self.reason = "primary"
+            return self._primary
+
+        if self._allow_fallback and primary and primary.health == GuideSourceHealth.TRANSIENT_BAD:
+            for role, state in states.items():
+                if role != self._primary and state.running and state.health == GuideSourceHealth.HEALTHY:
+                    self.reason = f"fallback_from_{self._primary}"
+                    return role
+
+        if primary and primary.running:
+            self.reason = "primary_only_available"
+            return self._primary
+
+        self.reason = "no_source"
+        return None
+
+
+def source_state_from_measurement(
+    role: str,
+    measurement: GuideMeasurement | None,
+    *,
+    running: bool,
+    latest_sequence: int,
+    latest_frame_age_s: float | None,
+    bad_frame_count: int,
+    fallback_after_bad_frames: int,
+    hard_failure: str | None = None,
+) -> GuideSourceState:
+    """Build a GuideSourceState from a measurement result and stream health counters."""
+    if hard_failure:
+        health = GuideSourceHealth.HARD_FAILED
+    elif bad_frame_count >= fallback_after_bad_frames:
+        health = GuideSourceHealth.TRANSIENT_BAD
+    else:
+        health = GuideSourceHealth.HEALTHY
+    return GuideSourceState(
+        role=role,
+        running=running,
+        health=health,
+        latest_sequence=latest_sequence,
+        latest_frame_age_s=latest_frame_age_s,
+        bad_frame_count=bad_frame_count,
+        hard_failure=hard_failure,
+        measurement=measurement,
+    )

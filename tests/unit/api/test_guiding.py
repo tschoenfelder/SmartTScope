@@ -23,9 +23,11 @@ def client(mock_svc):
     mock_rt._mount = None
     app.dependency_overrides[deps.get_guiding_service] = lambda: mock_svc
     app.dependency_overrides[deps.get_runtime] = lambda: mock_rt
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_get_status_idle(client, mock_svc):

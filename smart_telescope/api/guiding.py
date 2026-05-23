@@ -32,8 +32,8 @@ def guiding_start(
         try:
             cam = rt.get_camera_by_role(role)
             role_cameras[role] = cam
-        except Exception:
-            pass  # role not configured — skip silently
+        except HTTPException:
+            pass  # role not in config or unsupported backend
 
     if not role_cameras:
         raise HTTPException(status_code=422, detail="No guide-capable camera roles are configured")
@@ -46,7 +46,7 @@ def guiding_start(
 @router.post("/stop")
 def guiding_stop(svc: GuidingService = Depends(get_guiding_service)) -> dict:
     svc.stop()
-    return {"state": "idle"}
+    return svc.status().to_dict()
 
 
 @router.get("/status")

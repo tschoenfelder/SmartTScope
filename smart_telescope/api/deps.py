@@ -26,7 +26,12 @@ Adapter selection priority (documented in RuntimeContext._build_adapters):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import HTTPException
+
+if TYPE_CHECKING:
+    from ..services.guiding_service import GuidingService
 
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
@@ -127,7 +132,6 @@ def resolve_camera_index(camera_index: int, camera_role: str | None) -> int:
     return train.camera_index
 
 
-def get_guiding_service():
+def get_guiding_service() -> GuidingService:
     """Return the lazily-created GuidingService from the runtime context."""
-    from ..services.guiding_service import GuidingService  # noqa: F401 (type hint only)
     return get_runtime().guiding_service

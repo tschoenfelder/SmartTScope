@@ -11,6 +11,10 @@ import contextlib
 import logging
 import os
 import threading
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .services.guiding_service import GuidingService
 
 from .ports.camera import CameraPort
 from .ports.focuser import FocuserPort
@@ -225,7 +229,7 @@ class RuntimeContext:
         # Hardware mode (R5-011): set by _build_adapters; default "mock" until adapters built
         self._hardware_mode: str = "mock"
         # Guiding service (GUD): lazily created on first access
-        self._guiding_service: object | None = None  # GuidingService | None
+        self._guiding_service: GuidingService | None = None
 
     @property
     def hardware_mode(self) -> str:
@@ -233,7 +237,7 @@ class RuntimeContext:
         return self._hardware_mode
 
     @property
-    def guiding_service(self):
+    def guiding_service(self) -> GuidingService:
         """Return the lazily-created GuidingService (creates on first access)."""
         if self._guiding_service is None:
             from .services.guiding_service import GuidingService
@@ -318,7 +322,7 @@ class RuntimeContext:
         """
         if self._guiding_service is not None:
             with contextlib.suppress(Exception):
-                self._guiding_service.stop()  # type: ignore[attr-defined]
+                self._guiding_service.stop()
             self._guiding_service = None
         self.job_manager.cancel_all()
         self.cooling_service.stop()
@@ -382,7 +386,7 @@ class RuntimeContext:
         self.device_state.stop()
         if self._guiding_service is not None:
             with contextlib.suppress(Exception):
-                self._guiding_service.stop()  # type: ignore[attr-defined]
+                self._guiding_service.stop()
             self._guiding_service = None
         self._camera = None
         self._mount = None

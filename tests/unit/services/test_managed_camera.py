@@ -74,15 +74,13 @@ def test_managed_camera_stop_is_clean():
 
 def test_managed_camera_reports_stream_error():
     from smart_telescope.adapters.mock.camera import MockCamera
-    cam = MockCamera()
+    cam = MockCamera(fail_on_capture=1)
     cam.connect()
     mc = ManagedCamera(cam, "guide")
-    # Inject a failure by disconnecting before stream runs
-    cam.disconnect()
     mc.start_stream(exposure_s=0.01, cadence_s=0.05)
     time.sleep(0.3)
     err = mc.pop_stream_error()
     mc.stop_stream()
-    # MockCamera.capture() after disconnect should raise; error surfaces
-    # (MockCamera may not raise — just verify no crash and clean stop)
-    assert mc.pop_stream_error() is None  # only one error stored
+    assert err is not None
+    assert isinstance(err, RuntimeError)
+    assert mc.pop_stream_error() is None  # second pop clears slot

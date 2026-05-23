@@ -73,6 +73,8 @@ class ManagedCamera:
         self._err_lock = threading.Lock()
 
     def start_stream(self, exposure_s: float, cadence_s: float) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return  # already running; no-op
         self._stop_event.clear()
         self._thread = threading.Thread(
             target=self._run,
@@ -87,6 +89,11 @@ class ManagedCamera:
         self.camera.abort_capture()
         if self._thread is not None:
             self._thread.join(timeout=10.0)
+            if self._thread.is_alive():
+                import logging
+                logging.getLogger(__name__).warning(
+                    "guide-cam-%s thread did not exit within 10 s", self.role
+                )
             self._thread = None
 
     def pop_stream_error(self) -> Exception | None:
@@ -100,8 +107,8 @@ class ManagedCamera:
         while not self._stop_event.is_set():
             try:
                 cycle_start = time.monotonic()
-                captured_at = time.monotonic()
                 frame = self.camera.capture(exposure_s)
+                captured_at = time.monotonic()   # after capture to reflect true frame age
                 self._seq += 1
                 self.mailbox.put(frame, sequence=self._seq, captured_at=captured_at)
                 elapsed = time.monotonic() - cycle_start

@@ -166,6 +166,8 @@ class MeasureOnlyGuideController:
             if abs(error) <= self._cfg.deadband_px:
                 return
             raw_ms = abs(error) * self._cfg.ms_per_px * self._cfg.aggressiveness
+            if raw_ms < self._cfg.min_pulse_ms:
+                return  # error too small for mount to correct meaningfully
             clamped = min(int(raw_ms), self._cfg.max_pulse_ms)
             clipped = raw_ms > self._cfg.max_pulse_ms
             direction = pos_dir if error > 0 else neg_dir
@@ -173,7 +175,7 @@ class MeasureOnlyGuideController:
                 WouldGuidePulse(
                     axis=axis,
                     direction=direction,
-                    duration_ms=max(self._cfg.min_pulse_ms, clamped),
+                    duration_ms=clamped,
                     reason=f"{axis}_error",
                     clipped=clipped,
                 )
@@ -206,13 +208,16 @@ class GuideSourceSelector:
             self.reason = "primary"
             return self._primary
 
-        if self._allow_fallback and primary and primary.health == GuideSourceHealth.TRANSIENT_BAD:
+        if self._allow_fallback and primary and primary.health in (
+            GuideSourceHealth.TRANSIENT_BAD,
+            GuideSourceHealth.HARD_FAILED,
+        ):
             for role, state in states.items():
                 if role != self._primary and state.running and state.health == GuideSourceHealth.HEALTHY:
                     self.reason = f"fallback_from_{self._primary}"
                     return role
 
-        if primary and primary.running:
+        if primary and primary.running and primary.health != GuideSourceHealth.HARD_FAILED:
             self.reason = "primary_only_available"
             return self._primary
 
@@ -232,7 +237,7 @@ def source_state_from_measurement(
     hard_failure: str | None = None,
 ) -> GuideSourceState:
     """Build a GuideSourceState from a measurement result and stream health counters."""
-    if hard_failure:
+    if hard_failure is not None:
         health = GuideSourceHealth.HARD_FAILED
     elif bad_frame_count >= fallback_after_bad_frames:
         health = GuideSourceHealth.TRANSIENT_BAD

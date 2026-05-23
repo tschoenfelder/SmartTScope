@@ -90,3 +90,25 @@ def test_source_selector_prefers_primary_then_fallback():
     assert states["guide"].health == GuideSourceHealth.TRANSIENT_BAD
     assert selector.select(states) == "oag"
     assert selector.reason == "fallback_from_guide"
+
+
+def test_centroid_rejects_dark_frame():
+    estimator = GuideCentroidEstimator(CentroidConfig(roi_px=24, min_peak_snr=5.0))
+    result = estimator.measure(np.zeros((80, 100), dtype=np.uint16), role="guide", sequence=1)
+    assert not result.accepted
+    assert result.rejected_reason is not None
+
+
+def test_centroid_tracks_target_error():
+    estimator = GuideCentroidEstimator(CentroidConfig(roi_px=24))
+    result = estimator.measure(
+        _star_frame(42.0, 29.0),
+        role="guide",
+        sequence=2,
+        target=(40.0, 30.0),
+    )
+    assert result.accepted
+    assert result.error_x is not None
+    assert abs(result.error_x - 2.0) < 0.3
+    assert result.error_y is not None
+    assert abs(result.error_y - (-1.0)) < 0.3

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -52,7 +52,7 @@ class GuideCentroidEstimator:
         if np.issubdtype(pixels.dtype, np.integer):
             dtype_max = float(np.iinfo(pixels.dtype).max)
         else:
-            dtype_max = float(np.finfo(pixels.dtype).max)
+            dtype_max = 1.0  # assume normalised float in [0, 1]
         if peak_val >= dtype_max * self._cfg.saturation_fraction:
             return GuideMeasurement(
                 role=role,
@@ -78,7 +78,11 @@ class GuideCentroidEstimator:
             [roi[0, :], roi[-1, :], roi[1:-1, 0], roi[1:-1, -1]]
         )
         background = float(np.median(border)) if border.size > 0 else 0.0
-        noise = float(np.std(border)) if border.size > 0 else 1.0
+        if border.size > 0:
+            noise = float(1.4826 * np.median(np.abs(border - np.median(border))))
+            noise = max(noise, 1.0)  # prevent division by zero on uniform backgrounds
+        else:
+            noise = 1.0
 
         signal = np.clip(roi - background, 0.0, None)
         peak_signal = peak_val - background

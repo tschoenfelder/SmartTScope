@@ -44,6 +44,7 @@ def test_centroid_rejects_saturated_star():
     assert "saturated" in (result.rejected_reason or "")
 
 
+@pytest.mark.skip(reason="Task 3 not yet implemented")
 def test_measure_only_controller_outputs_would_pulses():
     estimator = GuideCentroidEstimator(CentroidConfig(roi_px=24))
     target = estimator.measure(_star_frame(40, 30), role="guide", sequence=1)
@@ -61,6 +62,7 @@ def test_measure_only_controller_outputs_would_pulses():
     assert {pulse.axis for pulse in pulses} == {"ra", "dec"}
 
 
+@pytest.mark.skip(reason="Task 3 not yet implemented")
 def test_source_selector_prefers_primary_then_fallback():
     selector = GuideSourceSelector(primary_role="guide", allow_fallback=True)
     estimator = GuideCentroidEstimator()

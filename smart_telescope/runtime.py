@@ -224,11 +224,35 @@ class RuntimeContext:
         self._autogain_job:   object | None  = None  # autogain._Job | None
         # Hardware mode (R5-011): set by _build_adapters; default "mock" until adapters built
         self._hardware_mode: str = "mock"
+        # Guiding service (GUD): lazily created on first access
+        self._guiding_service: object | None = None  # GuidingService | None
 
     @property
     def hardware_mode(self) -> str:
         """Return the current hardware mode: 'real', 'simulator', or 'mock'."""
         return self._hardware_mode
+
+    @property
+    def guiding_service(self):
+        """Return the lazily-created GuidingService (creates on first access)."""
+        if self._guiding_service is None:
+            from .services.guiding_service import GuidingService
+            from .services.guide_measurement import CentroidConfig, GuideControllerConfig
+            from . import config
+            self._guiding_service = GuidingService.from_config(
+                primary_role=config.GUIDING.primary_role,
+                allow_fallback=config.GUIDING.allow_fallback,
+                fallback_after_bad_frames=config.GUIDING.fallback_after_bad_frames,
+                max_frame_age_s=config.GUIDING.max_frame_age_s,
+                centroid_config=CentroidConfig(
+                    roi_px=config.GUIDING.centroid_roi_px,
+                    min_peak_snr=config.GUIDING.min_peak_snr,
+                    saturation_fraction=config.GUIDING.saturation_fraction,
+                ),
+                controller_config=GuideControllerConfig(),
+                measure_only=config.GUIDING.measure_only,
+            )
+        return self._guiding_service
 
     # ── camera helpers ────────────────────────────────────────────────────────
 
@@ -292,6 +316,10 @@ class RuntimeContext:
         OnStep keeps executing a slew command even after the serial port
         closes, so stop commands must be sent first.
         """
+        if self._guiding_service is not None:
+            with contextlib.suppress(Exception):
+                self._guiding_service.stop()  # type: ignore[attr-defined]
+            self._guiding_service = None
         self.job_manager.cancel_all()
         self.cooling_service.stop()
         self.dawn_watcher.stop()
@@ -352,6 +380,10 @@ class RuntimeContext:
         """Clear all cached singletons for test isolation."""
         self.dawn_watcher.stop()
         self.device_state.stop()
+        if self._guiding_service is not None:
+            with contextlib.suppress(Exception):
+                self._guiding_service.stop()  # type: ignore[attr-defined]
+            self._guiding_service = None
         self._camera = None
         self._mount = None
         self._focuser = None

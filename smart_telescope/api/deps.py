@@ -34,12 +34,18 @@ from ..ports.mount import MountPort
 from ..ports.solver import SolverPort
 from ..ports.stacker import StackerPort
 from ..ports.storage import StoragePort
-from ..runtime import get_runtime
+from ..runtime import RuntimeContext
+from ..runtime import get_runtime as _get_runtime
 from ..services.cooling import CoolingService
 from ..services.hardware_coordinator import HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
 from ..services.job_manager import JobManager
 from ..services.optical_train_registry import OpticalTrainRegistry
+
+
+def get_runtime() -> RuntimeContext:
+    """FastAPI-injectable wrapper around the global runtime singleton."""
+    return _get_runtime()
 
 
 def get_camera() -> CameraPort:
@@ -119,3 +125,9 @@ def resolve_camera_index(camera_index: int, camera_role: str | None) -> int:
             detail=f"camera_role {camera_role!r} not found in optical train registry",
         )
     return train.camera_index
+
+
+def get_guiding_service():
+    """Return the lazily-created GuidingService from the runtime context."""
+    from ..services.guiding_service import GuidingService  # noqa: F401 (type hint only)
+    return get_runtime().guiding_service

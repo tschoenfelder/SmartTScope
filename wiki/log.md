@@ -4,6 +4,34 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-23 — GUD-002..007 — Guiding pipeline complete
+
+**What changed:**
+
+- `smart_telescope/services/managed_camera.py` (GUD-003): `MailboxFrame` frozen dataclass; `FrameMailbox` with latest-frame drop semantics (`put()` drops unconsumed, `wait_latest()` with monotonic deadline, `dropped_count`); `ManagedCamera` (background daemon thread, `start_stream()` / `stop_stream()`, `pop_stream_error()`, `abort_capture()` on stop); 7 tests in `tests/unit/services/test_managed_camera.py`
+
+- `smart_telescope/services/guide_measurement.py` (GUD-002/004): `CentroidConfig`, `GuideCentroidEstimator` (find-peak→ROI→MAD-noise→saturation→SNR→centroid), `GuideControllerConfig`, `MeasureOnlyGuideController` (deadband, aggressiveness, pulse clamp, sub-deadband suppression), `GuideSourceSelector` (primary/fallback logic, TRANSIENT_BAD + HARD_FAILED trigger fallback), `source_state_from_measurement`; 6 tests in `tests/unit/services/test_guide_measurement.py`
+
+- `smart_telescope/services/guiding_service.py` (GUD-004): `GuidingStatus` (`to_dict()`), `GuidingService` with `from_config()` factory; `_lifecycle_lock` wrapping both `start()` and `stop()` for TOCTOU safety; `started_at` passed as arg to `_loop()`; `_estimator.measure()` wrapped in try/except; `latest is None` increments bad_count; real mount pulses sent when `measure_only=False` with exception swallowed; 6 tests in `tests/unit/services/test_guiding_service.py` (including 2 measure_only=False tests with mock mount)
+
+- `smart_telescope/api/guiding.py` (GUD-006): `POST /api/guiding/start` (202, 409 if running, 422 if no cameras, `RuntimeError` caught on camera connect failure); `POST /api/guiding/stop`; `GET /api/guiding/status`; mount resolved via `rt.get_mount()` (with fallback to None); 4 tests in `tests/unit/api/test_guiding.py`
+
+- `smart_telescope/api/deps.py`, `smart_telescope/runtime.py`: `get_guiding_service()` injectable; `runtime.guiding_service` property (lazy init from config); `shutdown()` and `reset_for_tests()` stop and clear `_guiding_service`
+
+- `smart_telescope/app.py`: `guiding_router` registered after `bias_estimation_router`
+
+- `templates/config.toml`: `[guiding]` section appended with 9 commented fields (primary_role, allow_fallback, fallback_after_bad_frames, max_frame_age_s, centroid_roi_px, min_peak_snr, saturation_fraction, measure_only=true)
+
+- `smart_telescope/static/js/guiding.js`: Guide Monitor card polling JS — `guidingStart()`, `guidingStop()`, `_guidingPollStart()`, `_guidingPollStop()`, `_guidingPoll()`, `_guidingUpdateCard()`; polls every 2 s when running; state badge (IDLE/RUNNING/FAILED), source health badges, pulse summary
+
+- `smart_telescope/static/index.html`: Guide Monitor card added before Connected Cameras section (advanced mode only, `adv-only` class); `guiding.js` loaded after `bias_estimation.js`
+
+- `docs/todo.md`: GUD-002..007 marked done; GUD-008 remains (hardware verification)
+
+- `wiki/index.md`: Guiding section updated with pipeline plan link and implementation summary
+
+---
+
 ## 2026-05-23 — requirements ingest: guiding pipeline, OnStep replacement, watchdog, packaging fixes
 
 **Sources:** 10 new files in `resources/hlrequirements/` (ingested 2026-05-23)

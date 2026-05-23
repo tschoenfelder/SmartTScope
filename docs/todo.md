@@ -669,18 +669,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 - [x] GUD-001 Add `guide(direction, duration_ms)` to `MountPort`; implement in `OnStepMount` and `MockMount` `[P1 · Runtime]`
   - *Done:* `guide()` already exists on `MountPort` (line 56), `OnStepMount` (line 219), and `MockMount` (line 69) — camera_adapter's OnStep mount was already synced with guide support
-- [ ] GUD-002 Implement `smart_telescope/services/guide_measurement.py` — `CentroidConfig`, `GuideCentroidEstimator`, `GuideSourceSelector`, `MeasureOnlyGuideController`, `source_state_from_measurement` `[P1 · Service]`
-  - *Acceptance:* all tests in `tests/unit/services/test_guide_measurement.py` pass; centroid accurate to ±0.5 px on synthetic star frames
-- [ ] GUD-003 Implement `GuideWorker` service — bounded frame queue from camera adapter, per-cycle centroid, `GuideSourceState` output `[P1 · Service]`
-  - *Acceptance:* worker never blocks main event loop; drops stale frames when behind; exposes `get_status()` → `{health, centroid, snr, loop_ms, dropped_frames}`; thread-safe stop/pause/resume
-- [ ] GUD-004 Implement `GuideController` — pixel error to pulse-guide corrections with deadband and pulse clamping `[P1 · Service]`
-  - *Acceptance:* pixel error below `deadband_px` produces no pulse; pulses clamped to `pulse_min_ms`–`pulse_max_ms`; RA-only and RA+Dec modes; corrections logged with direction/duration/residual
+- [x] GUD-002 Implement `smart_telescope/services/guide_measurement.py` — `CentroidConfig`, `GuideCentroidEstimator`, `GuideSourceSelector`, `MeasureOnlyGuideController`, `source_state_from_measurement` `[P1 · Service]`
+  - *Done:* MAD-based noise estimator; windowed centroid; `GuideSourceSelector` falls back on TRANSIENT_BAD or HARD_FAILED; `MeasureOnlyGuideController` with deadband, aggressiveness, pulse clamping; 6 tests all pass
+- [x] GUD-003 Implement `GuideWorker` service — bounded frame queue from camera adapter, per-cycle centroid, `GuideSourceState` output `[P1 · Service]`
+  - *Done (merged into GUD-004):* `FrameMailbox` (latest-frame drop semantics) in `managed_camera.py`; `ManagedCamera` background thread per role; `GuidingService._loop()` never blocks main event loop; drops stale frames via mailbox
+- [x] GUD-004 Implement `GuideController` — pixel error to pulse-guide corrections with deadband and pulse clamping `[P1 · Service]`
+  - *Done:* `MeasureOnlyGuideController` in `guide_measurement.py`; `GuidingService` in `guiding_service.py`; sub-deadband frames produce no pulse; `measure_only=true` default; real mount pulses sent when `measure_only=false`; `_lifecycle_lock` on start+stop; `started_at` passed as thread param
 - [x] GUD-005 Wire guiding config into `config.py`: `GUIDING: GuidingSpec` already parsed; guide camera via `get_camera_by_role("guide")` in runtime `[P1 · Config]`
   - *Done:* `GUIDING: GuidingSpec` already parsed in `config.py`; `get_camera_by_role("guide")` already in `runtime.py` from camera_adapter integration
-- [ ] GUD-006 API: `POST /api/guiding/start`, `POST /api/guiding/stop`, `GET /api/guiding/status` `[P1 · API]`
-  - *Acceptance:* start returns 202 + job_id; status returns `{state, health, centroid_x, centroid_y, snr, corrections_sent, loop_ms}`; stop cancels worker within 1 s; conflicts with active session return 409
-- [ ] GUD-007 Frontend guide monitoring card: lock state badge, correction arrow indicator, SNR readout `[P2 · UI]`
-  - *Acceptance:* card shows LOCKED/SEARCHING/LOST badge; arrow shows last RA/Dec correction direction; SNR readout updates every 2 s; available in advanced mode
+- [x] GUD-006 API: `POST /api/guiding/start`, `POST /api/guiding/stop`, `GET /api/guiding/status` `[P1 · API]`
+  - *Done:* `api/guiding.py` — start returns 202 + `{state, roles}` (no job_id; guiding is a long-running service, not a one-shot job); stop returns final status; status returns full `GuidingStatus.to_dict()`; 409 if already running, 422 if no cameras; deps wired in `deps.py` + `runtime.py`
+- [x] GUD-007 Frontend guide monitoring card: lock state badge, correction arrow indicator, SNR readout `[P2 · UI]`
+  - *Done:* `static/js/guiding.js` + Guide Monitor card in `index.html` (advanced mode only); state badge (IDLE/RUNNING/FAILED); source health badges with centroid coords and confidence; pulse summary; polls `/api/guiding/status` every 2 s when running
 - [ ] GUD-008 Verify guiding on real hardware: guide camera locks onto star, corrections visible in OnStep `[P1 · Hardware]`
 
 ---

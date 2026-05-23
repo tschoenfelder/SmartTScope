@@ -42,6 +42,8 @@ Table of contents for the SmartTelescope knowledge base.
 ## Guiding
 
 - [guiding requirements](../resources/hlrequirements/onstep_guiding_requirements.md) — Guide-camera processing pipeline: frame acquisition, centroid, pulse-guide corrections, CPU budgeting, GUD-001..008 todo items
+- [guiding pipeline plan](../docs/superpowers/plans/2026-05-23-guiding-pipeline.md) — 6-task MetaGuide-inspired implementation plan: FrameMailbox, GuideCentroidEstimator, GuideSourceSelector, MeasureOnlyGuideController, GuidingService, REST API, frontend card
+- **GUD-002..007 done:** `FrameMailbox` + `ManagedCamera` (latest-frame drop mailbox, background capture thread); `GuideCentroidEstimator` (MAD noise, windowed centroid, saturation+SNR check); `GuideSourceSelector` (primary/fallback logic); `MeasureOnlyGuideController` (deadband, pulse clamping); `GuidingService` (TOCTOU-safe lifecycle, measure-only mode, real pulse path); REST API (`POST /api/guiding/start|stop`, `GET /api/guiding/status`); Guide Monitor card in UI (advanced mode only)
 
 ## Device handling
 

@@ -10,7 +10,7 @@ function guidingStart() {
 
 function guidingStop() {
   apiPost('/api/guiding/stop', {})
-    .then(data => { _guidingUpdateCard(data); _guidingPollStop(); })
+    .then(() => { _guidingUpdateCard({ state: 'idle', sources: {}, latest_pulses: [] }); _guidingPollStop(); })
     .catch(err => setStatus('s5-guide-status', 'Stop failed: ' + err, true));
 }
 

@@ -570,21 +570,31 @@ class TestPark:
     def test_park_sends_hP_command(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        # park() uses raw_send() → read(1); GVP uses read(32)
-        instance.read.side_effect = lambda n: b""
+        # read sequence: GVP(32) → b"", Td(1) → b"", hP(1) → b"1"
+        instance.read.side_effect = [b"", b"", b"1"]
         mount = _make_mount()
         mount.connect()
         mount.park()
         sent = b"".join(c[0][0] for c in instance.write.call_args_list)
         assert b":hP#" in sent
 
-    def test_park_returns_true(self, mocker):
+    def test_park_returns_true_when_acknowledged(self, mocker):
+        # :hP# returns b"1" immediately (~10 ms); mount slews to park asynchronously
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        instance.read.side_effect = lambda n: b""
+        instance.read.side_effect = [b"", b"", b"1"]
         mount = _make_mount()
         mount.connect()
         assert mount.park() is True
+
+    def test_park_returns_false_when_rejected(self, mocker):
+        # :hP# returns b"0" when OnStep rejects the command (no park position set, etc.)
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.read.side_effect = [b"", b"", b"0"]
+        mount = _make_mount()
+        mount.connect()
+        assert mount.park() is False
 
 
 # ── disable_tracking ──────────────────────────────────────────────────────────

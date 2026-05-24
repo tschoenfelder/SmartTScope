@@ -172,6 +172,33 @@ class TestStop:
         assert b":Q#" in cmds
 
 
+# ── park ──────────────────────────────────────────────────────────────────────
+
+class TestPark:
+    def test_park_returns_true(self):
+        mount, _ = _mount(state="tracking")
+        assert mount.park() is True
+
+    def test_park_sets_state_to_parked(self):
+        mount, _ = _mount(state="tracking")
+        mount.park()
+        assert mount.get_state() == MountState.PARKED
+
+    def test_park_from_unparked_state(self):
+        mount, _ = _mount(state="unparked")
+        result = mount.park()
+        assert result is True
+        assert mount.get_state() == MountState.PARKED
+
+    def test_unpark_after_park_restores_state(self):
+        mount, _ = _mount(state="tracking")
+        mount.park()
+        assert mount.get_state() == MountState.PARKED
+        result = mount.unpark()
+        assert result is True
+        assert mount.get_state() != MountState.PARKED
+
+
 # ── position read-back ────────────────────────────────────────────────────────
 
 class TestPositionReadback:

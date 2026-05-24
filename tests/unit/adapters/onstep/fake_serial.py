@@ -103,6 +103,10 @@ class FakeOnStepSerial:
                 return b"1"
             return b"0"
 
+        if cmd == ":hP#":
+            self._state = "parked"
+            return b"1"
+
         if cmd == ":Te#":
             if self._state in ("unparked", "parked", "tracking"):
                 self._state = "tracking"

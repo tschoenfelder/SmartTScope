@@ -199,8 +199,10 @@ class OnStepMount(MountPort):
         self._bus.write_bypass(b":Q#")
 
     def park(self) -> bool:
-        self._raw_send(":hP#")
-        return True
+        resp = self._raw_send(":hP#")
+        ok = resp == b"1"
+        _log.info("OnStepMount.park(): :hP# sent → resp=%r ok=%s", resp, ok)
+        return ok
 
     def get_park_position(self) -> MountPosition | None:
         try:

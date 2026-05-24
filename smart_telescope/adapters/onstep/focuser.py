@@ -34,6 +34,8 @@ class OnStepFocuser(FocuserPort):
     # ── FocuserPort ───────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
+        if self._available:
+            return True  # already confirmed; skip serial round-trips
         for attempt in range(_MAX_FA_ATTEMPTS):
             if attempt:
                 time.sleep(_FA_RETRY_DELAY_S)

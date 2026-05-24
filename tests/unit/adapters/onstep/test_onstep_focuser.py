@@ -126,6 +126,39 @@ class TestConnectRetry:
         assert foc.get_max_position() == 8000
 
 
+# ── connect idempotency ───────────────────────────────────────────────────────
+
+
+class TestConnectIdempotency:
+    """Second connect() call skips serial round-trips when already available."""
+
+    def test_second_connect_when_available_makes_no_serial_calls(self) -> None:
+        foc, bus = _make_focuser()
+        bus.send.side_effect = ["1", "5000"]
+        foc.connect()
+        assert foc.is_available is True
+
+        bus.reset_mock()
+        result = foc.connect()
+        assert result is True
+        bus.send.assert_not_called()
+        bus.raw_send.assert_not_called()
+
+    def test_second_connect_when_unavailable_retries(self) -> None:
+        """Reconnect after fixing hardware must still retry :FA#."""
+        foc, bus = _make_focuser()
+        bus.send.return_value = "0"
+        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+            foc.connect()
+        assert foc.is_available is False
+
+        bus.send.side_effect = ["1", "6000"]
+        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+            result = foc.connect()
+        assert result is True
+        assert foc.get_max_position() == 6000
+
+
 # ── is_available (pre-connect) ────────────────────────────────────────────────
 
 

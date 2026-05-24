@@ -13,10 +13,19 @@ _log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    import threading
     from .runtime import RuntimeContext, set_runtime
     ctx = RuntimeContext()
     set_runtime(ctx)
     app.state.runtime = ctx
+
+    def _eager_connect() -> None:
+        try:
+            ctx.connect_devices()
+        except Exception as exc:
+            _log.warning("Startup hardware connect failed: %s", exc)
+
+    threading.Thread(target=_eager_connect, daemon=True, name="eager-connect").start()
     yield
     ctx.shutdown()
 

@@ -228,6 +228,22 @@ class FineCollimationConfig:
             )
 
 
+@dataclass(frozen=True)
+class ArchiveConfig:
+    """Opt-in frame archive — saves accepted FITS frames and JSON sidecars."""
+    enabled: bool = False
+    archive_dir: str = ""   # empty → ~/.SmartTScope/frame_archive
+    max_frames_per_session: int = 50
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ArchiveConfig":
+        return cls(
+            enabled=bool(d.get("enabled", False)),
+            archive_dir=str(d.get("archive_dir", "")),
+            max_frames_per_session=int(d.get("max_frames_per_session", 50)),
+        )
+
+
 # ── Top-level config ──────────────────────────────────────────────────────────
 
 @dataclass(frozen=True)
@@ -258,6 +274,7 @@ class CollimationConfig:
     guiding_camera_role: str = "guide"
     guiding_exposure_s: float = 2.0
     guiding_cadence_s: float = 3.0
+    archive: ArchiveConfig = field(default_factory=ArchiveConfig)
 
     @classmethod
     def from_dict(cls, d: dict) -> CollimationConfig:
@@ -284,6 +301,7 @@ class CollimationConfig:
             guiding_camera_role=str(d.get("guiding_camera_role", "guide")),
             guiding_exposure_s=float(d.get("guiding_exposure_s", 2.0)),
             guiding_cadence_s=float(d.get("guiding_cadence_s", 3.0)),
+            archive=ArchiveConfig.from_dict(d.get("archive", {})),
         )
 
     def validate(self) -> None:

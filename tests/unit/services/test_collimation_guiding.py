@@ -102,3 +102,23 @@ def test_guiding_stops_when_run_exits():
 
     # stop() is called in finally block of _run()
     svc.stop.assert_called()
+
+
+def test_archive_config_defaults():
+    cfg = CollimationConfig.from_dict({})
+    assert cfg.archive.enabled is False
+    assert cfg.archive.archive_dir == ""
+    assert cfg.archive.max_frames_per_session == 50
+
+
+def test_archive_config_from_dict():
+    cfg = CollimationConfig.from_dict({
+        "archive": {
+            "enabled": True,
+            "archive_dir": "/tmp/test_archive",
+            "max_frames_per_session": 10,
+        }
+    })
+    assert cfg.archive.enabled is True
+    assert cfg.archive.archive_dir == "/tmp/test_archive"
+    assert cfg.archive.max_frames_per_session == 10

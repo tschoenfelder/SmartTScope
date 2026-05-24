@@ -120,10 +120,10 @@ def park_sequence(
     except CommandConflictError:
         raise
 
-    device_state.poll_now()  # BUG-011: refresh cache immediately after park command
-    converged = device_state.wait_for_mount_state(MountState.PARKED, timeout_s=5.0)
-    if not converged:
-        _log.warning("Mount park: state not confirmed PARKED within 5 s — mount may still be slewing to park position")
+    device_state.poll_now()  # refresh cache once; JS polls 60 × 1 s for park confirmation
+    obs = device_state.get_mount_state()
+    state_name = obs.state.name if obs else "?"
+    _log.info("Mount park: state after poll = %s", state_name)
 
 
 def home_sequence(

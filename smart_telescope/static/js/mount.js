@@ -195,6 +195,7 @@ async function mountAction(action) {
       }
       if (action === 'unpark' || action === 'track') {
         unlockStage(2);
+        unlockStage(4);
       }
     } catch (err) {
       setStatus('s1-mount-status', `${action} failed: ${err.message}`, true);

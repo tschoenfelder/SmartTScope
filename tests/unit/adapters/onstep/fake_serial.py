@@ -63,6 +63,21 @@ class FakeOnStepSerial:
         self._last_response = b""
         return r
 
+    def read_until(self, expected: bytes = b"\n") -> bytes:
+        """Return buffered response and clear it; used by OnStepSerialBus.send()."""
+        r = self._last_response
+        self._last_response = b""
+        return r
+
+    def read(self, n: int = 1) -> bytes:
+        """Return first n bytes of buffered response; used by OnStepSerialBus.raw_send()."""
+        r = self._last_response[:n]
+        self._last_response = self._last_response[n:]
+        return r
+
+    def reset_input_buffer(self) -> None:
+        self._last_response = b""
+
     def close(self) -> None:
         self.is_open = False
 

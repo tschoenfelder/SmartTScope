@@ -56,7 +56,7 @@ class OnStepMount(MountPort):
         self,
         port: str,
         baud_rate: int = 9600,
-        timeout: float = 2.0,
+        timeout: float = 0.2,  # OnStep serial responses arrive in <10 ms over USB
     ) -> None:
         self._port = port
         self._baud_rate = baud_rate

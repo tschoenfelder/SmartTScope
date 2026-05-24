@@ -62,25 +62,25 @@ def safe_goto(
 # ── Multi-step sequences ──────────────────────────────────────────────────────
 
 def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
-    """Unpark the mount and wait up to 5 s for observed state to change.
+    """Unpark the mount and refresh the state cache once.
+
+    Returns immediately after issuing the command so the HTTP request
+    does not block the UI.  The caller's JS polling loop detects the
+    state change asynchronously via /api/mount/status.
 
     Raises:
         RuntimeError: unpark command rejected by the mount
     Returns:
-        True if the observed state changed (confirmed not parked); False on timeout.
+        Always True (command accepted); state confirmation is left to the poller.
     """
     ok = mount.unpark()
     if not ok:
         raise RuntimeError("Unpark rejected by OnStep")
     _log.info("Mount unpark issued")
-    device_state.poll_now()  # BUG-016: refresh cache immediately after command
-    changed = device_state.wait_while_mount_state(MountState.PARKED, timeout_s=5.0)
-    if changed:
-        obs = device_state.get_mount_state()
-        _log.info("Mount unparked — state is now %s", obs.state.name if obs else "?")
-    else:
-        _log.warning("Mount unpark: state still PARKED after 5 s — check OnStep")
-    return changed
+    device_state.poll_now()  # refresh cache once; JS polls for confirmation
+    obs = device_state.get_mount_state()
+    _log.info("Mount unpark: state after poll = %s", obs.state.name if obs else "?")
+    return True
 
 
 def track_sequence(mount: MountPort) -> None:

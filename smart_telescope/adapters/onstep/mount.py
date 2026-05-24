@@ -90,42 +90,38 @@ class OnStepMount(MountPort):
         except (serial.SerialException, OSError) as exc:
             _log.error("OnStepMount.connect(): failed to open %s — %s", self._port, exc)
             return False
-        self._bus._serial = s
 
-        # Confirm we're talking to OnStep and not another serial device.
-        # Uses read() instead of readline() so unit-test mocks (which only stub
-        # readline) pass through unaffected; non-bytes mock return values are
-        # treated as "no response" and accepted as inconclusive.
-        # Accepts "OnStep" and "On-Step" (both appear across firmware versions).
-        # On reconnect the buffer may contain stale command ACKs ('0'/'1') from a
-        # previous session.  Retry up to _MAX_GVP_ATTEMPTS times, flushing between
-        # each attempt, before concluding the port is not OnStep.
+        # Assign the serial port and perform the GVP handshake under the bus
+        # lock so the DeviceState background poller cannot interleave :GU#
+        # commands and corrupt the GVP response.
         product = ""
-        for attempt in range(_MAX_GVP_ATTEMPTS):
-            if attempt:
-                time.sleep(_GVP_RETRY_DELAY_S)
-            s.reset_input_buffer()
-            s.write(b":GVP#")
-            raw = s.read(32)
-            if not isinstance(raw, bytes):
-                _log.warning("OnStepMount.connect(): :GVP# returned non-bytes %r (mock?)", raw)
-                break
-            product = raw.decode(errors="replace").rstrip("#\r\n").strip()
-            _log.info("OnStepMount.connect(): :GVP# attempt=%d response=%r", attempt + 1, product)
-            if not product or ("on" in product.lower() and "step" in product.lower()):
-                break  # empty (inconclusive but accepted) or confirmed OnStep
-            _log.warning(
-                "OnStepMount.connect(): :GVP# unexpected %r on attempt %d — retrying",
-                product, attempt + 1,
-            )
-        else:
-            _log.error(
-                "OnStepMount.connect(): not OnStep after %d attempts (last: %r) — closing",
-                _MAX_GVP_ATTEMPTS, product,
-            )
-            s.close()
-            self._bus._serial = None
-            return False
+        with self._bus._lock:
+            self._bus._serial = s
+            for attempt in range(_MAX_GVP_ATTEMPTS):
+                if attempt:
+                    time.sleep(_GVP_RETRY_DELAY_S)
+                s.reset_input_buffer()
+                s.write(b":GVP#")
+                raw = s.read(32)
+                if not isinstance(raw, bytes):
+                    _log.warning("OnStepMount.connect(): :GVP# returned non-bytes %r (mock?)", raw)
+                    break
+                product = raw.decode(errors="replace").rstrip("#\r\n").strip()
+                _log.info("OnStepMount.connect(): :GVP# attempt=%d response=%r", attempt + 1, product)
+                if not product or ("on" in product.lower() and "step" in product.lower()):
+                    break  # empty (inconclusive but accepted) or confirmed OnStep
+                _log.warning(
+                    "OnStepMount.connect(): :GVP# unexpected %r on attempt %d — retrying",
+                    product, attempt + 1,
+                )
+            else:
+                _log.error(
+                    "OnStepMount.connect(): not OnStep after %d attempts (last: %r) — closing",
+                    _MAX_GVP_ATTEMPTS, product,
+                )
+                s.close()
+                self._bus._serial = None
+                return False  # 'with' releases lock before return
 
         self.disable_tracking()
         _log.info("OnStepMount.connect(): connected — product=%r port=%s", product, self._port)

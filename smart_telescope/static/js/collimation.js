@@ -177,12 +177,36 @@ function _updateCollimWizard(s) {
 }
 
 async function collimStart() {
+    const btn = document.getElementById('s4-wiz-start-btn');
     try {
+      // Auto-unpark if mount is parked — collimation needs guide pulses
+      const ms = await (await fetch('/api/mount/status')).json();
+      if (ms.state === 'parked') {
+        setStatus('s4-status', 'Unparking mount…');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Unparking…'; }
+        await apiPost('/api/mount/unpark');
+        // Poll up to 15 s for state to leave PARKED
+        let unparked = false;
+        for (let i = 0; i < 30; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          const d = await (await fetch('/api/mount/status')).json();
+          _updateMountStrip(d);
+          if (d.state !== 'parked') { unparked = true; break; }
+        }
+        if (!unparked) {
+          setStatus('s4-status', 'Mount still parked — check OnStep (may need manual unpark or alignment)', true);
+          return;
+        }
+        setStatus('s4-status', '');
+      }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Starting…'; }
       const s = await apiPost('/api/collimation/start');
       _updateCollimWizard(s);
       _startCollimPoll();
     } catch (err) {
       setStatus('s4-status', `Wizard start failed: ${err.message}`, true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = 'Start'; }
     }
 }
 

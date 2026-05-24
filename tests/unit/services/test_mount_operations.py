@@ -113,11 +113,13 @@ def test_unpark_sequence_returns_true_when_state_changed():
     assert result is True
 
 
-def test_unpark_sequence_returns_false_on_timeout():
+def test_unpark_sequence_returns_true_even_when_still_parked():
+    # Server no longer waits for state confirmation — always True after command
+    # is accepted.  UI polls asynchronously via /api/mount/status.
     m = _mock_mount(unpark_ok=True)
-    ds = _device_state(MountState.PARKED)  # still PARKED → times out quickly
+    ds = _device_state(MountState.PARKED)  # still PARKED after poll
     result = unpark_sequence(m, ds)
-    assert result is False
+    assert result is True
 
 
 # ── track_sequence ────────────────────────────────────────────────────────────

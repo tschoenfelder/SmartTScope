@@ -20,6 +20,8 @@ async def _lifespan(app: FastAPI):
     app.state.runtime = ctx
 
     def _eager_connect() -> None:
+        import time
+        time.sleep(3)  # allow USB devices to enumerate before probing serial
         try:
             ctx.connect_devices()
         except Exception as exc:

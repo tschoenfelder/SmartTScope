@@ -179,9 +179,8 @@ async function mountAction(action) {
       const expectParked   = action === 'park';
       const expectUnparked = action === 'unpark';
       if (expectParked || expectUnparked) {
-        // Park slews can take 30-60 s; unpark is fast but give 10 s margin.
-        // Poll until DeviceStateService confirms the new hardware state.
-        const maxIter  = expectParked ? 60 : 20;
+        // Park slews can take 30-60 s; unpark polls up to 15 s (server no longer blocks).
+        const maxIter  = expectParked ? 60 : 30;
         const delayMs  = expectParked ? 1000 : 500;
         for (let i = 0; i < maxIter; i++) {
           await new Promise(r => setTimeout(r, i === 0 ? 300 : delayMs));

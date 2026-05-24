@@ -44,14 +44,30 @@ async def ws_preview(
     """
     await websocket.accept()
 
-    # Resolve camera_role → camera_index (R4-005: role-based selection)
+    # Resolve camera_role → camera instance (R4-005: role-based selection).
+    # When cameras are identified by model name (no explicit SDK index in config),
+    # all optical trains default to camera_index=0 in the registry, causing every
+    # train to open the same physical camera.  Use get_camera_by_role() instead so
+    # model-matching (SmartTouptekCamera) finds the correct device.
+    _pre_resolved_camera = None
     if camera_role:
         try:
             registry = deps.get_optical_train_registry()
             train = registry.by_camera_role(camera_role) or registry.get(camera_role)
             if train is not None:
-                camera_index = train.camera_index
-                _log.info("Preview WS: resolved camera_role=%r → camera_index=%d", camera_role, camera_index)
+                camera_index = train.camera_index  # kept for logging / fallback
+                try:
+                    _pre_resolved_camera = deps.get_camera_by_role(train.camera_role)
+                    _log.info(
+                        "Preview WS: resolved camera_role=%r → train=%r role_key=%r adapter=%s",
+                        camera_role, train.name, train.camera_role,
+                        type(_pre_resolved_camera).__name__,
+                    )
+                except Exception as exc:
+                    _log.warning(
+                        "Preview WS: role-based resolution failed for %r → fallback camera_index=%d: %s",
+                        train.camera_role, camera_index, exc,
+                    )
         except Exception:
             pass
 
@@ -61,9 +77,13 @@ async def ws_preview(
     )
 
     try:
-        camera = deps.get_preview_camera(camera_index)
-    except RuntimeError as exc:
-        _log.error("Preview: camera_index=%d unavailable: %s", camera_index, exc)
+        camera = (
+            _pre_resolved_camera
+            if _pre_resolved_camera is not None
+            else deps.get_preview_camera(camera_index)
+        )
+    except (RuntimeError, Exception) as exc:
+        _log.error("Preview: camera unavailable (role=%r index=%d): %s", camera_role, camera_index, exc)
         # Send reason as text before closing so the UI status bar shows it
         try:
             await websocket.send_text(f"camera_error: {exc}")

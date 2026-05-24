@@ -39,8 +39,13 @@ function _updateMountStrip(data) {
     if (altLive) altLive.textContent = data.alt != null ? (+data.alt).toFixed(1) + '°'  : '—';
 
     // Unlock navigation stages from mount state — covers page-reload with already-unparked mount.
+    // Stage 4 (Collimation) is unlocked whenever the mount is responding (any known state),
+    // because calibration frames and the Bahtinov preview don't require an unparked mount.
+    // The collimation wizard auto-unparks internally if needed.
     if (state !== 'parked' && state !== 'unknown') {
         unlockStage(2);
+    }
+    if (state !== 'unknown') {
         unlockStage(4);
     }
 }

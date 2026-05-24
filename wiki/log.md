@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-24 — BUG-FIX — Preview camera and Stage 4 unlock fixes
+
+**What changed:**
+
+- `smart_telescope/api/preview.py`: Fixed preview WebSocket always using GPCMOS02000KPA (camera index 0) regardless of selected optical train.
+  - Root cause: model-based camera config sets `CameraSpec.index = None`; registry defaults all trains to `camera_index = 0`, so every train opened the same physical camera.
+  - Fix: after resolving the train from `camera_role`, call `deps.get_camera_by_role(train.camera_role)` (which uses model-matching to open the correct device) instead of `deps.get_preview_camera(camera_index=0)`. Falls back to index-based resolution on failure.
+
+- `smart_telescope/static/js/mount.js` (`_updateMountStrip`): Fixed Stage 4 (Collimation) tab remaining locked after the PARKED detection fix.
+  - Root cause: the previous `get_state()` bug (`r[0] == "P"` check) always returned UNPARKED on real hardware, so `_updateMountStrip` always unlocked Stage 4. After the correct PARKED detection, Stage 4 was locked on page-load with mount parked, and only unlocked after unpark.
+  - Fix: Stage 4 now unlocks for any *known* mount state (not just unparked), because calibration frames and Bahtinov preview don't require the mount to be unparked. The collimation wizard auto-unparks internally if needed. Stage 2 (Alignment) still requires unparked mount.
+
+---
+
 ## 2026-05-24 — ONS — OnStep protocol documentation update
 
 **What changed:**

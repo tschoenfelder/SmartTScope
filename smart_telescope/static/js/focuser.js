@@ -88,6 +88,9 @@ async function loadFocuserCameras() {
       const mainOpt = sel.querySelector('option[value="main"]');
       if (mainOpt) sel.value = 'main';
       _focusCamRole = sel.value;
+      // Single-focuser setup: hide the dropdown and show as plain text — no choice to make.
+      const row = document.getElementById('s1-focuser-cam-row');
+      if (row) row.style.display = withFocuser.length <= 1 ? 'none' : '';
     } catch (_) {}
 }
 

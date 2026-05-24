@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from smart_telescope.config import OpticalTrainSpec, TelescopeSpec
+from smart_telescope.config import CameraSpec, OpticalTrainSpec, TelescopeSpec
 from smart_telescope.services.optical_train_registry import OpticalTrain, OpticalTrainRegistry
 
 
@@ -33,13 +33,15 @@ _TRAINS_1 = {
 }
 
 
-def _make_registry(trains=None, cameras=None, telescopes=None) -> OpticalTrainRegistry:
+def _make_registry(trains=None, cameras=None, telescopes=None, camera_specs=None) -> OpticalTrainRegistry:
     import smart_telescope.config as cfg
     t = trains if trains is not None else _TRAINS_3
     c = cameras if cameras is not None else _CAMERAS
+    cs = camera_specs if camera_specs is not None else {}
     te = telescopes if telescopes is not None else _TELESCOPES
     with patch.object(cfg, "OPTICAL_TRAINS", t), \
          patch.object(cfg, "CAMERAS", c), \
+         patch.object(cfg, "CAMERA_SPECS", cs), \
          patch.object(cfg, "TELESCOPES", te), \
          patch.object(cfg, "PIXEL_SCALE_ARCSEC", 0.38):
         return OpticalTrainRegistry.from_config()
@@ -147,6 +149,46 @@ class TestPixelScale:
             reg = OpticalTrainRegistry.from_config()
         expected = round(2.9 * 206.265 / 2032.0, 4)
         assert reg.main().pixel_scale_arcsec == pytest.approx(expected, rel=1e-3)
+
+
+# ── CAMERA_SPECS table-format (new [cameras.main] table syntax) ────────────────
+
+class TestCameraSpecsTableFormat:
+    """OpticalTrainRegistry must resolve cameras via CAMERA_SPECS when CAMERAS is empty."""
+
+    def test_builds_train_from_camera_specs_with_index(self):
+        trains = {"main": OpticalTrainSpec(telescope="c8", camera="main", focuser="onstep")}
+        specs = {"main": CameraSpec(role="main", index=2)}
+        reg = _make_registry(trains=trains, cameras={}, telescopes=_TELESCOPES, camera_specs=specs)
+        t = reg.main()
+        assert t is not None
+        assert t.camera_index == 2
+        assert t.has_focuser is True
+
+    def test_builds_train_from_camera_specs_no_index_defaults_to_zero(self):
+        trains = {"main": OpticalTrainSpec(telescope="c8", camera="main")}
+        specs = {"main": CameraSpec(role="main", model="G3M678M", index=None)}
+        reg = _make_registry(trains=trains, cameras={}, telescopes=_TELESCOPES, camera_specs=specs)
+        t = reg.main()
+        assert t is not None
+        assert t.camera_index == 0
+
+    def test_camera_specs_takes_priority_over_cameras(self):
+        trains = {"main": OpticalTrainSpec(telescope="c8", camera="main")}
+        specs = {"main": CameraSpec(role="main", index=3)}
+        cameras = {"main": 7}  # legacy value — should be ignored when CAMERA_SPECS has the role
+        reg = _make_registry(trains=trains, cameras=cameras, telescopes=_TELESCOPES, camera_specs=specs)
+        assert reg.main().camera_index == 3
+
+    def test_falls_back_to_cameras_when_not_in_camera_specs(self):
+        trains = {"main": OpticalTrainSpec(telescope="c8", camera="main")}
+        reg = _make_registry(trains=trains, cameras={"main": 5}, camera_specs={})
+        assert reg.main().camera_index == 5
+
+    def test_missing_in_both_raises_value_error(self):
+        trains = {"main": OpticalTrainSpec(telescope="c8", camera="main")}
+        with pytest.raises(ValueError, match="main"):
+            _make_registry(trains=trains, cameras={}, camera_specs={})
 
 
 # ── validation ────────────────────────────────────────────────────────────────

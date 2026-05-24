@@ -102,14 +102,20 @@ class OpticalTrainRegistry:
                 )
                 continue
 
-            if spec.camera not in config.CAMERAS:
+            # Resolve camera index: prefer CAMERA_SPECS (table format) then CAMERAS (legacy).
+            if spec.camera in config.CAMERA_SPECS:
+                raw_idx = config.CAMERA_SPECS[spec.camera].index
+                camera_index: int = raw_idx if raw_idx is not None else 0
+            elif spec.camera in config.CAMERAS:
+                raw = config.CAMERAS[spec.camera]
+                camera_index = int(raw) if isinstance(raw, (int, float)) else 0
+            else:
+                all_roles = list(config.CAMERA_SPECS) or list(config.CAMERAS) or ["(none)"]
                 errors.append(
-                    f"[optical_trains.{name}]: camera role '{spec.camera}' not in [cameras] "
-                    f"(configured roles: {list(config.CAMERAS.keys()) or ['(none)']})"
+                    f"[optical_trains.{name}]: camera role '{spec.camera}' not found in "
+                    f"[cameras] (configured roles: {all_roles})"
                 )
                 continue
-
-            camera_index = config.CAMERAS[spec.camera]
             focal_mm = round(tele.focal_mm * spec.reducer_factor, 2)
 
             if spec.pixel_scale_arcsec > 0.0:

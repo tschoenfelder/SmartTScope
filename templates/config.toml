@@ -191,6 +191,15 @@ target_residual_px     = 2.0
 poor_seeing_residual_px = 3.0
 
 # ---------------------------------------------------------------------------
+# Collimation frame archive (opt-in)
+# Saves accepted donut/spike frames as FITS + JSON sidecar for offline replay.
+# ---------------------------------------------------------------------------
+[collimation.archive]
+enabled                  = false
+# archive_dir            = ""      # empty = ~/.SmartTScope/frame_archive
+max_frames_per_session   = 50
+
+# ---------------------------------------------------------------------------
 # Guiding
 # ---------------------------------------------------------------------------
 [guiding]

@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-24 — COL-ARC — Collimation frame archive
+
+**What changed:**
+
+- `smart_telescope/domain/collimation/config.py`: `ArchiveConfig` dataclass (`enabled`, `archive_dir`, `max_frames_per_session`); `CollimationConfig` gains `archive: ArchiveConfig` field
+
+- `smart_telescope/services/collimation/frame_archive.py` (NEW): `CollimationFrameArchive` — `new_session()` creates `<archive_dir>/<session_id>/`; `save_frame()` writes FITS via `FitsFrame.to_fits_bytes()` + JSON sidecar with state/analysis/ref_x/ref_y/bit_depth; silently skips when `max_frames_per_session` reached; `list_sessions()` newest-first by mtime; `list_frames()` sorted by filename; `load_frame()` / `load_sidecar()` raise `FileNotFoundError` when absent; 7 tests in `tests/unit/services/test_frame_archive.py`
+
+- `smart_telescope/services/collimation/assistant.py`: `__init__` accepts `frame_archive: CollimationFrameArchive | None`; `start()` generates `uuid4` session ID and calls `archive.new_session()`; `frame_archive` property; `_handle_measure_donut` saves raw frame + donut analysis dict after each accepted measurement; `_handle_measure_spikes` saves raw frame + spike analysis dict after each accepted measurement; 3 new tests in `test_collimation_guiding.py`
+
+- `smart_telescope/api/collimation.py`: `_get_assistant()` builds `CollimationFrameArchive` from `col_cfg.archive` when `enabled=True`, passes to `CollimationAssistant`; `GET /api/collimation/archive` lists sessions; `GET /api/collimation/archive/{session_id}` lists frames; `POST /api/collimation/archive/{session_id}/{frame_stem}/replay` re-runs `DonutAnalyzer` or `detect_spikes` on stored frame; 6 tests in `tests/unit/api/test_collimation_archive_api.py`
+
+- `templates/config.toml`: `[collimation.archive]` section added (disabled by default)
+
+---
+
 ## 2026-05-24 — COL-GUD — Collimation guiding integration complete
 
 **Source:** `docs/superpowers/plans/2026-05-24-collimation-guiding-integration.md`

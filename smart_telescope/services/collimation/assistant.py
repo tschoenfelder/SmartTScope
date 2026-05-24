@@ -8,9 +8,12 @@ from __future__ import annotations
 import datetime
 import logging
 import threading
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from ...config import get_collimation_config
+
+if TYPE_CHECKING:
+    from ...services.guiding_service import GuidingService
 from ...domain.collimation.config import CollimationConfig
 from ...domain.collimation.models import (
     CollimationRecommendation,
@@ -48,10 +51,14 @@ class CollimationAssistant:
         camera: CameraPort,
         mount: MountPort,
         focuser: FocuserPort,
+        guiding_service: "GuidingService | None" = None,
+        guide_cameras: "dict[str, CameraPort] | None" = None,
     ) -> None:
         self._camera = camera
         self._mount = mount
         self._focuser = focuser
+        self._guiding_service = guiding_service
+        self._guide_cameras: dict[str, CameraPort] = guide_cameras or {}
         self._cfg: CollimationConfig = get_collimation_config()
         self._sm = CollimationStateMachine()
 
@@ -190,6 +197,7 @@ class CollimationAssistant:
                 "error":                self._error,
                 "started_at":           self._started_at,
                 "updated_at":           self._updated_at,
+                "guiding":              self._guiding_status_dict(),
             }
 
     @property
@@ -245,6 +253,99 @@ class CollimationAssistant:
         b.set_camera(self._cfg.camera_id)
         return b
 
+    def _guiding_status_dict(self) -> dict:
+        if self._guiding_service is None:
+            return {"available": False}
+        s = self._guiding_service.status()
+        return {
+            "available": True,
+            "state": s.state,
+            "rms_px": s.rms_px,
+            "last_pulse": list(s.last_pulse) if s.last_pulse else None,
+        }
+
+    def _start_guiding(self) -> None:
+        if self._guiding_service is None or not self._guide_cameras:
+            return
+        try:
+            self._guiding_service.start(
+                self._guide_cameras,
+                exposure_s=self._cfg.guiding_exposure_s,
+                cadence_s=self._cfg.guiding_cadence_s,
+                mount=self._mount,
+            )
+            _log.info("CollimationAssistant: guiding started")
+        except Exception as exc:
+            _log.warning("CollimationAssistant: guiding start failed: %s", exc)
+
+    def _stop_guiding(self) -> None:
+        if self._guiding_service is None:
+            return
+        try:
+            if self._guiding_service.status().state == "running":
+                self._guiding_service.stop()
+                _log.info("CollimationAssistant: guiding stopped")
+        except Exception as exc:
+            _log.warning("CollimationAssistant: guiding stop failed: %s", exc)
+
+    def _with_guiding_paused(self, fn: Callable) -> None:
+        """Pause guide pulses, run fn(), rebaseline + resume regardless of fn outcome."""
+        if self._guiding_service is not None:
+            self._guiding_service.pause_pulses()
+        try:
+            fn()
+        finally:
+            if self._guiding_service is not None:
+                self._guiding_service.rebaseline()
+                self._guiding_service.resume_pulses()
+
+    def _recenter_star(self) -> None:
+        """Re-centre the main camera star via PulseCenterer (no state transition)."""
+        from ...domain.collimation.models import ReferenceCenterCalibration
+        from ...domain.collimation.processing.frame import normalize_frame
+        from ...domain.collimation.processing.star_detection import detect_star
+        from ...domain.collimation.profiles import get_profile
+        from .mount_centering import PulseCenterer
+
+        bit_depth  = self._camera.get_bit_depth()
+        exposure_s = self._camera.get_exposure_ms() / 1000.0
+        profile    = get_profile(self._cfg.telescope_profile)
+        ref_cfg    = self._cfg.reference_center
+
+        centerer = PulseCenterer(
+            mount=self._mount,
+            config=self._cfg.mount_centering,
+            pixel_scale_arcsec=profile.pixel_scale_arcsec,
+        )
+
+        def _get_offset() -> tuple[float, float] | None:
+            if self._cancel.is_set():
+                return None
+            try:
+                raw = self._camera.capture(exposure_s)
+            except Exception:
+                return None
+            processed = normalize_frame(raw, bit_depth=bit_depth)
+            star = detect_star(processed)
+            if star is None:
+                return None
+            ref = ReferenceCenterCalibration(
+                offset_x_px=ref_cfg.offset_x_px,
+                offset_y_px=ref_cfg.offset_y_px,
+                source=ref_cfg.source.value,
+            ).compute(processed.width, processed.height)
+            return star.center_x - ref.x, star.center_y - ref.y
+
+        result = centerer.center(
+            get_offset_px=_get_offset,
+            cancel_check=lambda: self._cancel.is_set(),
+            dec_deg=self._target_dec or 0.0,
+        )
+        _log.info(
+            "RECENTER: %s pulses=%d offset=%.1f px",
+            result.reason, result.pulses_issued, result.final_offset_px,
+        )
+
     # ── Background thread ─────────────────────────────────────────────────────
 
     def _run(self) -> None:
@@ -294,6 +395,7 @@ class CollimationAssistant:
                     self._fail(str(exc))
                     break
         finally:
+            self._stop_guiding()
             _log.info(
                 "CollimationAssistant: worker thread exiting in state %s",
                 self._sm.state.value,
@@ -317,6 +419,7 @@ class CollimationAssistant:
             if payload.get("finish"):
                 self._do_transition(CollimationState.INSTALL_TRIBAHTINOV)
             else:
+                self._with_guiding_paused(self._recenter_star)
                 self._do_transition(CollimationState.MEASURE_DONUT)
 
         elif state == CollimationState.INSTALL_TRIBAHTINOV:
@@ -326,6 +429,7 @@ class CollimationAssistant:
             if payload.get("finish"):
                 self._do_transition(CollimationState.FINAL_REFOCUS)
             else:
+                self._with_guiding_paused(self._recenter_star)
                 self._do_transition(CollimationState.MEASURE_SPIKES)
 
         elif state == CollimationState.MASKLESS_VALIDATION:
@@ -337,8 +441,16 @@ class CollimationAssistant:
     # ── State handlers (stubs — algorithms filled in Phases 3-9) ─────────────
 
     def _handle_precheck(self) -> None:
-        _log.info("PRECHECK: verifying hardware readiness (stub)")
-        # TODO Phase 2: check mount connected, camera present, focuser available
+        _log.info("PRECHECK: verifying hardware readiness")
+        from ...ports.mount import MountState
+        try:
+            state = self._mount.get_state()
+            if not isinstance(state, MountState):
+                self._fail(f"Mount not ready: unexpected state {state!r}")
+                return
+        except Exception as exc:
+            self._fail(f"PRECHECK: mount check failed: {exc}")
+            return
         self._do_transition(CollimationState.SELECT_STAR)
 
     def _handle_slew_to_star(self) -> None:
@@ -467,6 +579,7 @@ class CollimationAssistant:
             exposure_s = new_exp
 
         _log.info("AUTO_EXPOSURE: final exposure=%.3f s", exposure_s)
+        self._start_guiding()
         self._do_transition(CollimationState.ROUGH_DEFOCUS)
 
     def _handle_rough_defocus(self) -> None:

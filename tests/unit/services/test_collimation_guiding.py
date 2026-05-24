@@ -37,7 +37,7 @@ def _make_mock_guiding_service():
     return svc
 
 
-def _make_minimal_assistant(guiding_service=None, guide_cameras=None):
+def _make_minimal_assistant(guiding_service=None, guide_cameras=None, frame_archive=None):
     from smart_telescope.services.collimation.assistant import CollimationAssistant
     cam = MagicMock()
     cam.get_bit_depth.return_value = 16
@@ -51,6 +51,7 @@ def _make_minimal_assistant(guiding_service=None, guide_cameras=None):
         focuser=focuser,
         guiding_service=guiding_service,
         guide_cameras=guide_cameras or {},
+        frame_archive=frame_archive,
     )
 
 
@@ -102,6 +103,34 @@ def test_guiding_stops_when_run_exits():
 
     # stop() is called in finally block of _run()
     svc.stop.assert_called()
+
+
+def test_frame_archive_property_returns_injected_archive():
+    archive = MagicMock()
+    assistant = _make_minimal_assistant(frame_archive=archive)
+    assert assistant.frame_archive is archive
+
+
+def test_no_frame_archive_property_is_none():
+    assistant = _make_minimal_assistant()
+    assert assistant.frame_archive is None
+
+
+def test_archive_new_session_called_on_start():
+    from smart_telescope.services.collimation.assistant import CollimationAssistant
+    archive = MagicMock()
+    a = CollimationAssistant(
+        camera=MagicMock(
+            **{"get_bit_depth.return_value": 16,
+               "get_exposure_ms.return_value": 100.0,
+               "get_gain.return_value": 100}
+        ),
+        mount=MagicMock(),
+        focuser=MagicMock(),
+        frame_archive=archive,
+    )
+    a.start()
+    archive.new_session.assert_called_once()
 
 
 def test_archive_config_defaults():

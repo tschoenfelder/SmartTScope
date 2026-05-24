@@ -14,6 +14,7 @@ from ...config import get_collimation_config
 
 if TYPE_CHECKING:
     from ...services.guiding_service import GuidingService
+    from .frame_archive import CollimationFrameArchive
 from ...domain.collimation.config import CollimationConfig
 from ...domain.collimation.models import (
     CollimationRecommendation,
@@ -53,12 +54,15 @@ class CollimationAssistant:
         focuser: FocuserPort,
         guiding_service: "GuidingService | None" = None,
         guide_cameras: "dict[str, CameraPort] | None" = None,
+        frame_archive: "CollimationFrameArchive | None" = None,
     ) -> None:
         self._camera = camera
         self._mount = mount
         self._focuser = focuser
         self._guiding_service = guiding_service
         self._guide_cameras: dict[str, CameraPort] = guide_cameras or {}
+        self._frame_archive = frame_archive
+        self._session_id: str = ""
         self._cfg: CollimationConfig = get_collimation_config()
         self._sm = CollimationStateMachine()
 
@@ -104,6 +108,10 @@ class CollimationAssistant:
             self._mask_calibration = None
             self._spike_smoother = None
             self._contradiction_detector = None
+            import uuid
+            self._session_id = str(uuid.uuid4())
+            if self._frame_archive is not None:
+                self._frame_archive.new_session(self._session_id)
             self._sm.transition(CollimationState.PRECHECK)
             self._updated_at = _now()
 
@@ -252,6 +260,10 @@ class CollimationAssistant:
         b.set_optical_train(self._cfg.telescope_profile)
         b.set_camera(self._cfg.camera_id)
         return b
+
+    @property
+    def frame_archive(self) -> "CollimationFrameArchive | None":
+        return self._frame_archive
 
     def _guiding_status_dict(self) -> dict:
         if self._guiding_service is None:
@@ -697,6 +709,26 @@ class CollimationAssistant:
                     rec = advisor.recommend(donut)
                     if rec is not None:
                         self._last_recommendation = rec
+                if self._frame_archive is not None:
+                    self._frame_archive.save_frame(
+                        session_id=self._session_id,
+                        state="measure_donut",
+                        frame_index=self._frame_counter,
+                        captured_at=_now(),
+                        exposure_s=exposure_s,
+                        gain=self._camera.get_gain(),
+                        bit_depth=bit_depth,
+                        ref_x=raw.width / 2.0,
+                        ref_y=raw.height / 2.0,
+                        raw_frame=raw,
+                        analysis={
+                            "reason": "ok",
+                            "error_x_px": donut.error_x_px,
+                            "error_y_px": donut.error_y_px,
+                            "error_magnitude_px": donut.error_magnitude_px,
+                            "confidence": donut.confidence,
+                        },
+                    )
                 self._do_transition(CollimationState.GUIDE_ROUGH_COLLIMATION)
                 return
             _log.debug("MEASURE_DONUT attempt %d: %s", attempt + 1, result.reason)
@@ -865,6 +897,25 @@ class CollimationAssistant:
                 )
                 if rec is not None and not contradiction.stop_guidance:
                     self._last_recommendation = rec
+            if self._frame_archive is not None:
+                self._frame_archive.save_frame(
+                    session_id=self._session_id,
+                    state="measure_spikes",
+                    frame_index=self._frame_counter,
+                    captured_at=_now(),
+                    exposure_s=exposure_s,
+                    gain=self._camera.get_gain(),
+                    bit_depth=bit_depth,
+                    ref_x=ref.x,
+                    ref_y=ref.y,
+                    raw_frame=raw,
+                    analysis={
+                        "reason": "ok",
+                        "focus_error_px": spike_result.measurement.focus_error_px,
+                        "offset_from_ref_px": spike_result.measurement.offset_from_ref_px,
+                        "confidence": spike_result.measurement.confidence,
+                    },
+                )
 
             _log.info(
                 "MEASURE_SPIKES: focus=%.2f px contradiction=%s",

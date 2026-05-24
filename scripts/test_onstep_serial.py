@@ -159,11 +159,11 @@ def main() -> None:
     # ── Step 1: confirm parked ───────────────────────────────────────────────
     _header("STEP 1 — initial state (mount should be PARKED)")
     status = _gu(ser, "initial")
-    if not status.startswith("P"):
-        print(f"\n  WARNING: first :GU# char is {status[0]!r}, not 'P'.")
+    if not ("P" in status and "p" not in status):
+        print(f"\n  WARNING: no PARKED flag in :GU# response {status!r}.")
         print("  Mount may not be parked — results may differ from expected.")
     else:
-        print("  OK: mount reports PARKED (first char = 'P')")
+        print(f"  OK: mount reports PARKED (:GU# = {status!r}, 'P' present, 'p' absent)")
 
     # ── Step 2: unpark with :hR# (correct command) ──────────────────────────
     _header("STEP 2 — UNPARK with :hR# (spec command, from PARKED state)")
@@ -182,8 +182,8 @@ def main() -> None:
     for i in range(30):
         time.sleep(2.0)
         gu = _gu(ser, f"poll {i+1}")
-        if gu.startswith("P"):
-            print("  Mount is PARKED.")
+        if "P" in gu and "p" not in gu:
+            print(f"  Mount is PARKED  ({gu!r}).")
             break
     else:
         print("  WARNING: mount did not report PARKED within 60 s")
@@ -202,7 +202,7 @@ def main() -> None:
     # 5a: make sure we're unparked (use :hR# since it works)
     print("  Ensuring mount is unparked before slew…")
     gu_now = _gu(ser, "before unpark-for-slew")
-    if gu_now.startswith("P"):
+    if "P" in gu_now and "p" not in gu_now:
         print("  Sending :hR# to unpark…")
         _probe_single(ser, ":hR#", "unpark for slew", timeout_s=args.timeout)
         time.sleep(0.5)
@@ -245,7 +245,7 @@ def main() -> None:
         for i in range(60):
             time.sleep(2.0)
             gu = _gu(ser, f"poll {i+1} ({(i+1)*2} s after :hP# reply)")
-            if gu.startswith("P"):
+            if "P" in gu and "p" not in gu:
                 print(f"  Mount PARKED at t+{(i+1)*2 + t_park_resp:.0f} s from :hP# send")
                 break
         else:

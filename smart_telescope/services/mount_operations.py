@@ -105,7 +105,11 @@ def park_sequence(
     coordinator: HardwareCommandCoordinator,
     device_state: DeviceStateService,
 ) -> None:
-    """Park the mount via the coordinator and wait up to 5 s for confirmation.
+    """Park the mount via the coordinator.
+
+    After sending :hP#, polls :GU# until state leaves UNPARKED (confirming
+    the slew started) or times out after 5 s.  The full park slew can take
+    30–120 s — JS polls for 60 s to detect final PARKED state.
 
     Raises:
         MountSlewingError: mount is currently slewing
@@ -123,10 +127,17 @@ def park_sequence(
     except CommandConflictError:
         raise
 
-    device_state.poll_now()  # refresh cache once; JS polls 60 × 1 s for park confirmation
+    changed = device_state.poll_until_changed(MountState.UNPARKED, timeout_s=5.0)
     obs = device_state.get_mount_state()
     state_name = obs.state.name if obs else "?"
-    _log.info("Mount park: state after poll = %s", state_name)
+    if changed:
+        _log.info("Mount park slew started: state = %s", state_name)
+    else:
+        _log.warning(
+            "Mount park: state still UNPARKED after 5 s — "
+            "check OnStep park position / firmware; state: %s",
+            state_name,
+        )
 
 
 def home_sequence(

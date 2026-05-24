@@ -146,9 +146,19 @@ def test_track_sequence_raises_on_track_failure():
 def test_park_sequence_calls_park():
     m = _mock_mount(park_ok=True)
     c = _coordinator()
-    ds = _device_state(MountState.PARKED)
+    ds = _device_state(MountState.PARKED)   # non-UNPARKED → poll_until_changed exits fast
     park_sequence(m, c, ds)
     m.park.assert_called_once()
+
+
+def test_park_sequence_does_not_raise_when_stuck_unparked():
+    # If OnStep never starts the slew (e.g. no park position), park_sequence
+    # warns but does not raise — the JS polls for PARKED for 60 s.
+    m = _mock_mount(park_ok=True)
+    c = _coordinator()
+    ds = _device_state(MountState.UNPARKED)
+    with patch.object(ds, "poll_until_changed", return_value=False):
+        park_sequence(m, c, ds)   # must not raise
 
 
 def test_park_sequence_raises_slewing_error():

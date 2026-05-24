@@ -37,6 +37,12 @@ function _updateMountStrip(data) {
     const altLive = document.getElementById('current-alt');
     if (haLive)  haLive.textContent  = data.ha  != null ? _fmtHA(+data.ha)              : '—';
     if (altLive) altLive.textContent = data.alt != null ? (+data.alt).toFixed(1) + '°'  : '—';
+
+    // Unlock navigation stages from mount state — covers page-reload with already-unparked mount.
+    if (state !== 'parked' && state !== 'unknown') {
+        unlockStage(2);
+        unlockStage(4);
+    }
 }
 
 function mountEmergencyStop() {

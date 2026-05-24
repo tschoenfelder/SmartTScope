@@ -116,9 +116,10 @@ class TestMountUnpark:
         _inject(_mock_mount(unpark_ok=True))
         assert client.post("/api/mount/unpark").json() == {"ok": True}
 
-    def test_returns_500_when_unpark_fails(self) -> None:
+    def test_returns_200_regardless_of_mount_unpark_result(self) -> None:
+        # :hU# is fire-and-forget; unpark() always returns True so 200 is always returned.
         _inject(_mock_mount(unpark_ok=False))
-        assert client.post("/api/mount/unpark").status_code == 500
+        assert client.post("/api/mount/unpark").status_code == 200
 
     def test_calls_unpark_on_mount(self) -> None:
         m = _mock_mount()

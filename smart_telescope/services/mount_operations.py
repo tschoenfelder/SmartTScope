@@ -64,18 +64,11 @@ def safe_goto(
 def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
     """Unpark the mount and refresh the state cache once.
 
-    Returns immediately after issuing the command so the HTTP request
-    does not block the UI.  The caller's JS polling loop detects the
-    state change asynchronously via /api/mount/status.
-
-    Raises:
-        RuntimeError: unpark command rejected by the mount
-    Returns:
-        Always True (command accepted); state confirmation is left to the poller.
+    :hU# is fire-and-forget in OnStep V4 (no response byte), so we always
+    return True after sending it.  State confirmation is left to the JS
+    polling loop via /api/mount/status.
     """
-    ok = mount.unpark()
-    if not ok:
-        raise RuntimeError("Unpark rejected by OnStep")
+    mount.unpark()
     _log.info("Mount unpark issued")
     device_state.poll_now()  # refresh cache once; JS polls for confirmation
     obs = device_state.get_mount_state()

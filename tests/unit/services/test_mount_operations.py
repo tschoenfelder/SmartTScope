@@ -99,25 +99,11 @@ def test_unpark_sequence_calls_unpark():
     m.unpark.assert_called_once()
 
 
-def test_unpark_sequence_raises_on_failure():
-    m = _mock_mount(unpark_ok=False)
-    ds = _device_state()
-    with pytest.raises(RuntimeError, match="Unpark rejected"):
-        unpark_sequence(m, ds)
-
-
-def test_unpark_sequence_returns_true_when_state_changed():
-    m = _mock_mount(unpark_ok=True)
-    ds = _device_state(MountState.TRACKING)  # pre-loaded with TRACKING
-    result = unpark_sequence(m, ds)
-    assert result is True
-
-
-def test_unpark_sequence_returns_true_even_when_still_parked():
-    # Server no longer waits for state confirmation — always True after command
-    # is accepted.  UI polls asynchronously via /api/mount/status.
-    m = _mock_mount(unpark_ok=True)
-    ds = _device_state(MountState.PARKED)  # still PARKED after poll
+def test_unpark_sequence_always_returns_true():
+    # :hU# is fire-and-forget — unpark_sequence always returns True regardless
+    # of what the mount returns.  State confirmation is left to the JS poller.
+    m = _mock_mount()
+    ds = _device_state(MountState.PARKED)
     result = unpark_sequence(m, ds)
     assert result is True
 

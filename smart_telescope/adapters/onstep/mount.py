@@ -156,7 +156,8 @@ class OnStepMount(MountPort):
         return MountState.UNPARKED
 
     def unpark(self) -> bool:
-        return len(self._raw_send(":hU#")) > 0
+        self._raw_send(":hU#")
+        return True
 
     def enable_tracking(self) -> bool:
         r = self._send(":Te#")

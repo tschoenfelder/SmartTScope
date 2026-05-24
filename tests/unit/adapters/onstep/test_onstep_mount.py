@@ -279,22 +279,15 @@ class TestUnpark:
         sent = b"".join(c[0][0] for c in instance.write.call_args_list)
         assert b":hU#" in sent
 
-    def test_unpark_returns_true_on_success(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
-        instance = mock_serial.return_value
-        # GVP read(32) → b"" (accepted); disable_tracking/unpark read(1) → b"1" (ACK)
-        instance.read.side_effect = lambda n: b"" if n == 32 else b"1"
-        mount = _make_mount()
-        mount.connect()
-        assert mount.unpark() is True
-
-    def test_unpark_returns_false_on_timeout(self, mocker):
+    def test_unpark_returns_true_regardless_of_response(self, mocker):
+        # :hU# is fire-and-forget in OnStep V4 — no response byte is sent.
+        # unpark() must return True whether the bus read times out or returns bytes.
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = lambda n: b""
         mount = _make_mount()
         mount.connect()
-        assert mount.unpark() is False
+        assert mount.unpark() is True
 
 
 # ── enable_tracking ───────────────────────────────────────────────────────────

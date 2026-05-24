@@ -69,12 +69,27 @@ def _get_assistant() -> CollimationAssistant:
                         col_cfg.guiding_camera_role,
                     )
 
+                from ..services.collimation.frame_archive import CollimationFrameArchive
+                from pathlib import Path
+                arc_cfg = col_cfg.archive
+                frame_archive: CollimationFrameArchive | None = None
+                if arc_cfg.enabled:
+                    archive_dir = (
+                        Path(arc_cfg.archive_dir)
+                        if arc_cfg.archive_dir
+                        else Path.home() / ".SmartTScope" / "frame_archive"
+                    )
+                    frame_archive = CollimationFrameArchive(
+                        archive_dir, arc_cfg.max_frames_per_session
+                    )
+
                 _assistant = CollimationAssistant(
                     camera=get_camera(),
                     mount=get_mount(),
                     focuser=get_focuser(),
                     guiding_service=guiding_svc,
                     guide_cameras=guide_cameras,
+                    frame_archive=frame_archive,
                 )
     return _assistant
 
@@ -169,6 +184,96 @@ def collimation_overlay() -> dict[str, Any]:
 @router.get("/report")
 def collimation_report() -> dict[str, Any]:
     return _get_assistant().report
+
+
+# ── Archive endpoints ─────────────────────────────────────────────────────────
+
+@router.get("/archive")
+def archive_list_sessions() -> dict[str, Any]:
+    """List all archived collimation sessions."""
+    archive = _get_assistant().frame_archive
+    if archive is None:
+        return {"enabled": False, "sessions": []}
+    return {"enabled": True, "sessions": archive.list_sessions()}
+
+
+@router.get("/archive/{session_id}")
+def archive_list_frames(session_id: str) -> dict[str, Any]:
+    """List frames in a single archived session."""
+    archive = _get_assistant().frame_archive
+    if archive is None:
+        return {"enabled": False, "session_id": session_id, "frames": []}
+    return {
+        "enabled": True,
+        "session_id": session_id,
+        "frames": archive.list_frames(session_id),
+    }
+
+
+@router.post("/archive/{session_id}/{frame_stem}/replay")
+def archive_replay(session_id: str, frame_stem: str) -> dict[str, Any]:
+    """Re-run stored frame through its original analysis pipeline."""
+    archive = _get_assistant().frame_archive
+    if archive is None:
+        raise HTTPException(status_code=503, detail="Frame archive is not enabled")
+    try:
+        raw = archive.load_frame(session_id, frame_stem)
+        sidecar = archive.load_sidecar(session_id, frame_stem)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"Frame {session_id}/{frame_stem} not found"
+        )
+
+    from ..domain.collimation.processing.frame import normalize_frame
+    bit_depth = int(sidecar.get("bit_depth", 16))
+    processed = normalize_frame(raw, bit_depth=bit_depth)
+    state = sidecar["state"]
+
+    new_result: dict[str, Any]
+    if state == "measure_donut":
+        from ..domain.collimation.processing.donut_detection import DonutAnalyzer
+        result = DonutAnalyzer().analyze(processed)
+        if result.reason == "ok" and result.measurement is not None:
+            d = result.measurement
+            new_result = {
+                "reason": "ok",
+                "error_x_px": d.error_x_px,
+                "error_y_px": d.error_y_px,
+                "error_magnitude_px": d.error_magnitude_px,
+                "confidence": d.confidence,
+            }
+        else:
+            new_result = {"reason": result.reason}
+    elif state == "measure_spikes":
+        from ..domain.collimation.models import Point2D
+        from ..domain.collimation.processing.spike_detection import detect_spikes
+        ref = Point2D(
+            x=float(sidecar.get("ref_x", processed.width / 2)),
+            y=float(sidecar.get("ref_y", processed.height / 2)),
+        )
+        sr = detect_spikes(processed, ref)
+        if sr.measurement is not None:
+            m = sr.measurement
+            new_result = {
+                "reason": sr.reason,
+                "focus_error_px": m.focus_error_px,
+                "offset_from_ref_px": m.offset_from_ref_px,
+                "confidence": m.confidence,
+            }
+        else:
+            new_result = {"reason": sr.reason}
+    else:
+        raise HTTPException(
+            status_code=422, detail=f"No replay handler for state '{state}'"
+        )
+
+    return {
+        "session_id": session_id,
+        "frame_stem": frame_stem,
+        "state": state,
+        "original": sidecar.get("analysis", {}),
+        "replayed": new_result,
+    }
 
 
 # ── Self-test endpoints (COL-022) ─────────────────────────────────────────────

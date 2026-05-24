@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-24 — ONS — OnStep protocol documentation update
+
+**What changed:**
+
+- `wiki/onstep-protocol.md`: Updated with hardware-confirmed findings from direct serial probe (2026-05-24).
+  - `:GU#` section: documents real compact wire format (`nNPEW260` parked, `NpeEW260` unparked); correct PARKED detection rule `"P" in r and "p" not in r`; wrong approaches listed explicitly.
+  - Park commands section: `:hR#` confirmed as correct unpark command (~2 s synchronous, returns `b"1"`/`b"0"`); `:hU#` confirmed rejected by firmware; `:hP#` confirmed fire-and-forget (~10 ms, mount slews asynchronously).
+  - Serial bus section: documents two-read-strategy table; `timeout_s` override mechanism for slow commands; rule against long global timeouts.
+  - Commands table: updated `unpark()`, `get_state()`, `park()` rows with confirmed behaviour.
+
+---
+
 ## 2026-05-24 — COL-ARC — Collimation frame archive
 
 **What changed:**

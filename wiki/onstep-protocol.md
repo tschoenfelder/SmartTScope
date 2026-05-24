@@ -4,7 +4,7 @@
 
 **Sources**: https://onstep.groups.io/g/main/wiki/23755 (retrieved 2026-04-24)
 
-**Last updated**: 2026-05-02
+**Last updated**: 2026-05-24
 
 ---
 
@@ -24,21 +24,44 @@
 Reply: sss#
 ```
 
-Returns a status string. Flags confirmed in spec:
+Returns a compact status string. Flags confirmed in spec:
 
 | Char | Meaning |
 |---|---|
 | `N` | Not slewing |
 | `H` | At Home position |
 | `P` | Parked |
-| `p` | Not parked |
+| `p` | Not parked (unparked / tracking / idle) |
 | `F` | Park failed |
 | `I` | Park in progress |
 | `R` | PEC recorded |
 | `G` | Guiding in progress |
 | `S` | GPS PPS synced |
 
-> **Note for implementation**: The firmware returns a richer pipe-delimited string (`"n|T|0|0|..."`) that includes tracking (`T`) and limit (`E`/`W`) flags not shown in this simplified spec. The `OnStepMount` adapter's flag parsing was written against the observed wire format, not this summary, and should be trusted over the table above.
+### Real-hardware wire format (confirmed 2026-05-24)
+
+Real OnStep V4 returns a **compact flag string without pipe separators**, not the pipe-delimited format seen in older test fixtures. Observed examples from direct serial probe:
+
+| State | Raw `:GU#` response |
+|---|---|
+| Parked | `nNPEW260#` |
+| Unparked / idle | `NpeEW260#` |
+
+**PARKED detection rule** (correct):
+
+```python
+"P" in r and "p" not in r   # uppercase P present, lowercase p absent
+```
+
+**Wrong approaches** (do not use):
+
+```python
+r[0] == "P"          # fails — P is at position 2 in compact format
+r.startswith("P")    # same failure
+"P" in r             # false positive when 'p' also present (unparked state)
+```
+
+> **Note on tracking/slewing flags**: `T` (tracking), `S` (slewing), and `l` (at limit) appear as single characters within the compact string and are checked with `"T" in r` / `"S" in r` / `"l" in r`. These checks remain valid with the compact format.
 
 ---
 
@@ -130,15 +153,26 @@ Syncs that are not allowed (during slew, while parked, limits exceeded) fail sil
 
 ## Park commands
 
-| Description | Command | Reply |
-|---|---|---|
-| Set park position | `:hQ#` | 0 or 1 |
-| Move to park position | `:hP#` | 0 or 1 |
-| **Restore parked telescope (unpark)** | **`:hR#`** | 0 or 1 |
-| Set home (counterweight-down) | `:hF#` | none |
-| Move to home | `:hC#` | none |
+| Description | Command | Reply | Timing |
+|---|---|---|---|
+| Set park position | `:hQ#` | 0 or 1 | fast |
+| Move to park position | `:hP#` | 0 or 1 | ~10 ms (fire-and-forget) |
+| **Restore parked telescope (unpark)** | **`:hR#`** | 0 or 1 | **~2 s (synchronous)** |
+| Set home (counterweight-down) | `:hF#` | none | fast |
+| Move to home | `:hC#` | none | fast |
 
-> **Unpark discrepancy**: The spec defines `:hR#` as the unpark command. The current `OnStepMount` adapter uses `:hU#`. OnStep V4 firmware pre-dates OnStepX and used `:hU#`; `:hR#` was introduced later. **Verify against your firmware version** before changing the adapter. If unpark stops working after a firmware upgrade, switch to `:hR#`.
+### Hardware-confirmed behaviour (serial probe 2026-05-24)
+
+**`:hR#` — Unpark (Restore)**
+- Returns `b'1'` on success after ~2 seconds — the firmware **blocks until the mount is unparked**.
+- Returns `b'0'` if unpark is rejected (e.g. no alignment stored).
+- Serial read timeout must be at least 3–5 s. Default 0.2 s silently drops the reply.
+- `:hU#` is **explicitly rejected** by OnStep V4 — returns `b'0'` immediately. Do not use it.
+
+**`:hP#` — Park**
+- Returns `b'1'` in ~10 ms — fire-and-forget. The mount starts slewing to the park position after the reply.
+- The slew takes 30–120 s depending on current position.
+- Poll `:GU#` after the reply to detect when the mount reaches PARKED state.
 
 ---
 
@@ -255,29 +289,49 @@ Positive coefficient → focuser moves out as temperature falls.
 
 ### Threading safety (added 2026-05-02)
 
-`OnStepMount` uses a single `pyserial` port shared across all mount methods. Concurrent HTTP requests can race on the port. As of Sprint 37 bugfix, every `_raw_send()` call acquires a `threading.Lock` before the `serial.write()` / `serial.readline()` pair. This prevents byte-interleaving that caused HTTP 500 errors during hardware testing. See [[requirements-addon-20260501]] for the bug report.
+`OnStepMount` uses a single `pyserial` port shared across all mount methods via `OnStepSerialBus`. The bus holds a `threading.Lock`; every `send()` and `raw_send()` call acquires it before writing. This prevents byte-interleaving between concurrent API requests. See [[requirements-addon-20260501]] for the original bug report.
 
-**Rule**: never call `serial.write()` outside `_raw_send()` in the mount adapter. All new commands must go through `_raw_send()` or `_send()` to inherit the lock.
+**Rule**: never call `serial.write()` directly in the mount adapter. All commands must go through `_raw_send()` or `_send()` to inherit the lock. The only exception is `stop()`, which uses `write_bypass()` intentionally to interrupt an in-progress command.
 
-### readline() and the `#` terminator
+### Two read strategies in `OnStepSerialBus`
 
-OnStep terminates replies with `#`, not `\n`. `pyserial`'s `readline()` reads until `\n` or timeout. A missing or unexpected reply consumes the full `timeout` (default 2 s). Commands marked `[none]` (no reply) must use `_raw_send()` without reading back — or use a very short per-command timeout if polling frequency matters.
+| Method | Read call | Used for |
+|---|---|---|
+| `send(cmd)` | `read_until(b"#")` | GET commands with `#`-terminated responses (`:GU#`, `:GR#`, `:GD#`, `:MS#`, …) |
+| `raw_send(cmd, timeout_s)` | `read(1)` | SET/action commands returning a single ACK byte `'1'`/`'0'` or nothing (`:hP#`, `:hR#`, `:Td#`, …) |
+
+`send()` terminates as soon as `#` arrives. `raw_send()` reads exactly one byte, which returns either the ACK or an empty `b""` if the port times out.
+
+### Serial timeout management (confirmed 2026-05-24)
+
+The default port timeout is 0.2 s — sufficient for all GET commands and most SET commands. `:hR#` is the exception: it blocks ~2 s in firmware before replying. `raw_send()` accepts an optional `timeout_s` parameter that temporarily overrides `serial.timeout` for that call and restores it afterwards.
+
+```python
+# unpark — override timeout for slow synchronous reply
+raw_send(":hR#", timeout_s=5.0)   # safely catches 2 s reply
+
+# all other commands — use default 0.2 s
+raw_send(":hP#")
+send(":GU#")
+```
+
+**Never set a long global port timeout** — it would make the 2 s poll loop block 10× slower on every `:GU#`.
 
 ### Commands currently used by `OnStepMount`
 
 | Port method | LX200 command | Notes |
 |---|---|---|
-| `connect()` | opens serial, then `:Td#` | 9600 baud; sends disable-tracking immediately on connect |
-| `get_state()` | `:GU#` | parses P/T/S/E/W flags from wire format |
-| `unpark()` | `:hU#` | ⚠ spec says `:hR#` — firmware-version dependent |
+| `connect()` | opens serial, then `:Td#` | 9600 baud; GVP handshake with retry; disables tracking on connect |
+| `get_state()` | `:GU#` | `"P" in r and "p" not in r` → PARKED; `"S"` → SLEWING; `"T"` → TRACKING |
+| `unpark()` | `:hR#` | synchronous ~2 s; returns `True` if `b"1"`, `False` if `b"0"`; serial timeout overridden to 5 s |
 | `enable_tracking()` | `:Te#` | returns `1` on success |
 | `disable_tracking()` | `:Td#` | called on connect and via API endpoint |
 | `get_position()` | `:GR#` + `:GD#` | parses RA hours + Dec degrees |
 | `goto()` | `:Sr#` + `:Sd#` + `:MS#` | `MS#` returns `0` for success |
 | `sync()` | `:Sr#` + `:Sd#` + `:CM#` | |
 | `is_slewing()` | `:D#` | checks for `\|` char in response |
-| `stop()` | `:Q#` | no reply |
-| `park()` | `:hP#` | no reply — always returns True |
+| `stop()` | `:Q#` | no reply; uses `write_bypass()` to skip bus lock |
+| `park()` | `:hP#` | fire-and-forget ~10 ms; always returns True; mount slews asynchronously |
 | `guide(d, ms)` | `:Mgdnnnn#` | d=n/s/e/w, nnnn=ms (1–9999); no reply |
 | `start_alignment(n)` | `:An#` | n=1–9 stars; returns `1` on success |
 | `accept_alignment_star()` | `:A+#` | returns `1` on success |

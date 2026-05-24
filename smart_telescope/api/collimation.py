@@ -25,7 +25,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .deps import get_camera, get_focuser, get_mount
+from .deps import get_camera, get_camera_by_role, get_focuser, get_mount
 from ..ports.camera import CameraPort, CaptureAbortedError
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
@@ -43,10 +43,38 @@ def _get_assistant() -> CollimationAssistant:
     if _assistant is None:
         with _assistant_lock:
             if _assistant is None:
+                from ..services.guiding_service import GuidingService
+                from ..services.guide_measurement import CentroidConfig, GuideControllerConfig
+                from .. import config as _cfg_mod
+
+                col_cfg = _cfg_mod.get_collimation_config()
+                guiding_svc: GuidingService | None = None
+                guide_cameras: dict = {}
+                try:
+                    guide_cam = get_camera_by_role(col_cfg.guiding_camera_role)
+                    guide_cameras = {col_cfg.guiding_camera_role: guide_cam}
+                    guiding_svc = GuidingService.from_config(
+                        primary_role=col_cfg.guiding_camera_role,
+                        allow_fallback=False,
+                        fallback_after_bad_frames=5,
+                        max_frame_age_s=col_cfg.guiding_cadence_s * 3,
+                        centroid_config=CentroidConfig(),
+                        controller_config=GuideControllerConfig(),
+                        measure_only=False,
+                    )
+                except Exception:
+                    _log.info(
+                        "CollimationAssistant: guide camera '%s' not available — "
+                        "starting without guiding",
+                        col_cfg.guiding_camera_role,
+                    )
+
                 _assistant = CollimationAssistant(
                     camera=get_camera(),
                     mount=get_mount(),
                     focuser=get_focuser(),
+                    guiding_service=guiding_svc,
+                    guide_cameras=guide_cameras,
                 )
     return _assistant
 

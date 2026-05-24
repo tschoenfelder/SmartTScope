@@ -44,10 +44,10 @@ class TestConnect:
         bus.send.side_effect = ["1", "5000"]  # :FA#, :FM#
         assert foc.connect() is True
 
-    def test_connect_returns_true_when_focuser_not_active(self) -> None:
+    def test_connect_returns_false_when_focuser_not_active(self) -> None:
         foc, bus = _make_focuser()
         bus.send.return_value = "0"
-        assert foc.connect() is True
+        assert foc.connect() is False
 
     def test_connect_sets_available_true_when_FA_returns_1(self) -> None:
         foc, bus = _make_focuser()

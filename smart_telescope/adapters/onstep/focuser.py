@@ -54,7 +54,7 @@ class OnStepFocuser(FocuserPort):
                 " — check OnStep focuser wiring/config",
                 _MAX_FA_ATTEMPTS,
             )
-        return True
+        return self._available
 
     def disconnect(self) -> None:
         pass  # serial owned by OnStepSerialBus

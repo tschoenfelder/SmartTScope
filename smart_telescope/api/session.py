@@ -87,7 +87,7 @@ def get_session_running() -> bool:
 _ACTIONS: dict[str, str] = {
     "camera": "Check USB connection and power; ensure ToupTek driver is installed",
     "mount": "Check serial connection and OnStep power; verify onstep_port in smart_telescope.toml",
-    "focuser": "Check focuser serial connection and power",
+    "focuser": "Focuser not detected by OnStep — check focuser wiring/config in OnStep",
 }
 
 _ASTAP_INSTALL_URL = "https://www.hnsky.org/astap.htm"
@@ -111,9 +111,13 @@ def _try_connect(device: str, connect_fn: object) -> DeviceResult:
         ok: bool = connect_fn()  # type: ignore[operator]
         if ok:
             return DeviceResult(status="ok")
+        error_msg = (
+            "Not detected — autofocus disabled" if device == "focuser"
+            else f"{device.capitalize()} refused connection"
+        )
         return DeviceResult(
             status="error",
-            error=f"{device.capitalize()} refused connection",
+            error=error_msg,
             action=_ACTIONS[device],
         )
     except Exception as exc:

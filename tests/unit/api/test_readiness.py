@@ -160,12 +160,16 @@ class TestAstapCheck:
 
 class TestCameraCheck:
     def test_green_when_cameras_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("smart_telescope.config.CAMERAS", {"main": 0})
+        from smart_telescope.config import CameraSpec
+        monkeypatch.setattr(
+            "smart_telescope.config.CAMERA_SPECS",
+            {"main": CameraSpec(role="main", model="ATR585M")},
+        )
         item = ReadinessService()._check_camera()
         assert item.level == Level.GREEN
 
     def test_yellow_when_no_cameras(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("smart_telescope.config.CAMERAS", {})
+        monkeypatch.setattr("smart_telescope.config.CAMERA_SPECS", {})
         item = ReadinessService()._check_camera()
         assert item.level == Level.YELLOW
 

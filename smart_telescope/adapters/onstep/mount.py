@@ -132,8 +132,8 @@ class OnStepMount(MountPort):
         if s is not None:
             s.close()
 
-    def _raw_send(self, cmd: str) -> bytes:
-        return self._bus.raw_send(cmd)
+    def _raw_send(self, cmd: str, timeout_s: float | None = None) -> bytes:
+        return self._bus.raw_send(cmd, timeout_s=timeout_s)
 
     def _send(self, cmd: str) -> str:
         return self._bus.send(cmd)
@@ -143,11 +143,10 @@ class OnStepMount(MountPort):
         if not r:
             return MountState.UNKNOWN
         _log.debug("OnStepMount.get_state(): :GU# → %r", r)
-        # OnStep V4: 'P' at position 0 means parked.  Other positions may
-        # contain 'P' for unrelated flags (past-meridian, pier-side, etc.).
-        # Old broad check "P" in r caused false PARKED when mount was east of
-        # meridian and a later flag happened to be 'P'.
-        if r[0] == "P":
+        # Real OnStep V4 hardware returns compact flags, e.g. "nNPEW260" (parked)
+        # or "NpeEW260" (unparked).  Uppercase 'P' = PARKED; lowercase 'p' = NOT
+        # parked (unparked/tracking).  Check both to avoid false positives.
+        if "P" in r and "p" not in r:
             return MountState.PARKED
         if "S" in r:
             return MountState.SLEWING
@@ -158,9 +157,10 @@ class OnStepMount(MountPort):
         return MountState.UNPARKED
 
     def unpark(self) -> bool:
-        resp = self._raw_send(":hU#")
-        _log.info("OnStepMount.unpark(): :hU# sent → resp=%r", resp)
-        return True
+        resp = self._raw_send(":hR#", timeout_s=5.0)
+        ok = resp == b"1"
+        _log.info("OnStepMount.unpark(): :hR# sent → resp=%r ok=%s", resp, ok)
+        return ok
 
     def enable_tracking(self) -> bool:
         r = self._send(":Te#")

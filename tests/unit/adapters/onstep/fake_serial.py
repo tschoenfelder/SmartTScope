@@ -6,7 +6,7 @@ Maintains a mount state machine so tests exercise real command sequences
 without any hardware or mocker patching.
 
 State transitions:
-  parked  → unpark (:hU#)    → unparked
+  parked  → unpark (:hR#)    → unparked
   unparked → track (:Te#)    → tracking
   any      → goto  (:MS#)    → slewing
   slewing  → settle()        → tracking   (helper for tests)
@@ -49,6 +49,7 @@ class FakeOnStepSerial:
         self._target_dec = 0.0
         self._last_response: bytes = b""
         self.is_open = True
+        self.timeout = 0.2  # mirrors pyserial.Serial.timeout; raw_send() saves/restores this
         self.commands_received: list[bytes] = []
 
     # ── pyserial interface ─────────────────────────────────────────────────────
@@ -96,10 +97,11 @@ class FakeOnStepSerial:
         if cmd == ":GU#":
             return _GU_RESPONSES.get(self._state, b"#")
 
-        if cmd == ":hU#":
+        if cmd == ":hR#":
             if self._state == "parked":
                 self._state = "unparked"
-            return b"#"
+                return b"1"
+            return b"0"
 
         if cmd == ":Te#":
             if self._state in ("unparked", "parked", "tracking"):

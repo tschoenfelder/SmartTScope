@@ -94,24 +94,24 @@ def test_safe_goto_raises_conflict_when_coordinator_busy():
 
 def test_unpark_sequence_calls_unpark():
     m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
-    ds = _device_state(MountState.TRACKING)   # non-PARKED → poll_until_changed exits fast
+    ds = _device_state(MountState.TRACKING)
     unpark_sequence(m, ds)
     m.unpark.assert_called_once()
 
 
 def test_unpark_sequence_always_returns_true():
     m = _mock_mount()
-    ds = _device_state(MountState.TRACKING)   # non-PARKED → poll_until_changed exits fast
+    ds = _device_state(MountState.TRACKING)
     result = unpark_sequence(m, ds)
     assert result is True
 
 
-def test_unpark_sequence_returns_true_even_when_stuck_parked():
-    # If OnStep never leaves PARKED (e.g. no alignment), unpark_sequence still returns True.
+def test_unpark_sequence_returns_true_even_when_rejected():
+    # If OnStep rejects :hR# (e.g. no alignment), unpark_sequence still returns True.
     m = _mock_mount()
+    m.unpark.return_value = False
     ds = _device_state(MountState.PARKED)
-    with patch.object(ds, "poll_until_changed", return_value=False):
-        result = unpark_sequence(m, ds)
+    result = unpark_sequence(m, ds)
     assert result is True
 
 

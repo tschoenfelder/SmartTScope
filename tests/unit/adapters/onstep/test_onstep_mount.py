@@ -16,7 +16,7 @@ Design contract being tested:
 
 LX200 / OnStep V4 command reference (subset used by this adapter):
   :GU#    → status flags string (e.g. "n|T|0|0|0|0|0|0|0|0|0|0|0|0|0#")
-  :hU#    → unpark
+  :hR#    → unpark (Restore) — blocks ~2 s, returns "1" (ok) or "0" (rejected)
   :Te#    → enable sidereal tracking  → "1" on success
   :Td#    → disable tracking
   :GR#    → get RA  → "HH:MM:SS#"
@@ -212,11 +212,29 @@ class TestGetState:
     def test_parked_flag_returns_parked_state(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        # :GU# response containing 'P' = parked; send() uses read_until(b'#')
+        # :GU# fake-serial format: uppercase 'P' = parked, no lowercase 'p'
         instance.read_until.return_value = b"P|N|0|0|0|0|0|0|0|0|0|0|0|0|0#"
         mount = _make_mount()
         mount.connect()
         assert mount.get_state() == MountState.PARKED
+
+    def test_real_hardware_parked_format_returns_parked_state(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        # Real OnStep V4 compact flags when parked: uppercase 'P', no lowercase 'p'
+        instance.read_until.return_value = b"nNPEW260#"
+        mount = _make_mount()
+        mount.connect()
+        assert mount.get_state() == MountState.PARKED
+
+    def test_real_hardware_unparked_format_is_not_parked(self, mocker):
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        # Real OnStep V4 compact flags when unparked: lowercase 'p', no uppercase 'P'
+        instance.read_until.return_value = b"NpeEW260#"
+        mount = _make_mount()
+        mount.connect()
+        assert mount.get_state() != MountState.PARKED
 
     def test_tracking_flag_returns_unparked_tracking_state(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
@@ -268,26 +286,34 @@ class TestGetState:
 # ── unpark ────────────────────────────────────────────────────────────────────
 
 class TestUnpark:
-    def test_unpark_sends_hU_command(self, mocker):
+    def test_unpark_sends_hR_command(self, mocker):
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        # unpark() uses raw_send() → read(1); GVP uses read(32)
-        instance.read.side_effect = lambda n: b""
+        # read sequence: GVP(32) → b"", Td(1) → b"", hR(1) → b"1"
+        instance.read.side_effect = [b"", b"", b"1"]
         mount = _make_mount()
         mount.connect()
         mount.unpark()
         sent = b"".join(c[0][0] for c in instance.write.call_args_list)
-        assert b":hU#" in sent
+        assert b":hR#" in sent
 
-    def test_unpark_returns_true_regardless_of_response(self, mocker):
-        # :hU# is fire-and-forget in OnStep V4 — no response byte is sent.
-        # unpark() must return True whether the bus read times out or returns bytes.
+    def test_unpark_returns_true_when_acknowledged(self, mocker):
+        # :hR# blocks ~2 s then returns b"1" on success
         mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
         instance = mock_serial.return_value
-        instance.read.side_effect = lambda n: b""
+        instance.read.side_effect = [b"", b"", b"1"]
         mount = _make_mount()
         mount.connect()
         assert mount.unpark() is True
+
+    def test_unpark_returns_false_when_rejected(self, mocker):
+        # :hR# returns b"0" when OnStep rejects unpark (e.g. no alignment done)
+        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.read.side_effect = [b"", b"", b"0"]
+        mount = _make_mount()
+        mount.connect()
+        assert mount.unpark() is False
 
 
 # ── enable_tracking ───────────────────────────────────────────────────────────

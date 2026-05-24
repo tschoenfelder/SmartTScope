@@ -62,27 +62,23 @@ def safe_goto(
 # ── Multi-step sequences ──────────────────────────────────────────────────────
 
 def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
-    """Unpark the mount and wait up to 10 s for hardware confirmation.
+    """:hR# is synchronous — OnStep blocks ~2 s then returns '1' (ok) or '0' (rejected).
 
-    :hU# is fire-and-forget in OnStep V4 (no response byte).  We then poll
-    :GU# until the state leaves PARKED so the cache is accurate when the
-    HTTP endpoint returns.  If OnStep doesn't change state within 10 s (e.g.
-    alignment not done), we log a warning and return True anyway — the JS
-    poll loop continues for another 15 s.
+    We issue one poll_now() after the command to refresh the state cache for the
+    HTTP response.  If OnStep returns '0' (no alignment, etc.) we log a warning
+    but still return True — the JS poll loop will reflect the current state.
     """
-    mount.unpark()
-    _log.info("Mount unpark issued")
-    changed = device_state.poll_until_changed(MountState.PARKED, timeout_s=10.0)
+    ok = mount.unpark()
+    _log.info("Mount unpark: OnStep reply = %s", "1 (ok)" if ok else "0 (rejected)")
+    if not ok:
+        _log.warning(
+            "Mount unpark rejected by OnStep (:hR# returned 0) — "
+            "check alignment / firmware"
+        )
+    device_state.poll_now()
     obs = device_state.get_mount_state()
     state_name = obs.state.name if obs else "?"
-    if changed:
-        _log.info("Mount unpark confirmed: state = %s", state_name)
-    else:
-        _log.warning(
-            "Mount unpark: state still PARKED after 10 s — "
-            "check OnStep alignment / firmware; state: %s",
-            state_name,
-        )
+    _log.info("Mount unpark: state = %s", state_name)
     return True
 
 

@@ -53,22 +53,34 @@ class OnStepSerialBus:
                 self._serial = None
                 raise
 
-    def raw_send(self, cmd: str) -> bytes:
+    def raw_send(self, cmd: str, timeout_s: float | None = None) -> bytes:
         """Send *cmd* and return the raw reply bytes (up to the next newline).
 
         Used for action/SET commands that return a single ACK byte ('1'/'0')
         or nothing at all.  Reads exactly one byte so the call returns as soon
         as the ACK arrives (or after the serial timeout if there is none).
+
+        Pass timeout_s to temporarily override the port timeout for commands
+        that take longer than the default (e.g. :hR# unpark blocks ~2 s).
         """
         if self._serial is None:
             return b""
         with self._lock:
+            s = self._serial
+            saved_timeout = s.timeout
             try:
-                self._serial.write(cmd.encode())
-                return bytes(self._serial.read(1))
+                if timeout_s is not None:
+                    s.timeout = timeout_s
+                s.write(cmd.encode())
+                return bytes(s.read(1))
             except Exception:
                 self._serial = None
                 raise
+            finally:
+                try:
+                    s.timeout = saved_timeout
+                except Exception:
+                    pass
 
     def write_bypass(self, data: bytes) -> None:
         """Write *data* without acquiring the lock.

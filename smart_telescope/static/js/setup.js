@@ -948,6 +948,7 @@ async function connectAll() {
       });
 
       await refreshMount();
+      await refreshReadiness();
     } catch (err) {
       if (dot) dot.className = 'dot dot-red';
       setStatus('s1-mount-status', 'Connect All failed: ' + err, true);

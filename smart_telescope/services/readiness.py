@@ -129,7 +129,7 @@ class ReadinessService:
         return ReadinessItem(
             key="hardware_mode", label="Hardware mode",
             level=Level.YELLOW, message="MOCK — observation disabled",
-            repair="No hardware configured. Set onstep_port / camera index in config.toml.",
+            repair="Set onstep_port in the [hardware] section of ~/.SmartTScope/config.toml.",
         )
 
     def _check_config_file(self) -> ReadinessItem:

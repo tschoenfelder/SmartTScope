@@ -187,17 +187,40 @@ class DeviceStateService:
         timeout_s: float = 5.0,
         poll_s: float = 0.2,
     ) -> bool:
-        """Poll the cached state until it differs from *current_state* or times out.
+        """Poll hardware until state differs from *current_state* or times out.
 
-        Returns True when the state changed; False if it stayed the same until
-        the timeout.  Useful after park/unpark to confirm state transition.
+        Calls poll_now() each iteration for a fresh hardware query.
+        Returns True when the state changed; False on timeout.
         """
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
+            self.poll_now()
             obs = self.get_mount_state()
             if obs is not None and obs.state != current_state:
                 return True
-            time.sleep(poll_s)
+            if time.monotonic() < deadline:
+                time.sleep(poll_s)
+        return False
+
+    def poll_until_changed(
+        self,
+        from_state: MountState,
+        timeout_s: float = 10.0,
+        interval_s: float = 0.5,
+    ) -> bool:
+        """Poll hardware until state differs from *from_state*, or timeout.
+
+        Issues a fresh :GU# query on each iteration — does not rely on the
+        background-poll cache.  Returns True if state changed; False on timeout.
+        """
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            self.poll_now()
+            obs = self.get_mount_state()
+            if obs is not None and obs.state != from_state:
+                return True
+            if time.monotonic() < deadline:
+                time.sleep(interval_s)
         return False
 
     # ── internal ──────────────────────────────────────────────────────────────

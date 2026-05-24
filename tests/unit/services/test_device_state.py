@@ -488,3 +488,55 @@ class TestPollNow:
         svc.poll_now()  # must not raise; _mount cleared by stop()
         assert mount.get_state.call_count == calls_before, \
             "poll_now() must not call get_state after stop()"
+
+
+# ── poll_until_changed ────────────────────────────────────────────────────────
+
+class TestPollUntilChanged:
+    """poll_until_changed() issues fresh :GU# queries until state leaves from_state."""
+
+    def test_returns_true_immediately_when_already_different(self) -> None:
+        mount = _mock_mount(state=MountState.TRACKING)
+        svc = DeviceStateService()
+        svc.start(mount, poll_interval=60.0)
+        try:
+            result = svc.poll_until_changed(MountState.PARKED, timeout_s=5.0, interval_s=0.05)
+            assert result is True
+        finally:
+            svc.stop()
+
+    def test_returns_true_when_state_changes_on_second_poll(self) -> None:
+        call_n = {"n": 0}
+
+        def changing_state():
+            call_n["n"] += 1
+            return MountState.PARKED if call_n["n"] <= 1 else MountState.TRACKING
+
+        mount = MagicMock()
+        mount.get_state.side_effect = changing_state
+        mount.get_position.return_value = MountPosition(ra=0.0, dec=0.0)
+
+        svc = DeviceStateService()
+        svc.start(mount, poll_interval=60.0)
+        try:
+            result = svc.poll_until_changed(MountState.PARKED, timeout_s=5.0, interval_s=0.05)
+            assert result is True
+            assert svc.get_mount_state().state != MountState.PARKED  # type: ignore[union-attr]
+        finally:
+            svc.stop()
+
+    def test_returns_false_on_timeout_when_state_never_changes(self) -> None:
+        mount = _mock_mount(state=MountState.PARKED)
+        svc = DeviceStateService()
+        svc.start(mount, poll_interval=60.0)
+        try:
+            result = svc.poll_until_changed(MountState.PARKED, timeout_s=0.2, interval_s=0.05)
+            assert result is False
+        finally:
+            svc.stop()
+
+    def test_returns_false_before_start(self) -> None:
+        svc = DeviceStateService()
+        # No start() → poll_now() is a no-op → state is None → never != from_state
+        result = svc.poll_until_changed(MountState.PARKED, timeout_s=0.1, interval_s=0.02)
+        assert result is False

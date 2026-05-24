@@ -72,7 +72,14 @@ def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
     _log.info("Mount unpark issued")
     device_state.poll_now()  # refresh cache once; JS polls for confirmation
     obs = device_state.get_mount_state()
-    _log.info("Mount unpark: state after poll = %s", obs.state.name if obs else "?")
+    state_name = obs.state.name if obs else "?"
+    _log.info("Mount unpark: state after poll = %s", state_name)
+    if obs and obs.state == MountState.PARKED:
+        _log.warning(
+            "Mount unpark: state still PARKED after :hU# — "
+            "check OnStep alignment / firmware; mount state: %s",
+            state_name,
+        )
     return True
 
 

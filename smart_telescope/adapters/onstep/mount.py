@@ -142,10 +142,12 @@ class OnStepMount(MountPort):
         r = self._send(":GU#")
         if not r:
             return MountState.UNKNOWN
-        # Priority order matters — check tracking before meridian-side letters.
-        # OnStep uses 'E'/'W' for east/west of meridian (normal positions), not limits.
-        # Actual hardware limits are signalled by 'l' (lowercase) in V4 firmware.
-        if "P" in r:
+        _log.debug("OnStepMount.get_state(): :GU# → %r", r)
+        # OnStep V4: 'P' at position 0 means parked.  Other positions may
+        # contain 'P' for unrelated flags (past-meridian, pier-side, etc.).
+        # Old broad check "P" in r caused false PARKED when mount was east of
+        # meridian and a later flag happened to be 'P'.
+        if r[0] == "P":
             return MountState.PARKED
         if "S" in r:
             return MountState.SLEWING
@@ -156,7 +158,8 @@ class OnStepMount(MountPort):
         return MountState.UNPARKED
 
     def unpark(self) -> bool:
-        self._raw_send(":hU#")
+        resp = self._raw_send(":hU#")
+        _log.info("OnStepMount.unpark(): :hU# sent → resp=%r", resp)
         return True
 
     def enable_tracking(self) -> bool:

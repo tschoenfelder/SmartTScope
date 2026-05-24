@@ -56,17 +56,21 @@ async def ws_preview(
             train = registry.by_camera_role(camera_role) or registry.get(camera_role)
             if train is not None:
                 camera_index = train.camera_index  # kept for logging / fallback
+                _role_key = train.camera_role
                 try:
-                    _pre_resolved_camera = deps.get_camera_by_role(train.camera_role)
+                    # Run in a thread: first call may connect the camera (blocking SDK I/O).
+                    _pre_resolved_camera = await asyncio.to_thread(
+                        deps.get_camera_by_role, _role_key
+                    )
                     _log.info(
                         "Preview WS: resolved camera_role=%r → train=%r role_key=%r adapter=%s",
-                        camera_role, train.name, train.camera_role,
+                        camera_role, train.name, _role_key,
                         type(_pre_resolved_camera).__name__,
                     )
                 except Exception as exc:
                     _log.warning(
                         "Preview WS: role-based resolution failed for %r → fallback camera_index=%d: %s",
-                        train.camera_role, camera_index, exc,
+                        _role_key, camera_index, exc,
                     )
         except Exception:
             pass

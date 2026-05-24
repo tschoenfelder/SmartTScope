@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-24 — COL-GUD — Collimation guiding integration complete
+
+**Source:** `docs/superpowers/plans/2026-05-24-collimation-guiding-integration.md`
+
+**What changed:**
+
+- `smart_telescope/services/guiding_service.py`: `GuidingStatus` gains `rms_px: float` and `last_pulse: tuple[str, int] | None`; `GuidingService` gains `pause_pulses()`, `resume_pulses()`, `rebaseline()`; `_loop()` honours pause flag, flushes error history on rebaseline, tracks rolling RMS (10-frame window), records last issued pulse direction+duration; `_lifecycle_lock` wraps `start()` and `stop()` to prevent TOCTOU; reset of pause/rebaseline on `start()`; 3 new tests in `test_guiding_service.py` (pause suppresses calls, resume restores, rebaseline stops cleanly)
+
+- `smart_telescope/domain/collimation/config.py`: `CollimationConfig` dataclass gains `guiding_camera_role: str = "guide"`, `guiding_exposure_s: float = 2.0`, `guiding_cadence_s: float = 3.0`; `from_dict()` reads all three from TOML; 2 new tests in `test_collimation_guiding.py`
+
+- `smart_telescope/services/collimation/assistant.py`: `__init__` accepts `guiding_service: GuidingService | None` and `guide_cameras: dict[str, CameraPort] | None`; `_guiding_status_dict()` returns `available/state/rms_px/last_pulse`; `status` property includes `"guiding"` key; `_start_guiding()` starts the service using collimation config fields; `_stop_guiding()` stops if running, called in `_run()` finally block; `_with_guiding_paused(fn)` pause→fn→rebaseline+resume wrapper; `_recenter_star()` PulseCenterer without state transition; `_handle_auto_exposure()` calls `_start_guiding()` before transitioning; `_dispatch_user_wait()` calls `_with_guiding_paused(_recenter_star)` before each Remeasure transition; 5 new tests in `test_collimation_guiding.py`
+
+- `smart_telescope/api/collimation.py`: `_get_assistant()` now builds `GuidingService` lazily from collimation config (gracefully falls back to no guiding if guide camera role is absent); imports `get_camera_by_role` from deps
+
+- `smart_telescope/static/index.html`: guide status row `<div id="s4-wiz-guide-row">` inserted after instruction div in wizard card (initially `display:none`)
+
+- `smart_telescope/static/js/collimation.js`: `_updateCollimWizard(s)` renders guide row — shows/hides based on `s.guiding.available`; green/red dot for locked/lost; displays `rms_px` and `last_pulse` direction+duration
+
+- `wiki/index.md`: Guiding section updated with collimation guiding integration plan link and completion summary; Collimation Assistant section unchanged
+
+---
+
 ## 2026-05-23 — GUD-002..007 — Guiding pipeline complete
 
 **What changed:**

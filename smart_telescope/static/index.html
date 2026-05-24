@@ -1370,6 +1370,13 @@
            style="font-size:0.88rem;min-height:2.5em;margin-bottom:0.6rem;line-height:1.45;color:var(--text)">
         Ready. Click Start to begin the collimation wizard.
       </div>
+      <!-- Guide status row (shown when guiding is active) -->
+      <div id="s4-wiz-guide-row"
+           style="display:none;font-size:0.82rem;color:var(--muted);
+                  margin-bottom:0.5rem;align-items:center;gap:0.4rem">
+        <span class="dot dot-grey" id="s4-wiz-guide-dot"></span>
+        <span id="s4-wiz-guide-label">Guide: —</span>
+      </div>
       <!-- Screw recommendation (rough/fine guidance phases) -->
       <div id="s4-wiz-recommendation"
            style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;

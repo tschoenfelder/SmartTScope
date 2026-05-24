@@ -141,6 +141,27 @@ function _updateCollimWizard(s) {
       else { errEl.style.display = 'none'; }
     }
 
+    // Guide status row
+    const g = s.guiding;
+    const guideRow = document.getElementById('s4-wiz-guide-row');
+    if (guideRow) {
+        if (!g || !g.available) {
+            guideRow.style.display = 'none';
+        } else {
+            guideRow.style.display = 'flex';
+            const dot    = document.getElementById('s4-wiz-guide-dot');
+            const lbl    = document.getElementById('s4-wiz-guide-label');
+            const locked = g.state === 'running';
+            if (dot) dot.className = 'dot ' + (locked ? 'dot-green' : 'dot-red');
+            const rms  = locked && g.rms_px != null
+                ? ` RMS ${g.rms_px.toFixed(1)} px` : '';
+            const last = g.last_pulse
+                ? ` last ${g.last_pulse[1] > 0 ? '+' : ''}${g.last_pulse[1]}ms ${g.last_pulse[0]}`
+                : '';
+            if (lbl) lbl.textContent = `Guide: ${locked ? 'locked' : 'lost'}${rms}${last}`;
+        }
+    }
+
     // Buttons
     _wizBtn('s4-wiz-start-btn',  idle);
     _wizBtn('s4-wiz-pause-btn',  (active || waiting) && !terminal);

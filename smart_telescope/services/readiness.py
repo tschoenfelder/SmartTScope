@@ -277,8 +277,12 @@ class ReadinessService:
 
     def _check_camera(self) -> ReadinessItem:
         from .. import config
-        if config.CAMERAS:
-            roles = ", ".join(f"{r} (index {i})" for r, i in config.CAMERAS.items())
+        specs = {r: s for r, s in config.CAMERA_SPECS.items() if s.enabled}
+        if specs:
+            roles = ", ".join(
+                f"{r} ({s.model or ('index ' + str(s.index))})"
+                for r, s in specs.items()
+            )
             return ReadinessItem(
                 key="camera", label="Camera",
                 level=Level.GREEN, message=f"Configured: {roles}",
@@ -287,7 +291,7 @@ class ReadinessService:
             key="camera", label="Camera",
             level=Level.YELLOW,
             message="No camera configured — using mock (no real imaging)",
-            repair="Add a [cameras] section to config.toml, e.g.  main = 0",
+            repair='Add a [cameras.main] section to config.toml with model = "ATR585M", backend = "native"',
         )
 
     def _check_mount_focuser(self) -> list[ReadinessItem]:

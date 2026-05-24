@@ -897,7 +897,7 @@ async function connectAll() {
       _mountConnected = mountOk;
 
       if (dot) dot.className = (mountOk && camOk) ? 'dot dot-green' : 'dot dot-yellow';
-      if (mountOk) unlockStage(2);
+      if (mountOk) { unlockStage(2); unlockStage(4); }
       if (camOk)   unlockStage(5);
       const scBtn = document.getElementById('setup-check-btn');
       if (scBtn) scBtn.disabled = !(mountOk && camOk);

@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-26 — COL-ENH — Collimation measurement metrics + archive browser UI
+
+**What changed:**
+
+- `smart_telescope/services/collimation/assistant.py` (`status` property): `last_measurement` now includes `measurement_type` ("donut"/"spikes"/"star"/None) and sub-dicts: `donut` (error_x_px, error_y_px, error_magnitude_px, error_fraction, outer_radius_px, is_collimated, confidence); `spikes` (focus_error_px, crossing_error_rms_px, offset_from_ref_px, is_in_focus, confidence); `star` (fwhm_px, snr). 4 new tests verify each measurement type.
+
+- `smart_telescope/static/index.html` + `smart_telescope/static/js/collimation.js`: Measurement metrics panel added to wizard card — shows collimation error (px + % of outer ring, colour-coded green/yellow/red), spike focus error + RMS, star FWHM. Frame Archive Browser card added to Stage 4: lists past sessions (id, frame count, state breakdown, disk size); expanding a session loads its frame table; Replay button re-runs donut/spike analysis on the stored FITS frame and shows original vs replayed values side-by-side.
+
+---
+
 ## 2026-05-26 — BUG-FIX — Stage 4 mount strip poll stopped on Stage 1
 
 **What changed:**

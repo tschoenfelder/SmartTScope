@@ -4,6 +4,21 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-26 — DBG — Diagnostic logs for Stage 4 collimation button unlock failure
+
+**What changed:**
+
+- `smart_telescope/static/js/app.js`: log at page load showing strip poll is NOT started at startup (only starts via `goToStage()`).
+- `smart_telescope/static/js/app.js`: log in `_startMountStripPoll` when it fires.
+- `smart_telescope/static/js/mount.js`: log in `refreshMount` showing state received, whether strip poll is running, whether Stage 4 is already unlocked.
+- `smart_telescope/static/js/mount.js`: log in `_updateMountStrip` showing when Stage 4 is unlocked vs. why it stays locked (state='unknown').
+- `smart_telescope/api/mount.py`: WARNING logs in `mount_status` when cache or direct query returns UNKNOWN state.
+- `smart_telescope/services/device_state.py`: WARNING log in `_poll_once` when `get_state()` returns UNKNOWN, separate from poll exception.
+
+**Root cause hypothesis:** The mount strip poll only starts when `goToStage()` is called. On page load, only one `refreshMount()` fires. If that one call gets state='unknown' (OnStep not yet ready), Stage 4 stays locked forever with no retry mechanism.
+
+---
+
 ## 2026-05-26 — COL-ENH2 — Collimation UX polish: report, auto-remeasure, best-star
 
 **What changed:**

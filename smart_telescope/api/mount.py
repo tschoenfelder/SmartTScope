@@ -143,11 +143,24 @@ def mount_status(
         ra    = observed.ra
         dec   = observed.dec
         stale = observed.is_stale()
+        age_s = round(observed.age_seconds(), 1)
+        if state == MountState.UNKNOWN:
+            _log.warning(
+                "mount_status: cache hit but state=UNKNOWN (age=%.1fs error=%r) — Stage 4 will stay locked",
+                age_s, observed.error,
+            )
+        else:
+            _log.debug("mount_status: cache hit state=%s age=%.1fs stale=%s", state.name, age_s, stale)
     else:
+        _log.warning("mount_status: no cache yet — falling back to direct mount.get_state()")
         state = mount.get_state()
         ra    = None
         dec   = None
         stale = False
+        if state == MountState.UNKNOWN:
+            _log.warning("mount_status: direct query also returned UNKNOWN — Stage 4 will stay locked")
+        else:
+            _log.info("mount_status: direct query state=%s", state.name)
         if state != MountState.UNKNOWN:
             with contextlib.suppress(Exception):
                 pos = mount.get_position()

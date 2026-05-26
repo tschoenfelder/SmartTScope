@@ -239,6 +239,8 @@ class DeviceStateService:
                     pos = mount.get_position()
                 except Exception:
                     pass
+            else:
+                _log.warning("DeviceStateService: get_state() returned UNKNOWN — Stage 4 will stay locked until this clears")
             observed = MountObservedState(
                 state=state,
                 ra=pos.ra if pos else None,
@@ -246,7 +248,7 @@ class DeviceStateService:
                 polled_at=time.monotonic(),
             )
         except Exception as exc:
-            _log.warning("DeviceStateService: mount poll error: %s", exc)
+            _log.warning("DeviceStateService: mount poll error (will store UNKNOWN): %s", exc)
             observed = MountObservedState(
                 state=MountState.UNKNOWN,
                 ra=None,

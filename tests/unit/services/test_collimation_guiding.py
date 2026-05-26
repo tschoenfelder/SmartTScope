@@ -151,3 +151,105 @@ def test_archive_config_from_dict():
     assert cfg.archive.enabled is True
     assert cfg.archive.archive_dir == "/tmp/test_archive"
     assert cfg.archive.max_frames_per_session == 10
+
+
+# ── Status measurement metrics ────────────────────────────────────────────────
+
+def _make_frame_measurement(donut=None, spike=None, star=None):
+    from smart_telescope.domain.collimation.models import FrameMeasurement
+    return FrameMeasurement(
+        frame_index=1,
+        captured_at="2026-01-01T00:00:00+00:00",
+        exposure_s=2.0,
+        gain=100,
+        star=star,
+        donut=donut,
+        spike=spike,
+    )
+
+
+def _make_donut_measurement(error_x=5.0, error_y=3.0, outer_r=80.0):
+    from smart_telescope.domain.collimation.models import DonutMeasurement, CircleEllipseFit
+    import math
+    outer = CircleEllipseFit(center_x=100.0, center_y=100.0, radius_x=outer_r, radius_y=outer_r)
+    inner = CircleEllipseFit(
+        center_x=100.0 + error_x, center_y=100.0 + error_y,
+        radius_x=30.0, radius_y=30.0,
+    )
+    mag = math.hypot(error_x, error_y)
+    return DonutMeasurement(
+        outer_ring=outer, inner_hole=inner,
+        error_x_px=error_x, error_y_px=error_y,
+        error_magnitude_px=mag,
+        error_angle_deg=0.0,
+        confidence=0.9,
+    )
+
+
+def _make_spike_measurement(focus_error=1.2, offset=3.0):
+    from smart_telescope.domain.collimation.models import SpikeMeasurement
+    return SpikeMeasurement(
+        focus_error_px=focus_error,
+        crossing_error_rms_px=0.8,
+        crossing_point_x=200.0, crossing_point_y=200.0,
+        reference_center_x=200.0, reference_center_y=200.0,
+        offset_from_ref_px=offset,
+        confidence=0.85,
+    )
+
+
+def test_status_last_measurement_none_when_no_frame():
+    assistant = _make_minimal_assistant()
+    s = assistant.status
+    assert s["last_measurement"] is None
+
+
+def test_status_last_measurement_donut_fields():
+    assistant = _make_minimal_assistant()
+    assistant._last_frame = _make_frame_measurement(donut=_make_donut_measurement())
+    s = assistant.status
+    meas = s["last_measurement"]
+    assert meas is not None
+    assert meas["measurement_type"] == "donut"
+    assert "donut" in meas
+    d = meas["donut"]
+    assert d["error_x_px"] == pytest.approx(5.0)
+    assert d["error_y_px"] == pytest.approx(3.0)
+    assert d["error_magnitude_px"] == pytest.approx(5.831, abs=0.01)
+    assert 0 < d["error_fraction"] < 1
+    assert d["outer_radius_px"] == pytest.approx(80.0)
+    assert d["confidence"] == pytest.approx(0.9)
+    assert isinstance(d["is_collimated"], bool)
+    assert "spikes" not in meas
+    assert "star" not in meas
+
+
+def test_status_last_measurement_spikes_fields():
+    assistant = _make_minimal_assistant()
+    assistant._last_frame = _make_frame_measurement(spike=_make_spike_measurement())
+    s = assistant.status
+    meas = s["last_measurement"]
+    assert meas["measurement_type"] == "spikes"
+    assert "spikes" in meas
+    sp = meas["spikes"]
+    assert sp["focus_error_px"] == pytest.approx(1.2)
+    assert sp["offset_from_ref_px"] == pytest.approx(3.0)
+    assert sp["crossing_error_rms_px"] == pytest.approx(0.8)
+    assert isinstance(sp["is_in_focus"], bool)
+    assert "donut" not in meas
+
+
+def test_status_last_measurement_star_fields():
+    from smart_telescope.domain.collimation.models import StarMeasurement
+    star = StarMeasurement(
+        center_x=100.0, center_y=100.0, fwhm_px=3.5, peak_adu=50000.0,
+        total_flux=1e6, snr=45.0, confidence=0.95,
+    )
+    assistant = _make_minimal_assistant()
+    assistant._last_frame = _make_frame_measurement(star=star)
+    s = assistant.status
+    meas = s["last_measurement"]
+    assert meas["measurement_type"] == "star"
+    assert "star" in meas
+    assert meas["star"]["fwhm_px"] == pytest.approx(3.5)
+    assert meas["star"]["snr"] == pytest.approx(45.0)

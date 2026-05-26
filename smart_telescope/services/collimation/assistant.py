@@ -190,10 +190,42 @@ class CollimationAssistant:
             if self._last_frame:
                 f = self._last_frame
                 meas = {
-                    "frame_index":  f.frame_index,
-                    "captured_at":  f.captured_at,
-                    "confidence":   f.confidence,
+                    "frame_index":        f.frame_index,
+                    "captured_at":        f.captured_at,
+                    "confidence":         f.confidence,
+                    "measurement_type":   (
+                        "donut"  if f.donut  else
+                        "spikes" if f.spike  else
+                        "star"   if f.star   else
+                        None
+                    ),
                 }
+                if f.donut:
+                    d = f.donut
+                    r = d.outer_ring.mean_radius
+                    meas["donut"] = {
+                        "error_x_px":           d.error_x_px,
+                        "error_y_px":           d.error_y_px,
+                        "error_magnitude_px":   d.error_magnitude_px,
+                        "error_fraction":       d.error_magnitude_px / r if r > 0 else 0.0,
+                        "outer_radius_px":      r,
+                        "confidence":           d.confidence,
+                        "is_collimated":        d.is_collimated,
+                    }
+                if f.spike:
+                    s = f.spike
+                    meas["spikes"] = {
+                        "focus_error_px":          s.focus_error_px,
+                        "crossing_error_rms_px":   s.crossing_error_rms_px,
+                        "offset_from_ref_px":      s.offset_from_ref_px,
+                        "confidence":              s.confidence,
+                        "is_in_focus":             s.is_in_focus,
+                    }
+                if f.star:
+                    meas["star"] = {
+                        "fwhm_px":  f.star.fwhm_px,
+                        "snr":      f.star.snr,
+                    }
             return {
                 "state":                self._sm.state.value,
                 "instruction":          self._sm.instruction(),

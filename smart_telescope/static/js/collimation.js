@@ -162,6 +162,9 @@ function _updateCollimWizard(s) {
         }
     }
 
+    // Measurement metrics panel
+    _updateCollimMetrics(s.last_measurement);
+
     // Buttons
     _wizBtn('s4-wiz-start-btn',  idle);
     _wizBtn('s4-wiz-pause-btn',  (active || waiting) && !terminal);
@@ -174,6 +177,214 @@ function _updateCollimWizard(s) {
             s.state === 'guide_rough_collimation' ? 'Finish Rough' : 'Finish Fine');
     _wizBtn('s4-wiz-accept-btn', validateState);
     _wizBtn('s4-wiz-more-btn',   validateState);
+}
+
+function _show(id, visible) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+}
+
+function _text(id, t) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = t;
+}
+
+function _updateCollimMetrics(meas) {
+    const panel = document.getElementById('s4-wiz-metrics');
+    if (!panel) return;
+    if (!meas || !meas.measurement_type) {
+        panel.style.display = 'none';
+        return;
+    }
+    panel.style.display = 'flex';
+    _show('s4-wiz-metric-error', false);
+    _show('s4-wiz-metric-focus', false);
+    _show('s4-wiz-metric-fwhm',  false);
+
+    _text('s4-wiz-metric-type', meas.measurement_type);
+    _text('s4-wiz-metric-conf',
+        meas.confidence != null ? `conf ${(meas.confidence * 100).toFixed(0)}%` : '');
+
+    if (meas.measurement_type === 'donut' && meas.donut) {
+        const d = meas.donut;
+        _show('s4-wiz-metric-error', true);
+        _text('s4-wiz-metric-err-val', `${d.error_magnitude_px.toFixed(1)} px`);
+        const pct = (d.error_fraction * 100).toFixed(1);
+        const colour = d.is_collimated ? 'var(--green,#4caf50)' :
+                       d.error_fraction < 0.10 ? 'var(--accent)' : 'var(--red,#e53935)';
+        const pctEl = document.getElementById('s4-wiz-metric-err-pct');
+        if (pctEl) { pctEl.textContent = `(${pct}% of ring)`; pctEl.style.color = colour; }
+    } else if (meas.measurement_type === 'spikes' && meas.spikes) {
+        const sp = meas.spikes;
+        _show('s4-wiz-metric-focus', true);
+        _text('s4-wiz-metric-foc-val', sp.focus_error_px.toFixed(2));
+        _text('s4-wiz-metric-foc-rms', `${sp.crossing_error_rms_px.toFixed(2)} px`);
+    }
+
+    if (meas.star) {
+        _show('s4-wiz-metric-fwhm', true);
+        _text('s4-wiz-metric-fwhm-val', meas.star.fwhm_px.toFixed(1));
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+     Frame Archive Browser (COL-ARC UI)
+══════════════════════════════════════════════════════════════════════ */
+
+let _arcOpen = false;
+
+async function archiveToggle() {
+    _arcOpen = !_arcOpen;
+    const body    = document.getElementById('s4-archive-body');
+    const chevron = document.getElementById('s4-arc-chevron');
+    if (body)    body.style.display    = _arcOpen ? '' : 'none';
+    if (chevron) chevron.textContent   = _arcOpen ? '▼' : '▶';
+    if (_arcOpen) await archiveLoad();
+}
+
+async function archiveLoad() {
+    const status = document.getElementById('s4-arc-status');
+    const list   = document.getElementById('s4-arc-sessions');
+    const dot    = document.getElementById('s4-arc-dot');
+    const badge  = document.getElementById('s4-arc-badge');
+    if (status) status.textContent = 'Loading…';
+    try {
+        const r = await fetch('/api/collimation/archive');
+        const d = await r.json();
+        if (!d.enabled) {
+            if (status) status.textContent = 'Archive disabled — set [collimation.archive] enabled = true in config.toml';
+            if (dot)   dot.className = 'dot dot-grey';
+            if (badge) { badge.textContent = 'Disabled'; badge.className = 'state-badge state-unknown'; }
+            if (list)  list.innerHTML = '';
+            return;
+        }
+        if (status) status.textContent = '';
+        if (dot)   dot.className = 'dot dot-green';
+        if (badge) {
+            badge.textContent = `${d.sessions.length} session${d.sessions.length !== 1 ? 's' : ''}`;
+            badge.className = 'state-badge state-tracking';
+        }
+        if (list) list.innerHTML = d.sessions.length === 0
+            ? '<p style="color:var(--muted);font-size:0.83rem">No archived sessions yet.</p>'
+            : d.sessions.map(s => _arcSessionHtml(s)).join('');
+    } catch (e) {
+        if (status) status.textContent = `Error: ${e.message}`;
+    }
+}
+
+function _arcSessionHtml(s) {
+    const counts = Object.entries(s.state_counts || {})
+        .map(([st, n]) => `${n}× ${st.replace('measure_', '')}`)
+        .join(', ');
+    const kb = (s.size_bytes / 1024).toFixed(0);
+    const shortId = s.session_id.slice(0, 8);
+    return `<details style="margin-bottom:0.4rem;border:1px solid var(--border);
+                             border-radius:4px;padding:0.3rem 0.5rem"
+                      onToggle="if(this.open) archiveLoadFrames(this, '${escHtml(s.session_id)}')">
+      <summary style="cursor:pointer;font-size:0.83rem;list-style:none;display:flex;
+                       gap:0.6rem;align-items:center">
+        <span style="font-family:monospace">${escHtml(shortId)}…</span>
+        <span style="color:var(--muted)">${s.frame_count} frame${s.frame_count !== 1 ? 's' : ''}</span>
+        ${counts ? `<span style="color:var(--muted);font-size:0.75rem">(${escHtml(counts)})</span>` : ''}
+        <span style="margin-left:auto;color:var(--muted);font-size:0.75rem">${kb} KB</span>
+      </summary>
+      <div class="arc-frames" style="margin-top:0.4rem"></div>
+    </details>`;
+}
+
+async function archiveLoadFrames(details, sessionId) {
+    const container = details.querySelector('.arc-frames');
+    if (!container || container.dataset.loaded) return;
+    container.dataset.loaded = '1';
+    container.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">Loading frames…</span>';
+    try {
+        const r = await fetch(`/api/collimation/archive/${encodeURIComponent(sessionId)}`);
+        const d = await r.json();
+        if (!d.frames || d.frames.length === 0) {
+            container.innerHTML = '<span style="color:var(--muted);font-size:0.8rem">No frames.</span>';
+            return;
+        }
+        container.innerHTML = `<table style="width:100%;font-size:0.78rem;border-collapse:collapse">
+          <tr style="color:var(--muted);text-align:left">
+            <th style="padding:0.15rem 0.3rem">Frame</th>
+            <th style="padding:0.15rem 0.3rem">State</th>
+            <th style="padding:0.15rem 0.3rem">Captured</th>
+            <th style="padding:0.15rem 0.3rem">Size</th>
+            <th style="padding:0.15rem 0.3rem"></th>
+          </tr>
+          ${d.frames.map(f => _arcFrameRow(sessionId, f)).join('')}
+        </table>`;
+    } catch (e) {
+        container.innerHTML = `<span style="color:var(--red,#e53935);font-size:0.8rem">Error: ${escHtml(e.message)}</span>`;
+    }
+}
+
+function _arcFrameRow(sessionId, f) {
+    const ts = f.captured_at ? f.captured_at.slice(0, 19).replace('T', ' ') : '—';
+    const kb = f.size_bytes ? (f.size_bytes / 1024).toFixed(0) + ' KB' : '—';
+    return `<tr style="border-top:1px solid var(--border)">
+      <td style="padding:0.15rem 0.3rem;font-family:monospace">${escHtml(f.frame_stem)}</td>
+      <td style="padding:0.15rem 0.3rem">${escHtml(f.state || '—')}</td>
+      <td style="padding:0.15rem 0.3rem;color:var(--muted)">${ts}</td>
+      <td style="padding:0.15rem 0.3rem;color:var(--muted)">${kb}</td>
+      <td style="padding:0.15rem 0.3rem">
+        <button class="secondary" style="font-size:0.72rem;padding:0.1rem 0.4rem"
+                onclick="archiveReplay(this, '${escHtml(sessionId)}', '${escHtml(f.frame_stem)}')">
+          Replay
+        </button>
+      </td>
+    </tr>
+    <tr id="arc-replay-${escHtml(f.frame_stem)}" style="display:none">
+      <td colspan="5" style="padding:0.2rem 0.5rem 0.4rem;font-size:0.78rem"></td>
+    </tr>`;
+}
+
+async function archiveReplay(btn, sessionId, frameStem) {
+    const resultRow = document.getElementById(`arc-replay-${frameStem}`);
+    if (!resultRow) return;
+    const cell = resultRow.querySelector('td');
+    btn.disabled = true;
+    btn.textContent = '…';
+    resultRow.style.display = '';
+    if (cell) cell.textContent = 'Running replay…';
+    try {
+        const r = await fetch(
+            `/api/collimation/archive/${encodeURIComponent(sessionId)}/${encodeURIComponent(frameStem)}/replay`,
+            { method: 'POST' }
+        );
+        const d = await r.json();
+        if (!r.ok) {
+            if (cell) cell.textContent = `Error ${r.status}: ${d.detail || ''}`;
+            return;
+        }
+        const orig    = d.original || {};
+        const replayed = d.replayed || {};
+        const keys    = [...new Set([...Object.keys(orig), ...Object.keys(replayed)])];
+        const rows    = keys.map(k => {
+            const o = orig[k]     != null ? (typeof orig[k]     === 'number' ? orig[k].toFixed(3)     : orig[k])     : '—';
+            const n = replayed[k] != null ? (typeof replayed[k] === 'number' ? replayed[k].toFixed(3) : replayed[k]) : '—';
+            const changed = String(o) !== String(n);
+            return `<tr ${changed ? 'style="color:var(--accent)"' : ''}>
+              <td style="padding:0.1rem 0.3rem;color:var(--muted)">${escHtml(k)}</td>
+              <td style="padding:0.1rem 0.3rem">${escHtml(String(o))}</td>
+              <td style="padding:0.1rem 0.3rem">${escHtml(String(n))}</td>
+            </tr>`;
+        }).join('');
+        if (cell) cell.innerHTML = `
+          <table style="font-size:0.77rem;border-collapse:collapse">
+            <tr style="color:var(--muted)">
+              <th style="padding:0.1rem 0.3rem;text-align:left">Field</th>
+              <th style="padding:0.1rem 0.3rem;text-align:left">Original</th>
+              <th style="padding:0.1rem 0.3rem;text-align:left">Replayed</th>
+            </tr>
+            ${rows}
+          </table>`;
+    } catch (e) {
+        if (cell) cell.textContent = `Error: ${e.message}`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Replay';
+    }
 }
 
 async function collimStart() {

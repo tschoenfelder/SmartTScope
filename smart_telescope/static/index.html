@@ -1377,6 +1377,28 @@
         <span class="dot dot-grey" id="s4-wiz-guide-dot"></span>
         <span id="s4-wiz-guide-label">Guide: —</span>
       </div>
+      <!-- Measurement metrics (shown when last_measurement available) -->
+      <div id="s4-wiz-metrics"
+           style="display:none;font-size:0.82rem;margin-bottom:0.5rem;
+                  background:var(--bg);border:1px solid var(--border);
+                  border-radius:5px;padding:0.35rem 0.65rem;
+                  display:flex;gap:1.2rem;flex-wrap:wrap;align-items:center">
+        <span id="s4-wiz-metric-type"
+              style="color:var(--muted);font-size:0.74rem;text-transform:uppercase;
+                     letter-spacing:0.04em;min-width:3.5rem"></span>
+        <span id="s4-wiz-metric-error" style="display:none">
+          Error: <strong id="s4-wiz-metric-err-val"></strong>
+          <span id="s4-wiz-metric-err-pct" style="color:var(--muted);font-size:0.78rem"></span>
+        </span>
+        <span id="s4-wiz-metric-focus" style="display:none">
+          Focus err: <strong id="s4-wiz-metric-foc-val"></strong>
+          px &nbsp;RMS: <span id="s4-wiz-metric-foc-rms" style="color:var(--muted)"></span>
+        </span>
+        <span id="s4-wiz-metric-fwhm" style="display:none">
+          FWHM: <strong id="s4-wiz-metric-fwhm-val"></strong> px
+        </span>
+        <span id="s4-wiz-metric-conf" style="color:var(--muted);font-size:0.78rem"></span>
+      </div>
       <!-- Screw recommendation (rough/fine guidance phases) -->
       <div id="s4-wiz-recommendation"
            style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;
@@ -1399,6 +1421,22 @@
         <button id="s4-wiz-finish-btn" onclick="collimNext(true)"  style="display:none">Finish Phase</button>
         <button id="s4-wiz-accept-btn" onclick="collimAccept(true)"  style="display:none">Accept</button>
         <button id="s4-wiz-more-btn"   onclick="collimAccept(false)" class="secondary" style="display:none">Adjust More</button>
+      </div>
+    </div>
+
+    <!-- ── Frame Archive Browser (COL-ARC UI) ── -->
+    <div class="card" id="s4-archive-card" style="margin-bottom:1rem">
+      <div class="card-title" style="cursor:pointer" onclick="archiveToggle()">
+        <span class="dot dot-grey" id="s4-arc-dot"></span>
+        Session Archive
+        <span id="s4-arc-badge" class="state-badge state-unknown"
+              style="margin-left:0.5rem">Disabled</span>
+        <span id="s4-arc-chevron"
+              style="margin-left:auto;font-size:0.8rem;color:var(--muted)">▶</span>
+      </div>
+      <div id="s4-archive-body" style="display:none">
+        <div id="s4-arc-status" class="status-line" style="min-height:auto;margin-bottom:0.5rem"></div>
+        <div id="s4-arc-sessions" style="font-size:0.85rem"></div>
       </div>
     </div>
 

@@ -52,6 +52,7 @@ function _startCollimPoll() {
 
 function _stopCollimPoll() {
     if (_collimPollTimer) { clearInterval(_collimPollTimer); _collimPollTimer = null; }
+    _stopAutoRemeasure();
 }
 
 async function _refreshCollimWizardOnce() {
@@ -165,18 +166,29 @@ function _updateCollimWizard(s) {
     // Measurement metrics panel
     _updateCollimMetrics(s.last_measurement);
 
+    // Session report (COMPLETE state)
+    _updateCollimReport(s.state);
+
     // Buttons
-    _wizBtn('s4-wiz-start-btn',  idle);
-    _wizBtn('s4-wiz-pause-btn',  (active || waiting) && !terminal);
-    _wizBtn('s4-wiz-resume-btn', paused);
-    _wizBtn('s4-wiz-cancel-btn', !idle && !terminal);
-    _wizBtn('s4-wiz-retry-btn',  terminal);
-    _wizBtn('s4-wiz-next-btn',   waiting && !selectStar && !validateState,
+    _wizBtn('s4-wiz-start-btn',      idle);
+    _wizBtn('s4-wiz-pause-btn',      (active || waiting) && !terminal);
+    _wizBtn('s4-wiz-resume-btn',     paused);
+    _wizBtn('s4-wiz-cancel-btn',     !idle && !terminal);
+    _wizBtn('s4-wiz-retry-btn',      terminal);
+    _wizBtn('s4-wiz-best-star-btn',  selectStar);
+    _wizBtn('s4-wiz-next-btn',       waiting && !selectStar && !validateState,
             guideState ? 'Remeasure' : 'Next');
-    _wizBtn('s4-wiz-finish-btn', guideState,
+    _wizBtn('s4-wiz-finish-btn',     guideState,
             s.state === 'guide_rough_collimation' ? 'Finish Rough' : 'Finish Fine');
-    _wizBtn('s4-wiz-accept-btn', validateState);
-    _wizBtn('s4-wiz-more-btn',   validateState);
+    _wizBtn('s4-wiz-accept-btn',     validateState);
+    _wizBtn('s4-wiz-more-btn',       validateState);
+
+    // Auto-remeasure label (guidance states only)
+    const autoLabel = document.getElementById('s4-wiz-auto-remeasure-label');
+    if (autoLabel) {
+        autoLabel.style.display = guideState ? 'flex' : 'none';
+        if (!guideState) _stopAutoRemeasure();
+    }
 }
 
 function _show(id, visible) {
@@ -385,6 +397,88 @@ async function archiveReplay(btn, sessionId, frameStem) {
         btn.disabled = false;
         btn.textContent = 'Replay';
     }
+}
+
+// ── Session report on COMPLETE ────────────────────────────────────────────────
+
+let _reportFetched = false;
+
+async function _updateCollimReport(state) {
+    const panel = document.getElementById('s4-wiz-report');
+    const body  = document.getElementById('s4-wiz-report-body');
+    if (!panel || !body) return;
+    if (state !== 'complete') {
+        panel.style.display = 'none';
+        _reportFetched = false;
+        return;
+    }
+    panel.style.display = '';
+    if (_reportFetched) return;
+    _reportFetched = true;
+    try {
+        const r = await (await fetch('/api/collimation/report')).json();
+        const dur = (r.started_at && r.finished_at)
+            ? `${Math.round(r.finished_at - r.started_at)} s` : '—';
+        const fwhmRow = (r.initial_focus_fwhm_px != null || r.final_focus_fwhm_px != null)
+            ? `<div>FWHM: ${r.initial_focus_fwhm_px != null ? r.initial_focus_fwhm_px.toFixed(1) + ' px' : '—'}
+               → ${r.final_focus_fwhm_px != null ? r.final_focus_fwhm_px.toFixed(1) + ' px' : '—'}</div>` : '';
+        const errRow = r.final_donut_error_px != null
+            ? `<div>Final donut error: <strong>${r.final_donut_error_px.toFixed(1)} px</strong>
+               (${escHtml(r.final_donut_status || '')})</div>` : '';
+        const warnRows = (r.warnings || []).map(w =>
+            `<div style="color:var(--accent)">⚠ ${escHtml(w)}</div>`).join('');
+        const statusColour = r.overall_status === 'complete' ? 'var(--green,#4caf50)' :
+                             r.overall_status === 'acceptable' ? 'var(--accent)' : 'var(--muted)';
+        body.innerHTML = `
+          <div><strong style="color:${statusColour}">${escHtml(r.overall_status || '—')}</strong>
+               &nbsp;·&nbsp; Duration: ${escHtml(dur)}
+               ${r.selected_star ? `&nbsp;·&nbsp; Star: ${escHtml(r.selected_star)}` : ''}</div>
+          ${fwhmRow}${errRow}${warnRows}`;
+    } catch (e) {
+        body.innerHTML = `<span style="color:var(--muted)">Report unavailable: ${escHtml(e.message)}</span>`;
+    }
+}
+
+// ── Auto-remeasure in guidance phases ─────────────────────────────────────────
+
+let _autoRemeasureTimer = null;
+
+function _stopAutoRemeasure() {
+    if (_autoRemeasureTimer) { clearInterval(_autoRemeasureTimer); _autoRemeasureTimer = null; }
+    const cb = document.getElementById('s4-wiz-auto-remeasure');
+    if (cb) cb.checked = false;
+}
+
+function collimAutoRemeasureToggle(enabled) {
+    if (enabled) {
+        _autoRemeasureTimer = setInterval(() => collimNext(false), 5000);
+    } else {
+        _stopAutoRemeasure();
+    }
+}
+
+// ── "Use Best Star" quick-select ──────────────────────────────────────────────
+
+async function collimUseBestStar() {
+    const list = document.getElementById('s4-star-list');
+    if (!list) return;
+    // First item in the list is the brightest magnitude star; read ra/dec from its onclick
+    const firstItem = list.querySelector('.star-item');
+    if (!firstItem) {
+        setStatus('s4-status', 'No stars in list — load stars first', true);
+        return;
+    }
+    // Extract onclick args: collimSelect(ra, dec, 'name')
+    const onclick = firstItem.getAttribute('onclick') || '';
+    const m = onclick.match(/collimSelect\(([\d.]+),([-\d.]+)/);
+    if (!m) {
+        setStatus('s4-status', 'Could not read star coordinates', true);
+        return;
+    }
+    const ra  = parseFloat(m[1]);
+    const dec = parseFloat(m[2]);
+    firstItem.style.outline = '2px solid var(--accent)';
+    await collimSelectStar(ra, dec);
 }
 
 async function collimStart() {

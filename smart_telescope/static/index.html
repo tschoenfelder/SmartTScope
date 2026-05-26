@@ -1410,13 +1410,31 @@
         <span id="s4-wiz-rec-confidence" style="color:var(--muted);font-size:0.75rem;margin-left:0.6rem"></span>
       </div>
       <div id="s4-wiz-error" class="status-line error" style="display:none;min-height:auto;margin-bottom:0.5rem"></div>
-      <div class="controls">
+      <!-- Session report (shown on COMPLETE) -->
+      <div id="s4-wiz-report"
+           style="display:none;font-size:0.82rem;background:var(--bg);
+                  border:1px solid var(--border);border-radius:5px;
+                  padding:0.45rem 0.75rem;margin-bottom:0.6rem;line-height:1.6">
+        <span style="color:var(--muted);font-size:0.74rem;text-transform:uppercase;
+                     letter-spacing:0.04em">Session Report</span>
+        <div id="s4-wiz-report-body"></div>
+      </div>
+      <div class="controls" style="flex-wrap:wrap;gap:0.35rem">
         <button id="s4-wiz-start-btn"  onclick="collimStart()">Start</button>
         <button id="s4-wiz-pause-btn"  onclick="collimPause()"   class="secondary" style="display:none">Pause</button>
         <button id="s4-wiz-resume-btn" onclick="collimResume()"  class="secondary" style="display:none">Resume</button>
         <button id="s4-wiz-cancel-btn" onclick="collimCancel()"  class="secondary" style="display:none">Cancel</button>
         <button id="s4-wiz-retry-btn"  onclick="collimRetry()"   class="secondary" style="display:none">Reset</button>
+        <button id="s4-wiz-best-star-btn" onclick="collimUseBestStar()"
+                class="secondary" style="display:none">Use Best Star</button>
         <span class="controls-spacer"></span>
+        <label id="s4-wiz-auto-remeasure-label"
+               style="display:none;font-size:0.8rem;color:var(--muted);
+                      align-items:center;gap:0.3rem;cursor:pointer">
+          <input type="checkbox" id="s4-wiz-auto-remeasure"
+                 onchange="collimAutoRemeasureToggle(this.checked)">
+          Auto every 5s
+        </label>
         <button id="s4-wiz-next-btn"   onclick="collimNext(false)" style="display:none">Next</button>
         <button id="s4-wiz-finish-btn" onclick="collimNext(true)"  style="display:none">Finish Phase</button>
         <button id="s4-wiz-accept-btn" onclick="collimAccept(true)"  style="display:none">Accept</button>

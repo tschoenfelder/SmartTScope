@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-26 — COL-ENH2 — Collimation UX polish: report, auto-remeasure, best-star
+
+**What changed:**
+
+- `smart_telescope/static/index.html` + `smart_telescope/static/js/collimation.js`:
+  - **Session report panel**: when wizard reaches COMPLETE, fetches `/api/collimation/report` and shows overall status (colour-coded), duration, selected star, FWHM before/after, final donut error, and any warnings — all inline in the wizard card.
+  - **Auto-remeasure**: guide phases (GUIDE_ROUGH_COLLIMATION / GUIDE_FINE_COLLIMATION) now show an "Auto every 5s" checkbox. When ticked, the wizard fires Remeasure automatically on a 5-second interval; cleared on cancel/stop.
+  - **Use Best Star button**: when wizard enters SELECT_STAR state, a "Use Best Star" button appears that auto-picks the brightest star from the star list (mag-sorted) and submits it as the selected star without user needing to click the list.
+
+---
+
 ## 2026-05-26 — COL-ENH — Collimation measurement metrics + archive browser UI
 
 **What changed:**

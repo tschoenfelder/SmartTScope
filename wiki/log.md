@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-26 — BUG-FIX — Stage 4 mount strip poll stopped on Stage 1
+
+**What changed:**
+
+- `smart_telescope/static/js/app.js` (`goToStage`): Removed `_stopMountStripPoll()` call when navigating to Stage 1.
+  - Root cause: OnStep takes time to boot after power-on; the initial page-load `refreshMount()` sees UNKNOWN state. With the mount strip poll stopped on Stage 1, this UNKNOWN state was never corrected automatically, keeping Stage 4 locked until the user clicked "Connect All".
+  - Fix: `goToStage()` now always calls `_startMountStripPoll()` on every stage, so `_updateMountStrip()` runs every 5 s and unlocks Stage 4 as soon as the mount reports a known state.
+
+---
+
 ## 2026-05-24 — BUG-FIX — Preview camera and Stage 4 unlock fixes (rev 2)
 
 **What changed:**

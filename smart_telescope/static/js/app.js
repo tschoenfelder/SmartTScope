@@ -64,9 +64,8 @@ function goToStage(n) {
     document.getElementById(`s${_stage.current}`).classList.remove('active');
     document.getElementById(`s${n}`).classList.add('active');
     _stage.current = n;
-    // strip always visible (global STOP — UX4-004); only poll mount state on stages 2–5
-    if (n === 1) { _stopMountStripPoll(); }
-    else         { _startMountStripPoll(); }
+    // mount strip always visible; poll on all stages so timing race after OnStep boot resolves
+    _startMountStripPoll();
     _renderStageBar();
     if (n === 4) { refreshFocuser(); loadCollimStars(); _refreshCollimWizardOnce(); }
     if (n === 5) { s5LoadTargets(); }

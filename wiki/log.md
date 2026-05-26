@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-26 — FIX(UI) — Stage 4 collimation button: start strip poll at page load
+
+**What changed:**
+
+- `smart_telescope/static/js/app.js`: Added `_startMountStripPoll()` call at page load alongside `refreshMount()`. The 5-second repeating mount-status poll now starts immediately, so Stage 4 unlocks within ≤5 s even if the single initial `refreshMount()` caught a transient UNKNOWN state (startup race between DeviceStateService poller and DawnWatcher's concurrent `poll_now()` call). Removed diagnostic console.log lines.
+- `smart_telescope/static/js/mount.js`: Removed diagnostic console lines from `refreshMount` and `_updateMountStrip`; restored to original logic.
+- Backend WARNING logs in `smart_telescope/api/mount.py` and `smart_telescope/services/device_state.py` retained for future diagnosis.
+
+**Root cause:** `_startMountStripPoll()` was only called inside `goToStage()`. Stage 1 is the initial active stage and `goToStage(1)` is never called at startup, so no strip poll ran on Stage 1. If the one-shot `refreshMount()` at page load caught a transient UNKNOWN state (DawnWatcher + background poller both calling the serial bus simultaneously at startup), Stage 4 stayed locked with no recovery mechanism.
+
+---
+
 ## 2026-05-26 — DBG — Diagnostic logs for Stage 4 collimation button unlock failure
 
 **What changed:**

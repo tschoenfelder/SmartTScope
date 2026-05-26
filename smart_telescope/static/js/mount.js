@@ -42,15 +42,11 @@ function _updateMountStrip(data) {
     // Stage 4 (Collimation) is unlocked whenever the mount is responding (any known state),
     // because calibration frames and the Bahtinov preview don't require an unparked mount.
     // The collimation wizard auto-unparks internally if needed.
-    const s4WasLocked = !_stage.unlocked.has(4);
     if (state !== 'parked' && state !== 'unknown') {
         unlockStage(2);
     }
     if (state !== 'unknown') {
         unlockStage(4);
-        if (s4WasLocked) console.log('[Stage4] unlocked by mount strip — state:', state, 'stale:', data.stale);
-    } else {
-        console.warn('[Stage4] strip update — mount state is "unknown", Stage 4 stays locked. stale:', data.stale, 'error from strip:', data.error ?? '(none)');
     }
 }
 
@@ -178,12 +174,9 @@ async function watchSlew(statusId, label, timeout_s = 120) {
 async function refreshMount() {
     try {
       const data = await (await fetch('/api/mount/status')).json();
-      console.log('[refreshMount] state:', data.state, 'stale:', data.stale,
-                  'stripPollRunning:', !!_mountStripTimer, 'stage4Unlocked:', _stage.unlocked.has(4));
       document.getElementById('s1-mount-card').innerHTML = mountCard(data);
       _updateMountStrip(data);
     } catch (err) {
-      console.error('[refreshMount] fetch failed:', err);
       setStatus('s1-mount-status', String(err), true);
     }
 }

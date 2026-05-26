@@ -46,7 +46,6 @@ let _mountStripTimer = null;
 
 function _startMountStripPoll() {
     if (_mountStripTimer) return;
-    console.log('[StripPoll] starting mount strip poll (5 s interval)');
     _mountStripTimer = setInterval(async () => {
       try {
         const data = await (await fetch('/api/mount/status')).json();
@@ -159,8 +158,8 @@ async function loadVersion() {
 _applyAdvancedMode();
 initSiteConfig();
 loadVersion();
-console.log('[App] page load — stripPollRunning:', !!_mountStripTimer, '— refreshMount() will fire once; strip poll only starts via goToStage()');
 refreshMount();
+_startMountStripPoll();
 refreshReadiness();
 refreshMilestones();
 refreshHealth();

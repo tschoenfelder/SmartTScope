@@ -73,6 +73,10 @@ function goToStage(n) {
 
 function unlockStage(n) {
     _stage.unlocked.add(n);
+    if (n === 4) {
+        const btn = document.getElementById('s3-proceed-btn');
+        if (btn) { btn.disabled = false; btn.title = ''; }
+    }
     _renderStageBar();
 }
 

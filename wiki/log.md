@@ -4,6 +4,30 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-05-26 — FIX(UI) — Focuser selftest runaway + serial port auto-reconnect
+
+**What changed:**
+
+- `smart_telescope/static/index.html`: Added IDs `s4-st-focuser-plus` and `s4-st-focuser-minus` to the two focuser selftest buttons so they can be referenced by JavaScript.
+- `smart_telescope/static/js/collimation.js` (`selftestFocuser`): Both buttons are disabled synchronously at the start of the function (before the first `await`), and re-enabled in a `finally` block after the API call completes. This prevents any additional browser events (second tap, touch+click double-fire) from queuing serial moves while one is in flight.
+- `smart_telescope/services/device_state.py`: Added rate-limited `mount.connect()` call in `_poll_once` exception handler. When a serial I/O error leaves the serial bus broken (`_serial = None`), the poller now attempts reconnect at most once every 30 s. Previously, an I/O error (e.g. `[Errno 5] Input/output error` from USB disconnect/overload) would leave the mount permanently in UNKNOWN state until app restart.
+
+**Root cause — runaway:** `selftestFocuser()` had no button locking. On a touchscreen a single physical tap can fire both a `touchend` and a `click` event; some browsers/tablets fire the `onclick` handler twice in rapid succession. Both calls reached the server before either completed, queueing multiple `:FS{steps}#` serial commands. The motor received alternating `+10` and `-10` (or repeated same-direction) moves with no time to settle, producing the observed runaway.
+
+**Root cause — serial port death:** After rapid focuser moves caused an I/O error on the shared serial bus, `OnStepSerialBus.send()` set `self._serial = None` and raised, leaving the bus permanently broken. `DeviceStateService._poll_once` caught the exception and stored UNKNOWN state, but had no mechanism to recover the connection — the mount stayed UNKNOWN until the app was restarted.
+
+---
+
+## 2026-05-26 — FIX(UI) — Stage 4 proceed button: unlock on Connect All (no GoTo required)
+
+**What changed:**
+
+- `smart_telescope/static/js/app.js` (`unlockStage`): When Stage 4 is unlocked, `s3-proceed-btn` is now enabled immediately. Previously the button was only enabled after a successful GoTo slew completed, so after a "Connect All" that left the mount parked, the user had no way to advance to Stage 4.
+
+**Root cause:** `s3-proceed-btn.disabled` was cleared only in the GoTo success path. Stage 4 unlock (triggered by any non-UNKNOWN mount state) never touched the button, leaving it disabled for users who skipped GoTo.
+
+---
+
 ## 2026-05-26 — FIX(UI) — Stage 4 collimation button: start strip poll at page load
 
 **What changed:**

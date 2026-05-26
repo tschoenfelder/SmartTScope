@@ -621,7 +621,11 @@ async function selftestMount(dir) {
 }
 
 async function selftestFocuser(steps) {
+    const btnPlus  = document.getElementById('s4-st-focuser-plus');
+    const btnMinus = document.getElementById('s4-st-focuser-minus');
     const el = document.getElementById('s4-st-focuser-result');
+    if (btnPlus)  btnPlus.disabled  = true;
+    if (btnMinus) btnMinus.disabled = true;
     if (el) { el.textContent = 'moving…'; el.style.color = 'var(--muted)'; }
     try {
       const r = await apiPost('/api/collimation/selftest/focuser', { steps });
@@ -634,6 +638,9 @@ async function selftestFocuser(steps) {
         `${r.position_before} → ${r.position_after}  (Δ${delta >= 0 ? '+' : ''}${delta})`);
     } catch (err) {
       _stResult('s4-st-focuser-result', false, err.message);
+    } finally {
+      if (btnPlus)  btnPlus.disabled  = false;
+      if (btnMinus) btnMinus.disabled = false;
     }
 }
 

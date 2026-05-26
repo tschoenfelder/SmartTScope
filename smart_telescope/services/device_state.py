@@ -20,10 +20,11 @@ from ..ports.mount import MountPort, MountPosition, MountState
 
 _log = logging.getLogger(__name__)
 
-_POLL_INTERVAL_S   = 2.0    # seconds between state polls
-_STALE_THRESHOLD_S = 10.0   # seconds — state older than this is shown as uncertain
-_WATCHDOG_SLEW_S   = 120.0  # M1-004: warn if mount stays SLEWING beyond this
+_POLL_INTERVAL_S     = 2.0   # seconds between state polls
+_STALE_THRESHOLD_S   = 10.0  # seconds — state older than this is shown as uncertain
+_WATCHDOG_SLEW_S     = 120.0 # M1-004: warn if mount stays SLEWING beyond this
 _WATCHDOG_COOLDOWN_S = 30.0  # suppress repeated watchdog log lines within this window
+_RECONNECT_INTERVAL_S = 30.0 # minimum seconds between serial reconnect attempts
 
 
 @dataclasses.dataclass
@@ -67,6 +68,8 @@ class DeviceStateService:
         # M1-004: hardware watchdog
         self._watchdog_warning:   str   | None = None
         self._watchdog_fired_at:  float | None = None  # time.monotonic() of last log
+        # serial reconnect throttle
+        self._last_reconnect_at:  float | None = None
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -256,6 +259,20 @@ class DeviceStateService:
                 polled_at=time.monotonic(),
                 error=str(exc),
             )
+            now = time.monotonic()
+            if (self._last_reconnect_at is None
+                    or now - self._last_reconnect_at >= _RECONNECT_INTERVAL_S):
+                self._last_reconnect_at = now
+                _log.info("DeviceStateService: serial error — attempting reconnect")
+                try:
+                    ok = mount.connect()
+                    if ok:
+                        _log.info("DeviceStateService: reconnect succeeded")
+                    else:
+                        _log.warning("DeviceStateService: reconnect failed — will retry in %.0fs",
+                                     _RECONNECT_INTERVAL_S)
+                except Exception as reconnect_exc:
+                    _log.warning("DeviceStateService: reconnect error: %s", reconnect_exc)
         with self._lock:
             self._mount_state = observed
             self._check_watchdog_locked()

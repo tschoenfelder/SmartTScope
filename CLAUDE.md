@@ -74,8 +74,8 @@
 
 - ## Pi deployment
 
-- - Pi runs from source at `~/astro_sw/SmartTScope/` using `bash ~/astro_sw/start.sh` (no systemd service).
-- - To update the Pi: `git fetch origin && git reset --hard origin/main`, then restart via `bash ~/astro_sw/start.sh`.
+- - Pi runs from source at `~/astro_sw/SmartTScope/` using `bash ~/astro_sw/astro_start.sh` (no systemd service).
+- - To update the Pi: `git fetch origin && git reset --hard origin/main`, then restart via `bash ~/astro_sw/astro_start.sh`.
 - - Pi hardware config lives at `~/.SmartTScope/config.toml` (outside the repo — not touched by git reset).
 
 - ## Rules

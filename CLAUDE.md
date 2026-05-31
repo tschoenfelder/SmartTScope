@@ -68,3 +68,11 @@
 - - Write in clear, plain language
     
 - - When uncertain about how to categorize something, ask the user
+
+- ## On Compaction
+
+- When compacting, preserve:
+- - Current active todo item and sprint goal from `docs/todo.md`
+- - Any active SYNC-OVERRIDEs from `SYNC.md`
+- - The feature currently being developed and its test status
+- - Any unresolved errors or failing tests

@@ -21,7 +21,8 @@ share/
 .coverage
 coverage.xml
 .obsidian/
-.claude/
+.claude/*
+!.claude/settings.json
 
 # ToupTek SDK binaries
 resources/touptek/

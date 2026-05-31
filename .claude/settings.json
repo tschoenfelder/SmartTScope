@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest *)",
+      "Bash(python -m ruff check *)",
+      "Bash(python -m mypy *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(python3 -m ruff check *)",
+      "Bash(python3 -m mypy *)",
+      "Bash(git rev-parse *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.log)",
+      "Read(./**/*.key)",
+      "Read(./**/*.pem)",
+      "Read(./resources/camera_adapter/**)",
+      "Read(./**/__pycache__/**)",
+      "Read(./**/*.pyc)"
+    ]
+  }
+}

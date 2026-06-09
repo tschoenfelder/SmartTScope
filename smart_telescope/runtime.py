@@ -418,8 +418,16 @@ class RuntimeContext:
         assert self._camera is not None
         return self._camera
 
-    def get_preview_camera(self, index: int) -> CameraPort:
+    def get_preview_camera(self, index: int | str) -> CameraPort:
         from . import config
+
+        # Old-style [cameras] config stores model names (e.g. "G3M678M") rather
+        # than integer SDK indices.  Resolve to int before any comparison.
+        if not isinstance(index, int):
+            from .services.camera_name_resolver import CameraNameResolver
+            index = CameraNameResolver().resolve(
+                index, getattr(config, "CAMERA_SERIALS", {})
+            )
 
         self.connect_devices()
         main_index_str = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX

@@ -434,13 +434,23 @@ class RuntimeContext:
         _log.info(
             "get_preview_camera(%d): main_index=%r cached=%s primary=%s",
             index,
-            int(main_index_str) if main_index_str else None,
+            main_index_str or None,
             list(self._preview_cameras.keys()),
             type(self._camera).__name__,
         )
 
         if main_index_str:
-            main_index = int(main_index_str)
+            try:
+                main_index = int(main_index_str)
+            except ValueError:
+                # main_index_str is a model name (e.g. "G3M678M") — resolve to SDK int.
+                from .services.camera_name_resolver import CameraNameResolver
+                try:
+                    main_index = CameraNameResolver().resolve(
+                        main_index_str, getattr(config, "CAMERA_SERIALS", {})
+                    )
+                except Exception:
+                    main_index = -1  # unresolvable; skip primary-camera match
             if index == main_index:
                 _log.info("get_preview_camera(%d): returning primary camera (%s)", index, type(self._camera).__name__)
                 assert self._camera is not None

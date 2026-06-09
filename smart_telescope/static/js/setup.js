@@ -1202,7 +1202,7 @@ async function runSetupCheck() {
 
     // ── 5. Optional home ────────────────────────────────────────────────────
     const goHome = await _scConfirm(
-      'Setup check complete. Move mount to home position (HA=0, Dec=85°)?');
+      'Setup check complete. Move mount to OnStep home position?');
     if (goHome) {
       const d = _scStep('⏳', 'Mount: slewing to home…');
       try {
@@ -1386,11 +1386,25 @@ function cameraCard(cam) {
       cam.has_tec     && 'TEC Cooler',
       cam.has_fan     && 'Cooling Fan',
     ].filter(Boolean).map(f => `<span class="badge">${f}</span>`).join('');
+
+    const isNew    = !cam.role;
+    const dotCls   = isNew ? 'dot-yellow' : 'dot-green';
+    const roleBadge = isNew
+        ? `<span class="badge badge-warn">Not in config</span>`
+        : `<span class="badge badge-ok">Role: ${escHtml(cam.role)}</span>`;
+    const snippetBlock = (isNew && cam.toml_snippet) ? `
+        <details class="snippet-details">
+          <summary>Suggested config snippet — click to expand</summary>
+          <pre class="snippet-code">${escHtml(cam.toml_snippet)}</pre>
+          <button class="btn-sm btn-copy" onclick="csSnipcopy(this)">Copy</button>
+        </details>` : '';
+
     return `
-      <div class="card">
+      <div class="card${isNew ? ' card-warn' : ''}">
         <div class="card-title">
-          <span class="dot dot-green"></span>
+          <span class="dot ${dotCls}"></span>
           ${escHtml(cam.display_name)}
+          ${roleBadge}
         </div>
         <div class="params">
           <div class="param">
@@ -1411,7 +1425,114 @@ function cameraCard(cam) {
           </div>
         </div>
         <div class="features">${features}</div>
+        ${snippetBlock}
       </div>`;
+}
+
+function csSnipcopy(btn) {
+    const pre = btn.previousElementSibling;
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    }).catch(() => {
+        btn.textContent = 'Copy failed';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    });
+}
+
+/* ── Extended Setup Check ─────────────────────────────────────────────── */
+
+const _extStepLabels = {
+    focuser_move: 'Focuser Move',
+    mount_slew:   'Mount Slew',
+    plate_solve:  'Plate Solve',
+    home_return:  'Home Return',
+};
+
+function _extSetBusy(busy) {
+    ['focuser', 'slew', 'solve', 'home'].forEach(k => {
+        const btn = document.getElementById(`s1-ext-btn-${k}`);
+        if (btn) btn.disabled = busy;
+    });
+    const allBtn = document.getElementById('s1-ext-check-all-btn');
+    if (allBtn) allBtn.disabled = busy;
+}
+
+function _extRenderStep(key, data) {
+    const ok    = data.ok;
+    const dot   = ok ? 'dot-green' : 'dot-red';
+    const label = _extStepLabels[key] || key;
+    const msg   = escHtml(data.message || '');
+    let detail  = '';
+    if (key === 'focuser_move' && data.before != null) {
+        detail = ` <span style="color:var(--muted);font-size:0.72rem">${data.before} → ${data.after} (Δ${data.delta > 0 ? '+' : ''}${data.delta})</span>`;
+    } else if (key === 'mount_slew' && data.elapsed_s != null) {
+        detail = ` <span style="color:var(--muted);font-size:0.72rem">${data.elapsed_s} s</span>`;
+    } else if (key === 'plate_solve' && data.per_camera) {
+        detail = ' ' + data.per_camera.map(c => {
+            const cls = c.solved ? 'badge-ok' : 'badge-warn';
+            return `<span class="badge ${cls}">${escHtml(c.role)}: ${c.solved ? '✓' : '✗'}</span>`;
+        }).join(' ');
+    } else if (key === 'home_return' && data.elapsed_s != null) {
+        detail = ` <span style="color:var(--muted);font-size:0.72rem">${data.elapsed_s} s</span>`;
+    }
+    return `<div style="display:flex;align-items:center;gap:0.4rem;padding:0.25rem 0;font-size:0.82rem">
+        <span class="dot ${dot}" style="flex-shrink:0"></span>
+        <span style="min-width:7rem">${label}</span>
+        <span>${msg}${detail}</span>
+      </div>`;
+}
+
+async function extCheckStep(step) {
+    _extSetBusy(true);
+    setStatus('s1-ext-check-status', `Running ${_extStepLabels[step]}…`);
+    try {
+        const data = await apiPost(`/api/setup/${step}`, {});
+        const box  = document.getElementById('s1-ext-check-results');
+        // Replace or append the row for this step
+        const id = `ext-row-${step}`;
+        const html = `<div id="${id}">${_extRenderStep(step, data)}</div>`;
+        const existing = document.getElementById(id);
+        if (existing) existing.outerHTML = html;
+        else box.insertAdjacentHTML('beforeend', html);
+        setStatus('s1-ext-check-status', '');
+        _updateExtDot();
+    } catch (err) {
+        setStatus('s1-ext-check-status', `${_extStepLabels[step]}: ${err}`, true);
+    } finally {
+        _extSetBusy(false);
+    }
+}
+
+async function extCheckRunAll() {
+    _extSetBusy(true);
+    setStatus('s1-ext-check-status', 'Running all checks…');
+    const box = document.getElementById('s1-ext-check-results');
+    box.innerHTML = '';
+    try {
+        const data = await apiPost('/api/setup/run_all', {});
+        for (const [key, result] of Object.entries(data.steps)) {
+            box.insertAdjacentHTML('beforeend',
+                `<div id="ext-row-${key}">${_extRenderStep(key, result)}</div>`);
+        }
+        const p = data.passed, t = data.total;
+        setStatus('s1-ext-check-status', p === t
+            ? `All ${t} checks passed`
+            : `${p}/${t} checks passed — see details above`);
+        _updateExtDot();
+    } catch (err) {
+        setStatus('s1-ext-check-status', String(err), true);
+    } finally {
+        _extSetBusy(false);
+    }
+}
+
+function _updateExtDot() {
+    const rows = document.querySelectorAll('#s1-ext-check-results [class*="dot-"]');
+    const dot  = document.getElementById('s1-ext-check-dot');
+    if (!dot || rows.length === 0) return;
+    const hasRed = [...rows].some(el => el.classList.contains('dot-red'));
+    dot.className = `dot ${hasRed ? 'dot-red' : 'dot-green'}`;
 }
 
 /* ══════════════════════════════════════════════════════════════════════

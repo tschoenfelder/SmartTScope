@@ -188,41 +188,24 @@ def test_park_sequence_raises_conflict_when_busy():
 
 # ── home_sequence ─────────────────────────────────────────────────────────────
 
-def _mock_time_now(lst_hours: float = 12.0):
-    mock_lst = MagicMock()
-    mock_lst.hour = lst_hours
-    mock_now = MagicMock()
-    mock_now.sidereal_time.return_value = mock_lst
-    return patch("smart_telescope.services.mount_operations.Time"), mock_now
-
-
-def test_home_sequence_returns_ra_dec():
+def test_home_sequence_issues_go_home():
     m = _mock_mount()
     c = _coordinator()
-    time_patch, mock_now = _mock_time_now(6.0)
-    with time_patch as mock_time_cls:
-        mock_time_cls.now.return_value = mock_now
-        ra, dec = home_sequence(m, c)
-    assert ra == pytest.approx(6.0)
-    assert dec == pytest.approx(85.0)
+    home_sequence(m, c)
+    m.go_home.assert_called_once()
 
 
-def test_home_sequence_issues_goto():
+def test_home_sequence_does_not_goto():
     m = _mock_mount()
     c = _coordinator()
-    time_patch, mock_now = _mock_time_now()
-    with time_patch as mock_time_cls:
-        mock_time_cls.now.return_value = mock_now
-        home_sequence(m, c)
-    m.goto.assert_called_once()
+    home_sequence(m, c)
+    m.goto.assert_not_called()
 
 
 def test_home_sequence_auto_unparks_when_parked():
     m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
     c = _coordinator()
-    time_patch, mock_now = _mock_time_now()
-    with time_patch as mock_time_cls, patch("smart_telescope.services.mount_operations.time") as mock_sleep_mod:
-        mock_time_cls.now.return_value = mock_now
+    with patch("smart_telescope.services.mount_operations.time") as mock_sleep_mod:
         home_sequence(m, c)
     m.unpark.assert_called_once()
 
@@ -230,18 +213,12 @@ def test_home_sequence_auto_unparks_when_parked():
 def test_home_sequence_raises_on_unpark_failure():
     m = _mock_mount(state=MountState.PARKED, unpark_ok=False)
     c = _coordinator()
-    time_patch, mock_now = _mock_time_now()
-    with time_patch as mock_time_cls:
-        mock_time_cls.now.return_value = mock_now
-        with pytest.raises(RuntimeError, match="Auto-unpark"):
-            home_sequence(m, c)
+    with pytest.raises(RuntimeError, match="Auto-unpark"):
+        home_sequence(m, c)
 
 
 def test_home_sequence_raises_slewing_error():
     m = _mock_mount(slewing=True)
     c = _coordinator()
-    time_patch, mock_now = _mock_time_now()
-    with time_patch as mock_time_cls:
-        mock_time_cls.now.return_value = mock_now
-        with pytest.raises(MountSlewingError):
-            home_sequence(m, c)
+    with pytest.raises(MountSlewingError):
+        home_sequence(m, c)

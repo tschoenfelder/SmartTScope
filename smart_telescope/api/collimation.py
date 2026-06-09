@@ -327,13 +327,21 @@ def selftest_focuser(
     body: FocuserTestRequest = FocuserTestRequest(),
     focuser: FocuserPort = Depends(get_focuser),
 ) -> dict[str, Any]:
-    """Move the focuser by ±steps and return before/after position."""
+    """Move the focuser by ±steps relative to current position and return before/after."""
+    import time as _time
     if not focuser.is_available:
         return {"ok": False, "message": "Focuser not available"}
     steps = body.steps
     if steps == 0:
         raise HTTPException(status_code=422, detail="steps must be non-zero")
     before = focuser.get_position()
-    focuser.move(steps)
+    target = before + steps           # absolute target from relative delta
+    focuser.move(target)
+    # Wait for movement to settle (up to 10 s)
+    deadline = _time.monotonic() + 10.0
+    while _time.monotonic() < deadline:
+        _time.sleep(0.1)
+        if not focuser.is_moving():
+            break
     after = focuser.get_position()
     return {"ok": True, "steps": steps, "position_before": before, "position_after": after}

@@ -204,6 +204,10 @@ class OnStepMount(MountPort):
         _log.info("OnStepMount.park(): :hP# sent → resp=%r ok=%s", resp, ok)
         return ok
 
+    def go_home(self) -> None:
+        self._raw_send(":hC#")
+        _log.info("OnStepMount.go_home(): :hC# sent")
+
     def get_park_position(self) -> MountPosition | None:
         try:
             ra_str  = self._send(":GpA#")

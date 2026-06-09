@@ -283,16 +283,14 @@ def mount_home(
     coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict:
-    """Slew to the celestial pole (RA = current LST, Dec = 85°, HA = 0).
+    """Slew to the OnStep stored home position (:hC#).
 
-    Sets the mount to its starting position pointing at the polar region.
-    Auto-unparks if necessary.  Bypasses position limits — the pole is
-    always at altitude ≈ observer latitude, well within any sane limit set.
-    Uses Dec=85° (not 89°) to stay within OnStep's zenith exclusion zone.
+    Uses the home position saved in OnStep's firmware (set via :hF# during
+    initial mount setup).  Auto-unparks if necessary.
     """
     device_state.record_command("home")
     try:
-        ra_hours, dec_deg = mount_ops.home_sequence(mount, coordinator)
+        mount_ops.home_sequence(mount, coordinator)
     except mount_ops.MountSlewingError as exc:
         device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail="Mount is slewing — stop it before homing") from exc
@@ -305,7 +303,7 @@ def mount_home(
     except CommandConflictError as exc:
         device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"ok": True, "ra": ra_hours, "dec": dec_deg}
+    return {"ok": True}
 
 
 @router.post("/park")

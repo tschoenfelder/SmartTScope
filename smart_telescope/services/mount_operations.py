@@ -13,11 +13,6 @@ from __future__ import annotations
 import logging
 import time
 
-from astropy.coordinates import EarthLocation
-from astropy.time import Time
-import astropy.units as u
-
-from .. import config
 from ..ports.mount import MountPort, MountState
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
@@ -139,11 +134,12 @@ def park_sequence(
 def home_sequence(
     mount: MountPort,
     coordinator: HardwareCommandCoordinator,
-) -> tuple[float, float]:
-    """Slew to the home position (HA=0, Dec=85°).
+) -> None:
+    """Slew to the OnStep stored home position (:hC#).
 
-    Auto-unparks if the mount is currently parked.  Returns (ra_hours, dec_deg)
-    of the commanded home position.
+    Uses OnStep's own home position (set via :hF# during initial setup)
+    rather than computing a SmartTScope-side target.  Auto-unparks if the
+    mount is currently parked.
 
     Raises:
         RuntimeError: auto-unpark failed
@@ -156,21 +152,11 @@ def home_sequence(
         _log.info("Mount home: unparked — waiting for state to propagate")
         time.sleep(1.0)
 
-    loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
-    lst_hours: float = Time.now().sidereal_time("apparent", longitude=loc.lon).hour
-    ra_hours: float = lst_hours
-    dec_deg: float  = 85.0
-    _log.info("Mount home: slewing to RA=%.4fh Dec=%.1f°", ra_hours, dec_deg)
-
     try:
         with coordinator.mount_command():
             if mount.is_slewing():
                 raise MountSlewingError("Rejected — mount is slewing")
-            try:
-                mount.goto(ra_hours, dec_deg)
-            except RuntimeError:
-                raise
+            mount.go_home()
+            _log.info("Mount home: go_home() issued")
     except CommandConflictError:
         raise
-
-    return ra_hours, dec_deg

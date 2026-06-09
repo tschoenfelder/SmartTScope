@@ -239,6 +239,16 @@ async function _refreshFocuserPosition() {
         badgeEl.textContent = data.moving ? 'Moving…' : 'Stopped';
         badgeEl.className   = `state-badge ${data.moving ? 'state-slewing' : 'state-tracking'}`;
       }
+      // Also keep the Stage 1 position tile in sync
+      if (data.available) {
+        const s1posEl  = document.getElementById('s1-focuser-pos');
+        const s1posRow = document.getElementById('s1-focuser-pos-row');
+        if (s1posEl) {
+          const maxPos = data.max_position != null ? ` / ${data.max_position}` : '';
+          s1posEl.textContent = `${data.position ?? '—'}${maxPos} steps`;
+        }
+        if (s1posRow) s1posRow.style.display = '';
+      }
       if (!data.moving) {
         clearInterval(_focuserMoveTimer);
         _focuserMoveTimer = null;

@@ -254,9 +254,8 @@ async function mountHome() {
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Homing…'; }
     await refreshMount();  // show pending badge immediately
     try {
-      const data = await apiPost('/api/mount/home');
-      setStatus('s1-mount-status',
-        `Slewing to pole — RA ${data.ra.toFixed(3)} h  Dec ${data.dec.toFixed(1)}°`);
+      await apiPost('/api/mount/home');
+      setStatus('s1-mount-status', 'Slewing to OnStep home position…');
     } catch (err) {
       setStatus('s1-mount-status', `Home failed: ${err.message}`, true);
     } finally {
@@ -299,8 +298,8 @@ async function s2Home() {
     btn.innerHTML = '<span class="spin"></span>Slewing…';
     st.textContent = '';
     try {
-      const d = await apiPost('/api/mount/home');
-      st.textContent = `→ RA ${d.ra.toFixed(3)} h  Dec ${d.dec.toFixed(1)}°`;
+      await apiPost('/api/mount/home');
+      st.textContent = '→ Slewing to OnStep home…';
       st.style.color = 'var(--success)';
       await refreshMount();
     } catch (err) {
@@ -308,7 +307,7 @@ async function s2Home() {
       st.style.color = 'var(--danger)';
     } finally {
       btn.disabled = false;
-      btn.innerHTML = 'Slew to Home (Dec 89°)';
+      btn.innerHTML = 'Slew to Home';
     }
 }
 

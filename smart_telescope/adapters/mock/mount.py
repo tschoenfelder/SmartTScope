@@ -78,5 +78,8 @@ class MockMount(MountPort):
     def save_alignment(self) -> bool:
         return True
 
+    def go_home(self) -> None:
+        self._state = MountState.TRACKING
+
     def disconnect(self) -> None:
         self._state = MountState.PARKED

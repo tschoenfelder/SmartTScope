@@ -4,6 +4,76 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-09 — FIX — HOME uses OnStep :hC#; focuser selftest relative moves; tile refresh
+
+**Bug 1 — HOME position overrun**
+`home_sequence()` was computing RA = current LST, Dec = 85° and issuing a GoTo.  This ignored
+OnStep's stored home position (set with `:hF#` during initial alignment) and could overrun the
+mount's meridian limits or HA limits near the pole.
+
+**Root cause:** SmartTScope invented its own HOME coordinates instead of delegating to OnStep.
+
+**Fix:**
+- `smart_telescope/ports/mount.py` — added `go_home()` abstract method to `MountPort`
+- `smart_telescope/adapters/onstep/mount.py` — `go_home()` sends `:hC#` (Move to home)
+- `smart_telescope/adapters/mock/mount.py` — stub: sets state to TRACKING
+- `smart_telescope/adapters/simulator/mount.py` — stub: calls `goto(0, 89.0)`
+- `smart_telescope/services/mount_operations.py` — `home_sequence()` now calls `mount.go_home()`
+  instead of computing LST+85°; removed astropy/config imports no longer needed; returns `None`
+- `smart_telescope/api/mount.py` — HOME endpoint response simplified to `{"ok": True}`
+- `smart_telescope/services/setup_check_service.py` — callers updated; message updated
+- `smart_telescope/api/setup_check.py` — docstring updated
+- `smart_telescope/static/js/mount.js` — status messages no longer display invented coordinates
+- `smart_telescope/static/js/setup.js` — wizard prompt updated
+
+**Bug 2 — Focuser selftest moved to absolute position instead of relative**
+`selftest_focuser()` in `collimation.py` called `focuser.move(steps)` with `steps=10`.
+Since `FocuserPort.move()` is an **absolute** position command (`:FS[n]#`), this moved the
+focuser to absolute step 10 from wherever it was (e.g. 5227 → 10), not +10 from current.
+Same bug existed in `run_focuser_move()` in `setup_check_service.py`.
+
+**Fix:**
+- `smart_telescope/api/collimation.py` `selftest_focuser()` — computes `target = before + steps`
+  then calls `focuser.move(target)`; waits for `is_moving()` to clear before reading `after`
+- `smart_telescope/services/setup_check_service.py` `run_focuser_move()` — same relative→absolute
+  fix; restore now calls `focuser.move(before)` instead of `focuser.move(-steps)`
+
+**Bug 3 — OnStep focuser tile (s1-focuser-pos) not refreshing**
+The Stage 1 focuser position tile was set only at `connectAll()` time and never updated when
+nudge or selftest operations ran, so it showed the connect-time value (e.g. 25000/50000) even
+as the focuser moved.
+
+**Fix:**
+- `smart_telescope/static/js/focuser.js` `_refreshFocuserPosition()` — now also updates
+  `s1-focuser-pos` / `s1-focuser-pos-row` whenever Stage 4 position poll fires
+- `smart_telescope/static/js/collimation.js` `selftestFocuser()` — calls `refreshFocuser()` and
+  `_refreshS1FocuserPos()` in the `finally` block after each test
+
+**Tests:**
+- `tests/unit/services/test_mount_operations.py` — replaced LST-based home tests with
+  `test_home_sequence_issues_go_home` and `test_home_sequence_does_not_goto`
+- `tests/unit/api/test_setup_check.py` — `TestFocuserMove` updated: move calls now use
+  absolute positions (before+steps, before); iterator provides 2 positions instead of 3
+- All 2920 unit tests pass
+
+---
+
+## 2026-06-08 — FEAT(CID-007) — Detect newly connected cameras not in config
+
+**What changed:**
+- `smart_telescope/domain/camera_config_suggestion.py` (new) — `suggest_role()`, `_default_offset()`, `_default_capture_mode()`, `generate_toml_snippet()` — pure domain, no I/O
+- `smart_telescope/api/cameras.py` — `CameraInfo.toml_snippet` field added; `_do_scan()` populates it for cameras with `role=None`; also resolves role via `CAMERA_SPECS` model/camera_id match (was only checking by index)
+- `smart_telescope/services/readiness.py` — `_check_unconfigured_cameras()` returns YELLOW item when SDK cameras are connected but not matched by any configured CameraSpec; wired into `check()`
+- `smart_telescope/static/js/setup.js` — `cameraCard()` shows yellow "Not in config" badge + collapsible TOML snippet + Copy button for unconfigured cameras; `csSnipcopy()` helper added
+- `smart_telescope/static/index.html` — CSS added: `.card-warn`, `.badge-ok`, `.badge-warn`, `.snippet-details`, `.snippet-code`, `.btn-copy`
+- `tests/unit/domain/test_camera_config_suggestion.py` (new) — 30 tests, 100% coverage of domain module
+- `tests/unit/api/test_cid007.py` (new) — 15 tests covering API snippet generation and readiness YELLOW item
+- `docs/todo.md` — CID-007 marked done
+
+**Verified:** 2897 tests pass, 0 regressions.
+
+---
+
 ## 2026-05-26 — FIX(UI) — Focuser selftest runaway + serial port auto-reconnect
 
 **What changed:**

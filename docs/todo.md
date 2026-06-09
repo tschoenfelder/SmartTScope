@@ -602,7 +602,8 @@
 - [ ] CID-006 Verify camera identification on real hardware — G3M678M and ATR585M resolve correctly `[P1 · Hardware]`
   - *Hardware serial numbers (for `~/.SmartTScope/config.toml` `[camera_serials]`):*  
     `GPCMOS02000KPA = "tp-3-4-23-0547-1367"`, `ATR585M = "tp-4-1-10-0547-157c"`, `G3M678M = "tp-4-2-11-0547-14bc"`
-- [ ] CID-007 Post-release: detect newly connected cameras not in config and offer to add them `[P3 · Future]`
+- [x] CID-007 Post-release: detect newly connected cameras not in config and offer to add them `[P3 · Future]`
+  - *Done:* `domain/camera_config_suggestion.py` — `suggest_role()`, `generate_toml_snippet()`; `/api/cameras` response includes `toml_snippet` for cameras with `role=None`; `ReadinessService._check_unconfigured_cameras()` → YELLOW item with repair hint; `cameraCard()` in setup.js shows yellow "Not in config" badge + collapsible TOML snippet + Copy button; 45 tests (30 domain + 15 API/readiness)
 
 ---
 

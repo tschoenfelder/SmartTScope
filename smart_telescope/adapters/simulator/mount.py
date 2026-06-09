@@ -107,6 +107,9 @@ class SimulatorMount(MountPort):
     def save_alignment(self) -> bool:
         return True
 
+    def go_home(self) -> None:
+        self.goto(ra=0.0, dec=89.0)
+
     def disconnect(self) -> None:
         with self._lock:
             self._cancel_timer()

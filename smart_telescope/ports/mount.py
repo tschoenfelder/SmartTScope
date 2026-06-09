@@ -81,4 +81,13 @@ class MountPort(ABC):
         return None
 
     @abstractmethod
+    def go_home(self) -> None:
+        """Command the mount to slew to its stored home position.
+
+        On OnStep this sends :hC# (Move to home — counterweight-down).
+        The slew is fire-and-forget; poll get_state() for completion.
+        """
+        ...
+
+    @abstractmethod
     def disconnect(self) -> None: ...

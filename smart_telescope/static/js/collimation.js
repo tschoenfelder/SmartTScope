@@ -641,6 +641,9 @@ async function selftestFocuser(steps) {
     } finally {
       if (btnPlus)  btnPlus.disabled  = false;
       if (btnMinus) btnMinus.disabled = false;
+      // Refresh both the Stage 4 card and the Stage 1 position tile
+      await refreshFocuser();
+      await _refreshS1FocuserPos();
     }
 }
 

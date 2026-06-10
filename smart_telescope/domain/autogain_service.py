@@ -225,6 +225,14 @@ class AutoGainService:
                     pass
             threading.Thread(target=_abort_watcher, daemon=True).start()
 
+        # Preempt any in-flight capture on this camera (e.g. a streaming preview).
+        # abort_capture() only affects the current caller; capture() clears the
+        # flag on entry so our own subsequent captures are not affected.
+        try:
+            camera.abort_capture()
+        except Exception:
+            pass
+
         # Steps 5–12: adjustment loop
         for iteration in range(max_iterations):
             # Cancellation check
@@ -252,6 +260,17 @@ class AutoGainService:
                     histogram_stats=None,
                 )
             except Exception as exc:
+                exc_str = str(exc)
+                if "Camera busy" in exc_str:
+                    _log.error("AutoGain: camera still busy at iteration %d: %s", iteration, exc)
+                    return AutoGainResult(
+                        status=AutoGainStatus.CANCELLED,
+                        exposure_ms=cur_exp_ms,
+                        gain=cur_gain,
+                        offset=cur_offset,
+                        conversion_gain=cg,
+                        warning_msg="Camera is in use by another operation — stop the preview and retry",
+                    )
                 _log.error("AutoGain: capture failed at iteration %d: %s", iteration, exc)
                 return AutoGainResult(
                     status=AutoGainStatus.UNSUPPORTED,
@@ -259,7 +278,7 @@ class AutoGainService:
                     gain=cur_gain,
                     offset=cur_offset,
                     conversion_gain=cg,
-                    warning_msg=str(exc),
+                    warning_msg=exc_str,
                 )
 
             # Check cancellation immediately after the blocking capture returns,

@@ -251,6 +251,14 @@ async def ws_preview(
                 frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)
             except Exception as exc:
                 exc_str = str(exc)
+                # Capture was preempted by a background job (abort_capture fired or
+                # camera-busy timeout).  Loop back to the yield check so the preview
+                # resumes automatically once the job releases the camera.
+                try:
+                    if deps.get_job_manager().is_resource_held(_cam_res):
+                        continue
+                except Exception:
+                    pass
                 hex_note = ""
                 if exc_str.lstrip("-").isdigit():
                     hex_note = f" (0x{int(exc_str) & 0xFFFFFFFF:08X})"

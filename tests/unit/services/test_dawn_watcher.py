@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from itertools import chain, repeat
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -122,9 +123,11 @@ class TestDawnWatcherPolling:
         mount = _mock_mount()
         ds = _mock_device_state()
         watcher = DawnWatcher()
+        # First poll returns a night altitude so _night_seen is set; subsequent polls hit dawn.
+        altitudes = chain([-30.0], repeat(ASTRONOMICAL_DAWN_ALT_DEG))
         with patch(
             "smart_telescope.services.dawn_watcher.sun_altitude_now",
-            return_value=ASTRONOMICAL_DAWN_ALT_DEG,  # exactly -18°
+            side_effect=altitudes,
         ):
             watcher.start(mount, ds, 50.0, 8.0, poll_interval=_FAST_INTERVAL)
             # wait until parked_at_dawn is set
@@ -148,9 +151,11 @@ class TestDawnWatcherPolling:
         mount = _mock_mount()
         ds = _mock_device_state()
         watcher = DawnWatcher()
+        # Simulate night crossing then persistent above-threshold altitude.
+        altitudes = chain([-30.0], repeat(-17.0))
         with patch(
             "smart_telescope.services.dawn_watcher.sun_altitude_now",
-            return_value=-17.0,  # well above threshold → is_dawn=True on every poll
+            side_effect=altitudes,
         ):
             watcher.start(mount, ds, 50.0, 8.0, poll_interval=_FAST_INTERVAL)
             # let it fire several times
@@ -158,6 +163,21 @@ class TestDawnWatcherPolling:
             watcher.stop()
 
         assert mount.park.call_count == 1
+
+    def test_no_park_during_daytime_start(self) -> None:
+        """Watcher started while sun is already above threshold must not park."""
+        mount = _mock_mount()
+        ds = _mock_device_state()
+        watcher = DawnWatcher()
+        with patch(
+            "smart_telescope.services.dawn_watcher.sun_altitude_now",
+            return_value=30.0,  # daytime — never dips below threshold
+        ):
+            watcher.start(mount, ds, 50.0, 8.0, poll_interval=_FAST_INTERVAL)
+            time.sleep(_FAST_INTERVAL * 5)
+            watcher.stop()
+
+        mount.park.assert_not_called()
 
     def test_no_park_when_sun_below_threshold(self) -> None:
         mount = _mock_mount()

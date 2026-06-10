@@ -44,6 +44,7 @@ class DawnWatcher:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._night_seen: bool = False  # True once sun has been seen below threshold
 
     # ── lifecycle ──────────────────────────────────────────────────────────────
 
@@ -113,10 +114,13 @@ class DawnWatcher:
             _log.warning("DawnWatcher: sun altitude error: %s", exc)
             return
 
+        if alt < ASTRONOMICAL_DAWN_ALT_DEG:
+            self._night_seen = True
+
         with self._lock:
             prev = self._status
             already_parked = prev is not None and prev.parked_at_dawn
-            is_dawn = alt >= ASTRONOMICAL_DAWN_ALT_DEG
+            is_dawn = alt >= ASTRONOMICAL_DAWN_ALT_DEG and self._night_seen
             self._status = DawnStatus(
                 sun_altitude_deg=alt,
                 is_dawn=is_dawn,

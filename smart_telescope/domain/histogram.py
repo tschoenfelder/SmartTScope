@@ -97,9 +97,9 @@ def histogram_bins_focused(
     """Focused histogram with fine resolution on the active signal range.
 
     The histogram range is [0, adu_hi] where adu_hi = max(p99.9 × 1.3,
-    adc_max × 0.05, 1000), capped at adc_max.  For a 12-bit sensor in
-    16-bit output mode (values 0-4095, adc_max=65535) this typically gives
-    adu_hi ≈ 5000 with 256 bins → ~19 ADU per bin instead of 512 ADU/bin.
+    1000), capped at adc_max.  For a 12-bit sensor (native values 0-4095,
+    bit_depth=12) at low signal this gives adu_hi ≈ 1000 with 256 bins →
+    ~4 ADU per bin — a clean, comb-free histogram.
 
     Returns:
         counts   – list of n_bins integers

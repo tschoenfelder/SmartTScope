@@ -63,6 +63,13 @@ async def analyze_histogram(
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Camera capture failed: {exc}") from exc
 
+    # Use the bit depth reported in the frame header (camera detects native ADC depth
+    # on first capture and right-shifts pixels to native range); fall back to the
+    # query param if the header key is absent (e.g. replay/mock cameras).
+    frame_bd = frame.header.get("BITDEPTH") if hasattr(frame.header, "get") else None
+    if frame_bd is not None:
+        bit_depth = int(frame_bd)
+
     stats: HistogramStats = analyze(frame.pixels, bit_depth=bit_depth)
     counts, edges, adu_hi = histogram_bins_focused(frame.pixels, bit_depth=bit_depth, n_bins=n_bins)
 

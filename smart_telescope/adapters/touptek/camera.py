@@ -28,6 +28,25 @@ _FLAG_TEC         = 0x00000080
 _FLAG_TEC_ONOFF   = 0x00020000
 _FLAG_CG          = 0x04000000
 _FLAG_CGHDR       = 0x0000000800000000
+_FLAG_RAW16       = 0x00008000  # camera has true 16-bit ADC depth
+
+
+def _detect_pixel_shift(raw: np.ndarray) -> int:
+    """Detect right-shift to convert MSB-aligned sub-16-bit data to native ADC range.
+
+    ToupTek SDK in 16-bit output mode stores data MSB-aligned:
+    12-bit ADC → ×16 (shift=4), 14-bit → ×4 (shift=2), true 16-bit → no shift.
+    Returns -1 if the frame has too few non-zero pixels to decide reliably.
+    """
+    flat = raw.ravel()
+    nonzero = flat[flat > 0]
+    if len(nonzero) < 100:
+        return -1  # not enough data — retry on next frame
+    sample = nonzero[:4096].astype(np.int32)
+    for shift in (4, 2):
+        if np.all(sample % (1 << shift) == 0):
+            return shift
+    return 0
 _FLAG_BLACKLEVEL  = 0x00400000
 _FLAG_MONO        = 0x00000040  # monochrome / no Bayer filter
 
@@ -107,6 +126,7 @@ class ToupcamCamera(CameraPort):
         self._capture_error: Exception | None = None
         self._last_event: int | None = None
         self._capture_lock = threading.Lock()  # prevents concurrent captures on same handle
+        self._pixel_shift: int = -1  # -1=not yet detected; 0/2/4=right-shift to native range
 
     # ------------------------------------------------------------------
     # CameraPort — lifecycle
@@ -165,6 +185,8 @@ class ToupcamCamera(CameraPort):
             self._model_flag = int(devices[self._index].model.flag)
         except Exception:
             self._model_flag = 0
+        if self._model_flag & _FLAG_RAW16:
+            self._pixel_shift = 0  # true 16-bit sensor — no shift needed
         try:
             self._logical_name = str(devices[self._index].displayname)
         except Exception:
@@ -251,11 +273,14 @@ class ToupcamCamera(CameraPort):
             if _pull_exc is not None:
                 raise RuntimeError(f"PullImageV4 failed after 3 attempts: {_pull_exc}") from _pull_exc
 
-            pixels = (
+            raw_u16 = (
                 np.frombuffer(self._buf, dtype=np.uint16)
                 .reshape(self._height, self._width)
-                .astype(np.float32)
             )
+            if self._pixel_shift < 0:
+                self._pixel_shift = _detect_pixel_shift(raw_u16)
+            shift = max(0, self._pixel_shift)
+            pixels = (raw_u16 >> shift).astype(np.float32)
 
             hdr = fits.Header()
             hdr["SIMPLE"] = True
@@ -264,6 +289,7 @@ class ToupcamCamera(CameraPort):
             hdr["NAXIS1"] = self._width
             hdr["NAXIS2"] = self._height
             hdr["EXPTIME"] = exposure_seconds
+            hdr["BITDEPTH"] = 16 - shift
 
             return FitsFrame(pixels=pixels, header=hdr, exposure_seconds=exposure_seconds)
         finally:
@@ -346,10 +372,14 @@ class ToupcamCamera(CameraPort):
         if self._cam is not None:
             try:
                 raw = self._cam.get_Option(_OPTION_BITDEPTH)
-                return 16 if raw == 1 else 8
+                if raw != 1:
+                    return 8
             except Exception:
                 pass
-        return 16
+        # Return sensor native depth (shift detected lazily on first frame).
+        # Returns 16 until the first capture completes — callers should prefer
+        # reading BITDEPTH from the FitsFrame header for per-frame accuracy.
+        return 16 - max(0, self._pixel_shift)
 
     def get_temperature(self) -> float | None:
         if self._cam is None:

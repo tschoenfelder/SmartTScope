@@ -149,10 +149,9 @@ class AutoGainService:
         Returns:
             AutoGainResult with the recommended settings and outcome status.
         """
-        # Derive camera limits
+        # Derive camera limits — bit_depth is refined per-frame from the FITS header
+        # (camera adapters detect native ADC depth lazily on first capture)
         bit_depth = 16
-        with _suppress():
-            bit_depth = camera.get_bit_depth()
         adc_max = float((1 << bit_depth) - 1)
 
         gain_min  = _GAIN_MIN
@@ -293,6 +292,14 @@ class AutoGainService:
                     histogram_stats=None,
                 )
 
+            # Refine bit_depth from frame header (camera detects native depth on first capture)
+            try:
+                frame_bd = int(frame.header.get("BITDEPTH", bit_depth))
+                if frame_bd != bit_depth:
+                    bit_depth = frame_bd
+                    adc_max = float((1 << bit_depth) - 1)
+            except (AttributeError, TypeError):
+                pass
             stats = _hist_analyze(frame.pixels, bit_depth=bit_depth)
             last_stats = stats
             eff_mean = _effective_mean(stats, cur_offset, adc_max)

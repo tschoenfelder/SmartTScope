@@ -647,8 +647,14 @@ function _agShowResult(d) {
     const off   = d.offset != null ? d.offset : '—';
     const warn  = d.warning_msg ? (' — ' + d.warning_msg) : '';
     resultTxt.innerHTML = `Exp <b>${expS}</b> &nbsp; Gain <b>${gain}</b> &nbsp; Off <b>${off}</b>${warn}`;
-    if (ok) {
-      _agLastResult = { exposure_ms: d.exposure_ms, gain: d.gain, offset: d.offset };
+    // Show Apply whenever valid settings are returned, not just on OK.
+    // NO_SIGNAL / GAIN_LIMIT_REACHED still carry the best-found max settings
+    // which the user should be able to apply to the preview.
+    const canApply = !d.error && d.exposure_ms != null && d.gain != null
+        && d.status !== 'AUTO_GAIN_CANCELLED'
+        && d.status !== 'AUTO_GAIN_UNSUPPORTED';
+    if (canApply) {
+      _agLastResult = { exposure_ms: d.exposure_ms, gain: d.gain, offset: d.offset ?? 0 };
       applyBtn.style.display = '';
     } else {
       applyBtn.style.display = 'none';
@@ -672,6 +678,14 @@ function _agShowDiagResult(d) {
     diagTitle.textContent = info.title;
     diagMsg.textContent   = (_focuserOk && info.msgWithFocuser) ? info.msgWithFocuser : info.msg;
     diagResult.style.display = '';
+    // Expose Apply so the user can push the found max settings to the preview.
+    const applyBtn  = document.getElementById('autogain-apply-btn');
+    const resultRow = document.getElementById('autogain-result-row');
+    if (applyBtn && d.exposure_ms != null && d.gain != null) {
+        _agLastResult = { exposure_ms: d.exposure_ms, gain: d.gain, offset: d.offset ?? 0 };
+        applyBtn.style.display = '';
+        if (resultRow) resultRow.style.display = '';
+    }
 }
 
 let _agIsDiag     = false;  // true while polling a diagnostic run

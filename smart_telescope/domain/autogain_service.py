@@ -94,16 +94,15 @@ class AutoGainResult:
 
 def _apply_settings(
     camera: CameraPort,
-    exposure_ms: float,
     gain: int,
     offset: int,
 ) -> None:
+    # exposure is applied atomically inside capture() via put_ExpoTime — do not set it here
+    # to avoid corrupting any concurrent in-progress capture.
     with _suppress():
         camera.set_gain(gain)
     with _suppress():
         camera.set_black_level(offset)
-    with _suppress():
-        camera.set_exposure_ms(exposure_ms)
 
 
 class _suppress:
@@ -240,7 +239,7 @@ class AutoGainService:
                 )
 
             # Apply settings and capture
-            _apply_settings(camera, cur_exp_ms, cur_gain, cur_offset)
+            _apply_settings(camera, cur_gain, cur_offset)
             try:
                 frame = camera.capture(cur_exp_ms / 1000.0)
             except CaptureAbortedError:

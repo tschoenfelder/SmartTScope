@@ -234,6 +234,17 @@ async def ws_preview(
                 except Exception:
                     pass
 
+            # --- yield while a background job owns the camera ---
+            _cam_res = f"camera:{camera_index}"
+            while True:
+                try:
+                    if not deps.get_job_manager().is_resource_held(_cam_res):
+                        break
+                    await websocket.send_text(json.dumps({"type": "camera_busy"}))
+                except (WebSocketDisconnect, RuntimeError, AssertionError):
+                    break
+                await asyncio.sleep(0.25)
+
             # --- capture frame ---
             _t_capture = time.monotonic()
             try:

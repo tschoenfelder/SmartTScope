@@ -58,6 +58,7 @@ from .api.solver import router as solver_router
 from .api.stack import router as stack_router
 from .api.bias_estimation import router as bias_estimation_router
 from .api.guiding import router as guiding_router
+from .api.setup_check import router as setup_check_router
 
 _STATIC = Path(__file__).parent / "static"
 
@@ -104,6 +105,7 @@ app.include_router(solver_router)
 app.include_router(stack_router)
 app.include_router(bias_estimation_router)
 app.include_router(guiding_router)
+app.include_router(setup_check_router)
 
 
 @app.get("/", response_class=HTMLResponse)

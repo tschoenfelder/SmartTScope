@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel
 
 from .. import config
+from ..domain.camera_config_suggestion import generate_toml_snippet, suggest_role
 from . import deps
 
 _scan_lock  = threading.Lock()
@@ -43,6 +44,7 @@ class CameraInfo(BaseModel):
     has_raw16: bool
     has_mono: bool
     role: str | None = None     # "main", "guide", etc. from [cameras] config section
+    toml_snippet: str | None = None  # populated for cameras not in config (role is None)
 
 
 class CameraScanResult(BaseModel):
@@ -95,6 +97,8 @@ def _do_scan() -> CameraScanResult:
 
     # Reverse lookup: sdk_index → role from [cameras] config section
     _index_to_role: dict[int, str] = {idx: role for role, idx in config.CAMERAS.items()}
+    _existing_roles: set[str] = set(_index_to_role.values())
+    _first_telescope: str | None = next(iter(config.TELESCOPES), None) if hasattr(config, "TELESCOPES") else None
 
     cameras: list[CameraInfo] = []
     for i, dev in raw:
@@ -109,6 +113,29 @@ def _do_scan() -> CameraScanResult:
         else:
             display_label = model_name
 
+        role = _index_to_role.get(i)
+        # For cameras not yet in the config: also check CAMERA_SPECS by model/camera_id
+        if role is None:
+            for spec in config.CAMERA_SPECS.values():
+                if (spec.model and spec.model.lower() in model_name.lower()) or \
+                   (spec.camera_id and spec.camera_id == str(dev.id)):
+                    role = spec.role
+                    break
+
+        has_tec  = bool(flag & (_FLAG_TEC | _FLAG_TEC_ONOFF))
+        has_mono = bool(flag & _FLAG_MONO)
+        snippet: str | None = None
+        if role is None:
+            suggested = suggest_role(model_name, _existing_roles)
+            snippet = generate_toml_snippet(
+                model_name=model_name,
+                cam_id=str(dev.id),
+                has_tec=has_tec,
+                has_mono=has_mono,
+                suggested_role=suggested,
+                first_telescope=_first_telescope,
+            )
+
         cameras.append(
             CameraInfo(
                 display_label=display_label,
@@ -121,12 +148,13 @@ def _do_scan() -> CameraScanResult:
                 preview_count=int(model.preview),
                 still_count=int(model.still),
                 max_speed=int(model.maxspeed),
-                has_tec=bool(flag & (_FLAG_TEC | _FLAG_TEC_ONOFF)),
+                has_tec=has_tec,
                 has_fan=bool(flag & _FLAG_FAN),
                 usb3=bool(flag & _FLAG_USB30),
                 has_raw16=bool(flag & _FLAG_RAW16),
-                has_mono=bool(flag & _FLAG_MONO),
-                role=_index_to_role.get(i),
+                has_mono=has_mono,
+                role=role,
+                toml_snippet=snippet,
             )
         )
 

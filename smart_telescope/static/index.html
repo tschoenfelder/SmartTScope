@@ -414,6 +414,27 @@
     /* ── camera grid ── */
     .camera-grid { display: grid; gap: 1rem; }
 
+    /* ── badge variants ── */
+    .badge-ok   { background: rgba(63,185,80,0.12);  color: var(--success); border-color: rgba(63,185,80,0.25); }
+    .badge-warn { background: rgba(210,153,34,0.12); color: var(--warning); border-color: rgba(210,153,34,0.25); }
+
+    /* ── unconfigured camera card ── */
+    .card-warn { border-color: var(--warning); }
+    .snippet-details { margin-top: 0.75rem; }
+    .snippet-details summary { cursor: pointer; font-size: 0.8rem; color: var(--warning); user-select: none; }
+    .snippet-code {
+      font-size: 0.72rem;
+      font-family: var(--mono, monospace);
+      overflow-x: auto;
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.6rem 0.75rem;
+      margin-top: 0.4rem;
+      white-space: pre;
+    }
+    .btn-copy { margin-top: 0.4rem; font-size: 0.75rem; }
+
     /* ── preview panel ── */
     .preview-frame {
       position: relative;
@@ -825,6 +846,29 @@
       </div>
       <div class="params" id="s1-health-params">
       </div>
+    </div>
+
+    <!-- Extended Setup Check -->
+    <div class="card adv-only" style="margin-top:0.75rem" id="s1-ext-check-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-ext-check-dot"></span>
+        Extended Setup Check
+        <span style="flex:1"></span>
+        <button onclick="extCheckRunAll()" id="s1-ext-check-all-btn"
+                style="font-size:0.75rem;padding:0.2rem 0.7rem">Run All</button>
+      </div>
+      <p style="font-size:0.78rem;color:var(--muted);margin:0 0 0.6rem">
+        Exercises hardware beyond static readiness: focuser move, 5° slew, plate solve, home return.
+        Mount must be unparked and tracking.
+      </p>
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem">
+        <button class="btn-sm" onclick="extCheckStep('focuser_move')" id="s1-ext-btn-focuser">Focuser Move</button>
+        <button class="btn-sm" onclick="extCheckStep('mount_slew')"   id="s1-ext-btn-slew">Mount Slew</button>
+        <button class="btn-sm" onclick="extCheckStep('plate_solve')"  id="s1-ext-btn-solve">Plate Solve</button>
+        <button class="btn-sm" onclick="extCheckStep('home_return')"  id="s1-ext-btn-home">Home Return</button>
+      </div>
+      <div id="s1-ext-check-results"></div>
+      <div id="s1-ext-check-status" class="status-line"></div>
     </div>
 
     <div class="stage-nav">

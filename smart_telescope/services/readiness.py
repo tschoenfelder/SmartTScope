@@ -81,6 +81,9 @@ class ReadinessService:
         items.extend(self._check_astap())
         items.append(self._check_camera())
         items.extend(self._check_mount_focuser())
+        uncfg = self._check_unconfigured_cameras()
+        if uncfg is not None:
+            items.append(uncfg)
 
         if any(i.level == Level.RED for i in items):
             overall = Level.RED
@@ -354,3 +357,51 @@ class ReadinessService:
                 repair="Press 'Connect All' to establish connection.",
             ),
         ]
+
+    def _check_unconfigured_cameras(self) -> ReadinessItem | None:
+        """Return YELLOW item when cameras are connected but not in config.toml."""
+        try:
+            import toupcam
+            from .. import config
+
+            devices = list(toupcam.Toupcam.EnumV2())
+            if not devices:
+                return None
+
+            specs = list(config.CAMERA_SPECS.values())
+            configured_indices: set[int] = {
+                v for v in config.CAMERAS.values() if isinstance(v, int)
+            }
+
+            unconfigured: list[str] = []
+            for i, dev in enumerate(devices):
+                model_name = str(dev.model.name)
+                cam_id = str(dev.id)
+                matched = (
+                    i in configured_indices
+                    or any(
+                        (s.model and s.model.lower() in model_name.lower())
+                        or (s.camera_id and s.camera_id == cam_id)
+                        for s in specs
+                    )
+                )
+                if not matched:
+                    unconfigured.append(str(dev.displayname))
+
+            if not unconfigured:
+                return None
+
+            names = ", ".join(unconfigured)
+            n = len(unconfigured)
+            return ReadinessItem(
+                key="unconfigured_cameras",
+                label="Unconfigured cameras",
+                level=Level.YELLOW,
+                message=f"{n} camera{'s' if n != 1 else ''} connected but not in config: {names}",
+                repair=(
+                    "See Setup & Diagnostics → Camera Scan for a suggested config snippet "
+                    "to add to ~/.SmartTScope/config.toml."
+                ),
+            )
+        except Exception:
+            return None

@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-11 — FIX — Histogram comb pattern from 12-bit-in-16-bit camera data
+
+**Root cause**: ToupTek SDK in 16-bit mode stores 12-bit ADC data MSB-aligned (left-shifted 4 bits). Values are 0, 16, 32, …, 65520. The focused histogram with ~7 ADU bins produced a comb pattern (every 2–3 bins was empty because valid values are 16 ADU apart). Additionally the histogram API was incorrectly normalising by `adc_max=4095` (bit_depth=12 default) while pixels were in 16-bit container range, giving signal fractions 16× too high.
+
+**Fix** (`fb60f73`):
+- `camera.py` / `managed.py`: lazily detect pixel shift on first captured frame (`_detect_pixel_shift`); right-shift pixels to native 12-bit range (0–4095); write `BITDEPTH=12` in FITS header. `get_bit_depth()` now returns the sensor depth.
+- `autogain_service.py`: re-derives `bit_depth` and `adc_max` from the frame `BITDEPTH` header after each capture.
+- `histogram.py API`: reads `bit_depth` from frame header instead of query-param default.
+- `SYNC.md`: documents new SYNC-OVERRIDEs for both adapter files.
+
+---
+
 ## 2026-06-09 — FIX — HOME uses OnStep :hC#; focuser selftest relative moves; tile refresh
 
 **Bug 1 — HOME position overrun**

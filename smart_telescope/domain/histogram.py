@@ -11,6 +11,7 @@ Key design choices:
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -96,10 +97,11 @@ def histogram_bins_focused(
 ) -> tuple[list[int], list[float], float]:
     """Focused histogram with fine resolution on the active signal range.
 
-    The histogram range is [0, adu_hi] where adu_hi = max(p99.9 × 1.3,
-    1000), capped at adc_max.  For a 12-bit sensor (native values 0-4095,
-    bit_depth=12) at low signal this gives adu_hi ≈ 1000 with 256 bins →
-    ~4 ADU per bin — a clean, comb-free histogram.
+    The histogram range is [0, adu_hi] where adu_hi is chosen so that
+    bin_width = adu_hi / n_bins is an integer number of ADU.  Integer bin
+    widths guarantee that bin edges land on exact ADU values, eliminating
+    the false-comb artefact that appears when a sub-16-bit sensor's
+    quantisation step does not divide evenly into a fractional bin width.
 
     Returns:
         counts   – list of n_bins integers
@@ -109,9 +111,12 @@ def histogram_bins_focused(
     amax = _adc_max(bit_depth)
     flat = pixels.astype(np.float64, copy=False).ravel()
     p999_adu = float(np.percentile(flat, 99.9))
-    # Minimum 1000 ADU avoids zooming in on pure sensor noise; no adc_max floor
-    # so dim images (p99.9 < 770 ADU) still zoom to 1000 instead of 3000+.
-    adu_hi = float(np.clip(max(p999_adu * 1.3, 1000.0), 1.0, amax))
+    adu_hi_raw = float(np.clip(max(p999_adu * 1.3, 1000.0), 1.0, amax))
+    # Round bin width UP to the nearest integer ADU so all bin edges are exact
+    # integer positions.  This prevents the "comb misalignment" artefact where
+    # bars from a sub-16-bit sensor appear at 3.9, 7.8 ADU instead of 4, 8.
+    bin_width = max(1, math.ceil(adu_hi_raw / n_bins))
+    adu_hi = float(min(bin_width * n_bins, amax))
     hi_normed = adu_hi / amax
     normed = flat / amax
     counts, edges = np.histogram(normed, bins=n_bins, range=(0.0, hi_normed))

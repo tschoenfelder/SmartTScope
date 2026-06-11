@@ -179,15 +179,21 @@ class TestHistogramBinsFocused:
 
     def test_dark_frame_zooms_to_1000_minimum(self) -> None:
         arr = _uniform(0.0)
-        _, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
-        assert adu_hi == pytest.approx(1000.0)
+        counts, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
+        # adu_hi is rounded up to the next integer bin_width × n_bins (≥ 1000)
+        assert adu_hi >= 1000.0
+        assert adu_hi < 1000.0 + len(counts)  # within one bin of the floor
+        # bin_width must be an exact integer number of ADU
+        assert (adu_hi / len(counts)) == int(adu_hi / len(counts))
 
     def test_dim_frame_clamps_to_1000_not_adc_fraction(self) -> None:
         # p99.9 ≈ 200 ADU → 200*1.3=260, but minimum is 1000; old code gave ~3276
         arr = _uniform(200.0)
-        _, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
-        assert adu_hi == pytest.approx(1000.0)
+        counts, _, adu_hi = histogram_bins_focused(arr, bit_depth=12)
+        assert adu_hi >= 1000.0
         assert adu_hi < 3000.0  # must be tighter than the old adc_max*0.05 floor
+        # bin_width must be an exact integer number of ADU
+        assert (adu_hi / len(counts)) == int(adu_hi / len(counts))
 
     def test_bright_frame_uses_p999_range(self) -> None:
         # 4000*1.3=5200 exceeds 12-bit adc_max=4095 → clipped to 4095

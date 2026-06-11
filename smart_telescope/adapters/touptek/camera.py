@@ -37,6 +37,10 @@ def _detect_pixel_shift(raw: np.ndarray) -> int:
     ToupTek SDK in 16-bit output mode stores data MSB-aligned:
     12-bit ADC → ×16 (shift=4), 14-bit → ×4 (shift=2), true 16-bit → no shift.
     Returns -1 if the frame has too few non-zero pixels to decide reliably.
+
+    Uses a 99% majority test rather than np.all() so that a small number of
+    hot pixels or saturated values with non-zero lower bits do not defeat
+    detection and leave data in MSB-aligned 16-bit space.
     """
     flat = raw.ravel()
     nonzero = flat[flat > 0]
@@ -44,7 +48,7 @@ def _detect_pixel_shift(raw: np.ndarray) -> int:
         return -1  # not enough data — retry on next frame
     sample = nonzero[:4096].astype(np.int32)
     for shift in (4, 2):
-        if np.all(sample % (1 << shift) == 0):
+        if float(np.mean(sample % (1 << shift) == 0)) >= 0.99:
             return shift
     return 0
 _FLAG_BLACKLEVEL  = 0x00400000

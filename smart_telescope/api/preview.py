@@ -274,6 +274,12 @@ async def ws_preview(
             _dt = time.monotonic() - _t_capture
 
             # --- STS-ADDON-007: send histogram JSON before the JPEG ---
+            # Refresh bit depth from the frame header — shift detection runs on the
+            # first capture so cur_bit_depth (read before any frame) may be stale.
+            frame_bd = frame.header.get("BITDEPTH") if hasattr(frame.header, "get") else None
+            if frame_bd is not None:
+                cur_bit_depth = int(frame_bd)
+
             stats = None
             try:
                 stats = _hist_analyze(frame.pixels, bit_depth=cur_bit_depth)
@@ -404,11 +410,13 @@ def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
 
 def _to_jpeg(frame: FitsFrame, stretch: bool = True, bayer_pattern: str = "") -> bytes:
     from PIL import Image  # runtime import — keeps startup fast on Pi
+    bd = int(frame.header.get("BITDEPTH", 16)) if hasattr(frame.header, "get") else 16
+    adc_scale = float((1 << bd) - 1)
     if bayer_pattern:
         # Colour camera: demosaic then per-channel stretch
         rgb = _debayer(frame.pixels, bayer_pattern)
         display = _auto_stretch_color(rgb) if stretch else np.clip(
-            rgb / 65535.0 * 255.0, 0.0, 255.0
+            rgb / adc_scale * 255.0, 0.0, 255.0
         ).astype(np.uint8)
         buf = io.BytesIO()
         Image.fromarray(display, mode="RGB").save(buf, format="JPEG", quality=85)
@@ -418,7 +426,7 @@ def _to_jpeg(frame: FitsFrame, stretch: bool = True, bayer_pattern: str = "") ->
             display = auto_stretch(frame.pixels)
         else:
             display = np.clip(
-                frame.pixels.astype(np.float64) / 65535.0 * 255.0, 0.0, 255.0
+                frame.pixels.astype(np.float64) / adc_scale * 255.0, 0.0, 255.0
             ).astype(np.uint8)
         buf = io.BytesIO()
         Image.fromarray(display).save(buf, format="JPEG", quality=85)

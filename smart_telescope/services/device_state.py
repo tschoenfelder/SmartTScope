@@ -70,6 +70,9 @@ class DeviceStateService:
         self._watchdog_fired_at:  float | None = None  # time.monotonic() of last log
         # serial reconnect throttle
         self._last_reconnect_at:  float | None = None
+        # Sticky AT_HOME: OnStep only sets 'H' in :GU# briefly after hC# completes.
+        # We preserve AT_HOME until the mount actually moves or starts tracking.
+        self._sticky_at_home: bool = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -244,6 +247,18 @@ class DeviceStateService:
                     pass
             else:
                 _log.warning("DeviceStateService: get_state() returned UNKNOWN — Stage 4 will stay locked until this clears")
+
+            # Sticky AT_HOME: OnStep's 'H' flag clears quickly after the home slew.
+            # Once observed, preserve AT_HOME until the mount slews, tracks, or parks.
+            with self._lock:
+                if state == MountState.AT_HOME:
+                    self._sticky_at_home = True
+                elif state in (MountState.SLEWING, MountState.TRACKING,
+                               MountState.PARKED, MountState.AT_LIMIT):
+                    self._sticky_at_home = False
+                if state == MountState.UNPARKED and self._sticky_at_home:
+                    state = MountState.AT_HOME
+
             observed = MountObservedState(
                 state=state,
                 ra=pos.ra if pos else None,

@@ -140,6 +140,9 @@ class DeviceStateService:
             self._last_command_error = None
             self._watchdog_warning   = None
             self._watchdog_fired_at  = None
+            # goto / park / track all move the mount away from home
+            if command in ("goto", "park", "track"):
+                self._sticky_at_home = False
         _log.info("command issued command_id=%s command=%r", cmd_id, command)
         return cmd_id
 
@@ -249,13 +252,13 @@ class DeviceStateService:
                 _log.warning("DeviceStateService: get_state() returned UNKNOWN — Stage 4 will stay locked until this clears")
 
             # Sticky AT_HOME: OnStep's 'H' flag clears quickly after the home slew.
-            # Once observed, preserve AT_HOME until the mount slews, tracks, or parks.
+            # Set sticky when AT_HOME is observed; only promote UNPARKED to AT_HOME
+            # (SLEWING / TRACKING / PARKED are shown as-is — those are meaningful
+            # transitions).  Sticky is cleared by record_command() when the user
+            # issues a goto, park, or track command that moves the mount.
             with self._lock:
                 if state == MountState.AT_HOME:
                     self._sticky_at_home = True
-                elif state in (MountState.SLEWING, MountState.TRACKING,
-                               MountState.PARKED, MountState.AT_LIMIT):
-                    self._sticky_at_home = False
                 if state == MountState.UNPARKED and self._sticky_at_home:
                     state = MountState.AT_HOME
 

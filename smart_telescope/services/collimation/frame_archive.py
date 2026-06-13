@@ -1,6 +1,7 @@
 """CollimationFrameArchive — opt-in FITS frame + JSON sidecar storage."""
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import threading
@@ -94,6 +95,38 @@ class CollimationFrameArchive:
         _log.debug("CollimationFrameArchive: saved %s/%s", session_id, frame_stem)
         return frame_stem
 
+    def save_tag(self, session_id: str, tag_type: str, data: dict) -> str | None:
+        """Save a metadata-only JSON entry (no FITS) for GoTo/Solve/AF operations.
+
+        Returns frame_stem (e.g. 'goto_143022'), or None if at cap.
+        """
+        session_dir = self._root / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            existing = list(session_dir.glob("*.json"))
+            if len(existing) >= self._max:
+                _log.debug(
+                    "CollimationFrameArchive: session %s at cap (%d), skipping tag",
+                    session_id, self._max,
+                )
+                return None
+        ts = datetime.datetime.now(datetime.timezone.utc).strftime("%H%M%S")
+        stem = f"{tag_type}_{ts}"
+        json_path = session_dir / f"{stem}.json"
+        sidecar = {
+            "session_id": session_id,
+            "type": tag_type,
+            "tagged_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            **data,
+        }
+        try:
+            json_path.write_text(json.dumps(sidecar, indent=2), encoding="utf-8")
+        except Exception as exc:
+            _log.warning("CollimationFrameArchive: tag write failed: %s", exc)
+            return None
+        _log.debug("CollimationFrameArchive: tagged %s/%s", session_id, stem)
+        return stem
+
     def list_sessions(self) -> list[dict]:
         """Return sessions sorted newest-first by directory mtime."""
         if not self._root.exists():
@@ -107,30 +140,37 @@ class CollimationFrameArchive:
             if not session_dir.is_dir():
                 continue
             fits_files = list(session_dir.glob("*.fits"))
+            tag_files = [j for j in session_dir.glob("*.json")
+                         if not (session_dir / f"{j.stem}.fits").exists()]
             state_counts: dict[str, int] = {}
             for f in fits_files:
                 state = f.stem.rsplit("_", 1)[0]
                 state_counts[state] = state_counts.get(state, 0) + 1
+            for j in tag_files:
+                tag_type = j.stem.rsplit("_", 1)[0]
+                state_counts[tag_type] = state_counts.get(tag_type, 0) + 1
             size_bytes = sum(f.stat().st_size for f in session_dir.iterdir())
             sessions.append({
                 "session_id": session_dir.name,
-                "frame_count": len(fits_files),
+                "frame_count": len(fits_files) + len(tag_files),
                 "state_counts": state_counts,
                 "size_bytes": size_bytes,
             })
         return sessions
 
     def list_frames(self, session_id: str) -> list[dict]:
-        """Return frames in session sorted by filename (= frame_index order)."""
+        """Return all entries (FITS frames + JSON-only tags) sorted by stem name."""
         session_dir = self._root / session_id
         if not session_dir.exists():
             return []
         frames = []
+        # FITS-backed frames
         for fits_path in sorted(session_dir.glob("*.fits")):
             frame_stem = fits_path.stem
             json_path = session_dir / f"{frame_stem}.json"
             entry: dict = {
                 "frame_stem": frame_stem,
+                "has_fits": True,
                 "size_bytes": fits_path.stat().st_size,
             }
             if json_path.exists():
@@ -146,6 +186,27 @@ class CollimationFrameArchive:
                 except Exception:
                     pass
             frames.append(entry)
+        # JSON-only tags (no corresponding FITS)
+        for json_path in sorted(session_dir.glob("*.json")):
+            if (session_dir / f"{json_path.stem}.fits").exists():
+                continue
+            entry = {
+                "frame_stem": json_path.stem,
+                "has_fits": False,
+                "size_bytes": json_path.stat().st_size,
+            }
+            try:
+                sidecar = json.loads(json_path.read_text(encoding="utf-8"))
+                entry.update({
+                    "state": sidecar.get("type"),
+                    "tagged_at": sidecar.get("tagged_at"),
+                })
+                entry.update({k: v for k, v in sidecar.items()
+                               if k not in ("session_id", "type", "tagged_at")})
+            except Exception:
+                pass
+            frames.append(entry)
+        frames.sort(key=lambda e: e["frame_stem"])
         return frames
 
     def load_frame(self, session_id: str, frame_stem: str) -> "FitsFrame":

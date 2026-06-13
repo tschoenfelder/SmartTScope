@@ -243,7 +243,14 @@ function _updateCollimMetrics(meas) {
      Frame Archive Browser (COL-ARC UI)
 ══════════════════════════════════════════════════════════════════════ */
 
-let _arcOpen = false;
+let _arcOpen   = false;
+let _s3ArcOpen = false;
+
+// Stage 3 pending archive data (populated after successful GoTo/Solve/AF)
+let _s3ArchiveEnabled = false;
+let _s3GotoData  = null;
+let _s3SolveData = null;
+let _s3AfData    = null;
 
 async function archiveToggle() {
     _arcOpen = !_arcOpen;
@@ -332,19 +339,20 @@ async function archiveLoadFrames(details, sessionId) {
 }
 
 function _arcFrameRow(sessionId, f) {
-    const ts = f.captured_at ? f.captured_at.slice(0, 19).replace('T', ' ') : '—';
-    const kb = f.size_bytes ? (f.size_bytes / 1024).toFixed(0) + ' KB' : '—';
+    const ts  = (f.captured_at || f.tagged_at || '').slice(0, 19).replace('T', ' ') || '—';
+    const kb  = f.size_bytes ? (f.size_bytes / 1024).toFixed(0) + ' KB' : '—';
+    const act = f.has_fits !== false
+        ? `<button class="secondary" style="font-size:0.72rem;padding:0.1rem 0.4rem"
+                   onclick="archiveReplay(this, '${escHtml(sessionId)}', '${escHtml(f.frame_stem)}')">
+             Replay
+           </button>`
+        : `<span style="font-size:0.72rem;color:var(--muted)">tag</span>`;
     return `<tr style="border-top:1px solid var(--border)">
       <td style="padding:0.15rem 0.3rem;font-family:monospace">${escHtml(f.frame_stem)}</td>
       <td style="padding:0.15rem 0.3rem">${escHtml(f.state || '—')}</td>
       <td style="padding:0.15rem 0.3rem;color:var(--muted)">${ts}</td>
       <td style="padding:0.15rem 0.3rem;color:var(--muted)">${kb}</td>
-      <td style="padding:0.15rem 0.3rem">
-        <button class="secondary" style="font-size:0.72rem;padding:0.1rem 0.4rem"
-                onclick="archiveReplay(this, '${escHtml(sessionId)}', '${escHtml(f.frame_stem)}')">
-          Replay
-        </button>
-      </td>
+      <td style="padding:0.15rem 0.3rem">${act}</td>
     </tr>
     <tr id="arc-replay-${escHtml(f.frame_stem)}" style="display:none">
       <td colspan="5" style="padding:0.2rem 0.5rem 0.4rem;font-size:0.78rem"></td>
@@ -396,6 +404,101 @@ async function archiveReplay(btn, sessionId, frameStem) {
     } finally {
         btn.disabled = false;
         btn.textContent = 'Replay';
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+     Stage 3 Archive (GoTo / Solve / AF tagging)
+══════════════════════════════════════════════════════════════════════ */
+
+async function _s3CheckArchiveEnabled() {
+    try {
+        const r = await fetch('/api/collimation/archive');
+        const d = await r.json();
+        _s3ArchiveEnabled = d.enabled === true;
+        const badge = document.getElementById('s3-arc-badge');
+        const dot   = document.getElementById('s3-arc-dot');
+        if (_s3ArchiveEnabled) {
+            if (badge) { badge.textContent = `${d.sessions.length} session${d.sessions.length !== 1 ? 's' : ''}`; badge.className = 'state-badge state-tracking'; }
+            if (dot)   dot.className = 'dot dot-green';
+        } else {
+            if (badge) { badge.textContent = 'Disabled'; badge.className = 'state-badge state-unknown'; }
+            if (dot)   dot.className = 'dot dot-grey';
+        }
+        _updateS3ArcButtons();
+    } catch (_) {}
+}
+
+async function s3ArchiveToggle() {
+    _s3ArcOpen = !_s3ArcOpen;
+    const body    = document.getElementById('s3-archive-body');
+    const chevron = document.getElementById('s3-arc-chevron');
+    if (body)    body.style.display  = _s3ArcOpen ? '' : 'none';
+    if (chevron) chevron.textContent = _s3ArcOpen ? '▼' : '▶';
+    if (_s3ArcOpen) await s3ArchiveLoad();
+}
+
+async function s3ArchiveLoad() {
+    const status = document.getElementById('s3-arc-status');
+    const list   = document.getElementById('s3-arc-sessions');
+    const dot    = document.getElementById('s3-arc-dot');
+    const badge  = document.getElementById('s3-arc-badge');
+    if (status) status.textContent = 'Loading…';
+    try {
+        const r = await fetch('/api/collimation/archive');
+        const d = await r.json();
+        if (!d.enabled) {
+            if (status) status.textContent = 'Archive disabled — set [collimation.archive] enabled = true in config.toml';
+            if (dot)   dot.className = 'dot dot-grey';
+            if (badge) { badge.textContent = 'Disabled'; badge.className = 'state-badge state-unknown'; }
+            if (list)  list.innerHTML = '';
+            _s3ArchiveEnabled = false;
+            _updateS3ArcButtons();
+            return;
+        }
+        _s3ArchiveEnabled = true;
+        _updateS3ArcButtons();
+        if (status) status.textContent = '';
+        if (dot)   dot.className = 'dot dot-green';
+        if (badge) {
+            badge.textContent = `${d.sessions.length} session${d.sessions.length !== 1 ? 's' : ''}`;
+            badge.className = 'state-badge state-tracking';
+        }
+        if (list) list.innerHTML = d.sessions.length === 0
+            ? '<p style="color:var(--muted);font-size:0.83rem">No archived sessions yet.</p>'
+            : d.sessions.map(s => _arcSessionHtml(s)).join('');
+    } catch (e) {
+        if (status) status.textContent = `Error: ${e.message}`;
+    }
+}
+
+function _updateS3ArcButtons() {
+    const gotoBtn  = document.getElementById('s3-arc-goto-btn');
+    const solveBtn = document.getElementById('s3-arc-solve-btn');
+    const afBtn    = document.getElementById('s3-arc-af-btn');
+    if (gotoBtn)  gotoBtn.disabled  = !(_s3ArchiveEnabled && _s3GotoData);
+    if (solveBtn) solveBtn.disabled = !(_s3ArchiveEnabled && _s3SolveData);
+    if (afBtn)    afBtn.disabled    = !(_s3ArchiveEnabled && _s3AfData);
+}
+
+async function s3ArchiveTag(type) {
+    let data = null;
+    if (type === 'goto'  && _s3GotoData)  data = { ..._s3GotoData };
+    if (type === 'solve' && _s3SolveData) data = { ..._s3SolveData };
+    if (type === 'af'    && _s3AfData)    data = { ..._s3AfData };
+    if (!data) return;
+    try {
+        await apiPost('/api/collimation/archive/tag', { tag_type: type, data });
+        // Clear the pending data so the button disables again
+        if (type === 'goto')  _s3GotoData  = null;
+        if (type === 'solve') _s3SolveData = null;
+        if (type === 'af')    _s3AfData    = null;
+        _updateS3ArcButtons();
+        // Refresh the archive list if open
+        if (_s3ArcOpen) await s3ArchiveLoad();
+        setStatus('s3-status', `${type} result saved to archive`);
+    } catch (err) {
+        setStatus('s3-status', `Archive save failed: ${err.message}`, true);
     }
 }
 

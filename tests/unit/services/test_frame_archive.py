@@ -93,3 +93,51 @@ def test_load_missing_frame_raises(tmp_path):
     archive.new_session("s5")
     with pytest.raises(FileNotFoundError):
         archive.load_frame("s5", "measure_donut_0099")
+
+
+def test_save_tag_creates_json_only_entry(tmp_path):
+    archive = CollimationFrameArchive(tmp_path / "arc", max_frames_per_session=50)
+    stem = archive.save_tag("s3_today", "goto", {"ra": 5.588, "dec": -5.39, "target": "M42"})
+    assert stem is not None
+    assert stem.startswith("goto_")
+    json_path = tmp_path / "arc" / "s3_today" / f"{stem}.json"
+    assert json_path.exists()
+    sidecar = json.loads(json_path.read_text(encoding="utf-8"))
+    assert sidecar["type"] == "goto"
+    assert sidecar["ra"] == 5.588
+    assert "tagged_at" in sidecar
+    fits_path = tmp_path / "arc" / "s3_today" / f"{stem}.fits"
+    assert not fits_path.exists()
+
+
+def test_save_tag_appears_in_list_sessions(tmp_path):
+    archive = CollimationFrameArchive(tmp_path / "arc", max_frames_per_session=50)
+    archive.save_tag("s3_today", "solve", {"ra": 1.0, "dec": 2.0})
+    sessions = archive.list_sessions()
+    assert len(sessions) == 1
+    assert sessions[0]["session_id"] == "s3_today"
+    assert sessions[0]["frame_count"] == 1
+    assert "solve" in sessions[0]["state_counts"]
+
+
+def test_save_tag_appears_in_list_frames(tmp_path):
+    archive = CollimationFrameArchive(tmp_path / "arc", max_frames_per_session=50)
+    stem = archive.save_tag("s3_today", "af", {"best_position": 1234, "metric_gain": 5.2})
+    frames = archive.list_frames("s3_today")
+    assert len(frames) == 1
+    assert frames[0]["frame_stem"] == stem
+    assert frames[0]["has_fits"] is False
+    assert frames[0]["state"] == "af"
+
+
+def test_list_frames_has_fits_flag_for_fits_entries(tmp_path):
+    archive = CollimationFrameArchive(tmp_path / "arc", max_frames_per_session=50)
+    archive.new_session("mixed")
+    _save(archive, "mixed", idx=1)
+    archive.save_tag("mixed", "goto", {"ra": 0.0})
+    frames = archive.list_frames("mixed")
+    assert len(frames) == 2
+    fits_entry = next(f for f in frames if f["has_fits"])
+    tag_entry = next(f for f in frames if not f["has_fits"])
+    assert fits_entry["state"] == "measure_donut"
+    assert tag_entry["state"] == "goto"

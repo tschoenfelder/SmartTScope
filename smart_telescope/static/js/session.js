@@ -78,6 +78,9 @@ async function solveFrame() {
           `<span style="color:var(--muted)">${data.solve_time_s}s</span>` +
           ` &nbsp; <button onclick="syncMount(${data.ra},${data.dec})" id="sync-btn"` +
           ` style="padding:0.1rem 0.4rem;font-size:0.75rem">Sync Mount</button>`;
+        _s3SolveData = { ra: data.ra, dec: data.dec, pa: data.pa, solve_time_s: data.solve_time_s, exposure_s: exposure, gain };
+        const arcBtn = document.getElementById('s3-arc-solve-btn');
+        if (arcBtn && _s3ArchiveEnabled) arcBtn.disabled = false;
       } else {
         setStatus('s3-status', `Solve failed: ${data.error || 'unknown'}`, true);
       }

@@ -1205,6 +1205,8 @@
             <button onclick="mountGoto()">GoTo</button>
             <button id="s3-center-btn" class="secondary" onclick="mountGotoAndCenter()"
                     title="GoTo then plate-solve + sync until centred">&#x2316;&nbsp;Center</button>
+            <button id="s3-arc-goto-btn" class="secondary" disabled onclick="s3ArchiveTag('goto')"
+                    title="Save GoTo target to archive" style="padding:0.15rem 0.4rem;font-size:0.8rem">&#x1F4C1;</button>
           </div>
           <div id="s3-center-status" class="status-line"
                style="margin-top:0.2rem;min-height:1rem;font-size:0.8rem"></div>
@@ -1257,9 +1259,13 @@
             <button id="solve-btn" onclick="solveFrame()"
                     style="margin-left:0.4rem;padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Plate-solve current frame">Solve</button>
+            <button id="s3-arc-solve-btn" class="secondary" disabled onclick="s3ArchiveTag('solve')"
+                    title="Save solve result to archive" style="padding:0.15rem 0.35rem;font-size:0.78rem">&#x1F4C1;</button>
             <button id="preview-af-btn" onclick="runPreviewAutofocus()" disabled
                     style="padding:0.15rem 0.5rem;font-size:0.78rem"
                     title="Focuser not connected">AF</button>
+            <button id="s3-arc-af-btn" class="secondary" disabled onclick="s3ArchiveTag('af')"
+                    title="Save AF result to archive" style="padding:0.15rem 0.35rem;font-size:0.78rem">&#x1F4C1;</button>
             <span id="s3-frame-count" style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem"></span>
             <span id="s3-cam-adapter" style="font-size:0.75rem;margin-left:0.4rem"></span>
           </div>
@@ -1340,6 +1346,22 @@
                border-radius:4px;background:var(--bg);font-size:0.8rem;
                font-family:ui-monospace,monospace;line-height:1.6"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Session Archive Browser (GoTo / Solve / AF tags) ── -->
+    <div class="card" id="s3-archive-card" style="margin-top:1rem;margin-bottom:1rem">
+      <div class="card-title" style="cursor:pointer" onclick="s3ArchiveToggle()">
+        <span class="dot dot-grey" id="s3-arc-dot"></span>
+        Session Archive
+        <span id="s3-arc-badge" class="state-badge state-unknown"
+              style="margin-left:0.5rem">Disabled</span>
+        <span id="s3-arc-chevron"
+              style="margin-left:auto;font-size:0.8rem;color:var(--muted)">▶</span>
+      </div>
+      <div id="s3-archive-body" style="display:none">
+        <div id="s3-arc-status" class="status-line" style="min-height:auto;margin-bottom:0.5rem"></div>
+        <div id="s3-arc-sessions" style="font-size:0.85rem"></div>
       </div>
     </div>
 

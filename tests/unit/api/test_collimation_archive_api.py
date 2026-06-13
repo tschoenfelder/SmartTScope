@@ -17,10 +17,12 @@ def _make_frame(width: int = 100, height: int = 100) -> FitsFrame:
 
 
 @pytest.fixture(autouse=True)
-def reset_assistant():
-    original = col_module._assistant
+def reset_singletons():
+    orig_assistant = col_module._assistant
+    orig_archive = col_module._frame_archive
     yield
-    col_module._assistant = original
+    col_module._assistant = orig_assistant
+    col_module._frame_archive = orig_archive
 
 
 @pytest.fixture()
@@ -37,6 +39,7 @@ def mock_archive():
     archive.list_frames.return_value = [
         {
             "frame_stem": "measure_donut_0001",
+            "has_fits": True,
             "state": "measure_donut",
             "frame_index": 1,
             "captured_at": "2026-01-01T00:00:00+00:00",
@@ -53,23 +56,20 @@ def mock_archive():
         "ref_y": 50.0,
         "analysis": {"reason": "ok", "error_x_px": 1.5, "error_y_px": -0.5},
     }
+    archive.save_tag.return_value = "goto_143022"
     return archive
 
 
 @pytest.fixture()
 def client(mock_archive):
-    assistant = MagicMock()
-    assistant.frame_archive = mock_archive
-    col_module._assistant = assistant
+    col_module._frame_archive = mock_archive
     with TestClient(app) as c:
         yield c
 
 
 @pytest.fixture()
 def client_no_archive():
-    assistant = MagicMock()
-    assistant.frame_archive = None
-    col_module._assistant = assistant
+    col_module._frame_archive = None
     with TestClient(app) as c:
         yield c
 
@@ -119,3 +119,30 @@ def test_replay_missing_frame_returns_404(client, mock_archive):
     mock_archive.load_frame.side_effect = FileNotFoundError("not found")
     r = client.post("/api/collimation/archive/abc-123/nonexistent_0001/replay")
     assert r.status_code == 404
+
+
+def test_archive_tag_saves_entry(client, mock_archive):
+    r = client.post("/api/collimation/archive/tag", json={
+        "tag_type": "goto",
+        "data": {"ra": 5.588, "dec": -5.39, "target": "M42"},
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["frame_stem"] == "goto_143022"
+    mock_archive.save_tag.assert_called_once()
+    call_args = mock_archive.save_tag.call_args
+    assert call_args[0][1] == "goto"
+
+
+def test_archive_tag_uses_date_session_when_not_specified(client, mock_archive):
+    import datetime
+    expected_session = datetime.date.today().strftime("s3_%Y-%m-%d")
+    r = client.post("/api/collimation/archive/tag", json={"tag_type": "solve", "data": {}})
+    assert r.status_code == 200
+    assert r.json()["session_id"] == expected_session
+
+
+def test_archive_tag_no_archive_returns_503(client_no_archive):
+    r = client_no_archive.post("/api/collimation/archive/tag",
+                               json={"tag_type": "goto", "data": {}})
+    assert r.status_code == 503

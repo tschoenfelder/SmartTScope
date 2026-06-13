@@ -37,6 +37,32 @@ router = APIRouter(prefix="/api/collimation", tags=["collimation"])
 _assistant: CollimationAssistant | None = None
 _assistant_lock = threading.Lock()
 
+_frame_archive: "CollimationFrameArchive | None" = None
+_archive_lock = threading.Lock()
+
+
+def _get_archive() -> "CollimationFrameArchive | None":
+    """Return the CollimationFrameArchive singleton (None if archive is disabled in config)."""
+    global _frame_archive
+    if _frame_archive is not None:
+        return _frame_archive
+    with _archive_lock:
+        if _frame_archive is not None:
+            return _frame_archive
+        from .. import config as _cfg_mod
+        from pathlib import Path
+        from ..services.collimation.frame_archive import CollimationFrameArchive
+        col_cfg = _cfg_mod.get_collimation_config()
+        arc_cfg = col_cfg.archive
+        if arc_cfg.enabled:
+            archive_dir = (
+                Path(arc_cfg.archive_dir)
+                if arc_cfg.archive_dir
+                else Path.home() / ".SmartTScope" / "frame_archive"
+            )
+            _frame_archive = CollimationFrameArchive(archive_dir, arc_cfg.max_frames_per_session)
+    return _frame_archive
+
 
 def _get_assistant() -> CollimationAssistant:
     global _assistant
@@ -69,27 +95,13 @@ def _get_assistant() -> CollimationAssistant:
                         col_cfg.guiding_camera_role,
                     )
 
-                from ..services.collimation.frame_archive import CollimationFrameArchive
-                from pathlib import Path
-                arc_cfg = col_cfg.archive
-                frame_archive: CollimationFrameArchive | None = None
-                if arc_cfg.enabled:
-                    archive_dir = (
-                        Path(arc_cfg.archive_dir)
-                        if arc_cfg.archive_dir
-                        else Path.home() / ".SmartTScope" / "frame_archive"
-                    )
-                    frame_archive = CollimationFrameArchive(
-                        archive_dir, arc_cfg.max_frames_per_session
-                    )
-
                 _assistant = CollimationAssistant(
                     camera=get_camera(),
                     mount=get_mount(),
                     focuser=get_focuser(),
                     guiding_service=guiding_svc,
                     guide_cameras=guide_cameras,
-                    frame_archive=frame_archive,
+                    frame_archive=_get_archive(),
                 )
     return _assistant
 
@@ -191,7 +203,7 @@ def collimation_report() -> dict[str, Any]:
 @router.get("/archive")
 def archive_list_sessions() -> dict[str, Any]:
     """List all archived collimation sessions."""
-    archive = _get_assistant().frame_archive
+    archive = _get_archive()
     if archive is None:
         return {"enabled": False, "sessions": []}
     return {"enabled": True, "sessions": archive.list_sessions()}
@@ -200,7 +212,7 @@ def archive_list_sessions() -> dict[str, Any]:
 @router.get("/archive/{session_id}")
 def archive_list_frames(session_id: str) -> dict[str, Any]:
     """List frames in a single archived session."""
-    archive = _get_assistant().frame_archive
+    archive = _get_archive()
     if archive is None:
         return {"enabled": False, "session_id": session_id, "frames": []}
     return {
@@ -213,7 +225,7 @@ def archive_list_frames(session_id: str) -> dict[str, Any]:
 @router.post("/archive/{session_id}/{frame_stem}/replay")
 def archive_replay(session_id: str, frame_stem: str) -> dict[str, Any]:
     """Re-run stored frame through its original analysis pipeline."""
-    archive = _get_assistant().frame_archive
+    archive = _get_archive()
     if archive is None:
         raise HTTPException(status_code=503, detail="Frame archive is not enabled")
     try:
@@ -274,6 +286,27 @@ def archive_replay(session_id: str, frame_stem: str) -> dict[str, Any]:
         "original": sidecar.get("analysis", {}),
         "replayed": new_result,
     }
+
+
+class ArchiveTagRequest(BaseModel):
+    """Metadata-only archive entry (no FITS image) for GoTo/Solve/AF operations."""
+    session_id: str = ""
+    tag_type: str
+    data: dict[str, Any] = {}
+
+
+@router.post("/archive/tag")
+def archive_tag(body: ArchiveTagRequest) -> dict[str, Any]:
+    """Save a metadata-only tag (no FITS) for GoTo, plate-solve, or AF operations."""
+    import datetime
+    archive = _get_archive()
+    if archive is None:
+        raise HTTPException(status_code=503, detail="Frame archive is not enabled")
+    session_id = body.session_id or datetime.date.today().strftime("s3_%Y-%m-%d")
+    stem = archive.save_tag(session_id, body.tag_type, body.data)
+    if stem is None:
+        raise HTTPException(status_code=409, detail="Session archive is full")
+    return {"session_id": session_id, "frame_stem": stem}
 
 
 # ── Self-test endpoints (COL-022) ─────────────────────────────────────────────

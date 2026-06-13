@@ -338,6 +338,9 @@ async function runPreviewAutofocus() {
       const sign = d.metric_gain >= 0 ? '+' : '';
       setStatus('s3-status',
         `AF: pos ${d.best_position}  gain ${sign}${d.metric_gain.toFixed(1)}`);
+      _s3AfData = { best_position: d.best_position, metric_gain: d.metric_gain, exposure_s: exp };
+      const arcBtn = document.getElementById('s3-arc-af-btn');
+      if (arcBtn && _s3ArchiveEnabled) arcBtn.disabled = false;
     } catch (err) {
       setStatus('s3-status', `AF failed: ${err.message}`, true);
     } finally {

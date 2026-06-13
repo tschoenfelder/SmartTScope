@@ -236,7 +236,7 @@ class OnStepMount(MountPort):
             return False
         # Use write_bypass — rate/move/stop commands return no response bytes.
         # Bypassing the lock is safe here (same pattern as stop()).
-        self._bus.write_bypass(b":RC#")             # center rate
+        self._bus.write_bypass(b":RM#")             # move/slew rate (faster than center, ~2× speed)
         self._bus.write_bypass(f":M{d}#".encode())  # start moving
         time.sleep(move_ms / 1000.0)
         self._bus.write_bypass(b":Q#")              # stop

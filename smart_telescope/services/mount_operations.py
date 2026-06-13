@@ -118,6 +118,8 @@ def park_sequence(
     if pre_state == MountState.PARKED:
         _log.info("park_sequence: mount already PARKED — skipping :hP#")
         return
+    if pre_state == MountState.SLEWING:
+        raise MountSlewingError("Mount is still slewing — wait for it to stop before parking")
 
     try:
         with coordinator.mount_command():

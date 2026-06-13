@@ -73,6 +73,11 @@ class DeviceStateService:
         # Sticky AT_HOME: OnStep only sets 'H' in :GU# briefly after hC# completes.
         # We preserve AT_HOME until the mount actually moves or starts tracking.
         self._sticky_at_home: bool = False
+        # Require SLEWING to be observed after the home command before UNPARKED is
+        # promoted to AT_HOME.  Without this gate, the first poll after :hC# can see
+        # UNPARKED (OnStep hasn't set the S flag yet) and display HOME prematurely.
+        self._home_cmd_issued: bool = False
+        self._home_slew_seen:  bool = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -140,12 +145,16 @@ class DeviceStateService:
             self._last_command_error = None
             self._watchdog_warning   = None
             self._watchdog_fired_at  = None
-            # home sets sticky (OnStep's 'H' flag clears before the next poll);
-            # goto / park / track move the mount away from home and clear it
+            # home: don't set sticky immediately — wait until SLEWING is observed
+            # (OnStep's S flag), then promote UNPARKED → AT_HOME after slew ends.
+            # Prevents premature HOME display before OnStep sets the S flag.
             if command == "home":
-                self._sticky_at_home = True
+                self._home_cmd_issued = True
+                self._home_slew_seen  = False
             elif command in ("goto", "park", "track"):
-                self._sticky_at_home = False
+                self._sticky_at_home  = False
+                self._home_cmd_issued = False
+                self._home_slew_seen  = False
         _log.info("command issued command_id=%s command=%r", cmd_id, command)
         return cmd_id
 
@@ -255,15 +264,27 @@ class DeviceStateService:
                 _log.warning("DeviceStateService: get_state() returned UNKNOWN — Stage 4 will stay locked until this clears")
 
             # Sticky AT_HOME: OnStep's 'H' flag clears quickly after the home slew.
-            # Set sticky when AT_HOME is observed; only promote UNPARKED to AT_HOME
-            # (SLEWING / TRACKING / PARKED are shown as-is — those are meaningful
-            # transitions).  Sticky is cleared by record_command() when the user
-            # issues a goto, park, or track command that moves the mount.
+            # Promotion rules (SLEWING / TRACKING / PARKED are always shown as-is):
+            # 1. Hardware 'H' flag observed → set sticky directly.
+            # 2. SLEWING observed after home command → mark slew as confirmed.
+            # 3. UNPARKED after confirmed home slew → promote to AT_HOME + set sticky.
+            # 4. UNPARKED with existing sticky (previous confirmed home) → stay AT_HOME.
             with self._lock:
                 if state == MountState.AT_HOME:
-                    self._sticky_at_home = True
-                if state == MountState.UNPARKED and self._sticky_at_home:
-                    state = MountState.AT_HOME
+                    self._sticky_at_home  = True
+                    self._home_cmd_issued = False
+                    self._home_slew_seen  = False
+                elif state == MountState.SLEWING and self._home_cmd_issued:
+                    self._home_slew_seen = True
+                elif state == MountState.UNPARKED:
+                    if self._home_cmd_issued and self._home_slew_seen:
+                        # Slew started and ended: mount is at home position
+                        self._sticky_at_home  = True
+                        self._home_cmd_issued = False
+                        self._home_slew_seen  = False
+                        state = MountState.AT_HOME
+                    elif self._sticky_at_home:
+                        state = MountState.AT_HOME
 
             observed = MountObservedState(
                 state=state,

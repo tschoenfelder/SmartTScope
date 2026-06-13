@@ -140,8 +140,11 @@ class DeviceStateService:
             self._last_command_error = None
             self._watchdog_warning   = None
             self._watchdog_fired_at  = None
-            # goto / park / track all move the mount away from home
-            if command in ("goto", "park", "track"):
+            # home sets sticky (OnStep's 'H' flag clears before the next poll);
+            # goto / park / track move the mount away from home and clear it
+            if command == "home":
+                self._sticky_at_home = True
+            elif command in ("goto", "park", "track"):
                 self._sticky_at_home = False
         _log.info("command issued command_id=%s command=%r", cmd_id, command)
         return cmd_id

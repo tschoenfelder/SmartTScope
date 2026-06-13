@@ -545,52 +545,60 @@ class TestPollUntilChanged:
 # ── Sticky AT_HOME ────────────────────────────────────────────────────────────
 
 class TestStickyAtHome:
-    def test_at_home_observed_once_persists_through_unparked(self):
-        # AT_HOME → UNPARKED → UNPARKED  ⇒  AT_HOME → AT_HOME → AT_HOME
-        states = [MountState.AT_HOME, MountState.UNPARKED, MountState.UNPARKED]
+    def test_home_command_sets_sticky(self):
+        # After record_command("home"), UNPARKED is promoted to AT_HOME.
         mount = MagicMock()
-        mount.get_state.side_effect = states
+        mount.get_state.return_value = MountState.UNPARKED
         svc = DeviceStateService()
-        for _ in range(3):
-            svc._poll_once(mount)
+        svc.record_command("home")
+        svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.AT_HOME
 
-    def test_sticky_survives_transient_slewing(self):
-        # After homing, brief SLEWING (correction) must not clear sticky.
-        # AT_HOME → SLEWING → UNPARKED  ⇒  AT_HOME → SLEWING → AT_HOME
+    def test_home_slew_then_unparked_shows_at_home(self):
+        # Realistic sequence: home issued → SLEWING observed → UNPARKED after slew.
+        # OnStep's 'H' flag clears before next poll, so the poller never sees AT_HOME.
         mount = MagicMock()
-        mount.get_state.side_effect = [MountState.AT_HOME, MountState.SLEWING, MountState.UNPARKED]
+        mount.get_state.side_effect = [MountState.SLEWING, MountState.UNPARKED, MountState.UNPARKED]
+        svc = DeviceStateService()
+        svc.record_command("home")       # sticky set at command time
+        svc._poll_once(mount)
+        assert svc.get_mount_state().state == MountState.SLEWING  # shown as-is during slew
+        svc._poll_once(mount)
+        assert svc.get_mount_state().state == MountState.AT_HOME  # promoted after slew
+        svc._poll_once(mount)
+        assert svc.get_mount_state().state == MountState.AT_HOME  # persists
+
+    def test_hardware_at_home_also_sets_sticky(self):
+        # If the 'H' flag IS caught, it also sets sticky.
+        mount = MagicMock()
+        mount.get_state.side_effect = [MountState.AT_HOME, MountState.UNPARKED]
         svc = DeviceStateService()
         svc._poll_once(mount)
+        svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.AT_HOME
-        svc._poll_once(mount)
-        assert svc.get_mount_state().state == MountState.SLEWING  # shown as-is
-        svc._poll_once(mount)
-        assert svc.get_mount_state().state == MountState.AT_HOME  # sticky still active
 
     def test_slewing_shown_as_slewing_not_overridden(self):
-        # SLEWING state is always shown as-is even when sticky is set.
+        # SLEWING is always shown as-is (not promoted) even with sticky set.
         mount = MagicMock()
-        mount.get_state.side_effect = [MountState.AT_HOME, MountState.SLEWING]
+        mount.get_state.side_effect = [MountState.SLEWING]
         svc = DeviceStateService()
-        svc._poll_once(mount)
+        svc.record_command("home")
         svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.SLEWING
 
     def test_tracking_shown_as_tracking_not_overridden(self):
-        # TRACKING is shown as-is so the user sees the mount is tracking.
         mount = MagicMock()
-        mount.get_state.side_effect = [MountState.AT_HOME, MountState.TRACKING]
+        mount.get_state.side_effect = [MountState.TRACKING]
         svc = DeviceStateService()
-        svc._poll_once(mount)
+        svc.record_command("home")
         svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.TRACKING
 
     def test_parked_shown_as_parked_not_overridden(self):
         mount = MagicMock()
-        mount.get_state.side_effect = [MountState.AT_HOME, MountState.PARKED]
+        mount.get_state.side_effect = [MountState.PARKED]
         svc = DeviceStateService()
-        svc._poll_once(mount)
+        svc.record_command("home")
         svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.PARKED
 
@@ -598,7 +606,7 @@ class TestStickyAtHome:
         mount = MagicMock()
         mount.get_state.return_value = MountState.UNPARKED
         svc = DeviceStateService()
-        svc._sticky_at_home = True
+        svc.record_command("home")
         svc.record_command("goto")
         svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.UNPARKED
@@ -607,7 +615,7 @@ class TestStickyAtHome:
         mount = MagicMock()
         mount.get_state.return_value = MountState.UNPARKED
         svc = DeviceStateService()
-        svc._sticky_at_home = True
+        svc.record_command("home")
         svc.record_command("park")
         svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.UNPARKED
@@ -616,21 +624,12 @@ class TestStickyAtHome:
         mount = MagicMock()
         mount.get_state.return_value = MountState.UNPARKED
         svc = DeviceStateService()
-        svc._sticky_at_home = True
+        svc.record_command("home")
         svc.record_command("track")
         svc._poll_once(mount)
         assert svc.get_mount_state().state == MountState.UNPARKED
 
-    def test_sticky_not_cleared_by_home_command(self):
-        mount = MagicMock()
-        mount.get_state.return_value = MountState.UNPARKED
-        svc = DeviceStateService()
-        svc._sticky_at_home = True
-        svc.record_command("home")
-        svc._poll_once(mount)
-        assert svc.get_mount_state().state == MountState.AT_HOME
-
-    def test_no_sticky_without_at_home_observed(self):
+    def test_no_sticky_without_home_command_or_observation(self):
         mount = MagicMock()
         mount.get_state.return_value = MountState.UNPARKED
         svc = DeviceStateService()

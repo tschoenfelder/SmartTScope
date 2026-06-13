@@ -314,9 +314,12 @@ def mount_park(
     coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
+    # Capture AT_HOME before record_command("park") clears the sticky flag.
+    obs = device_state.get_mount_state()
+    at_home = obs is not None and obs.state == MountState.AT_HOME
     device_state.record_command("park")
     try:
-        mount_ops.park_sequence(mount, coordinator, device_state)
+        mount_ops.park_sequence(mount, coordinator, device_state, auto_set_park=at_home)
     except mount_ops.MountSlewingError as exc:
         device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before parking") from exc
@@ -326,24 +329,6 @@ def mount_park(
     except RuntimeError as exc:
         device_state.record_command_error(str(exc))
         raise HTTPException(status_code=500, detail=f"Park failed: {exc}") from exc
-    return {"ok": True}
-
-
-@router.post("/set-park")
-def mount_set_park(
-    mount: MountPort = Depends(deps.get_mount),
-) -> dict[str, bool]:
-    """Save the current mount position as the park position (:hS#).
-
-    Must be called once before park() will be accepted by OnStep.  Typically
-    invoked after a home slew so that home position = park position.
-    """
-    ok = mount.set_park_position()
-    if not ok:
-        raise HTTPException(
-            status_code=500,
-            detail="Set park position rejected by OnStep — check mount connection and alignment",
-        )
     return {"ok": True}
 
 

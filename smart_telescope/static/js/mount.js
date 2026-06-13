@@ -158,9 +158,7 @@ function mountCard(data) {
             <span class="controls-spacer"></span>
             <span style="display:flex;gap:0.5rem;flex-wrap:nowrap;align-items:center">
               <button class="secondary" onclick="mountHome()"
-                      title="Slew to home position (:hC#)">Home</button>
-              <button class="secondary" onclick="mountSetPark()"
-                      title="Save current position as park position (:hS#) — do this once after homing">Set Park</button>
+                      title="Slew to celestial pole (Dec 85°, HA 0)">Home</button>
               <button class="secondary" onclick="mountAction('unpark')"
                       title="Unpark mount">Unpark</button>
               <button class="secondary" onclick="mountAction('park')"
@@ -285,20 +283,6 @@ async function mountHome() {
       _mountPendingCmd = null;
       if (btn) { btn.disabled = false; btn.innerHTML = 'Home'; }
       await refreshMount();  // render confirmed hardware state
-    }
-}
-
-async function mountSetPark() {
-    setStatus('s1-mount-status', '');
-    const btn = document.querySelector('button[onclick="mountSetPark()"]');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Setting…'; }
-    try {
-      await apiPost('/api/mount/set-park');
-      setStatus('s1-mount-status', 'Park position saved — Park button will now work.');
-    } catch (err) {
-      setStatus('s1-mount-status', `Set park failed: ${err.message}`, true);
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = 'Set Park'; }
     }
 }
 

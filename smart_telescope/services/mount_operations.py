@@ -95,8 +95,13 @@ def park_sequence(
     mount: MountPort,
     coordinator: HardwareCommandCoordinator,
     device_state: DeviceStateService,
+    auto_set_park: bool = False,
 ) -> None:
     """Park the mount via the coordinator.
+
+    When ``auto_set_park`` is True (mount was AT_HOME when park was requested),
+    sends :hS# before :hP# to save home as the park position.  OnStep requires
+    this at least once per EEPROM configuration.
 
     After sending :hP#, polls :GU# until state leaves UNPARKED (confirming
     the slew started) or times out after 5 s.  The full park slew can take
@@ -108,7 +113,7 @@ def park_sequence(
         RuntimeError: park command rejected by the mount
     """
     pre_state = mount.get_state()
-    _log.info("park_sequence: pre-park state = %s", pre_state.name)
+    _log.info("park_sequence: pre-park state = %s (at_home=%s)", pre_state.name, auto_set_park)
 
     if pre_state == MountState.PARKED:
         _log.info("park_sequence: mount already PARKED — skipping :hP#")
@@ -118,6 +123,12 @@ def park_sequence(
         with coordinator.mount_command():
             if mount.is_slewing():
                 raise MountSlewingError("Rejected — mount is slewing")
+            if auto_set_park:
+                ok_s = mount.set_park_position()
+                if ok_s:
+                    _log.info("park_sequence: park position saved (:hS# accepted)")
+                else:
+                    _log.warning("park_sequence: :hS# not accepted — will attempt :hP# anyway")
             ok = mount.park()
             if not ok:
                 raise RuntimeError(

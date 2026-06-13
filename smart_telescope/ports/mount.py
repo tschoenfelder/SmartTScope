@@ -10,6 +10,7 @@ class MountState(Enum):
     SLEWING = auto()
     TRACKING = auto()
     AT_LIMIT = auto()
+    AT_HOME = auto()
 
 
 @dataclass

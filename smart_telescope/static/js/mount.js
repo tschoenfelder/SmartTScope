@@ -3,9 +3,15 @@
      Mount strip (compact status, stages 2–5)
 ══════════════════════════════════════════════════════════════════════ */
 const _STRIP_DOT = {
-    parked: 'dot-grey', unparked: 'dot-yellow',
+    parked: 'dot-grey', unparked: 'dot-yellow', at_home: 'dot-yellow',
     tracking: 'dot-green', slewing: 'dot-green',
     at_limit: 'dot-red', unknown: 'dot-grey',
+};
+
+const _STATE_LABEL = {
+    parked: 'Parked', unparked: 'Unparked', at_home: 'Home',
+    tracking: 'Tracking', slewing: 'Slewing',
+    at_limit: 'At Limit', unknown: 'Unknown',
 };
 
 function _fmtHA(h) {
@@ -23,8 +29,9 @@ function _updateMountStrip(data) {
     const stEl   = document.getElementById('ms-state');
     const rdEl   = document.getElementById('ms-radec');
     const haEl   = document.getElementById('ms-haalt');
+    const label = _STATE_LABEL[state] || state;
     if (dotEl) dotEl.className = 'dot ' + (_mountPendingCmd ? 'dot-yellow' : (_STRIP_DOT[state] || 'dot-grey'));
-    if (stEl)  stEl.textContent = _mountPendingCmd ? `${_mountPendingCmd}…` : (data.stale ? `${state} ⚠` : state);
+    if (stEl)  stEl.textContent = _mountPendingCmd ? `${_mountPendingCmd}…` : (data.stale ? `${label} ⚠` : label);
     if (rdEl)  rdEl.textContent = data.ra != null
       ? `${_formatRA(+data.ra)}  ${_formatDec(+data.dec)}`
       : '—';
@@ -49,6 +56,7 @@ function _updateMountStrip(data) {
         unlockStage(4);
     }
 
+
     // Grey out movement buttons when parked — guide pulses and GoTo are no-ops on OnStep
     // while parked. UNPARK, HOME, STOP, and TRACK are intentionally excluded.
     const _parked = (state === 'parked');
@@ -72,7 +80,7 @@ function mountEmergencyStop() {
      Mount — Stage 1 card
 ══════════════════════════════════════════════════════════════════════ */
 const _MOUNT_DOT = {
-    parked: 'dot-grey', unparked: 'dot-yellow',
+    parked: 'dot-grey', unparked: 'dot-yellow', at_home: 'dot-yellow',
     tracking: 'dot-green', slewing: 'dot-green',
     at_limit: 'dot-red', unknown: 'dot-grey',
 };
@@ -88,8 +96,8 @@ function mountCard(data) {
     const stateBadge = _mountPendingCmd
       ? `<span class="state-badge state-pending"><span class="spin" style="display:inline-block;width:0.65em;height:0.65em;margin-right:0.3em;vertical-align:middle"></span>${_mountPendingCmd}…</span>`
       : data.stale
-        ? `<span class="state-badge state-unknown" title="Status data may be outdated — serial poll delayed">⚠ ${state}</span>`
-        : `<span class="state-badge state-${state}">${state}</span>`;
+        ? `<span class="state-badge state-unknown" title="Status data may be outdated — serial poll delayed">⚠ ${_STATE_LABEL[state] || state}</span>`
+        : `<span class="state-badge state-${state}">${_STATE_LABEL[state] || state}</span>`;
     const wdWarn = data.watchdog_warning
       ? `<div style="font-size:0.78rem;color:var(--warning);background:rgba(210,153,34,0.1);
               border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:0.35rem 0.6rem;

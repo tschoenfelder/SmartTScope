@@ -154,6 +154,8 @@ class OnStepMount(MountPort):
             return MountState.AT_LIMIT
         if "T" in r:
             return MountState.TRACKING
+        if "H" in r:
+            return MountState.AT_HOME
         return MountState.UNPARKED
 
     def unpark(self) -> bool:

@@ -152,6 +152,12 @@ def home_sequence(
         _log.info("Mount home: unparked — waiting for state to propagate")
         time.sleep(1.0)
 
+    # OnStep silently ignores :hC# while sidereal tracking is active on some
+    # firmware versions.  Disable tracking first so the home slew always starts.
+    if mount.get_state() == MountState.TRACKING:
+        mount.disable_tracking()
+        _log.info("Mount home: tracking disabled before home command")
+
     try:
         with coordinator.mount_command():
             if mount.is_slewing():

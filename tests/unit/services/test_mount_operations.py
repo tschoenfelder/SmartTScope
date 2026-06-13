@@ -222,3 +222,21 @@ def test_home_sequence_raises_slewing_error():
     c = _coordinator()
     with pytest.raises(MountSlewingError):
         home_sequence(m, c)
+
+
+def test_home_sequence_disables_tracking_before_go_home():
+    m = _mock_mount(state=MountState.TRACKING)
+    c = _coordinator()
+    call_order: list[str] = []
+    m.disable_tracking.side_effect = lambda: call_order.append("disable_tracking") or True
+    m.go_home.side_effect = lambda: call_order.append("go_home")
+    home_sequence(m, c)
+    assert call_order == ["disable_tracking", "go_home"]
+
+
+def test_home_sequence_skips_disable_tracking_when_unparked():
+    m = _mock_mount(state=MountState.UNPARKED)
+    c = _coordinator()
+    home_sequence(m, c)
+    m.disable_tracking.assert_not_called()
+    m.go_home.assert_called_once()

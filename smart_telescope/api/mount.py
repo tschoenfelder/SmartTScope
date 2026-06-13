@@ -236,6 +236,7 @@ def mount_stop(
 ) -> dict[str, bool]:
     device_state.record_command("stop")
     mount.stop()
+    device_state.poll_now()
     return {"ok": True}
 
 
@@ -298,11 +299,12 @@ def mount_home(
         device_state.record_command_error(str(exc))
         raise HTTPException(
             status_code=500,
-            detail=f"Home slew failed — check mount is tracking and powered ({exc})",
+            detail=f"Home slew failed — check mount is powered ({exc})",
         ) from exc
     except CommandConflictError as exc:
         device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    device_state.poll_now()
     return {"ok": True}
 
 

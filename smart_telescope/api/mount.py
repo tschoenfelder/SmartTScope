@@ -339,7 +339,19 @@ def mount_guide(
     body: GuideRequest,
     mount: MountPort = Depends(deps.get_mount),
 ) -> dict[str, bool]:
-    """Send a fixed-duration guide pulse — no stop command required."""
+    """Send a fixed-duration guide pulse — no stop command required.
+
+    Auto-enables tracking if the mount is unparked but idle — OnStep silently
+    ignores guide pulses unless the mount is actively tracking.
+    """
+    state = mount.get_state()
+    if state == MountState.PARKED:
+        raise HTTPException(status_code=409, detail="Mount is parked — unpark first")
+    if state == MountState.SLEWING:
+        raise HTTPException(status_code=409, detail="Mount is slewing — wait for it to stop")
+    if state != MountState.TRACKING:
+        if not mount.enable_tracking():
+            raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
     ok = mount.guide(body.direction.lower(), body.duration_ms)
     if not ok:
         raise HTTPException(status_code=500, detail="Guide pulse failed")

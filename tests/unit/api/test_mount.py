@@ -713,3 +713,70 @@ class TestMountAlign:
         m = self._inject_align_mount()
         client.post("/api/mount/align/save")
         m.save_alignment.assert_called_once()
+
+
+# ── POST /api/mount/guide ──────────────────────────────────────────────────────
+
+
+class TestMountGuide:
+    def _inject_guide_mount(
+        self,
+        state: MountState = MountState.TRACKING,
+        guide_ok: bool = True,
+        track_ok: bool = True,
+    ) -> MagicMock:
+        m = _mock_mount(state=state, track_ok=track_ok)
+        m.guide.return_value = guide_ok
+        _inject(m)
+        return m
+
+    def test_tracking_state_sends_pulse(self) -> None:
+        m = self._inject_guide_mount(state=MountState.TRACKING)
+        r = client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.guide.assert_called_once_with("n", 500)
+
+    def test_tracking_state_skips_enable_tracking(self) -> None:
+        m = self._inject_guide_mount(state=MountState.TRACKING)
+        client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        m.enable_tracking.assert_not_called()
+
+    def test_all_directions_accepted(self) -> None:
+        for d in ("n", "s", "e", "w", "N", "S", "E", "W"):
+            m = self._inject_guide_mount()
+            r = client.post("/api/mount/guide", json={"direction": d, "duration_ms": 200})
+            assert r.status_code == 200, f"direction {d!r} rejected"
+
+    def test_unparked_auto_enables_tracking_then_guides(self) -> None:
+        m = self._inject_guide_mount(state=MountState.UNPARKED, track_ok=True)
+        r = client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.enable_tracking.assert_called_once()
+        m.guide.assert_called_once()
+
+    def test_unparked_tracking_enable_failure_returns_503(self) -> None:
+        m = self._inject_guide_mount(state=MountState.UNPARKED, track_ok=False)
+        r = client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 503
+
+    def test_parked_returns_409(self) -> None:
+        m = self._inject_guide_mount(state=MountState.PARKED)
+        r = client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+        assert "parked" in r.json()["detail"].lower()
+
+    def test_slewing_returns_409(self) -> None:
+        m = self._inject_guide_mount(state=MountState.SLEWING)
+        r = client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+        assert "slewing" in r.json()["detail"].lower()
+
+    def test_guide_failure_returns_500(self) -> None:
+        m = self._inject_guide_mount(state=MountState.TRACKING, guide_ok=False)
+        r = client.post("/api/mount/guide", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 500
+
+    def test_invalid_direction_returns_422(self) -> None:
+        self._inject_guide_mount()
+        r = client.post("/api/mount/guide", json={"direction": "x", "duration_ms": 500})
+        assert r.status_code == 422

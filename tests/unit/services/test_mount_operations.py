@@ -151,6 +151,14 @@ def test_park_sequence_calls_park():
     m.park.assert_called_once()
 
 
+def test_park_sequence_skips_park_when_already_parked():
+    m = _mock_mount(state=MountState.PARKED, park_ok=True)
+    c = _coordinator()
+    ds = _device_state()
+    park_sequence(m, c, ds)
+    m.park.assert_not_called()
+
+
 def test_park_sequence_does_not_raise_when_stuck_unparked():
     # If OnStep never starts the slew (e.g. no park position), park_sequence
     # warns but does not raise — the JS polls for PARKED for 60 s.
@@ -173,7 +181,7 @@ def test_park_sequence_raises_on_park_failure():
     m = _mock_mount(park_ok=False)
     c = _coordinator()
     ds = _device_state()
-    with pytest.raises(RuntimeError, match="Park command rejected"):
+    with pytest.raises(RuntimeError, match=r"hP# rejected by OnStep"):
         park_sequence(m, c, ds)
 
 

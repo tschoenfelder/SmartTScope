@@ -211,7 +211,7 @@ def mount_unpark(
         mount_ops.unpark_sequence(mount, device_state)
     except RuntimeError as exc:
         device_state.record_command_error(str(exc))
-        raise HTTPException(status_code=500, detail="Unpark failed") from exc
+        raise HTTPException(status_code=500, detail=f"Unpark failed: {exc}") from exc
     return {"ok": True}
 
 
@@ -325,7 +325,7 @@ def mount_park(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RuntimeError as exc:
         device_state.record_command_error(str(exc))
-        raise HTTPException(status_code=500, detail="Park failed") from exc
+        raise HTTPException(status_code=500, detail=f"Park failed: {exc}") from exc
     return {"ok": True}
 
 
@@ -354,7 +354,10 @@ def mount_guide(
             raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
     ok = mount.guide(body.direction.lower(), body.duration_ms)
     if not ok:
-        raise HTTPException(status_code=500, detail="Guide pulse failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Guide pulse failed (direction={body.direction} state={state.name})"
+        )
     return {"ok": True}
 
 
@@ -384,7 +387,10 @@ def mount_nudge(
             raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
     ok = mount.move(body.direction.lower(), body.duration_ms)
     if not ok:
-        raise HTTPException(status_code=500, detail="Move command failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Move command failed (direction={body.direction} state={state.name})"
+        )
     return {"ok": True}
 
 

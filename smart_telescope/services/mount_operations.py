@@ -107,13 +107,23 @@ def park_sequence(
         CommandConflictError: coordinator is busy
         RuntimeError: park command rejected by the mount
     """
+    pre_state = mount.get_state()
+    _log.info("park_sequence: pre-park state = %s", pre_state.name)
+
+    if pre_state == MountState.PARKED:
+        _log.info("park_sequence: mount already PARKED — skipping :hP#")
+        return
+
     try:
         with coordinator.mount_command():
             if mount.is_slewing():
                 raise MountSlewingError("Rejected — mount is slewing")
             ok = mount.park()
             if not ok:
-                raise RuntimeError("Park command rejected by OnStep")
+                raise RuntimeError(
+                    f":hP# rejected by OnStep (pre-state={pre_state.name}) — "
+                    "verify park position is set (:hS# from home) and mount is aligned"
+                )
             _log.info("Mount park issued")
     except CommandConflictError:
         raise

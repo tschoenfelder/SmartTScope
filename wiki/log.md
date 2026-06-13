@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-13 — FIX — Park error surfacing and idempotency
+
+**Problem**: `POST /api/mount/park` returned HTTP 500 "Park failed" when `:hP#` returned `b'0'`, with no indication of the mount's pre-park state or why OnStep rejected the command. Debugging required reading server logs.
+
+**Fixes**:
+- `park_sequence()` now calls `get_state()` before attempting park; if already PARKED, returns immediately (idempotent). If `:hP#` is rejected, error message includes pre-state name and actionable hint: "verify park position is set (:hS# from home) and mount is aligned".
+- `mount_park()` endpoint passes `{exc}` through to HTTP detail instead of generic "Park failed".
+- Same pattern applied to `mount_unpark()`, `mount_guide()`, `mount_nudge()` error messages.
+- 1 new test: `test_park_sequence_skips_park_when_already_parked`.
+
+**Why park failed**: `:hP#` returns `0` when the park position was not set in OnStep (`:hS#` must be called from the desired park position during initial mount setup) or when the mount is not aligned.
+
 ## 2026-06-13 — FIX — Mount selftest + Centre Star guide pad: use center rate for observable movement
 
 **Root cause (round 2)**: Guide pulses (`:Mg...#`) use OnStep's configurable guide rate. If the guide rate is unconfigured or very slow, even 2000 ms pulses produce no observable movement. The focuser selftest works because it uses absolute steps — the mount equivalent is center rate (`:RC#` + `:Mn#` → sleep → `:Q#`), which is always configured for visible manual centering.

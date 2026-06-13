@@ -48,6 +48,16 @@ function _updateMountStrip(data) {
     if (state !== 'unknown') {
         unlockStage(4);
     }
+
+    // Grey out movement buttons when parked — guide pulses and GoTo are no-ops on OnStep
+    // while parked. UNPARK, HOME, STOP, and TRACK are intentionally excluded.
+    const _parked = (state === 'parked');
+    for (const id of ['s2-guide-pad', 's4-guide-pad', 's4-st-mount-btns']) {
+        const el = document.getElementById(id);
+        if (el) el.querySelectorAll('button').forEach(b => { b.disabled = _parked; });
+    }
+    const gotoBtn = document.getElementById('s2-goto-btn');
+    if (gotoBtn && !_mountPendingCmd) gotoBtn.disabled = _parked;
 }
 
 function mountEmergencyStop() {

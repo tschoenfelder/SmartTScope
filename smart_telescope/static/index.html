@@ -942,7 +942,7 @@
         Use guide pulses to centre the star precisely, then accept:
       </p>
       <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;margin-bottom:0.75rem">
-        <div class="guide-pad">
+        <div class="guide-pad" id="s2-guide-pad">
           <div></div>
           <button class="guide-btn" onmousedown="s2GuideStart('n')" onmouseup="s2GuideStop()"
                   ontouchstart="s2GuideStart('n')" ontouchend="s2GuideStop()">▲</button>
@@ -1374,7 +1374,7 @@
         <tr>
           <td style="padding:0.3rem 0;color:var(--muted)">Mount</td>
           <td>
-            <span style="display:flex;gap:0.35rem">
+            <span id="s4-st-mount-btns" style="display:flex;gap:0.35rem">
               <button class="secondary" onclick="selftestMount('n')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="North">▲</button>
               <button class="secondary" onclick="selftestMount('s')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="South">▼</button>
               <button class="secondary" onclick="selftestMount('e')" style="padding:0.2rem 0.5rem;font-size:0.82rem" title="East">▶</button>
@@ -1527,7 +1527,7 @@
             After GoTo, nudge the star to the frame centre before checking the Bahtinov pattern.
           </p>
           <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap">
-            <div class="guide-pad">
+            <div class="guide-pad" id="s4-guide-pad">
               <div></div>
               <button class="guide-btn" onmousedown="guideStart('n','s4-guide-ms')" onmouseup="guideStop()"
                       ontouchstart="guideStart('n','s4-guide-ms')" ontouchend="guideStop()">▲</button>

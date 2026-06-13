@@ -612,9 +612,15 @@ async function selftestMount(dir) {
     if (el) { el.textContent = 'sending pulse…'; el.style.color = 'var(--muted)'; }
     try {
       const r = await apiPost('/api/collimation/selftest/mount',
-                              { direction: dir, duration_ms: 500 });
-      _stResult('s4-st-mount-result', true,
-        `${dir.toUpperCase()} pulse ${r.duration_ms} ms — ok`);
+                              { direction: dir, duration_ms: 2000 });
+      let msg = `${dir.toUpperCase()} pulse ${r.duration_ms} ms — ok`;
+      if (r.delta_arcsec !== undefined) {
+          const d = r.delta_arcsec;
+          msg += d !== 0
+              ? ` (${d > 0 ? '+' : ''}${d}″ shift)`
+              : ' (no position shift — check OnStep guide rate)';
+      }
+      _stResult('s4-st-mount-result', true, msg);
     } catch (err) {
       _stResult('s4-st-mount-result', false, err.message);
     }

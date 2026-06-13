@@ -280,7 +280,7 @@ def archive_replay(session_id: str, frame_stem: str) -> dict[str, Any]:
 
 class MountTestRequest(BaseModel):
     direction: str = "n"
-    duration_ms: int = 500
+    duration_ms: int = 2000
 
 
 class FocuserTestRequest(BaseModel):
@@ -312,11 +312,15 @@ def selftest_mount(
     body: MountTestRequest = MountTestRequest(),
     mount: MountPort = Depends(get_mount),
 ) -> dict[str, Any]:
-    """Fire a short guide pulse in the requested direction.
+    """Fire a guide pulse and measure the resulting position shift.
 
     Auto-enables tracking if the mount is unparked but idle — OnStep silently
     ignores guide pulses unless the mount is actively tracking.
+    Returns delta_arcsec so users can verify movement without visual inspection
+    (guide pulses produce sub-arcminute shifts, invisible to the naked eye).
     """
+    import time as _time
+
     direction = body.direction.lower()
     if direction not in ("n", "s", "e", "w"):
         raise HTTPException(status_code=422, detail="direction must be n/s/e/w")
@@ -328,10 +332,38 @@ def selftest_mount(
     if state != MountState.TRACKING:
         if not mount.enable_tracking():
             raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
+
+    pos_before = None
+    try:
+        pos_before = mount.get_position()
+    except Exception:
+        pass
+
     ok = mount.guide(direction, body.duration_ms)
     if not ok:
         raise HTTPException(status_code=503, detail="Guide pulse rejected by mount")
-    return {"ok": True, "direction": direction, "duration_ms": body.duration_ms}
+
+    _time.sleep(body.duration_ms / 1000.0 + 0.3)
+
+    delta_arcsec: float | None = None
+    try:
+        pos_after = mount.get_position()
+        if pos_before is not None:
+            if direction in ("n", "s"):
+                delta_arcsec = round((pos_after.dec - pos_before.dec) * 3600, 1)
+            else:
+                delta_arcsec = round((pos_after.ra - pos_before.ra) * 54000, 0)
+    except Exception:
+        pass
+
+    result: dict[str, Any] = {
+        "ok": True,
+        "direction": direction,
+        "duration_ms": body.duration_ms,
+    }
+    if delta_arcsec is not None:
+        result["delta_arcsec"] = delta_arcsec
+    return result
 
 
 @router.post("/selftest/focuser")

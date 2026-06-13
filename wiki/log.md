@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-13 — FIX — Mount selftest: guide pulses now measure arcsec shift
+
+**Root cause**: A 2000 ms guide pulse at typical OnStep guide rates (0.5–1× sidereal = 7–15″/s) produces only 14–30 arcseconds of physical movement — invisible to the naked eye at any viewing distance. The selftest previously reported "ok" with no way to verify movement actually occurred.
+
+**Fix**:
+- `selftest_mount` now captures position (`:GD#`/`:GR#`) before and after the pulse, sleeps for `duration_ms + 300 ms`, then returns `delta_arcsec` in the response body.
+- Default `duration_ms` raised 500 → 2000 ms to improve detection signal.
+- `selftestMount()` JS now shows the shift: `N pulse 2000 ms — ok (+29.9″ shift)` or warns `no position shift — check OnStep guide rate`.
+- 2 new tests: `test_north_pulse_returns_delta_arcsec`, `test_south_pulse_returns_negative_delta`.
+
 ## 2026-06-11 — FIX — Histogram comb pattern from 12-bit-in-16-bit camera data
 
 **Root cause**: ToupTek SDK in 16-bit mode stores 12-bit ADC data MSB-aligned (left-shifted 4 bits). Values are 0, 16, 32, …, 65520. The focused histogram with ~7 ADU bins produced a comb pattern (every 2–3 bins was empty because valid values are 16 ADU apart). Additionally the histogram API was incorrectly normalising by `adc_max=4095` (bit_depth=12 default) while pixels were in 16-bit container range, giving signal fractions 16× too high.

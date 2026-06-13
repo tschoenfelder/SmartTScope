@@ -230,6 +230,18 @@ class OnStepMount(MountPort):
         self._raw_send(f":Mg{d}{ms:04d}#")
         return True
 
+    def move(self, direction: str, move_ms: int) -> bool:
+        d = direction.lower()
+        if d not in ("n", "s", "e", "w"):
+            return False
+        # Use write_bypass — rate/move/stop commands return no response bytes.
+        # Bypassing the lock is safe here (same pattern as stop()).
+        self._bus.write_bypass(b":RC#")             # center rate
+        self._bus.write_bypass(f":M{d}#".encode())  # start moving
+        time.sleep(move_ms / 1000.0)
+        self._bus.write_bypass(b":Q#")              # stop
+        return True
+
     def start_alignment(self, num_stars: int) -> bool:
         n = max(1, min(9, num_stars))
         return self._send(f":A{n}#") == "1"

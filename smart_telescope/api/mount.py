@@ -358,6 +358,36 @@ def mount_guide(
     return {"ok": True}
 
 
+class NudgeRequest(BaseModel):
+    direction: str = Field(pattern=r"^[nsewNSEW]$")
+    duration_ms: int = Field(default=500, ge=50, le=5000)
+
+
+@router.post("/nudge")
+def mount_nudge(
+    body: NudgeRequest,
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Move at center rate for a fixed duration — for manual object centering.
+
+    Unlike /guide (OnStep configurable guide rate), this always uses center
+    rate (:RC# + :Mn#) so motion is visually observable regardless of the
+    OnStep guide-rate configuration.
+    """
+    state = mount.get_state()
+    if state == MountState.PARKED:
+        raise HTTPException(status_code=409, detail="Mount is parked — unpark first")
+    if state == MountState.SLEWING:
+        raise HTTPException(status_code=409, detail="Mount is slewing — wait for it to stop")
+    if state != MountState.TRACKING:
+        if not mount.enable_tracking():
+            raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
+    ok = mount.move(body.direction.lower(), body.duration_ms)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Move command failed")
+    return {"ok": True}
+
+
 class AlignStartRequest(BaseModel):
     num_stars: int = Field(default=1, ge=1, le=9)
 

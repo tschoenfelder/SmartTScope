@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-13 — FIX — Mount selftest + Centre Star guide pad: use center rate for observable movement
+
+**Root cause (round 2)**: Guide pulses (`:Mg...#`) use OnStep's configurable guide rate. If the guide rate is unconfigured or very slow, even 2000 ms pulses produce no observable movement. The focuser selftest works because it uses absolute steps — the mount equivalent is center rate (`:RC#` + `:Mn#` → sleep → `:Q#`), which is always configured for visible manual centering.
+
+**Fix**:
+- Added `move(direction, move_ms)` abstract method to `MountPort`, implemented in `OnStepMount` using `write_bypass` (same pattern as `stop()` since rate/move commands have no response bytes), `SimulatorMount`, and `MockMount`.
+- Added `POST /api/mount/nudge` endpoint — same state checks as `/guide` but calls `mount.move()`.
+- `selftest_mount` now calls `mount.move()` instead of `mount.guide()`. Button group greys out during the 2-second test (like focuser), result shows `"N 2 s — moved"`.
+- Stage 2 Centre Star guide pad (`guideStart()`) switched from `/api/mount/guide` to `/api/mount/nudge` — hold-and-repeat pattern is identical but now uses center rate.
+- 11 new tests for `TestMountNudge`.
+
 ## 2026-06-13 — FIX — Mount selftest: guide pulses now measure arcsec shift
 
 **Root cause**: A 2000 ms guide pulse at typical OnStep guide rates (0.5–1× sidereal = 7–15″/s) produces only 14–30 arcseconds of physical movement — invisible to the naked eye at any viewing distance. The selftest previously reported "ok" with no way to verify movement actually occurred.

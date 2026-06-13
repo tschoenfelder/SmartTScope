@@ -608,21 +608,18 @@ async function selftestCamera() {
 }
 
 async function selftestMount(dir) {
-    const el = document.getElementById('s4-st-mount-result');
-    if (el) { el.textContent = 'sending pulse…'; el.style.color = 'var(--muted)'; }
+    const btns = document.getElementById('s4-st-mount-btns');
+    const el   = document.getElementById('s4-st-mount-result');
+    if (btns) btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    if (el) { el.textContent = `moving ${dir.toUpperCase()} 2 s…`; el.style.color = 'var(--muted)'; }
     try {
       const r = await apiPost('/api/collimation/selftest/mount',
                               { direction: dir, duration_ms: 2000 });
-      let msg = `${dir.toUpperCase()} pulse ${r.duration_ms} ms — ok`;
-      if (r.delta_arcsec !== undefined) {
-          const d = r.delta_arcsec;
-          msg += d !== 0
-              ? ` (${d > 0 ? '+' : ''}${d}″ shift)`
-              : ' (no position shift — check OnStep guide rate)';
-      }
-      _stResult('s4-st-mount-result', true, msg);
+      _stResult('s4-st-mount-result', true, `${dir.toUpperCase()} 2 s — moved`);
     } catch (err) {
       _stResult('s4-st-mount-result', false, err.message);
+    } finally {
+      if (btns) btns.querySelectorAll('button').forEach(b => { b.disabled = false; });
     }
 }
 

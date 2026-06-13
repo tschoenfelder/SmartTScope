@@ -290,7 +290,9 @@ function guideStart(dir, msInputId) {
     if (_guideTimer) return;
     const ms = parseInt(document.getElementById(msInputId).value) || 500;
     const body = JSON.stringify({ direction: dir, duration_ms: ms });
-    const send = () => fetch('/api/mount/guide', {
+    // Use /nudge (center rate) instead of /guide (guide rate) — center rate is
+    // always visually observable; guide rate depends on OnStep configuration.
+    const send = () => fetch('/api/mount/nudge', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
     });
     send();

@@ -69,6 +69,9 @@ class MockMount(MountPort):
     def guide(self, direction: str, duration_ms: int) -> bool:
         return direction.lower() in ("n", "s", "e", "w")
 
+    def move(self, direction: str, move_ms: int) -> bool:
+        return direction.lower() in ("n", "s", "e", "w")
+
     def start_alignment(self, num_stars: int) -> bool:
         return True
 

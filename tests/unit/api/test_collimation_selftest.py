@@ -5,7 +5,7 @@ All adapters are replaced by MagicMock — no hardware required.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -16,7 +16,7 @@ from smart_telescope.app import app
 from smart_telescope.domain.frame import FitsFrame  # noqa: F401 — used by _make_frame
 from smart_telescope.ports.camera import CameraPort, CaptureAbortedError
 from smart_telescope.ports.focuser import FocuserPort
-from smart_telescope.ports.mount import MountPort, MountPosition, MountState
+from smart_telescope.ports.mount import MountPort, MountState
 
 client = TestClient(app)
 
@@ -44,20 +44,14 @@ def _mock_camera(pixels: np.ndarray | None = None) -> MagicMock:
 
 
 def _mock_mount(
-    guide_ok: bool = True,
+    move_ok: bool = True,
     state: MountState = MountState.TRACKING,
     track_ok: bool = True,
-    dec_before: float = 45.0,
-    dec_delta: float = 0.0083,  # ~30 arcsec
 ) -> MagicMock:
     m = MagicMock(spec=MountPort)
-    m.guide.return_value = guide_ok
+    m.move.return_value = move_ok
     m.get_state.return_value = state
     m.enable_tracking.return_value = track_ok
-    m.get_position.side_effect = [
-        MountPosition(ra=12.5, dec=dec_before),
-        MountPosition(ra=12.5, dec=dec_before + dec_delta),
-    ]
     return m
 
 
@@ -109,13 +103,8 @@ class TestSelftestCamera:
 # ── mount self-test ────────────────────────────────────────────────────────────
 
 class TestSelftestMount:
-    @pytest.fixture(autouse=True)
-    def _no_sleep(self):
-        with patch('time.sleep'):
-            yield
-
-    def test_north_pulse_ok(self):
-        app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(guide_ok=True)
+    def test_north_move_ok(self):
+        app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(move_ok=True)
         r = client.post("/api/collimation/selftest/mount",
                         json={"direction": "n", "duration_ms": 500})
         assert r.status_code == 200
@@ -126,7 +115,7 @@ class TestSelftestMount:
 
     def test_all_directions_accepted(self):
         for d in ("n", "s", "e", "w"):
-            app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(guide_ok=True)
+            app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(move_ok=True)
             r = client.post("/api/collimation/selftest/mount",
                             json={"direction": d, "duration_ms": 200})
             assert r.status_code == 200, f"direction {d!r} rejected"
@@ -137,14 +126,14 @@ class TestSelftestMount:
                         json={"direction": "x", "duration_ms": 200})
         assert r.status_code == 422
 
-    def test_guide_failure_returns_503(self):
-        app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(guide_ok=False)
+    def test_move_failure_returns_503(self):
+        app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(move_ok=False)
         r = client.post("/api/collimation/selftest/mount",
                         json={"direction": "n", "duration_ms": 500})
         assert r.status_code == 503
 
     def test_default_body_accepted(self):
-        app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(guide_ok=True)
+        app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(move_ok=True)
         r = client.post("/api/collimation/selftest/mount")
         assert r.status_code == 200
 
@@ -162,13 +151,13 @@ class TestSelftestMount:
         assert r.status_code == 409
         assert "slewing" in r.json()["detail"].lower()
 
-    def test_unparked_auto_enables_tracking_then_guides(self):
+    def test_unparked_auto_enables_tracking_then_moves(self):
         m = _mock_mount(state=MountState.UNPARKED, track_ok=True)
         app.dependency_overrides[deps.get_mount] = lambda: m
         r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
         assert r.status_code == 200
         m.enable_tracking.assert_called_once()
-        m.guide.assert_called_once()
+        m.move.assert_called_once()
 
     def test_unparked_tracking_enable_failure_returns_503(self):
         m = _mock_mount(state=MountState.UNPARKED, track_ok=False)
@@ -182,24 +171,6 @@ class TestSelftestMount:
         r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
         assert r.status_code == 200
         m.enable_tracking.assert_not_called()
-
-    def test_north_pulse_returns_delta_arcsec(self):
-        m = _mock_mount(dec_before=45.0, dec_delta=0.0083)
-        app.dependency_overrides[deps.get_mount] = lambda: m
-        r = client.post("/api/collimation/selftest/mount",
-                        json={"direction": "n", "duration_ms": 2000})
-        assert r.status_code == 200
-        body = r.json()
-        assert "delta_arcsec" in body
-        assert body["delta_arcsec"] == pytest.approx(29.9, abs=0.5)
-
-    def test_south_pulse_returns_negative_delta(self):
-        m = _mock_mount(dec_before=45.0, dec_delta=-0.005)  # south = dec decreases
-        app.dependency_overrides[deps.get_mount] = lambda: m
-        r = client.post("/api/collimation/selftest/mount",
-                        json={"direction": "s", "duration_ms": 2000})
-        assert r.status_code == 200
-        assert r.json()["delta_arcsec"] < 0
 
 
 # ── focuser self-test ──────────────────────────────────────────────────────────

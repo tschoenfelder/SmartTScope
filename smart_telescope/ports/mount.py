@@ -62,6 +62,17 @@ class MountPort(ABC):
         ...
 
     @abstractmethod
+    def move(self, direction: str, move_ms: int) -> bool:
+        """Move at center rate for move_ms milliseconds, then stop.
+
+        Uses OnStep's manual centering rate (much faster than guide rate) so
+        movement is visually observable. Blocks for the requested duration.
+        direction: 'n' | 's' | 'e' | 'w'
+        move_ms: duration in milliseconds (50–5000)
+        """
+        ...
+
+    @abstractmethod
     def start_alignment(self, num_stars: int) -> bool:
         """Initialise n-star alignment sequence (num_stars: 1–9)."""
         ...

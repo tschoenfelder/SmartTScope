@@ -780,3 +780,71 @@ class TestMountGuide:
         self._inject_guide_mount()
         r = client.post("/api/mount/guide", json={"direction": "x", "duration_ms": 500})
         assert r.status_code == 422
+
+
+class TestMountNudge:
+    def _inject_nudge_mount(
+        self,
+        state: MountState = MountState.TRACKING,
+        move_ok: bool = True,
+        track_ok: bool = True,
+    ) -> MagicMock:
+        m = _mock_mount(state=state, track_ok=track_ok)
+        m.move.return_value = move_ok
+        _inject(m)
+        return m
+
+    def test_tracking_state_moves(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.TRACKING)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.move.assert_called_once_with("n", 500)
+
+    def test_tracking_state_skips_enable_tracking(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.TRACKING)
+        client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        m.enable_tracking.assert_not_called()
+
+    def test_all_directions_accepted(self) -> None:
+        for d in ("n", "s", "e", "w", "N", "S", "E", "W"):
+            m = self._inject_nudge_mount()
+            r = client.post("/api/mount/nudge", json={"direction": d, "duration_ms": 200})
+            assert r.status_code == 200, f"direction {d!r} rejected"
+
+    def test_unparked_auto_enables_tracking_then_moves(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.UNPARKED, track_ok=True)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.enable_tracking.assert_called_once()
+        m.move.assert_called_once()
+
+    def test_unparked_tracking_enable_failure_returns_503(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.UNPARKED, track_ok=False)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 503
+
+    def test_parked_returns_409(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.PARKED)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+        assert "parked" in r.json()["detail"].lower()
+
+    def test_slewing_returns_409(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.SLEWING)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+
+    def test_move_failure_returns_500(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.TRACKING, move_ok=False)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 500
+
+    def test_invalid_direction_returns_422(self) -> None:
+        self._inject_nudge_mount()
+        r = client.post("/api/mount/nudge", json={"direction": "x", "duration_ms": 500})
+        assert r.status_code == 422
+
+    def test_duration_below_minimum_returns_422(self) -> None:
+        self._inject_nudge_mount()
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 10})
+        assert r.status_code == 422

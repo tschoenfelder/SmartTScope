@@ -16,7 +16,7 @@ from smart_telescope.app import app
 from smart_telescope.domain.frame import FitsFrame  # noqa: F401 — used by _make_frame
 from smart_telescope.ports.camera import CameraPort, CaptureAbortedError
 from smart_telescope.ports.focuser import FocuserPort
-from smart_telescope.ports.mount import MountPort
+from smart_telescope.ports.mount import MountPort, MountState
 
 client = TestClient(app)
 
@@ -43,9 +43,15 @@ def _mock_camera(pixels: np.ndarray | None = None) -> MagicMock:
     return cam
 
 
-def _mock_mount(guide_ok: bool = True) -> MagicMock:
+def _mock_mount(
+    guide_ok: bool = True,
+    state: MountState = MountState.TRACKING,
+    track_ok: bool = True,
+) -> MagicMock:
     m = MagicMock(spec=MountPort)
     m.guide.return_value = guide_ok
+    m.get_state.return_value = state
+    m.enable_tracking.return_value = track_ok
     return m
 
 
@@ -130,6 +136,41 @@ class TestSelftestMount:
         app.dependency_overrides[deps.get_mount] = lambda: _mock_mount(guide_ok=True)
         r = client.post("/api/collimation/selftest/mount")
         assert r.status_code == 200
+
+    def test_parked_returns_409(self):
+        m = _mock_mount(state=MountState.PARKED)
+        app.dependency_overrides[deps.get_mount] = lambda: m
+        r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+        assert "parked" in r.json()["detail"].lower()
+
+    def test_slewing_returns_409(self):
+        m = _mock_mount(state=MountState.SLEWING)
+        app.dependency_overrides[deps.get_mount] = lambda: m
+        r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+        assert "slewing" in r.json()["detail"].lower()
+
+    def test_unparked_auto_enables_tracking_then_guides(self):
+        m = _mock_mount(state=MountState.UNPARKED, track_ok=True)
+        app.dependency_overrides[deps.get_mount] = lambda: m
+        r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.enable_tracking.assert_called_once()
+        m.guide.assert_called_once()
+
+    def test_unparked_tracking_enable_failure_returns_503(self):
+        m = _mock_mount(state=MountState.UNPARKED, track_ok=False)
+        app.dependency_overrides[deps.get_mount] = lambda: m
+        r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 503
+
+    def test_tracking_state_skips_enable_tracking(self):
+        m = _mock_mount(state=MountState.TRACKING)
+        app.dependency_overrides[deps.get_mount] = lambda: m
+        r = client.post("/api/collimation/selftest/mount", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.enable_tracking.assert_not_called()
 
 
 # ── focuser self-test ──────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from .deps import get_camera, get_camera_by_role, get_focuser, get_mount
 from ..ports.camera import CameraPort, CaptureAbortedError
 from ..ports.focuser import FocuserPort
-from ..ports.mount import MountPort
+from ..ports.mount import MountPort, MountState
 from ..services.collimation.assistant import CollimationAssistant
 
 _log = logging.getLogger(__name__)
@@ -312,10 +312,22 @@ def selftest_mount(
     body: MountTestRequest = MountTestRequest(),
     mount: MountPort = Depends(get_mount),
 ) -> dict[str, Any]:
-    """Fire a short guide pulse in the requested direction."""
+    """Fire a short guide pulse in the requested direction.
+
+    Auto-enables tracking if the mount is unparked but idle — OnStep silently
+    ignores guide pulses unless the mount is actively tracking.
+    """
     direction = body.direction.lower()
     if direction not in ("n", "s", "e", "w"):
         raise HTTPException(status_code=422, detail="direction must be n/s/e/w")
+    state = mount.get_state()
+    if state == MountState.PARKED:
+        raise HTTPException(status_code=409, detail="Mount is parked — unpark first")
+    if state == MountState.SLEWING:
+        raise HTTPException(status_code=409, detail="Mount is slewing — wait for it to stop")
+    if state != MountState.TRACKING:
+        if not mount.enable_tracking():
+            raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
     ok = mount.guide(direction, body.duration_ms)
     if not ok:
         raise HTTPException(status_code=503, detail="Guide pulse rejected by mount")

@@ -118,13 +118,18 @@ def park_sequence(
     if pre_state == MountState.PARKED:
         _log.info("park_sequence: mount already PARKED — skipping :hP#")
         return
-    if pre_state == MountState.SLEWING:
-        raise MountSlewingError("Mount is still slewing — wait for it to stop before parking")
 
     try:
         with coordinator.mount_command():
-            if mount.is_slewing():
-                raise MountSlewingError("Rejected — mount is slewing")
+            slewing_now = mount.is_slewing() or pre_state == MountState.SLEWING
+            if slewing_now:
+                if auto_set_park:
+                    # Home slew not yet complete — park position would be wrong mid-slew
+                    raise MountSlewingError("Home slew not yet complete — wait for it to finish then try again")
+                # Any other active slew: stop it, then park to the previously saved position
+                _log.info("park_sequence: stopping active slew before parking to saved position")
+                mount.stop()
+                time.sleep(0.3)  # let :Q# register before :hP#
             if auto_set_park:
                 ok_s = mount.set_park_position()
                 if ok_s:
@@ -133,10 +138,12 @@ def park_sequence(
                     _log.warning("park_sequence: :hS# not accepted — will attempt :hP# anyway")
             ok = mount.park()
             if not ok:
-                raise RuntimeError(
-                    f":hP# rejected by OnStep (pre-state={pre_state.name}) — "
-                    "verify park position is set (:hS# from home) and mount is aligned"
+                hint = (
+                    "home the mount first to establish the park position, then park"
+                    if not auto_set_park
+                    else f"pre-state={pre_state.name} — verify mount is aligned"
                 )
+                raise RuntimeError(f":hP# rejected by OnStep — {hint}")
             _log.info("Mount park issued")
     except CommandConflictError:
         raise

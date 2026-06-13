@@ -169,12 +169,26 @@ def test_park_sequence_does_not_raise_when_stuck_unparked():
         park_sequence(m, c, ds)   # must not raise
 
 
-def test_park_sequence_raises_slewing_error():
-    m = _mock_mount(slewing=True)
+def test_park_sequence_stops_slew_before_parking():
+    # If mount is slewing (non-home slew), park_sequence stops it then parks.
+    m = _mock_mount(slewing=True, park_ok=True)
     c = _coordinator()
     ds = _device_state()
-    with pytest.raises(MountSlewingError):
-        park_sequence(m, c, ds)
+    with patch("smart_telescope.services.mount_operations.time.sleep"):
+        with patch.object(ds, "poll_until_changed", return_value=True):
+            park_sequence(m, c, ds)
+    m.stop.assert_called_once()
+    m.park.assert_called_once()
+
+
+def test_park_sequence_raises_slewing_error_when_home_slew_in_progress():
+    # If mount is slewing AND it was an AT_HOME context (auto_set_park=True),
+    # the home slew isn't done yet — reject rather than park at a mid-slew position.
+    m = _mock_mount(slewing=True, park_ok=True)
+    c = _coordinator()
+    ds = _device_state()
+    with pytest.raises(MountSlewingError, match="Home slew not yet complete"):
+        park_sequence(m, c, ds, auto_set_park=True)
 
 
 def test_park_sequence_raises_on_park_failure():

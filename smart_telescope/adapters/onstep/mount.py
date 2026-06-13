@@ -220,6 +220,12 @@ class OnStepMount(MountPort):
         except Exception:
             return None
 
+    def set_park_position(self) -> bool:
+        resp = self._raw_send(":hS#")
+        ok = resp == b"1"
+        _log.info("OnStepMount.set_park_position(): :hS# sent → resp=%r ok=%s", resp, ok)
+        return ok
+
     def disable_tracking(self) -> bool:
         self._raw_send(":Td#")
         return True

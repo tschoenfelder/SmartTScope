@@ -4,6 +4,41 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-13 — FEAT — Set Park Position button and endpoint (:hS#)
+
+**Problem**: `POST /api/mount/park` returned 500 with ":hP# rejected by OnStep" because OnStep had no park position stored. OnStep requires `:hS#` ("set park position to current position") to be called at least once before `:hP#` will accept the park command.
+
+**Fix**:
+- `MountPort.set_park_position()` added as a non-abstract method (default: `return False`); `MockMount`/`SimulatorMount` inherit the default without changes.
+- `OnStepMount.set_park_position()` sends `:hS#` and returns `True` on `b"1"` response.
+- `POST /api/mount/set-park` endpoint added; returns 500 if OnStep rejects.
+- "Set Park" button added to the mount card in the UI (next to Home/Unpark/Park), with spinner and status feedback.
+- **Usage**: Home the mount → click "Set Park" → click "Park". This only needs to be done once; OnStep stores the position in EEPROM.
+
+## 2026-06-13 — FEAT — AT_HOME mount state: sticky Home after homing slew
+
+**Problem**: After `POST /api/mount/home`, the mount tile showed "Unparked" instead of "Home". OnStep sets the `'H'` flag in `:GU#` for less than one poll cycle (2 s), so the background poller always missed it, observing only SLEWING then UNPARKED.
+
+**Fix**:
+- Added `MountState.AT_HOME` to the enum; `OnStepMount.get_state()` returns it when `'H'` is in the `:GU#` response (belt-and-suspenders path).
+- `DeviceStateService` gains `_sticky_at_home` flag set by `record_command("home")` — active before the first poll after the slew. When the poller sees UNPARKED and sticky is set, the cached state is promoted to AT_HOME.
+- Sticky clears on `record_command("goto" | "park" | "track")`. SLEWING/TRACKING/PARKED are always shown as-is (not overridden).
+- CSS `.state-at_home` (blue badge); JS `_STATE_LABEL` maps "at_home" → "Home"; dot colour = yellow (same as unparked).
+- 11 new tests in `TestStickyAtHome`.
+- Verified on hardware: "Home" persists after home slew and clears on next GoTo/Park/Track command.
+
+## 2026-06-13 — FEAT — Nudge rate ×2, archive singleton fix, GoTo/Solve/AF archive tagging
+
+**Nudge rate**: `OnStepMount.move()` now sends `:RM#` (move/slew rate) instead of `:RC#` (center rate), approximately doubling RA/Dec nudge speed in the Centre Star guide pad and Stage 4 collimation guide pad.
+
+**Archive activation fix**: `_frame_archive` is now a separate singleton from `_assistant`, created by `_get_archive()` on the first archive API call. Previously, the archive was only created when a collimation session started (`_get_assistant()`), so visiting the archive endpoint before starting a wizard returned "disabled" even with `enabled = true` in config. Archive now activates on app start if `[collimation.archive] enabled = true` is set before launch.
+
+**GoTo/Solve/AF archive tagging**:
+- `CollimationFrameArchive.save_tag()` saves metadata-only JSON entries (no FITS) for GoTo, plate-solve, and AF operations. `list_sessions()` and `list_frames()` include these tag entries alongside FITS frames; `_arcFrameRow` shows "tag" label instead of Replay button for JSON-only entries.
+- `POST /api/collimation/archive/tag` endpoint accepts `tag_type` + `data`; default session = `s3_YYYY-MM-DD`.
+- Stage 3 UI: 📁 buttons added next to GoTo, Solve, and AF buttons. Buttons enable after a successful operation when archive is active. Collapsible "Session Archive" browser added to Stage 3.
+- Archive status checked automatically when entering Stage 3 (`_s3CheckArchiveEnabled()`).
+
 ## 2026-06-13 — FIX — Park error surfacing and idempotency
 
 **Problem**: `POST /api/mount/park` returned HTTP 500 "Park failed" when `:hP#` returned `b'0'`, with no indication of the mount's pre-park state or why OnStep rejected the command. Debugging required reading server logs.

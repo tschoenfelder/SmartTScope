@@ -92,6 +92,14 @@ class MountPort(ABC):
         """Return the stored park position, or None if the adapter doesn't support it."""
         return None
 
+    def set_park_position(self) -> bool:
+        """Save the current mount position as the park position.
+
+        Must be called once from the desired park position before park() will
+        be accepted by OnStep (:hS# on LX200).  Returns True on success.
+        """
+        return False
+
     @abstractmethod
     def go_home(self) -> None:
         """Command the mount to slew to its stored home position.

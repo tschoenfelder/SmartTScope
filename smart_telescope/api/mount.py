@@ -329,6 +329,24 @@ def mount_park(
     return {"ok": True}
 
 
+@router.post("/set-park")
+def mount_set_park(
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict[str, bool]:
+    """Save the current mount position as the park position (:hS#).
+
+    Must be called once before park() will be accepted by OnStep.  Typically
+    invoked after a home slew so that home position = park position.
+    """
+    ok = mount.set_park_position()
+    if not ok:
+        raise HTTPException(
+            status_code=500,
+            detail="Set park position rejected by OnStep — check mount connection and alignment",
+        )
+    return {"ok": True}
+
+
 class GuideRequest(BaseModel):
     direction: str = Field(pattern=r"^[nsewNSEW]$")
     duration_ms: int = Field(default=500, ge=1, le=9999)

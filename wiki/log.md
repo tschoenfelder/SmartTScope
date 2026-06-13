@@ -4,16 +4,23 @@ Append-only record of all wiki operations.
 
 ---
 
-## 2026-06-13 — FEAT — Set Park Position button and endpoint (:hS#)
+## 2026-06-13 — FIX — Park: stop active slew before parking
 
-**Problem**: `POST /api/mount/park` returned 500 with ":hP# rejected by OnStep" because OnStep had no park position stored. OnStep requires `:hS#` ("set park position to current position") to be called at least once before `:hP#` will accept the park command.
+**Problem**: Clicking Park while the mount was slewing (e.g. left slewing from a previous session) returned HTTP 409 "Mount is still slewing", blocking all park attempts.
 
-**Fix**:
-- `MountPort.set_park_position()` added as a non-abstract method (default: `return False`); `MockMount`/`SimulatorMount` inherit the default without changes.
-- `OnStepMount.set_park_position()` sends `:hS#` and returns `True` on `b"1"` response.
-- `POST /api/mount/set-park` endpoint added; returns 500 if OnStep rejects.
-- "Set Park" button added to the mount card in the UI (next to Home/Unpark/Park), with spinner and status feedback.
-- **Usage**: Home the mount → click "Set Park" → click "Park". This only needs to be done once; OnStep stores the position in EEPROM.
+**Fix**: `park_sequence` now sends `:Q#` (stop) + 300 ms settle when the mount is SLEWING and `auto_set_park=False`. Then `:hP#` is sent to the previously saved park position. The 409 guard is retained only for the rare race where `auto_set_park=True` (home slew still in mid-flight when Park is clicked) — parking mid-home-slew would store the wrong position.
+
+## 2026-06-13 — FIX — Premature HOME display before home slew starts
+
+**Problem**: `record_command("home")` set `_sticky_at_home=True` immediately. If the background poller ran before OnStep raised its 'S' (SLEWING) flag, it saw UNPARKED and promoted it to AT_HOME — so the mount tile showed "Home" before the slew even started. Clicking Park at that moment then failed because the mount was mid-slew.
+
+**Fix**: Replaced the single `_sticky_at_home` flag with a two-phase gate: `_home_cmd_issued` (set on home command) + `_home_slew_seen` (set when SLEWING is polled after the command). UNPARKED is only promoted to AT_HOME after both flags are true — confirming the slew actually happened and ended. Hardware 'H' flag still sets sticky directly. Updated 12 tests in `TestStickyAtHome`; added `test_home_unparked_without_slewing_not_premature`.
+
+## 2026-06-13 — FEAT — Auto set-park position on Home → Park (:hS# before :hP#)
+
+**Problem**: OnStep requires `:hS#` to be called at least once before `:hP#` will be accepted. The "Set Park" button approach (reverted) required a manual extra step.
+
+**Fix**: `park_sequence` receives `auto_set_park: bool` from the API. The API captures whether the device-state cache shows `AT_HOME` before calling `record_command("park")` (which clears the sticky flag). When `auto_set_park=True`, `park_sequence` sends `:hS#` (save park position = current home position) then `:hP#` — all automatically. Subsequent Park clicks (position already in EEPROM) use `auto_set_park=False` and send only `:hP#`. `MountPort.set_park_position()` added as a non-abstract default (`return False`); `OnStepMount` overrides with `:hS#`.
 
 ## 2026-06-13 — FEAT — AT_HOME mount state: sticky Home after homing slew
 

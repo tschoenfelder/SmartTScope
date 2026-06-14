@@ -323,11 +323,15 @@ class ReadinessService:
             rt = get_runtime()
             if rt._adapters_built and rt._mount is not None:
                 from ..ports.mount import MountState
-                import importlib.metadata
                 try:
+                    import importlib.metadata
                     adapter_ver = f"v{importlib.metadata.version('onstep_adapter')}"
                 except Exception:
-                    adapter_ver = "?"
+                    try:
+                        from ..adapters.onstep import __version__ as _av
+                        adapter_ver = f"v{_av}"
+                    except Exception:
+                        adapter_ver = "?"
                 state = rt._mount.get_state()
                 mount_ok = state != MountState.UNKNOWN
                 focuser_available = rt._focuser is not None and rt._focuser.is_available

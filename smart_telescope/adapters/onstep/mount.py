@@ -3350,7 +3350,15 @@ class OnStepMount(MountPort):
         # During :hC# travel OnStep keeps the goto-active flag set until 'H' appears;
         # checking slewing first would return SLEWING indefinitely and the service
         # AT_HOME state machine would never trigger.
-        if decoded.get("at_home") or self._at_mechanical_home:
+        # Call confirm_home_position() on first 'H' observation so that
+        # set_park_position_from_current() (require_home_confirmation=True) succeeds —
+        # mirrors what _wait_for_status_flag("at_home") does internally.
+        if decoded.get("at_home"):
+            if not self._at_mechanical_home:
+                self._at_mechanical_home = True
+                self.confirm_home_position()
+            return MountState.AT_HOME
+        if self._at_mechanical_home:
             return MountState.AT_HOME
         if decoded.get("slewing"):
             return MountState.SLEWING
@@ -4349,7 +4357,8 @@ class OnStepMount(MountPort):
     def set_park_position(self) -> bool:
         # SYNC-OVERRIDE REQ-2: MountPort.set_park_position() → bool.
         # v0.3.0 exposes set_park_position_from_current(confirmed_safe, allow_at_home)
-        # → SetParkPositionResult. Delegates with confirmed_safe=True and extracts .ok.
+        # → SetParkPositionResult. allow_at_home=True because our park-from-home
+        # workflow explicitly sets park position = home position.
         # Upstream needs to add set_park_position() with the MountPort-exact signature.
-        result = self.set_park_position_from_current(confirmed_safe=True)
+        result = self.set_park_position_from_current(confirmed_safe=True, allow_at_home=True)
         return bool(result.ok)

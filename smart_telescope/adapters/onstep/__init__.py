@@ -17,6 +17,9 @@ from .safety import (
     SafetyViolation,
 )
 
+# SYNC-OVERRIDE: version tag stripped by external sync; re-added for readiness reporting.
+__version__ = "0.3.0"
+
 __all__ = [
     "AxisMotionResult",
     "FocuserMoveResult",

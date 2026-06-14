@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — FIX — Park fails after Home; adapter version "?" in readiness
+
+- `get_state()` SYNC-OVERRIDE: when GU# 'H' flag is first seen, call `confirm_home_position()`
+  (sets `_home_confirmed=True`) so `set_park_position_from_current()` accepts the subsequent call;
+  also split `at_home` / `_at_mechanical_home` branches so confirm is only called once
+- `set_park_position()` SYNC-OVERRIDE: pass `allow_at_home=True` — our park-from-home
+  workflow explicitly sets park position = home position, which the adapter refused by default
+- Added `__version__ = "0.3.0"` back to `onstep/__init__.py` (stripped by external sync)
+- Readiness: try `importlib.metadata` first, then `onstep.__version__` as fallback
+
+---
+
 ## 2026-06-14 — FIX — Unpark tracking / disable_tracking double-click / readiness version
 
 - `unpark_sequence()` now auto-disables tracking after `:hR#` (OnStep auto-starts tracking on unpark)

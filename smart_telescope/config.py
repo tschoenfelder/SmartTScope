@@ -268,6 +268,29 @@ MOUNT_MAX_ALT_DEG: float     = float(os.environ.get("MOUNT_MAX_ALT_DEG",     _ge
 MOUNT_HA_EAST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_EAST_LIMIT_H", _get("mount_limits", "ha_east_limit_h", "-5.5")))
 MOUNT_HA_WEST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_WEST_LIMIT_H", _get("mount_limits", "ha_west_limit_h", "0.333")))
 
+
+def build_onstep_safety_config():
+    """Build OnStepSafetyConfig from this module's config values.
+
+    Called by OnStepMount._default_safety_config() at adapter construction time.
+    """
+    from .adapters.onstep.safety import OnStepSafetyConfig
+
+    state_dir = APP_STATE_DIR or str(_USER_DIR)
+    return OnStepSafetyConfig(
+        observer_lat=OBSERVER_LAT,
+        observer_lon=OBSERVER_LON,
+        min_alt_deg=MOUNT_MIN_ALT_DEG,
+        max_alt_deg=MOUNT_MAX_ALT_DEG,
+        ha_east_limit_h=MOUNT_HA_EAST_LIMIT_H,
+        ha_west_limit_h=MOUNT_HA_WEST_LIMIT_H,
+        horizon_path=HORIZON_DAT if HORIZON_DAT and os.path.exists(HORIZON_DAT) else "",
+        state_file=str(Path(state_dir) / "onstep_last_state.json"),
+        mechanical_calibration_file=str(Path(state_dir) / "onstep_calibration.json"),
+        require_home_confirmation=True,
+        time_trust_source="raspberry_plausible",
+    )
+
 # ── session ───────────────────────────────────────────────────────────────────
 
 def _expand(p: str) -> str:

@@ -24,6 +24,11 @@ from ..services import mount_operations as mount_ops
 from ..workflow.goto_center import goto_and_center
 from . import deps
 
+try:
+    from ..adapters.onstep.safety import OnStepSafetyError
+except ImportError:
+    OnStepSafetyError = None  # type: ignore[assignment,misc]
+
 _log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mount")
 
@@ -84,6 +89,8 @@ class MountStatus(BaseModel):
     last_command_error: str | None = None
     # M1-004: hardware watchdog
     watchdog_warning: str | None = None
+    # adapter safety lock (populated when OnStep safety system blocks movement)
+    safety_violation: str | None = None
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -114,7 +121,9 @@ def _safe_goto(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CommandConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except RuntimeError as exc:
+    except Exception as exc:
+        if OnStepSafetyError is not None and isinstance(exc, OnStepSafetyError):
+            raise HTTPException(status_code=409, detail=exc.violation.reason) from exc
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -198,6 +207,7 @@ def mount_status(
         last_command_age_s=cmd_age,
         last_command_error=cmd_err,
         watchdog_warning=device_state.get_watchdog_warning(),
+        safety_violation=observed.safety_violation if observed else None,
     )
 
 

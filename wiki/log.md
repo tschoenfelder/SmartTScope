@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — FIX — Unpark shows PARKED: remove auto-disable-tracking from unpark_sequence
+
+`disable_tracking_verified()` sends `:Q#` (quit-move) after unpark. On the Pi's OnStep firmware
+this causes GU# to briefly report parked → UI flickers to PARKED immediately after Unpark.
+Removed auto-disable-tracking from `unpark_sequence()`. The Disable Tracking button works in
+one click (has `poll_now()` after success). Tracking is expected to be on after unpark.
+
+---
+
 ## 2026-06-14 — FIX — Home stays SLEWING: tight 0.5 s poll loop in home_sequence
 
 Background poll (2 s) was too coarse — OnStep's 'H' (at_home) GU# flag clears in <1 s when

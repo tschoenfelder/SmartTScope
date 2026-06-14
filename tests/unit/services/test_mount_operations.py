@@ -226,8 +226,13 @@ def test_home_sequence_does_not_goto():
 
 def test_home_sequence_auto_unparks_when_parked():
     m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
+    # get_state() call sequence: PARKED (auto-unpark), PARKED (tracking check),
+    # then AT_HOME on first poll iteration so the loop exits immediately.
+    m.get_state.side_effect = [MountState.PARKED, MountState.PARKED, MountState.AT_HOME]
     c = _coordinator()
-    with patch("smart_telescope.services.mount_operations.time") as mock_sleep_mod:
+    with patch("smart_telescope.services.mount_operations.time") as mock_time:
+        # monotonic: deadline = 0.0 + 60.0 = 60.0; loop check = 0.5 < 60.0 → True → enter loop
+        mock_time.monotonic.side_effect = [0.0, 0.5]
         home_sequence(m, c)
     m.unpark.assert_called_once()
 

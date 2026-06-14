@@ -206,3 +206,23 @@ def home_sequence(
             _log.info("Mount home: go_home() issued")
     except CommandConflictError:
         raise
+
+    # Poll directly at 0.5 s to catch the brief at_home ('H') GU# flag.
+    # The 2 s background poll is too coarse — if the mount is already near home
+    # the slew completes and 'H' clears before the next background poll fires.
+    _HOME_POLL_INTERVAL_S = 0.5
+    _HOME_TIMEOUT_S       = 60.0
+    deadline = time.monotonic() + _HOME_TIMEOUT_S
+    last_state = MountState.SLEWING
+    while time.monotonic() < deadline:
+        last_state = mount.get_state()
+        if last_state == MountState.AT_HOME:
+            _log.info("Mount home: AT_HOME confirmed by tight poll")
+            break
+        if last_state not in (MountState.SLEWING, MountState.UNPARKED):
+            _log.info("Mount home: unexpected state %s — stopping poll", last_state.name)
+            break
+        time.sleep(_HOME_POLL_INTERVAL_S)
+    else:
+        _log.warning("Mount home: AT_HOME not confirmed within %.0f s (last state: %s)",
+                     _HOME_TIMEOUT_S, last_state.name)

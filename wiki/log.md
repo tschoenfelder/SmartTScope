@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — FIX — Home stays SLEWING: tight 0.5 s poll loop in home_sequence
+
+Background poll (2 s) was too coarse — OnStep's 'H' (at_home) GU# flag clears in <1 s when
+the mount is already near home, so the background thread always missed it.
+
+Fix: `home_sequence()` now does a tight 0.5 s polling loop (up to 60 s) directly on
+`mount.get_state()` after `go_home()`.  `get_state()` SYNC-OVERRIDE detects the 'H' flag
+and calls `confirm_home_position()` on first observation, then returns AT_HOME.
+The loop breaks immediately on AT_HOME; unexpected states (TRACKING, PARKED) also break early.
+
+---
+
 ## 2026-06-14 — FIX — Park fails after Home; adapter version "?" in readiness
 
 - `get_state()` SYNC-OVERRIDE: when GU# 'H' flag is first seen, call `confirm_home_position()`

@@ -137,16 +137,19 @@ def _build_adapters(
 
     mnt_mode: str
     if onstep_port:
-        from .adapters.onstep.focuser import OnStepFocuser
-        from .adapters.onstep.mount import OnStepMount
+        from . import config as _cfg
+        from .adapters.onstep.client import OnStepClient
         from .ports.mount import MountState
-        _log.info("Adapter selected: OnStepMount+OnStepFocuser on port %s", onstep_port)
-        mount = OnStepMount(onstep_port)
-        mount_connected = mount.connect()
-        if not mount_connected:
-            _log.error("OnStepMount.connect() failed on port %s — mount will be unavailable", onstep_port)
+        safety_config = _cfg.build_onstep_safety_config()
+        _log.info("Adapter selected: OnStepClient on port %s", onstep_port)
+        _onstep_client = OnStepClient(onstep_port, safety_config=safety_config)
+        result = _onstep_client.connect()
+        mount = _onstep_client.mount
+        focuser = _onstep_client.focuser
+        if not result.connected:
+            _log.error("OnStepClient.connect() failed on port %s — mount will be unavailable", onstep_port)
         else:
-            _log.info("OnStepMount: connected on %s — REAL HARDWARE", onstep_port)
+            _log.info("OnStepClient: connected on %s — REAL HARDWARE", onstep_port)
             try:
                 current_state = mount.get_state()
             except Exception as exc:
@@ -162,8 +165,6 @@ def _build_adapters(
                     _log.warning("Auto-park after connect failed: %s", exc)
             else:
                 _log.info("Mount already parked after connect")
-        focuser = OnStepFocuser(mount.serial_bus)
-        focuser.connect()
         _log.info(
             "OnStepFocuser: connected, available=%s — %s",
             focuser.is_available,

@@ -17,6 +17,11 @@ from ..ports.mount import MountPort, MountState
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
 
+try:
+    from ..adapters.onstep.safety import OnStepSafetyError
+except ImportError:
+    OnStepSafetyError = None  # type: ignore[assignment,misc]
+
 _log = logging.getLogger(__name__)
 
 

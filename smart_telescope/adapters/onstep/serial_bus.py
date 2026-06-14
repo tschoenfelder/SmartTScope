@@ -20,14 +20,6 @@ class OnStepSerialBus:
     This class owns the connection and serialises all I/O behind a lock so
     that the focuser never needs to reach into the mount's private members.
 
-    Protocol note — two distinct read strategies:
-      send()      → write cmd, read until '#' terminator.  Used for all GET
-                    commands (":GU#", ":GR#", ":GD#", etc.) whose responses
-                    are '#'-terminated.  Returns the stripped string value.
-      raw_send()  → write cmd, read at most one byte.  Used for SET/action
-                    commands that return a single ACK ('1'/'0') or nothing.
-                    Returns raw bytes so callers can check len > 0.
-
     Emergency-stop callers use write_bypass() to write without acquiring the
     lock so they can interrupt an in-progress command.
     """
@@ -36,51 +28,91 @@ class OnStepSerialBus:
         self._serial: serial.Serial | None = None
         self._lock = threading.Lock()
 
-    def send(self, cmd: str) -> str:
-        """Send *cmd* and return the decoded reply stripped of '#' and whitespace.
+    @property
+    def is_open(self) -> bool:
+        serial_handle = self._serial
+        return bool(serial_handle is not None and getattr(serial_handle, "is_open", True))
 
-        Reads until the '#' terminator so the call returns as soon as OnStep
-        finishes its reply — no timeout wait for a newline that never arrives.
-        """
-        if self._serial is None:
-            return ""
+    def close(self) -> None:
+        """Close the shared serial connection once; repeated calls are safe."""
         with self._lock:
-            try:
-                self._serial.write(cmd.encode())
-                raw = bytes(self._serial.read_until(b"#"))
-                return raw.decode(errors="replace").rstrip("#\r\n")
-            except Exception:
-                self._serial = None
-                raise
+            serial_handle = self._serial
+            self._serial = None
+            if serial_handle is not None:
+                with contextlib.suppress(Exception):
+                    serial_handle.close()
 
-    def raw_send(self, cmd: str, timeout_s: float | None = None) -> bytes:
-        """Send *cmd* and return the raw reply bytes (up to the next newline).
+    def raw_send(self, cmd: str) -> bytes:
+        """Send *cmd* and return the raw reply bytes.
 
-        Used for action/SET commands that return a single ACK byte ('1'/'0')
-        or nothing at all.  Reads exactly one byte so the call returns as soon
-        as the ACK arrives (or after the serial timeout if there is none).
-
-        Pass timeout_s to temporarily override the port timeout for commands
-        that take longer than the default (e.g. :hR# unpark blocks ~2 s).
+        OnStep/LX200 replies are normally terminated by ``#`` rather than a
+        newline.  Reading with readline() can therefore hold the shared serial
+        lock until timeout even when the full reply already arrived.
         """
         if self._serial is None:
             return b""
         with self._lock:
-            s = self._serial
-            saved_timeout = s.timeout
             try:
-                if timeout_s is not None:
-                    s.timeout = timeout_s
-                s.write(cmd.encode())
-                return bytes(s.read(1))
+                self._serial.write(cmd.encode())
+                if hasattr(self._serial, "read_until"):
+                    return bytes(self._serial.read_until(b"#", 128))
+                return bytes(self._serial.read(128))
             except Exception:
                 self._serial = None
                 raise
-            finally:
-                try:
-                    s.timeout = saved_timeout
-                except Exception:
-                    pass
+
+    def send(self, cmd: str) -> str:
+        """Send *cmd* and return the decoded, stripped reply string."""
+        return self.raw_send(cmd).decode(errors="replace").rstrip("#\r\n")
+
+    def write_no_reply(self, cmd: str, timeout: float = 0.5) -> None:
+        """Send *cmd* without waiting for a reply.
+
+        Use this for LX200 commands that are documented or observed as
+        no-reply commands.  It still takes the normal serial lock so it cannot
+        interleave with mount/focuser traffic.  Emergency stop remains the only
+        lock-bypassing path.
+        """
+        if self._serial is None:
+            return
+        if not self._lock.acquire(timeout=timeout):
+            raise TimeoutError(f"serial bus busy while sending {cmd}")
+        try:
+            with contextlib.suppress(Exception):
+                self._serial.reset_input_buffer()
+            self._serial.write(cmd.encode())
+        except Exception:
+            self._serial = None
+            raise
+        finally:
+            self._lock.release()
+
+    def send_fixed(self, cmd: str, size: int = 1, timeout: float = 0.5) -> str:
+        """Send *cmd* and read a short fixed-size reply.
+
+        Some OnStep commands, including park/unpark, reply with a single
+        character and no trailing newline. readline() can wait for the full
+        serial timeout in that case, so use a bounded fixed read.
+        """
+        if self._serial is None:
+            return ""
+        if not self._lock.acquire(timeout=timeout):
+            raise TimeoutError(f"serial bus busy while sending {cmd}")
+        try:
+            old_timeout = getattr(self._serial, "timeout", None)
+            with contextlib.suppress(Exception):
+                self._serial.timeout = timeout
+                self._serial.reset_input_buffer()
+            self._serial.write(cmd.encode())
+            reply = bytes(self._serial.read(size))
+            with contextlib.suppress(Exception):
+                self._serial.timeout = old_timeout
+            return reply.decode(errors="replace").rstrip("#\r\n")
+        except Exception:
+            self._serial = None
+            raise
+        finally:
+            self._lock.release()
 
     def write_bypass(self, data: bytes) -> None:
         """Write *data* without acquiring the lock.

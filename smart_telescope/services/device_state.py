@@ -34,6 +34,7 @@ class MountObservedState:
     dec:       float | None
     polled_at: float          # time.monotonic() timestamp
     error:     str | None = None
+    safety_violation: str | None = None  # populated from adapter safety_lock when active
 
     def age_seconds(self) -> float:
         return time.monotonic() - self.polled_at
@@ -286,11 +287,13 @@ class DeviceStateService:
                     elif self._sticky_at_home:
                         state = MountState.AT_HOME
 
+            safety_lock = getattr(mount, "safety_lock", None)
             observed = MountObservedState(
                 state=state,
                 ra=pos.ra if pos else None,
                 dec=pos.dec if pos else None,
                 polled_at=time.monotonic(),
+                safety_violation=safety_lock.reason if safety_lock else None,
             )
         except Exception as exc:
             _log.warning("DeviceStateService: mount poll error (will store UNKNOWN): %s", exc)

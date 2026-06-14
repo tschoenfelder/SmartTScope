@@ -9,17 +9,30 @@ No real hardware or serial port is used.
 import pytest
 
 from smart_telescope.adapters.onstep.mount import OnStepMount
+from smart_telescope.adapters.onstep.safety import OnStepSafetyConfig
 from smart_telescope.ports.mount import MountPosition, MountState
 
 from .fake_serial import FakeOnStepSerial
+
+_TEST_SAFETY_CFG = OnStepSafetyConfig(
+    observer_lat=50.0, observer_lon=8.0,
+    min_alt_deg=-90.0, max_alt_deg=90.0,
+    ha_east_limit_h=-12.0, ha_west_limit_h=12.0,
+    require_home_confirmation=False,
+    time_trust_source="manual",
+)
 
 
 def _mount(
     state: str = "parked", ra: float = 0.0, dec: float = 0.0
 ) -> tuple[OnStepMount, FakeOnStepSerial]:
     fake = FakeOnStepSerial(initial_state=state, initial_ra=ra, initial_dec=dec)
-    mount = OnStepMount(port="/dev/ttyUSB0")
+    mount = OnStepMount(port="/dev/ttyUSB0", safety_config=_TEST_SAFETY_CFG)
     mount._serial = fake
+    mount._home_confirmed = True
+    # bypass location/limit readiness and motion preflight for protocol tests
+    mount._raise_if_not_astronomy_ready = lambda cmd: None  # type: ignore[method-assign]
+    mount.motion_safety_preflight = lambda **kw: {"motion_refused": False, "blockers": []}  # type: ignore[method-assign]
     return mount, fake
 
 

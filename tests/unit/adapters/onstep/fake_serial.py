@@ -64,7 +64,7 @@ class FakeOnStepSerial:
         self._last_response = b""
         return r
 
-    def read_until(self, expected: bytes = b"\n") -> bytes:
+    def read_until(self, expected: bytes = b"\n", size: int | None = None) -> bytes:
         """Return buffered response and clear it; used by OnStepSerialBus.send()."""
         r = self._last_response
         self._last_response = b""

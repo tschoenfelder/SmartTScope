@@ -4,6 +4,26 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — ARCH — OnStepAdapter migration complete
+
+Replaced hand-rolled `smart_telescope/adapters/onstep/{mount,focuser,serial_bus}.py` with the external `onstep_adapter` package (tschoenfelder/OnStepAdapter v0.2.0). All mount and focuser hardware communication now flows exclusively through `OnStepClient`.
+
+**Files changed:**
+- `smart_telescope/adapters/onstep/`: 9 files synced from GitHub source (mount.py, focuser.py, serial_bus.py, client.py, safety.py, results.py, state_store.py, firmware_proof.py, __init__.py)
+- `smart_telescope/config.py`: added `build_onstep_safety_config()` factory
+- `smart_telescope/runtime.py`: replaced direct adapter construction with `OnStepClient` lifecycle
+- `smart_telescope/services/device_state.py`: added `safety_violation` to `MountObservedState`; poll loop reads `mount.safety_lock`
+- `smart_telescope/services/mount_operations.py`: `OnStepSafetyError` imported with fallback
+- `smart_telescope/api/mount.py`: `safety_violation` field in `MountStatus`; goto returns 409 on safety violation
+- `SYNC.md`: OnStepAdapter registered as external module with REQ-1..5 enhancement requests
+
+**SYNC-OVERRIDE active:**
+- `mount.py`: `move(direction, move_ms)` added as concrete method delegating to `guide()` — satisfies abstract `MountPort.move()`; proper slew-rate variant tracked as REQ-1
+
+**Enhancement requests raised** (tracked in SYNC.md): REQ-1 move() at slew rate, REQ-2 park position get/set, REQ-3 sticky AT_HOME, REQ-4 hardware watchdog, REQ-5 command audit trail.
+
+---
+
 ## 2026-06-13 — FIX — Park: stop active slew before parking
 
 **Problem**: Clicking Park while the mount was slewing (e.g. left slewing from a previous session) returned HTTP 409 "Mount is still slewing", blocking all park attempts.

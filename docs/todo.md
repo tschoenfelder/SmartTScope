@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-05-23 (PKG-001/002 packaging fixes; GUD-001..008 guiding pipeline; deferred OnStep adapter replacement + Pi watchdog; serial numbers added to CID note)
+**Last updated:** 2026-06-14 (OnStepAdapter migration complete; REQ-1..5 pending external delivery)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
 
@@ -27,6 +27,31 @@
 - [x] NEXT-007 Complete M0 before any new feature work — satisfied by todo ordering `[P1 · Process]`
 - [x] NEXT-009 Start R0 Runtime Context Foundation — `RuntimeContext` created, `app.py` and `deps.py` updated, all tests pass `[P1 · Runtime]`
 - [x] NEXT-011 Start UX1 Ready To Observe design in parallel with R5 readiness service — `ReadinessService`, `/api/readiness`, readiness card in Stage 1 UI, 22 tests `[P1 · UI]`
+
+---
+
+## OnStepAdapter Migration — 2026-06-14
+
+All mount and focuser hardware communication now flows exclusively through the external `onstep_adapter` package (tschoenfelder/OnStepAdapter v0.2.0). See `SYNC.md` for sync state and enhancement requests.
+
+### Completed
+
+- [x] Install `onstep_adapter` wheel and register in `SYNC.md` as external module
+- [x] Sync 9 implementation files from OnStepAdapter GitHub into `smart_telescope/adapters/onstep/`
+- [x] Add `build_onstep_safety_config()` to `config.py` — bridges config.toml → `OnStepSafetyConfig`
+- [x] Update `runtime.py` to use `OnStepClient` lifecycle with safety config
+- [x] SYNC-OVERRIDE: add `move(direction, move_ms)` to `OnStepMount` delegating to `guide()` (REQ-1 interim)
+- [x] Surface `safety_lock` as `safety_violation` in `MountStatus` API response
+- [x] Handle `OnStepSafetyError` in `mount_operations.py` (imported with fallback) and return HTTP 409 from goto
+- [x] `MountObservedState` extended with `safety_violation` field; poll loop populates from adapter
+
+### Open Enhancement Requests (pending external delivery — tracked in SYNC.md)
+
+- [ ] REQ-1: `move(direction, move_ms)` at slew rate in `OnStepMount` — interim delegates to `guide()`
+- [ ] REQ-2: `get_park_position() → MountPosition | None` and `set_park_position() → bool` in `OnStepMount`
+- [ ] REQ-3: Sticky AT_HOME state tracking in adapter (currently in `DeviceStateService`)
+- [ ] REQ-4: Hardware watchdog property on `OnStepMount` (currently in `DeviceStateService`)
+- [ ] REQ-5: Command audit trail properties on `OnStepMount` (currently in `DeviceStateService`)
 
 ---
 

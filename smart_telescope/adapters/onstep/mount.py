@@ -3346,6 +3346,12 @@ class OnStepMount(MountPort):
         decoded = self._last_decoded_status
         if decoded.get("parked"):
             return MountState.PARKED
+        # SYNC-OVERRIDE: at_home checked before slewing.
+        # During :hC# travel OnStep keeps the goto-active flag set until 'H' appears;
+        # checking slewing first would return SLEWING indefinitely and the service
+        # AT_HOME state machine would never trigger.
+        if decoded.get("at_home") or self._at_mechanical_home:
+            return MountState.AT_HOME
         if decoded.get("slewing"):
             return MountState.SLEWING
         if decoded.get("at_limit"):

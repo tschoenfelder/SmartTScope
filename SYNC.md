@@ -25,6 +25,7 @@ Implementation files are synced from the GitHub source into `smart_telescope/ada
 
 | File | Override | Waiting for |
 |---|---|---|
+| smart_telescope/adapters/onstep/mount.py | `def get_state()` — checks `at_home` before `slewing` in priority chain. During `:hC#` home travel OnStep keeps the goto-active flag set until the `H` flag appears; original priority returned SLEWING indefinitely so the service AT_HOME state machine never triggered. | REQ-3 |
 | smart_telescope/adapters/onstep/mount.py | `def move(self, direction: str, move_ms: int) -> bool` — delegates to `self.mechanical_manual_move(direction, move_ms, cancel_check=None)` (center/slew rate via `:Me#`/`:Mw#` etc.). Faster than the v0.2.0 `guide()` workaround. Upstream still needs `move()` with exact MountPort signature. | REQ-1 |
 | smart_telescope/adapters/onstep/mount.py | `def set_park_position(self) -> bool` — delegates to `self.set_park_position_from_current(confirmed_safe=True).ok`. Sends `:hQ#` and persists to state store. Upstream needs `set_park_position() → bool` matching MountPort signature. | REQ-2 |
 
@@ -35,7 +36,7 @@ Implementation files are synced from the GitHub source into `smart_telescope/ada
 | REQ-1 | Add `move(direction: str, move_ms: int) -> bool` to `OnStepMount` with exact MountPort signature. v0.3.0 added `mechanical_manual_move()` at center rate — SYNC-OVERRIDE updated to use it (faster than guide rate). Remaining gap: upstream signature differs. | **IMPROVED** — SYNC-OVERRIDE upgraded | 2026-06-14 |
 | REQ-2 `get` | `get_park_position() → MountPosition \| None` via state store (not serial). | **DONE** — native in v0.3.0; `GpA#`/`GpD#` removed | 2026-06-14 |
 | REQ-2 `set` | `set_park_position() → bool` with exact MountPort signature. v0.3.0 added `set_park_position_from_current()` — SYNC-OVERRIDE wraps it. Remaining gap: upstream signature differs. | **PARTIAL** — SYNC-OVERRIDE added | 2026-06-14 |
-| REQ-3 | Sticky AT_HOME state (preserve HOME flag until mount moves after `:hC#`). Workaround: maintained in `DeviceStateService`. | **Open** | 2026-06-14 |
+| REQ-3 | `get_state()` must check `at_home` before `slewing`. During `:hC#` travel OnStep keeps goto-active set until `H` appears; without priority fix, `get_state()` stays SLEWING forever. Fix applied as SYNC-OVERRIDE in `mount.py`. Upstream should adopt the priority order natively. | **PARTIAL** — SYNC-OVERRIDE applied | 2026-06-14 |
 | REQ-4 | Hardware watchdog with configurable timeout and `watchdog_warning` property. Workaround: maintained in `DeviceStateService`. | **Open** | 2026-06-14 |
 | REQ-5 | Command audit trail (`last_command`, `last_command_at`, `last_command_error`) as properties on `OnStepMount`. Workaround: maintained in `DeviceStateService`. | **Open** | 2026-06-14 |
 

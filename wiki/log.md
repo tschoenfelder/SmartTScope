@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — FIX — Home stuck in SLEWING after :hC# (REQ-3 partial)
+
+Root cause: new adapter's `get_state()` checked `slewing` before `at_home` in priority chain.
+During home travel OnStep keeps the goto-active flag set until the 'H' GU# flag appears,
+so `get_state()` returned SLEWING indefinitely — the service AT_HOME state machine never fired.
+
+Fix: SYNC-OVERRIDE of `get_state()` in `smart_telescope/adapters/onstep/mount.py` —
+`at_home` (or `_at_mechanical_home`) now takes priority over `slewing`.
+Service layer sticky-AT_HOME logic in `device_state.py` lines 274-277 now triggers correctly.
+REQ-3 filed against upstream to adopt the priority order natively.
+
+---
+
 ## 2026-06-14 — UPGRADE — OnStepAdapter v0.2.0 → v0.3.0
 
 Upgraded onstep_adapter to v0.3.0 (branch `codex/release-0.3.0`).

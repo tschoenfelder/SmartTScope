@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — FIX — CRITICAL: remove auto_set_park; home UI live status
+
+- Removed `auto_set_park` from `park_sequence()` and park API endpoint. Pressing Park from
+  AT_HOME was automatically calling `set_park_position()` (`:hS#`), overwriting the user's
+  configured EEPROM park position. Park position must only be set by explicit user action.
+- `park_sequence()` now always stops any active slew and issues `:hP#` without touching `:hS#`
+- `mountHome()` JS: added 1 s `setInterval` status poll while the home API is blocking (up to
+  60 s). Strip now shows "home…" with yellow dot pulsing live during home slew — same visual
+  as park's rolling status badge
+
+---
+
 ## 2026-06-14 — FIX — Unpark shows PARKED: remove auto-disable-tracking from unpark_sequence
 
 `disable_tracking_verified()` sends `:Q#` (quit-move) after unpark. On the Pi's OnStep firmware

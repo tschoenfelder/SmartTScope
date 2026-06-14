@@ -324,12 +324,9 @@ def mount_park(
     coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
-    # Capture AT_HOME before record_command("park") clears the sticky flag.
-    obs = device_state.get_mount_state()
-    at_home = obs is not None and obs.state == MountState.AT_HOME
     device_state.record_command("park")
     try:
-        mount_ops.park_sequence(mount, coordinator, device_state, auto_set_park=at_home)
+        mount_ops.park_sequence(mount, coordinator, device_state)
     except mount_ops.MountSlewingError as exc:
         device_state.record_command_error(str(exc))
         raise HTTPException(status_code=409, detail="Mount is currently slewing — stop it before parking") from exc

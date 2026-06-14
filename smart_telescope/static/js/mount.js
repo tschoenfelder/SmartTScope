@@ -274,12 +274,23 @@ async function mountHome() {
     const btn = document.querySelector('button[onclick="mountHome()"]');
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Homing…'; }
     await refreshMount();  // show pending badge immediately
+
+    // The home API blocks until AT_HOME is confirmed (up to 60 s).
+    // Poll status every 1 s so the strip updates live (Slewing → Home).
+    const _homePoll = setInterval(async () => {
+        try {
+            const data = await (await fetch('/api/mount/status')).json();
+            _updateMountStrip(data);
+        } catch {}
+    }, 1000);
+
     try {
       await apiPost('/api/mount/home');
-      setStatus('s1-mount-status', 'Slewing to OnStep home position…');
+      setStatus('s1-mount-status', 'Mount is at home position');
     } catch (err) {
       setStatus('s1-mount-status', `Home failed: ${err.message}`, true);
     } finally {
+      clearInterval(_homePoll);
       _mountPendingCmd = null;
       if (btn) { btn.disabled = false; btn.innerHTML = 'Home'; }
       await refreshMount();  // render confirmed hardware state

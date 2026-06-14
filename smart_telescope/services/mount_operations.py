@@ -104,13 +104,13 @@ def park_sequence(
     mount: MountPort,
     coordinator: HardwareCommandCoordinator,
     device_state: DeviceStateService,
-    auto_set_park: bool = False,
 ) -> None:
     """Park the mount via the coordinator.
 
-    When ``auto_set_park`` is True (mount was AT_HOME when park was requested),
-    sends :hS# before :hP# to save home as the park position.  OnStep requires
-    this at least once per EEPROM configuration.
+    Sends :hP# to park to OnStep's stored park position.  If the mount is
+    currently slewing, stops it first then parks.  The park position must be
+    configured in OnStep directly — this function never modifies it (:hS# is
+    a user-only operation to avoid overwriting EEPROM park data).
 
     After sending :hP#, polls :GU# until state leaves UNPARKED (confirming
     the slew started) or times out after 5 s.  The full park slew can take
@@ -122,7 +122,7 @@ def park_sequence(
         RuntimeError: park command rejected by the mount
     """
     pre_state = mount.get_state()
-    _log.info("park_sequence: pre-park state = %s (at_home=%s)", pre_state.name, auto_set_park)
+    _log.info("park_sequence: pre-park state = %s", pre_state.name)
 
     if pre_state == MountState.PARKED:
         _log.info("park_sequence: mount already PARKED — skipping :hP#")
@@ -132,27 +132,15 @@ def park_sequence(
         with coordinator.mount_command():
             slewing_now = mount.is_slewing() or pre_state == MountState.SLEWING
             if slewing_now:
-                if auto_set_park:
-                    # Home slew not yet complete — park position would be wrong mid-slew
-                    raise MountSlewingError("Home slew not yet complete — wait for it to finish then try again")
-                # Any other active slew: stop it, then park to the previously saved position
-                _log.info("park_sequence: stopping active slew before parking to saved position")
+                _log.info("park_sequence: stopping active slew before parking")
                 mount.stop()
                 time.sleep(0.3)  # let :Q# register before :hP#
-            if auto_set_park:
-                ok_s = mount.set_park_position()
-                if ok_s:
-                    _log.info("park_sequence: park position saved (:hS# accepted)")
-                else:
-                    _log.warning("park_sequence: :hS# not accepted — will attempt :hP# anyway")
             ok = mount.park()
             if not ok:
-                hint = (
-                    "home the mount first to establish the park position, then park"
-                    if not auto_set_park
-                    else f"pre-state={pre_state.name} — verify mount is aligned"
+                raise RuntimeError(
+                    ":hP# rejected by OnStep — home the mount first to establish "
+                    "the park position, then park"
                 )
-                raise RuntimeError(f":hP# rejected by OnStep — {hint}")
             _log.info("Mount park issued")
     except CommandConflictError:
         raise

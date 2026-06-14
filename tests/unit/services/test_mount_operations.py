@@ -181,15 +181,6 @@ def test_park_sequence_stops_slew_before_parking():
     m.park.assert_called_once()
 
 
-def test_park_sequence_raises_slewing_error_when_home_slew_in_progress():
-    # If mount is slewing AND it was an AT_HOME context (auto_set_park=True),
-    # the home slew isn't done yet — reject rather than park at a mid-slew position.
-    m = _mock_mount(slewing=True, park_ok=True)
-    c = _coordinator()
-    ds = _device_state()
-    with pytest.raises(MountSlewingError, match="Home slew not yet complete"):
-        park_sequence(m, c, ds, auto_set_park=True)
-
 
 def test_park_sequence_raises_on_park_failure():
     m = _mock_mount(park_ok=False)

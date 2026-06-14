@@ -442,10 +442,14 @@ def mount_align_save(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bo
 
 
 @router.post("/disable_tracking")
-def mount_disable_tracking(mount: MountPort = Depends(deps.get_mount)) -> dict[str, bool]:
+def mount_disable_tracking(
+    mount: MountPort = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, bool]:
     ok = mount.disable_tracking()
     if not ok:
         raise HTTPException(status_code=500, detail="Disable tracking failed")
+    device_state.poll_now()
     return {"ok": True}
 
 

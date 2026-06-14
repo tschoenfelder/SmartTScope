@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — FIX — Unpark tracking / disable_tracking double-click / readiness version
+
+- `unpark_sequence()` now auto-disables tracking after `:hR#` (OnStep auto-starts tracking on unpark)
+- `disable_tracking` API endpoint now calls `device_state.poll_now()` after success — state cache
+  refreshes immediately so the UI reflects non-tracking without a second button press
+- Readiness mount item now shows OnStep adapter version: "Connected (adapter v0.3.0) — state: …"
+
+---
+
 ## 2026-06-14 — FIX — Home stuck in SLEWING after :hC# (REQ-3 partial)
 
 Root cause: new adapter's `get_state()` checked `slewing` before `at_home` in priority chain.

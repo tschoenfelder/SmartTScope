@@ -323,6 +323,11 @@ class ReadinessService:
             rt = get_runtime()
             if rt._adapters_built and rt._mount is not None:
                 from ..ports.mount import MountState
+                import importlib.metadata
+                try:
+                    adapter_ver = f"v{importlib.metadata.version('onstep_adapter')}"
+                except Exception:
+                    adapter_ver = "?"
                 state = rt._mount.get_state()
                 mount_ok = state != MountState.UNKNOWN
                 focuser_available = rt._focuser is not None and rt._focuser.is_available
@@ -330,7 +335,10 @@ class ReadinessService:
                     ReadinessItem(
                         key="mount", label="Mount (OnStep)",
                         level=Level.GREEN if mount_ok else Level.RED,
-                        message=f"Connected — state: {state.name}" if mount_ok else "Connected but state unknown",
+                        message=(
+                            f"Connected (adapter {adapter_ver}) — state: {state.name}"
+                            if mount_ok else "Connected but state unknown"
+                        ),
                         repair=None if mount_ok else "Check OnStep serial connection and retry.",
                     ),
                     ReadinessItem(

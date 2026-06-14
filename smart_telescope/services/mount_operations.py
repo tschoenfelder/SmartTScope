@@ -64,9 +64,9 @@ def safe_goto(
 def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
     """:hR# is synchronous — OnStep blocks ~2 s then returns '1' (ok) or '0' (rejected).
 
-    We issue one poll_now() after the command to refresh the state cache for the
-    HTTP response.  If OnStep returns '0' (no alignment, etc.) we log a warning
-    but still return True — the JS poll loop will reflect the current state.
+    After unparking, OnStep automatically starts tracking.  We immediately disable
+    tracking so the mount stays idle until the user issues an explicit GoTo.
+    Two poll_now() calls refresh the cache: once after unpark, once after disable.
     """
     ok = mount.unpark()
     _log.info("Mount unpark: OnStep reply = %s", "1 (ok)" if ok else "0 (rejected)")
@@ -76,9 +76,14 @@ def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:
             "check alignment / firmware"
         )
     device_state.poll_now()
+    # Disable tracking: OnStep auto-starts tracking after :hR#; we want idle until GoTo.
+    tracking_off = mount.disable_tracking()
+    if not tracking_off:
+        _log.warning("Mount unpark: disable_tracking() returned False — mount may still be tracking")
+    device_state.poll_now()
     obs = device_state.get_mount_state()
     state_name = obs.state.name if obs else "?"
-    _log.info("Mount unpark: state = %s", state_name)
+    _log.info("Mount unpark: state after disable_tracking = %s", state_name)
     return True
 
 

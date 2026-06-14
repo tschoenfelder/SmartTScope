@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-14 — UPGRADE — OnStepAdapter v0.2.0 → v0.3.0
+
+Upgraded onstep_adapter to v0.3.0 (branch `codex/release-0.3.0`).
+
+- `get_park_position()` now reads from state store (REQ-2 fulfilled); undocumented `:GpA#`/`:GpD#` serial probe removed by upstream
+- `set_park_position()` SYNC-OVERRIDE added: delegates to `set_park_position_from_current(confirmed_safe=True)` — now actually sends `:hQ#` and persists to state store
+- `move()` SYNC-OVERRIDE upgraded: `mechanical_manual_move()` at center/slew rate replaces `guide()` delegation (faster, uses `:Me#`/`:Mw#` etc.)
+- New public types: `SetParkPositionResult`, `AxisMotionResult`, `StoredParkPosition`, `OnStepMotionCalibration`
+- REQ-3/4/5 remain open; 2943 passed, 24 skipped, 0 failed
+
+---
+
 ## 2026-06-14 — ARCH — OnStepAdapter migration complete
 
 Replaced hand-rolled `smart_telescope/adapters/onstep/{mount,focuser,serial_bus}.py` with the external `onstep_adapter` package (tschoenfelder/OnStepAdapter v0.2.0). All mount and focuser hardware communication now flows exclusively through `OnStepClient`.

@@ -2735,7 +2735,7 @@ class OnStepMount(MountPort):
             blockers.append("onstep_park_failed")
         if decoded.get("at_limit"):
             blockers.append("onstep_at_limit")
-        if not pier_consistent:
+        if not pier_consistent and not terminal_state:
             blockers.append("pier_side_axis_inconsistent")
         if pier_side is None and not terminal_state:
             blockers.append("pier_side_unavailable")

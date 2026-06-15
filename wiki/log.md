@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — Track fails: pier_side_axis_inconsistent after home
+
+- At the CWD home position (axis2 ≈ 0°) `_instrument_to_mount_axes` derives
+  pier_side="east", but OnStep's `:Gm#` can report "west" — a meridian-point
+  ambiguity inherent to CWD position.
+- `pier_side_axis_inconsistent` was added to blockers unconditionally; but
+  `pier_side_unavailable` and `hour_angle_unavailable` already use `not terminal_state`
+  guard.  Applied the same guard to `pier_side_axis_inconsistent` in
+  `motion_safety_preflight()`.  In terminal state (parked or at-home) pier side
+  ambiguity is expected and harmless.
+
+---
+
 ## 2026-06-16 — FIX — Track fails: firmware_limits_broad
 
 - OnStep defaults to broad firmware limits (horizon ≤ -5°, overhead ≥ 89.5°).

@@ -2337,6 +2337,7 @@ class OnStepMount(MountPort):
             observer_lon=lon,
             observer_alt_m=alt_m,
             time_offset_s=time_offset_s,
+            time_trust_source="user_confirmed" if confirmed_by_user else self._safety_config.time_trust_source,
         )
         self._last_clock_check = self.read_onstep_clock()
         self._last_sidereal_check = self.read_onstep_sidereal_consistency()

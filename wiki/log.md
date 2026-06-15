@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — Track fails: raspberry_time_plausible_not_trusted
+
+- After a successful time/location sync the `_time_readiness()` check still returned
+  `ready=False` because `time_trust_source` remained `"raspberry_plausible"` — not
+  in `_TRUSTED_TIME_SOURCES` — so `trusted` was always `False`.
+- `sync_onstep_time_location()` now also sets `time_trust_source="user_confirmed"`
+  (which is in `_TRUSTED_TIME_SOURCES`) when called with `confirmed_by_user=True`.
+  This promotes the trust level so subsequent `_time_readiness()` calls pass.
+
+---
+
 ## 2026-06-16 — FIX — Enable Tracking fails: onstep_clock_invalid
 
 - `track_sequence()` in `mount_operations.py` called `enable_tracking()` which calls

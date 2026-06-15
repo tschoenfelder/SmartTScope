@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-14 (OnStepAdapter migration complete; REQ-1..5 pending external delivery)
+**Last updated:** 2026-06-15 (OnStep time/location auto-sync before GoTo fixed; readiness display item added)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
 
@@ -262,6 +262,8 @@ All mount and focuser hardware communication now flows exclusively through the e
 - [x] R5-009 Update setup check endpoint and UI — readiness card at top of Stage 1, auto-loads on page open `[P1 · UI]`
 - [x] R5-010 Tests: missing-file and invalid-config scenarios — `tests/unit/api/test_readiness.py` (22 tests) `[P1 · Tests]`
 - [x] R5-011 Add explicit hardware mode field to readiness API and UI (`real` / `simulator` / `mock`) `[P1 · Runtime]`
+- [ ] R5-012 Show OnStep time/location sync status in System Readiness card `[P2 · UI]`
+  - *Acceptance:* readiness card includes a Mount (OnStep) row showing whether the OnStep clock and site coordinates are aligned with the Pi system time and configured observer lat/lon; green = synced within threshold, yellow = stale or unread, red = `onstep_clock_invalid` or `onstep_location_mismatch`; repair hint points user to the time/location sync action
   - *Acceptance:* `/api/readiness` includes `mode` field; `can_observe=true` blocked when mode is `mock` or `simulator`; UI label shows "REAL", "SIMULATOR", or "MOCK"; prevents accidental real-sky session with mock devices
   - *Done:* `RuntimeContext._hardware_mode` set by `_build_adapters()` from adapter types (ToupcamCamera+OnStepMount→real, Simulator→simulator, Mock→mock); `hardware_mode` property exposed; `ReadinessReport.mode` field added; `can_observe` blocked for non-real modes; mode item in readiness items list; REAL/SIMULATOR/MOCK badge in UI header; 8 new tests in `test_readiness.py`
 

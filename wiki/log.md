@@ -4,6 +4,14 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — Enable Tracking fails: onstep_clock_invalid
+
+- `track_sequence()` in `mount_operations.py` called `enable_tracking()` which calls
+  `_check_target_safe()` — same safety gate that blocks GoTo when clock is unsynced.
+- Added `mount.ensure_time_location_synced()` at the start of `track_sequence()`.
+
+---
+
 ## 2026-06-16 — FIX — GoTo & Plate Solve Goto fails: onstep_clock_invalid
 
 - `goto_and_center()` and plain `/goto` endpoint never synced time/location to OnStep before

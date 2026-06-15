@@ -93,6 +93,7 @@ def track_sequence(mount: MountPort) -> None:
     Raises:
         RuntimeError: auto-unpark or enable-tracking failed
     """
+    mount.ensure_time_location_synced()
     if mount.get_state() == MountState.PARKED:
         if not mount.unpark():
             raise RuntimeError("Auto-unpark before tracking failed")

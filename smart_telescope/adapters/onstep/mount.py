@@ -3356,6 +3356,13 @@ class OnStepMount(MountPort):
         decoded = self._last_decoded_status
         if decoded.get("parked"):
             return MountState.PARKED
+        # Tracking wins over at_home: after enable_tracking() from home position,
+        # OnStep keeps the H flag set in :GU# while also reporting tracking=True.
+        # Returning TRACKING here prevents the at_home branch from re-asserting
+        # _at_mechanical_home and trapping the state machine in AT_HOME.
+        if decoded.get("tracking"):
+            self._at_mechanical_home = False
+            return MountState.TRACKING
         # SYNC-OVERRIDE: at_home checked before slewing.
         # During :hC# travel OnStep keeps the goto-active flag set until 'H' appears;
         # checking slewing first would return SLEWING indefinitely and the service
@@ -3374,8 +3381,6 @@ class OnStepMount(MountPort):
             return MountState.SLEWING
         if decoded.get("at_limit"):
             return MountState.AT_LIMIT
-        if decoded.get("tracking"):
-            return MountState.TRACKING
         return MountState.UNPARKED
 
     def _wait_for_status_flag(

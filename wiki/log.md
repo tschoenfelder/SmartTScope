@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — State stays AT_HOME after enable_tracking (root cause)
+
+- Previous fix (clear `_at_mechanical_home` in `enable_tracking()`) was undone on the
+  very next background poll: `get_state()` saw `at_home=True` still in `:GU#` (OnStep
+  keeps the H flag while tracking from home) and re-set `_at_mechanical_home = True`.
+- Root cause: `tracking` was checked AFTER `at_home` in `get_state()`.
+- Fix: check `decoded["tracking"]` first. If OnStep reports tracking, clear
+  `_at_mechanical_home` and return `TRACKING` immediately — `at_home` branch is skipped
+  entirely.  The SYNC-OVERRIDE order (at_home before slewing) is preserved for the
+  non-tracking case.
+
+---
+
 ## 2026-06-16 — FIX — State stays AT_HOME after enable_tracking
 
 - `get_state()` returns `AT_HOME` when `_at_mechanical_home` is True, regardless

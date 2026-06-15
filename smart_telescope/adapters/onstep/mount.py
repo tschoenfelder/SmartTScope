@@ -3561,6 +3561,7 @@ class OnStepMount(MountPort):
             raise RuntimeError("OnStep serial bus busy during enable_tracking") from exc
         ok = r == "1"
         if ok:
+            self._at_mechanical_home = False
             if not self._meridian_flip_completed:
                 self.begin_meridian_tracking_session()
             self._persist_last_state(last_command="enable_tracking", force=True)

@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — State stays AT_HOME after enable_tracking
+
+- `get_state()` returns `AT_HOME` when `_at_mechanical_home` is True, regardless
+  of `:GU#` flags.  After a successful `:Te#`, the flag was never cleared, so the
+  mount stayed stuck in AT_HOME even while OnStep reported `tracking=True`.
+- `enable_tracking()` now sets `_at_mechanical_home = False` on `:Te#` success.
+
+---
+
 ## 2026-06-16 — FIX — Track fails: hour_angle_east after home
 
 - After going home, OnStep's RA readback is stale (last tracked or park position RA).

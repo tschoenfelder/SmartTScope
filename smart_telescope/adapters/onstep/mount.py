@@ -2358,6 +2358,15 @@ class OnStepMount(MountPort):
             "onstep_sidereal_time": self._last_sidereal_check,
         }
 
+    def ensure_time_location_synced(self) -> None:
+        cfg = self._safety_config
+        self.sync_onstep_time_location(
+            lat=cfg.observer_lat,
+            lon=cfg.observer_lon,
+            alt_m=cfg.observer_alt_m,
+            confirmed_by_user=True,
+        )
+
     def _read_limit(self, cmd: str) -> float | None:
         reply = self._send(cmd)
         if not reply:

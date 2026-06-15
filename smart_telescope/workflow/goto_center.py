@@ -47,6 +47,15 @@ async def goto_and_center(
     last_ra,  last_dec    = target_ra, target_dec
     last_offset: float    = 999.0
 
+    try:
+        await asyncio.to_thread(mount.ensure_time_location_synced)
+    except RuntimeError as exc:
+        return CenterResult(
+            success=False, final_ra=target_ra, final_dec=target_dec,
+            iterations=0, offset_arcmin=last_offset,
+            error=f"Time/location sync failed: {exc}",
+        )
+
     for iteration in range(1, max_iterations + 1):
         # ── 1. GoTo ───────────────────────────────────────────────────────────
         try:

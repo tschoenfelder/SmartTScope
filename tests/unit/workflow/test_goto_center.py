@@ -40,6 +40,9 @@ class _MockMount:
         self.sync_calls.append((ra, dec))
         return True
 
+    def ensure_time_location_synced(self) -> None:
+        pass
+
 
 class _MockCamera:
     def capture(self, exposure_seconds: float) -> FitsFrame:

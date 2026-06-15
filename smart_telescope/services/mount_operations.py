@@ -46,6 +46,7 @@ def safe_goto(
         CommandConflictError: coordinator is busy with another command
         RuntimeError: mount rejected the goto command
     """
+    mount.ensure_time_location_synced()
     try:
         with coordinator.mount_command():
             if mount.is_slewing():

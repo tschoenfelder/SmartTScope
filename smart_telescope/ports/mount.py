@@ -88,6 +88,14 @@ class MountPort(ABC):
         """Write the computed pointing model to EEPROM."""
         ...
 
+    def ensure_time_location_synced(self) -> None:
+        """Push current system time and configured observer location to the mount.
+
+        Called automatically before GoTo operations.  The default is a no-op;
+        adapters that require explicit time/location sync (e.g. OnStep) override this.
+        Raises RuntimeError if the sync fails (e.g. system clock not trusted).
+        """
+
     def get_park_position(self) -> MountPosition | None:
         """Return the stored park position, or None if the adapter doesn't support it."""
         return None

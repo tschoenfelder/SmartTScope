@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — GoTo & Plate Solve Goto fails: onstep_clock_invalid
+
+- `goto_and_center()` and plain `/goto` endpoint never synced time/location to OnStep before
+  issuing the GoTo command. OnStep's safety system blocked all goto attempts with
+  `onstep_clock_invalid` because the adapter's internal clock state was stale.
+- Added `ensure_time_location_synced() -> None` to `MountPort` (default no-op).
+- Implemented in `OnStepMount`: calls `sync_onstep_time_location()` with configured lat/lon/alt.
+- Called before the GoTo loop in `workflow/goto_center.py` (Plate Solve Goto path).
+- Called at the start of `services/mount_operations.safe_goto()` (plain GoTo path).
+- Test mock `_MockMount` in `test_goto_center.py` updated with no-op `ensure_time_location_synced`.
+
+---
+
 ## 2026-06-14 — FIX — CRITICAL: remove auto_set_park; home UI live status
 
 - Removed `auto_set_park` from `park_sequence()` and park API endpoint. Pressing Park from

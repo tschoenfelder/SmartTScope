@@ -718,6 +718,7 @@ class OnStepMount(MountPort):
         self._last_ra: float | None = None
         self._last_dec: float | None = None
         self._at_mechanical_home = False
+        self._explicit_tracking_started = False
         self._meridian_initial_pier_side: str | None = None
         self._meridian_postflip_pier_side: str | None = None
         self._meridian_flip_completed = False
@@ -2678,6 +2679,13 @@ class OnStepMount(MountPort):
             and derived_pier_value in {"east", "west"}
             and direct_pier_value != derived_pier_value
         )
+        # :Gm# retains the last GoTo session's pier side across unpark/reboot.
+        # When home is confirmed and axis2 is near 0° (CWD home hemisphere), the
+        # axis-derived value is authoritative; treat a :Gm# mismatch as stale.
+        if not pier_consistent and self._home_confirmed:
+            axis2_raw = logical_axes.get("axis2_deg")
+            if isinstance(axis2_raw, (int, float)) and abs(float(axis2_raw)) < 15.0:
+                pier_consistent = True
         if (
             (decoded.get("tracking") or state == MountState.TRACKING)
             and self._meridian_initial_pier_side is None
@@ -3356,11 +3364,12 @@ class OnStepMount(MountPort):
         decoded = self._last_decoded_status
         if decoded.get("parked"):
             return MountState.PARKED
-        # Tracking wins over at_home: after enable_tracking() from home position,
-        # OnStep keeps the H flag set in :GU# while also reporting tracking=True.
-        # Returning TRACKING here prevents the at_home branch from re-asserting
-        # _at_mechanical_home and trapping the state machine in AT_HOME.
-        if decoded.get("tracking"):
+        # Tracking wins over at_home ONLY when SmartTScope explicitly enabled it.
+        # OnStep auto-starts tracking after :hR# (unpark) on some firmware versions —
+        # in that case H and T flags are both set but the user expects AT_HOME, not
+        # TRACKING.  _explicit_tracking_started is set by enable_tracking() and
+        # cleared by disable_tracking_verified(), park(), stop(), and unpark().
+        if decoded.get("tracking") and self._explicit_tracking_started:
             self._at_mechanical_home = False
             return MountState.TRACKING
         # SYNC-OVERRIDE: at_home checked before slewing.
@@ -3381,6 +3390,8 @@ class OnStepMount(MountPort):
             return MountState.SLEWING
         if decoded.get("at_limit"):
             return MountState.AT_LIMIT
+        if decoded.get("tracking"):
+            return MountState.TRACKING
         return MountState.UNPARKED
 
     def _wait_for_status_flag(
@@ -3414,6 +3425,7 @@ class OnStepMount(MountPort):
 
     def unpark(self) -> bool:
         self._raise_if_locked("unpark", allow_clock_lock=True)
+        self._explicit_tracking_started = False
         try:
             reply = self._bus.send_fixed(":hR#", size=1, timeout=5.0)
         except TimeoutError as exc:
@@ -3567,6 +3579,7 @@ class OnStepMount(MountPort):
         ok = r == "1"
         if ok:
             self._at_mechanical_home = False
+            self._explicit_tracking_started = True
             if not self._meridian_flip_completed:
                 self.begin_meridian_tracking_session()
             self._persist_last_state(last_command="enable_tracking", force=True)
@@ -3731,6 +3744,7 @@ class OnStepMount(MountPort):
         return "|" in self._send(":D#")
 
     def stop(self) -> None:
+        self._explicit_tracking_started = False
         self._bus.write_bypass(b":Q#")
         self._persist_last_state(last_command="stop", force=True)
 
@@ -3747,6 +3761,7 @@ class OnStepMount(MountPort):
             _log.warning("OnStepMount.park(): OnStep did not accept :hP#; reply=%r", reply)
         if ok:
             self._at_mechanical_home = False
+            self._explicit_tracking_started = False
         self._persist_last_state(last_command="park", force=True)
         return ok
 
@@ -3904,6 +3919,7 @@ class OnStepMount(MountPort):
                 if not decoded.get("tracking"):
                     result["ok"] = True
                     result["status_overrode_ack"] = reply != "1"
+                    self._explicit_tracking_started = False
                     self._persist_last_state(last_command="disable_tracking_verified", force=True)
                     return result
                 time.sleep(max(0.05, poll_s))

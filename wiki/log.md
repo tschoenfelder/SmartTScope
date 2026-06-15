@@ -4,6 +4,34 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — pier_side_axis_inconsistent after disable→re-enable tracking
+
+Two bugs fixed:
+
+**1. Unpark shows TRACKING unexpectedly (regression)**
+
+- `get_state()` was changed in a previous session to check `tracking` before `at_home`
+  so that explicit `enable_tracking()` from home would clear the stuck AT_HOME state.
+- Side effect: OnStep auto-starts sidereal tracking after `:hR#` (unpark) on some
+  firmware versions, setting both H and T flags in `:GU#`. With the new priority
+  order, `get_state()` returned TRACKING immediately after unpark instead of AT_HOME.
+- Fix: added `_explicit_tracking_started` flag (set by `enable_tracking()`, cleared by
+  `disable_tracking_verified()`, `stop()`, `park()`, `unpark()`). Tracking only wins
+  over `at_home` when the flag is set. Auto-tracking after unpark falls through to the
+  `at_home` branch, so AT_HOME is shown as expected.
+
+**2. pier_side_axis_inconsistent when re-enabling tracking after disable**
+
+- `:Gm#` retains the last GoTo session's pier side across unpark/reboot in OnStep
+  firmware. It is not reset when the mount returns to home.
+- When home is confirmed (`_home_confirmed=True`) and the mount has not done a GoTo
+  (axis2 ≈ 0°), the axis-derived pier side ("east" for CWD) is correct, but `:Gm#`
+  may still report "west" from the previous session → `pier_side_axis_inconsistent`.
+- Fix: in `motion_safety_preflight()`, when `_home_confirmed` is True and axis2 < 15°,
+  treat the derived value as authoritative and skip the inconsistency check.
+
+---
+
 ## 2026-06-16 — FIX — State stays AT_HOME after enable_tracking (root cause)
 
 - Previous fix (clear `_at_mechanical_home` in `enable_tracking()`) was undone on the

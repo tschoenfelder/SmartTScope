@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — Track fails: hour_angle_east after home
+
+- After going home, OnStep's RA readback is stale (last tracked or park position RA).
+  `LST − stale_RA` can produce an HA far east of the -5.5h limit, blocking
+  `enable_tracking()` with `hour_angle_east` even though the mount is mechanically safe.
+- `enable_tracking()` now detects `_at_mechanical_home` flag; if at home it only runs
+  `_raise_if_locked` and `_raise_if_not_astronomy_ready` (safety lock + time trust),
+  skipping the RA/Dec/HA positional limit checks which are meaningless until the
+  first plate-solve sync establishes a valid pointing model.
+
+---
+
 ## 2026-06-16 — FIX — Track fails: pier_side_axis_inconsistent after home
 
 - At the CWD home position (axis2 ≈ 0°) `_instrument_to_mount_axes` derives

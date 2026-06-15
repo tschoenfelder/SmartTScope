@@ -3542,8 +3542,19 @@ class OnStepMount(MountPort):
         }
 
     def enable_tracking(self) -> bool:
-        pos = self.get_position()
-        self._check_target_safe("enable_tracking", pos.ra, pos.dec, margin_deg=0.25)
+        # At the mechanical home position the RA/Dec readback is unreliable
+        # (stale park RA → LST − RA can yield an HA far outside limits).
+        # Safety lock and astronomy readiness still apply; positional checks
+        # (HA/alt/dec limits) do not — the home pose is mechanically safe.
+        at_home = self._at_mechanical_home or bool(
+            (self._last_decoded_status or {}).get("at_home")
+        )
+        if at_home:
+            self._raise_if_locked("enable_tracking")
+            self._raise_if_not_astronomy_ready("enable_tracking")
+        else:
+            pos = self.get_position()
+            self._check_target_safe("enable_tracking", pos.ra, pos.dec, margin_deg=0.25)
         try:
             r = self._bus.send_fixed(":Te#", size=1, timeout=2.0)
         except TimeoutError as exc:

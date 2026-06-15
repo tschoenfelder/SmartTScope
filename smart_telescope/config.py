@@ -289,6 +289,7 @@ def build_onstep_safety_config():
         mechanical_calibration_file=str(Path(state_dir) / "onstep_calibration.json"),
         require_home_confirmation=True,
         time_trust_source="raspberry_plausible",
+        allow_broad_onstep_limits=True,
     )
 
 # ── session ───────────────────────────────────────────────────────────────────

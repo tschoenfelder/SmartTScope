@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-16 — FIX — Track fails: firmware_limits_broad
+
+- OnStep defaults to broad firmware limits (horizon ≤ -5°, overhead ≥ 89.5°).
+  `allow_broad_onstep_limits` defaulted to `False`, blocking all motion.
+- SmartTScope enforces its own tighter limits (min 10°, max 88°) at the API
+  layer via `_check_mount_limits()` before any command reaches the hardware,
+  so the firmware limit check is redundant.
+- Set `allow_broad_onstep_limits=True` in the `OnStepSafetyConfig` created by
+  `config.py`.
+
+---
+
 ## 2026-06-16 — FIX — Track fails: raspberry_time_plausible_not_trusted
 
 - After a successful time/location sync the `_time_readiness()` check still returned

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from ...ports.focuser import FocuserMoveResult, FocuserStatus
+
 
 @dataclass(frozen=True)
 class OnStepConnectionResult:
@@ -12,22 +14,6 @@ class OnStepConnectionResult:
     mount_connected: bool
     focuser_available: bool
     port: str
-
-
-@dataclass(frozen=True)
-class FocuserStatus:
-    available: bool
-    position: int
-    max_position: int
-    moving: bool
-
-
-@dataclass(frozen=True)
-class FocuserMoveResult:
-    accepted: bool
-    target_position: int
-    start_position: int
-    onstep_reply: str
 
 
 @dataclass(frozen=True)

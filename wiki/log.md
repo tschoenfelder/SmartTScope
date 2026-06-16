@@ -4,6 +4,81 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-17 — FINDING — onstep_adapter v0.3.0 is a re-export shim, not an independent library
+
+`onstep_adapter` v0.3.0 package (`__init__.py` at Python 3.13 site-packages) contains only
+`from smart_telescope.adapters.onstep.* import ...` re-exports and two smoke-test tools.
+There is no independent implementation — the pip package re-exports SmartTScope's own code.
+All REQ-1 and REQ-ST-001..007 methods already "exist" in v0.3.0 because they are in
+SmartTScope's adapter layer. The ONS-MIGRATE migration is blocked on creating an independent
+codebase in the OnStepAdapter repo (not on individual method additions). Updated `docs/todo.md`.
+
+---
+
+## 2026-06-17 — CORRECTION — REQ-2 removed from upstream requirements
+
+`set_park_position() → bool` and `get_park_position() → MountPosition | None` are NOT
+upstream requirements. v0.3.0 already provides `set_park_position_from_current()` and
+`get_stored_park_position()`. The two SmartTScope methods are thin `MountPort` ABC
+compliance wrappers that stay permanently in the shim. Updated: `docs/todo.md`,
+`SYNC.md`, `smart_telescope/adapters/onstep/mount.py` comment.
+
+---
+
+## 2026-06-17 — PLAN — Replace adapter reimplementation with onstep_adapter pip package
+
+Migration plan ONS-MIGRATE-001..013 added to `docs/todo.md` under the OnStepAdapter Migration section.
+Goal: reduce `smart_telescope/adapters/onstep/mount.py` (4,408 lines) to a ≤30-line MountPort shim.
+Blocked by upstream adoption of REQ-1, REQ-2, and REQ-ST-001..007 in tschoenfelder/OnStepAdapter.
+Phase 0 (upstream contributions) must happen first; remaining phases execute after new wheel release.
+Wiki index updated to reference the migration plan.
+
+---
+
+## 2026-06-17 — IMPLEMENTATION — OnStepAdapter migration finalized: no direct serial communication outside adapter layer
+
+All serial/LX200 communication is now confined to `smart_telescope/adapters/onstep/` (focuser.py, mount.py).
+No `api/` or `services/` code sends any serial commands directly.
+
+Import path cleanup: all references to onstep_adapter types now go through the adapter package
+`__init__.py` rather than internal submodules:
+- `config.py`: `from .adapters.onstep import OnStepSafetyConfig`
+- `runtime.py`: `from .adapters.onstep import OnStepClient`
+- `api/mount.py`: `from ..adapters.onstep import OnStepSafetyError` (try/except removed)
+- `services/mount_operations.py`: dead `OnStepSafetyError` import removed entirely
+
+When an independent upstream `onstep_adapter` ships, the final rename is a single search-and-replace:
+`from .adapters.onstep import X` → `from onstep_adapter import X`.
+
+---
+
+## 2026-06-17 — IMPLEMENTATION — Focuser API migrated to onstep_adapter public API
+
+`FocuserStatus` and `FocuserMoveResult` dataclasses moved to `smart_telescope/ports/focuser.py`
+(canonical location); `adapters/onstep/results.py` re-exports them for backward compatibility.
+`FocuserPort` ABC extended with two new abstract methods: `status() → FocuserStatus` and
+`move_absolute(steps) → FocuserMoveResult`. All concrete implementations updated:
+`OnStepFocuser` (already had both), `MockFocuser`, `SimulatorFocuser`.
+
+`smart_telescope/api/focuser.py` now uses the onstep_adapter public API surface:
+- `GET /api/focuser/status` calls `focuser.status()` (single combined status call)
+- `POST /api/focuser/move` and `/nudge` use `focuser.status()` + `focuser.move_absolute(target)`
+- `_safe_move()` captures `result.start_position` from `FocuserMoveResult` (no separate `get_position` before move)
+
+Tests updated: `tests/unit/api/test_focuser.py`, `tests/unit/api/test_smoke.py`.
+Full unit suite: 2940 passed (before fix), all passing after.
+
+---
+
+## 2026-06-17 — TASK — OnStepAdapter v0.3.0 upgrade tracked
+
+Added upgrade tasks ONS3-001..006 to `docs/todo.md` under the OnStepAdapter Migration section.
+`pyproject.toml` already points to the v0.3.0 wheel (ONS3-001 done). Remaining steps:
+install wheel, review REQ-ST-* overrides in `adapters/onstep/mount.py` and `client.py`,
+run tests, commit. Wiki index updated to reference v0.3.0 and clarify the override-layer architecture.
+
+---
+
 ## 2026-06-16 — FIX — pier_side_axis_inconsistent after disable→re-enable tracking
 
 Two bugs fixed:

@@ -274,7 +274,7 @@ def build_onstep_safety_config():
 
     Called by OnStepMount._default_safety_config() at adapter construction time.
     """
-    from .adapters.onstep.safety import OnStepSafetyConfig
+    from .adapters.onstep import OnStepSafetyConfig
 
     state_dir = APP_STATE_DIR or str(_USER_DIR)
     return OnStepSafetyConfig(

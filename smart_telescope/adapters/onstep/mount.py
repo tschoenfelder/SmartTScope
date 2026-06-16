@@ -4398,10 +4398,9 @@ class OnStepMount(MountPort):
         return bool(result.get("ok"))
 
     def set_park_position(self) -> bool:
-        # SYNC-OVERRIDE REQ-2: MountPort.set_park_position() → bool.
-        # v0.3.0 exposes set_park_position_from_current(confirmed_safe, allow_at_home)
-        # → SetParkPositionResult. allow_at_home=True because our park-from-home
-        # workflow explicitly sets park position = home position.
-        # Upstream needs to add set_park_position() with the MountPort-exact signature.
+        # MountPort ABC compliance: maps the simple bool-returning interface to the
+        # upstream set_park_position_from_current(). allow_at_home=True because
+        # SmartTScope's park workflow sets park = home position after a HOME slew.
+        # Stays in shim permanently — upstream already has set_park_position_from_current().
         result = self.set_park_position_from_current(confirmed_safe=True, allow_at_home=True)
         return bool(result.ok)

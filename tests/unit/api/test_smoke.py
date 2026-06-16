@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps
 from smart_telescope.app import app
-from smart_telescope.ports.focuser import FocuserPort
+from smart_telescope.ports.focuser import FocuserMoveResult, FocuserPort, FocuserStatus
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
 from smart_telescope.services.device_state import DeviceStateService, MountObservedState
 
@@ -42,6 +42,18 @@ def _mock_focuser(available: bool = True) -> MagicMock:
     f.get_position.return_value = 5000
     f.is_moving.return_value = False
     f.get_max_position.return_value = 50000
+    f.status.return_value = FocuserStatus(
+        available=available,
+        position=5000 if available else 0,
+        max_position=50000 if available else 0,
+        moving=False,
+    )
+    f.move_absolute.return_value = FocuserMoveResult(
+        accepted=True,
+        target_position=5000,
+        start_position=5000,
+        onstep_reply="1",
+    )
     return f
 
 

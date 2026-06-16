@@ -1,0 +1,224 @@
+# SmartTScope — installation config
+# Copy this file to ~/.SmartTScope/config.toml and fill in your values.
+# Environment variables override any setting defined here.
+
+[observer]
+lat = 0.0    # decimal degrees, north-positive  (e.g. 50.336 for Usingen, Hesse)
+lon = 0.0    # decimal degrees, east-positive   (e.g. 8.533)
+
+[hardware]
+# Use stable udev symlink names (won't shift like ttyUSB0/1/2 across reconnects).
+# Leave empty ("") to fall back to simulator/mock — useful without hardware attached.
+onstep_port      = ""   # e.g. "/dev/ttyUSB_ONSTEP0"
+gps_port         = ""   # e.g. "/dev/ttyUSB_GPS0"          (future use)
+dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
+camera_backend   = "native" # MVP: use native; use INDI only in a dedicated all-INDI profile
+
+[cameras]
+# Preferred MVP form:
+#
+# [cameras.main]
+# enabled = true
+# model = "ATR585M"
+# backend = "native"
+# capture_mode = "indi-stream-trigger"
+# setup_profile = "indi"
+# gain = 101
+# offset_lcg = 150
+# offset_hcg = 150
+# bit_depth = 16
+#
+# [cameras.guide]
+# enabled = true
+# model = "GPCMOS02000KPA"
+# backend = "native"
+# capture_mode = "snap"
+# gain = 101
+# offset_lcg = 10
+# offset_hcg = 10
+# bit_depth = 16
+#
+# [cameras.oag]
+# enabled = true  # set false when the G3M678M is repurposed as main planetary camera
+# model = "G3M678M"
+# backend = "native"
+# capture_mode = "indi-stream-trigger"
+# setup_profile = "indi"
+# startup_delay_s = 40
+# prime_attempts = 3
+# prime_timeout_s = 1.5
+# prime_exposure_s = 0.001
+# gain = 101
+# offset_lcg = 150
+# offset_hcg = 150
+# bit_depth = 16
+#
+# Legacy fallback:
+# Map camera roles to ToupTek SDK indices (0-based, order in which the OS
+# enumerates USB devices).  Only "main" is required; comment out unused roles.
+#
+# Typical two-camera setup (678M imaging + dedicated guide cam):
+#   main  = 0   # 678M at C8
+#   guide = 1   # guide cam on 180×50 guide scope
+#
+# Three-camera setup (ATR585M at C8, 678M as OAG alongside guide scope):
+#   main  = 0   # ATR585M at C8
+#   guide = 1   # guide cam on 180×50 guide scope
+#   atr   = 2   # 678M now used as OAG — override "main" profile accordingly
+#
+main  = 0   # primary imaging camera
+
+[filters]
+# Map filter identifiers to 1-based filter drawer / wheel positions.
+luminance = 1
+red       = 2
+green     = 3
+blue      = 4
+ha        = 5
+oiii      = 6
+sii       = 7
+
+[filter_wheel]
+enabled = false
+backend = "native"
+active_camera_role = "main" # wheel is in front of ATR585M; set differently or disable when 678 is main
+settle_s = 1.5
+# model = ""
+# name = ""
+# wheel_id = ""
+
+[cooling]
+default_target_c = -10.0
+
+[guiding]
+# Measure-only guiding MVP. Both guide and oag may stream, but only one source
+# is active at a time. Real mount pulses require a later explicit enable step.
+primary_role = "guide"          # guide | oag
+allow_fallback = true           # switch to the other source on transient no-star/cloud conditions
+fallback_after_bad_frames = 3
+max_frame_age_s = 2.0           # stale guide frames are skipped, not processed late
+centroid_roi_px = 32
+min_peak_snr = 5.0
+saturation_fraction = 0.98
+measure_only = true
+
+# ── Optical hardware inventory ────────────────────────────────────────────────
+# Define each physical telescope once, then build optical trains from them.
+# Reducer/Barlow factors are set per train, not per telescope.
+
+[telescopes]
+
+[telescopes.c8]
+aperture_mm  = 203.2
+focal_mm     = 2032.0
+type         = "sct"          # sct | refractor | newt | rc
+obstruction  = 0.36           # central obstruction as fraction of aperture
+
+[telescopes.guide_scope]
+aperture_mm  = 50.0
+focal_mm     = 180.0
+type         = "refractor"
+obstruction  = 0.0
+
+# ── Optical trains ────────────────────────────────────────────────────────────
+# Each train binds a telescope to a camera role.
+# reducer_factor: 1.0=none, 0.63=Celestron f/6.3 reducer, 2.0=Barlow 2×
+# One telescope may appear in multiple trains (e.g. main + OAG both use "c8").
+
+[optical_trains]
+
+[optical_trains.main]
+telescope           = "c8"
+camera              = "main"        # camera role from [cameras]
+reducer_factor      = 1.0           # native f/10; use 0.63 for Celestron f/6.3 reducer
+focuser             = "onstep"      # "onstep" | "" (no focuser)
+# pixel_scale_arcsec = 0.38         # optional override; computed from focal_mm if omitted
+
+[optical_trains.guide]
+telescope      = "guide_scope"
+camera         = "guide"
+reducer_factor = 1.0
+focuser        = ""
+# pixel_scale_arcsec = 3.32         # guide scope 50/180 + 2.9 µm sensor
+
+[optical_trains.oag]
+telescope      = "c8"          # OAG shares the main telescope beam
+camera         = "oag"         # add "oag" to [cameras] when a third camera is connected
+reducer_factor = 1.0
+focuser        = "onstep"      # OAG shares main focuser
+
+[astap]
+path        = ""   # empty = auto-detect via PATH
+catalog_dir = ""   # empty = auto-search standard locations
+
+[mount_limits]
+min_alt_deg     = 10.0    # horizon clearance
+max_alt_deg     = 88.0    # avoid zenith flip zone
+ha_east_limit_h = -5.5    # negative = east of meridian
+ha_west_limit_h = 0.333   # ~20 min past meridian
+
+[session]
+storage_dir        = ""      # where captured frames are saved; empty = system temp
+stars_cfg          = ""      # path to custom target list; empty = ~/.SmartTScope/stars.cfg
+horizon_dat        = ""      # path to KStars horizon export; empty = ~/.SmartTScope/horizon.dat
+pixel_scale_arcsec = 0.38   # arcsec per pixel at your focal length (C8 native = 0.38)
+
+# ── Collimation assistant ─────────────────────────────────────────────────────
+# All values below show the defaults.  Uncomment and edit only what you need.
+
+[collimation]
+telescope_profile = "c8_f10"   # c8_f10 | c8_f10_atr585m | c8_f6_3 | c8_f20_barlow2x
+camera_id         = "main"     # camera role from [cameras] section
+mount_adapter     = "onstep"
+focuser_adapter   = "onstep"
+
+# Reference center: where the optical axis is in the image.
+# Default (frame_center): uses the geometric frame center.
+# Set source = "calibrated" and supply offsets once you have measured them.
+[collimation.reference_center]
+offset_x_px = 0.0           # positive = right of frame center
+offset_y_px = 0.0           # positive = below frame center
+source      = "frame_center" # "frame_center" | "calibrated"
+
+[collimation.contradiction_detection]
+enabled                               = true
+stop_on_conflicting_indicators        = true
+require_recenter_before_next_screw_hint = true
+require_refocus_before_final_fine_hint  = true
+
+# Daylight / mechanical alignment — disabled for MVP
+[collimation.daylight_mechanical_alignment]
+enabled = false
+
+# Focuser settings for the collimation assistant
+[collimation.focuser]
+min_position               = 0
+max_position               = 50000
+increasing_value_direction = "clockwise"
+final_approach_direction   = "clockwise"
+defocus_direction          = "clockwise"
+max_single_step            = 500
+fine_step                  = 25
+coarse_step                = 250
+
+# Mount centering during collimation
+[collimation.mount_centering]
+method               = "pulse_guide"
+max_pulse_ms         = 500
+settle_ms            = 750
+initial_tolerance_px = 50.0
+rough_tolerance_px   = 20.0
+fine_tolerance_px    = 5.0
+
+# Rough collimation (defocused donut)
+[collimation.rough_collimation]
+target_donut_diameter_ratio_min = 0.25
+target_donut_diameter_ratio_max = 0.50
+good_error_ratio                = 0.02
+fallback_error_ratio            = 0.05
+
+# Fine collimation (Tri-Bahtinov)
+[collimation.fine_collimation]
+moving_window_frames   = 7
+target_residual_px     = 2.0
+poor_seeing_residual_px = 3.0

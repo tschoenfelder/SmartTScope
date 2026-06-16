@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from ...ports.focuser import FocuserPort
+from ...ports.focuser import FocuserMoveResult, FocuserPort, FocuserStatus
 
 _log = logging.getLogger(__name__)
 
@@ -46,6 +46,24 @@ class SimulatorFocuser(FocuserPort):
         with self._lock:
             self._cancel_timer()
             self._target = None
+
+    def status(self) -> FocuserStatus:
+        return FocuserStatus(
+            available=self.is_available,
+            position=self.get_position(),
+            max_position=self.get_max_position(),
+            moving=self.is_moving(),
+        )
+
+    def move_absolute(self, steps: int) -> FocuserMoveResult:
+        start = self.get_position()
+        self.move(steps)
+        return FocuserMoveResult(
+            accepted=True,
+            target_position=steps,
+            start_position=start,
+            onstep_reply="1",
+        )
 
     def move(self, steps: int) -> None:
         with self._lock:

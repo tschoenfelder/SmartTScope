@@ -41,12 +41,12 @@ def focuser_connect(focuser: FocuserPort = Depends(deps.get_focuser)) -> dict[st
 
 @router.get("/status", response_model=FocuserStatus)
 def focuser_status(focuser: FocuserPort = Depends(deps.get_focuser)) -> FocuserStatus:
-    available = focuser.is_available
+    st = focuser.status()
     return FocuserStatus(
-        position=focuser.get_position() if available else 0,
-        moving=focuser.is_moving() if available else False,
-        available=available,
-        max_position=focuser.get_max_position() if available else None,
+        position=st.position,
+        moving=st.moving,
+        available=st.available,
+        max_position=st.max_position if st.available else None,
     )
 
 
@@ -71,9 +71,10 @@ def _safe_move(
             if focuser.is_moving():
                 _log.info("Focuser move rejected: focuser is moving (target=%d)", target)
                 raise HTTPException(status_code=409, detail="Focuser is moving — try again shortly")
-            start_pos = focuser.get_position()
-            focuser.move(target)
-            _log.info("Focuser move issued: start=%d target=%d", start_pos, target)
+            result = focuser.move_absolute(target)
+            start_pos = result.start_position
+            _log.info("Focuser move issued: start=%d target=%d accepted=%s",
+                      start_pos, target, result.accepted)
     except CommandConflictError as exc:
         _log.warning("Focuser move: lock conflict (target=%d)", target)
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -95,10 +96,10 @@ def focuser_move(
     focuser: FocuserPort = Depends(deps.get_focuser),
     coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
 ) -> dict[str, bool]:
-    if not focuser.is_available:
+    st = focuser.status()
+    if not st.available:
         raise HTTPException(status_code=503, detail="Focuser not available")
-    max_pos = focuser.get_max_position()
-    target = max(0, min(max_pos, body.position)) if max_pos else body.position
+    target = max(0, min(st.max_position, body.position)) if st.max_position else body.position
     _safe_move(focuser, coordinator, target)
     return {"ok": True}
 
@@ -110,13 +111,12 @@ def focuser_nudge(
     coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
 ) -> dict[str, object]:
     _log.info("Focuser nudge request: delta=%d", body.delta)
-    if not focuser.is_available:
+    st = focuser.status()
+    if not st.available:
         raise HTTPException(status_code=503, detail="Focuser not available")
-    current = focuser.get_position()
-    max_pos = focuser.get_max_position()
-    target  = current + body.delta
-    if max_pos:
-        target = max(0, min(max_pos, target))
+    target = st.position + body.delta
+    if st.max_position:
+        target = max(0, min(st.max_position, target))
     started = _safe_move(focuser, coordinator, target)
     return {"target": target, "started": started}
 

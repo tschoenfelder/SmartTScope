@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-15 (OnStep time/location auto-sync before GoTo fixed; readiness display item added)
+**Last updated:** 2026-06-17 (OnStepAdapter migration finalized: no direct serial comms outside adapter layer; FocuserPort consumer API updated)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
 
@@ -32,9 +32,9 @@
 
 ## OnStepAdapter Migration — 2026-06-14
 
-All mount and focuser hardware communication now flows exclusively through the external `onstep_adapter` package (tschoenfelder/OnStepAdapter v0.2.0). See `SYNC.md` for sync state and enhancement requests.
+All mount and focuser hardware communication now flows exclusively through the external `onstep_adapter` package (tschoenfelder/OnStepAdapter). `smart_telescope/adapters/onstep/` is an override layer — it subclasses the pip-installed package; it does NOT contain a hand-rolled copy. See `SYNC.md` for sync state, active SYNC-OVERRIDEs, and upgrade procedure.
 
-### Completed
+### Completed (initial migration to pip-installed package)
 
 - [x] Install `onstep_adapter` wheel and register in `SYNC.md` as external module
 - [x] Sync 9 implementation files from OnStepAdapter GitHub into `smart_telescope/adapters/onstep/`
@@ -45,13 +45,81 @@ All mount and focuser hardware communication now flows exclusively through the e
 - [x] Handle `OnStepSafetyError` in `mount_operations.py` (imported with fallback) and return HTTP 409 from goto
 - [x] `MountObservedState` extended with `safety_violation` field; poll loop populates from adapter
 
+### Upgrade to v0.3.0 — 2026-06-17
+
+Release: <https://github.com/tschoenfelder/OnStepAdapter/releases/tag/v0.3.0>
+
+- [x] ONS3-001 Update `pyproject.toml` wheel URL to v0.3.0 `[P1 · Build]`
+  - *Done:* `onstep-adapter @ .../v0.3.0/onstep_adapter-0.3.0-py3-none-any.whl` already in `pyproject.toml`
+- [ ] ONS3-002 Install new wheel: `pip install -e ".[dev]"` and confirm `onstep_adapter.__version__ == "0.3.0"` `[P1 · Build]`
+- [ ] ONS3-003 Review each REQ-ST-* override in `smart_telescope/adapters/onstep/mount.py` — check if v0.3.0 base class now handles any of them and remove those that are no longer needed `[P1 · Runtime]`
+- [ ] ONS3-004 Review `smart_telescope/adapters/onstep/client.py` — its `__init__` replicates the base `OnStepClient.__init__` body; update if upstream signature changed `[P1 · Runtime]`
+- [ ] ONS3-005 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all tests pass `[P1 · Tests]`
+- [ ] ONS3-006 Commit: `git commit -m "chore: upgrade onstep_adapter to v0.3.0"` `[P1 · Build]`
+
 ### Open Enhancement Requests (pending external delivery — tracked in SYNC.md)
 
 - [ ] REQ-1: `move(direction, move_ms)` at slew rate in `OnStepMount` — interim delegates to `guide()`
-- [ ] REQ-2: `get_park_position() → MountPosition | None` and `set_park_position() → bool` in `OnStepMount`
+- [ ] REQ-2: `get_park_position() → MountPosition | None` and `set_park_position() → bool` — **stays in SmartTScope shim** (v0.3.0 already has `set_park_position_from_current()` and `get_stored_park_position()`; these two wrappers adapt to `MountPort` signatures)
 - [ ] REQ-3: Sticky AT_HOME state tracking in adapter (currently in `DeviceStateService`)
 - [ ] REQ-4: Hardware watchdog property on `OnStepMount` (currently in `DeviceStateService`)
 - [ ] REQ-5: Command audit trail properties on `OnStepMount` (currently in `DeviceStateService`)
+
+### Replace SmartTScope adapter reimplementation with pip package
+
+`smart_telescope/adapters/onstep/mount.py` is 4,408 lines. The goal is to delete it and reduce the adapter layer to a ≤30-line shim that satisfies `MountPort`/`FocuserPort` ABC compliance while delegating all logic to `onstep_adapter`.
+
+**Architecture reality (discovered 2026-06-17):** `onstep_adapter` v0.3.0 is NOT an independent library. Its `__init__.py` consists entirely of `from smart_telescope.adapters.onstep.* import ...` — it re-exports SmartTScope's own code. The only files in the package are `__init__.py` and two smoke-test tools. There is no independent `_BaseMount`. All methods (REQ-1, REQ-ST-001..007) already "exist" in v0.3.0 only because they exist in SmartTScope's own adapter layer.
+
+**What this means:** The migration is blocked on creating an **independent codebase** in the OnStepAdapter repo. The upstream work is not "add these methods" but "implement the full adapter independently so SmartTScope can import from it without circular dependency". REQ-1 and REQ-ST-001..007 describe the methods that independent implementation must include.
+
+REQ-2 is NOT an upstream requirement — `set_park_position()` and `get_park_position()` stay permanently in the shim as `MountPort` interface adapters over the existing `set_park_position_from_current()` / `get_stored_park_position()` methods.
+
+**End state:** `smart_telescope/adapters/onstep/` contains only a thin `OnStepMount(_PipMount, MountPort): pass` shim. No LX200 commands, no serial bus logic, no method implementations remain in this repo.
+
+#### Phase 0 — Upstream contributions (must happen first)
+
+File the following as issues/PRs on `tschoenfelder/OnStepAdapter`:
+
+| ID | Upstream ask | Reasoning |
+|----|-------------|-----------|
+| REQ-1 | `move(direction, move_ms) → bool` in `_BaseMount` | MountPort contract; generic center-rate timed move for any GEM user. |
+| ~~REQ-2~~ | ~~`set_park_position() → bool`~~ | **NOT upstream** — v0.3.0 already has `set_park_position_from_current()` and `get_stored_park_position()`; SmartTScope's `set_park_position()` and `get_park_position()` are thin `MountPort`-compliance wrappers that stay in the shim. |
+| REQ-ST-001 | `ensure_time_location_synced()` | Pre-observation clock+location sync is needed by every OnStep client. |
+| REQ-ST-002 | `confirmed_by_user` param in `sync_onstep_time_location()` sets `time_trust_source="user_confirmed"` | Safety trust tracking — any safety-aware client needs this to clear clock locks. |
+| REQ-ST-003 | `_explicit_tracking_started` flag in `get_state()` prevents ``:hR#`` auto-tracking from masking AT_HOME | Firmware quirk (auto-tracking after unpark) affects all GEM OnStep users. |
+| REQ-ST-004 | `enable_tracking()` at-home bypass skips HA/altitude checks when HOME RA is stale | GEM HOME-position safety; stale RA produces false limit blocks at HOME. |
+| REQ-ST-005 | `disable_tracking_verified()` clears `_explicit_tracking_started` | Correctness: without the clear, `get_state()` returns TRACKING forever after verified disable. |
+| REQ-ST-006 | `stop()` / `park()` / `unpark()` each clear `_explicit_tracking_started` | Same flag lifecycle issue — all state-changing commands must reset the flag. |
+| REQ-ST-007 | `motion_safety_preflight()` pier-side guards: (a) `terminal_state` check; (b) suppress stale `:Gm#` when `axis2 < 15°` at HOME | GEM safety refinement; stale pier-side blocks valid GoTo at CWD home position. |
+
+- [ ] ONS-MIGRATE-001 File upstream issue: REQ-1 `move(direction, move_ms) → bool` `[P1 · External]`
+- [x] ONS-MIGRATE-002 ~~File upstream: REQ-2~~ — v0.3.0 already has `set_park_position_from_current()` + `get_stored_park_position()`; shim methods stay in SmartTScope (MountPort ABC compliance only) `[P1 · External]`
+- [ ] ONS-MIGRATE-003 File upstream issues: REQ-ST-001..007 (flag lifecycle, pier-side guards, at-home bypass, confirmed_by_user sync) `[P1 · External]`
+- [ ] ONS-MIGRATE-004 Confirm upstream release incorporating the above; update `pyproject.toml` wheel URL `[P1 · Build]`
+
+#### Phase 1 — Audit (after upstream release)
+
+- [ ] ONS-MIGRATE-005 Install new wheel; verify each REQ-ST-* is now in the base class; mark covered overrides for deletion `[P1 · Runtime]`
+
+#### Phase 2 — Reduce adapter layer
+
+- [ ] ONS-MIGRATE-006 Replace `mount.py` (4,408 lines) with shim: `class OnStepMount(_PipMount, MountPort): pass` plus any REQ-* override bodies not yet in upstream `[P1 · Runtime]`
+- [ ] ONS-MIGRATE-007 Reduce or delete `client.py`; if upstream `OnStepClient` injects its own mount, remove shim class entirely `[P1 · Runtime]`
+- [ ] ONS-MIGRATE-008 Delete 6 thin re-export files (`results.py`, `safety.py`, `serial_bus.py`, `state_store.py`, `firmware_proof.py`, `focuser.py`); update `__init__.py` to re-export from `onstep_adapter.*` `[P2 · Runtime]`
+- [x] ONS-MIGRATE-009 Update import sites: `runtime.py`, `config.py`, `api/mount.py`, `services/mount_operations.py` — all now import from `adapters.onstep` package `__init__.py`, not internal submodules. Dead `OnStepSafetyError` import removed from `mount_operations.py`. Defensive `try/except ImportError` removed from `api/mount.py` and `mount_operations.py`. Ready for final rename to `from onstep_adapter import ...` once upstream is independent. `[P1 · Runtime]`
+
+#### Phase 2b — Consumer API migration (no direct serial communication in api/ or services/)
+
+- [x] ONS-MIGRATE-009b `FocuserPort` extended with `status() → FocuserStatus` and `move_absolute() → FocuserMoveResult`; `FocuserStatus`/`FocuserMoveResult` dataclasses defined in `ports/focuser.py` (canonical); `results.py` re-exports. `api/focuser.py` uses `focuser.status()` + `focuser.move_absolute()` — no individual property calls, no direct serial access. `MockFocuser`, `SimulatorFocuser` updated. 2942 tests pass. `[P1 · Runtime]`
+- [ ] ONS-MIGRATE-009c (optional) Extend `MountPort` similarly with structured status call once mount-side richer API is defined upstream. `[P3 · Runtime]`
+
+#### Phase 3 — Verify and close (after upstream independent implementation)
+
+- [ ] ONS-MIGRATE-010 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all pass `[P1 · Tests]`
+- [ ] ONS-MIGRATE-011 Verify: `smart_telescope/adapters/onstep/mount.py` ≤ 30 lines; no `serial_bus` implementations remain in the adapter layer `[P1 · Process]`
+- [ ] ONS-MIGRATE-012 Hardware smoke-test on Pi: connect → GoTo → STOP → park/unpark — all succeed with no regression `[P1 · Hardware]`
+- [ ] ONS-MIGRATE-013 Commit and update `SYNC.md` to reflect shim-only state `[P1 · Build]`
 
 ---
 

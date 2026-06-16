@@ -1,66 +1,79 @@
-# OnStepAdapter Sync State
+# OnStepAdapter Dependency
 
-Last synced: 2026-06-14
-Source: https://github.com/tschoenfelder/OnStepAdapter
-Version: 0.3.0
+`onstep_adapter` is a **pip-installed package**, not a synced source copy.
+Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.0/onstep_adapter-0.3.0-py3-none-any.whl`
 
-Never edit files inside the installed `onstep_adapter` PyPI package directly.
-Implementation files are synced from the GitHub source into `smart_telescope/adapters/onstep/`.
+The directory `smart_telescope/adapters/onstep/` is **SmartTScope-owned** — do NOT sync
+files from the OnStepAdapter GitHub repo into it. It is an override layer that subclasses
+the installed package.
 
-## Owned files (synced from OnStepAdapter GitHub release on each update)
+## Current migration state (2026-06-17)
 
-| Source (GitHub: tschoenfelder/OnStepAdapter) | Destination (smart_telescope/) |
-|---|---|
-| smart_telescope/adapters/onstep/__init__.py | adapters/onstep/__init__.py |
-| smart_telescope/adapters/onstep/client.py | adapters/onstep/client.py |
-| smart_telescope/adapters/onstep/focuser.py | adapters/onstep/focuser.py |
-| smart_telescope/adapters/onstep/firmware_proof.py | adapters/onstep/firmware_proof.py |
-| smart_telescope/adapters/onstep/mount.py | adapters/onstep/mount.py |
-| smart_telescope/adapters/onstep/results.py | adapters/onstep/results.py |
-| smart_telescope/adapters/onstep/safety.py | adapters/onstep/safety.py |
-| smart_telescope/adapters/onstep/serial_bus.py | adapters/onstep/serial_bus.py |
-| smart_telescope/adapters/onstep/state_store.py | adapters/onstep/state_store.py |
+**Architecture reality**: `onstep_adapter` v0.3.0 is a re-export shim — its `__init__.py`
+imports entirely from `smart_telescope.adapters.onstep.*`. There is no independent upstream
+implementation. `smart_telescope/adapters/onstep/` IS the onstep_adapter implementation.
 
-## Active SYNC-OVERRIDEs
+**No direct serial communication outside the adapter layer**: All LX200/serial commands are
+confined to `smart_telescope/adapters/onstep/focuser.py` and `mount.py`. No `api/` or
+`services/` code sends serial commands directly.
 
-| File | Override | Waiting for |
-|---|---|---|
-| smart_telescope/adapters/onstep/mount.py | `def get_state()` — checks `at_home` before `slewing` in priority chain. During `:hC#` home travel OnStep keeps the goto-active flag set until the `H` flag appears; original priority returned SLEWING indefinitely so the service AT_HOME state machine never triggered. | REQ-3 |
-| smart_telescope/adapters/onstep/mount.py | `def move(self, direction: str, move_ms: int) -> bool` — delegates to `self.mechanical_manual_move(direction, move_ms, cancel_check=None)` (center/slew rate via `:Me#`/`:Mw#` etc.). Faster than the v0.2.0 `guide()` workaround. Upstream still needs `move()` with exact MountPort signature. | REQ-1 |
-| smart_telescope/adapters/onstep/mount.py | `def set_park_position(self) -> bool` — delegates to `self.set_park_position_from_current(confirmed_safe=True).ok`. Sends `:hQ#` and persists to state store. Upstream needs `set_park_position() → bool` matching MountPort signature. | REQ-2 |
+**Import paths**: All non-adapter code now imports through `adapters.onstep.__init__` (the
+package surface), not into internal submodules. The final migration step (when an independent
+upstream exists) is a simple search-and-replace:
+`from .adapters.onstep import X` → `from onstep_adapter import X`
 
-## Pending external requirements
+**Consumer API**: `FocuserPort` now declares `status()` and `move_absolute()`. `api/focuser.py`
+uses `focuser.status()` and `focuser.move_absolute(target)` — the onstep_adapter public API
+pattern. Mount-side consumer API unchanged (MountPort covers it).
 
-| ID | Request | Status (v0.3.0) | Opened |
-|---|---|---|---|
-| REQ-1 | Add `move(direction: str, move_ms: int) -> bool` to `OnStepMount` with exact MountPort signature. v0.3.0 added `mechanical_manual_move()` at center rate — SYNC-OVERRIDE updated to use it (faster than guide rate). Remaining gap: upstream signature differs. | **IMPROVED** — SYNC-OVERRIDE upgraded | 2026-06-14 |
-| REQ-2 `get` | `get_park_position() → MountPosition \| None` via state store (not serial). | **DONE** — native in v0.3.0; `GpA#`/`GpD#` removed | 2026-06-14 |
-| REQ-2 `set` | `set_park_position() → bool` with exact MountPort signature. v0.3.0 added `set_park_position_from_current()` — SYNC-OVERRIDE wraps it. Remaining gap: upstream signature differs. | **PARTIAL** — SYNC-OVERRIDE added | 2026-06-14 |
-| REQ-3 | `get_state()` must check `at_home` before `slewing`. During `:hC#` travel OnStep keeps goto-active set until `H` appears; without priority fix, `get_state()` stays SLEWING forever. Fix applied as SYNC-OVERRIDE in `mount.py`. Upstream should adopt the priority order natively. | **PARTIAL** — SYNC-OVERRIDE applied | 2026-06-14 |
-| REQ-4 | Hardware watchdog with configurable timeout and `watchdog_warning` property. Workaround: maintained in `DeviceStateService`. | **Open** | 2026-06-14 |
-| REQ-5 | Command audit trail (`last_command`, `last_command_at`, `last_command_error`) as properties on `OnStepMount`. Workaround: maintained in `DeviceStateService`. | **Open** | 2026-06-14 |
+## Override files (`smart_telescope/adapters/onstep/`)
 
-## How to sync
+| File | Role |
+|------|------|
+| `__init__.py` | Re-exports installed package surface; local overrides (OnStepMount, OnStepClient) win |
+| `mount.py` | `OnStepMount(_BaseMount)` — SmartTScope patches; see REQ-ST-* below |
+| `client.py` | `OnStepClient(_BaseClient)` — injects SmartTScopeMount via replicated `__init__` |
+| `safety.py` | Thin re-export from `onstep_adapter.safety` |
+| `serial_bus.py` | Thin re-export from `onstep_adapter.serial_bus` |
+| `focuser.py` | Thin re-export from `onstep_adapter.focuser` |
+| `firmware_proof.py` | Thin re-export from `onstep_adapter.firmware_proof` |
+| `results.py` | Thin re-export from `onstep_adapter.results` |
+| `state_store.py` | Thin re-export from `onstep_adapter.state_store` |
 
-When a new OnStepAdapter release ships:
-```bash
-# 1. Download the new source files from the GitHub release
-# 2. Copy each file from the table above into smart_telescope/adapters/onstep/
-# 3. Re-apply all SYNC-OVERRIDEs listed above
-# 4. Run: python -m pytest tests/unit/adapters/onstep/ -q
-# 5. Update "Last synced" and "Version" at the top of this file
-# 6. Commit: git commit -m "chore: sync onstep_adapter vX.Y.Z"
-```
+## Active SYNC-OVERRIDEs (kept in `mount.py`)
 
-## Smart_telescope-owned files that consume OnStepAdapter APIs
+These are original overrides that cannot be expressed as post-processing wrappers
+because the upstream `OnStepMount` does not expose these signatures.
 
-| File | External APIs consumed |
-|---|---|
-| `smart_telescope/config.py` | `OnStepSafetyConfig` constructor (via `build_onstep_safety_config()`) |
-| `smart_telescope/runtime.py` | `OnStepClient(port, safety_config=...)`, `client.mount`, `client.focuser`, `client.connect()`, `client.close()` |
-| `smart_telescope/services/device_state.py` | `mount.safety_lock` (via `getattr`, optional) |
-| `smart_telescope/services/mount_operations.py` | `OnStepSafetyError` (imported with fallback) |
-| `smart_telescope/api/mount.py` | `OnStepSafetyError` (imported with fallback); `MountStatus.safety_violation` field |
+| ID | Method | Why kept in SmartTScope |
+|----|--------|------------------------|
+| REQ-1 | `move(direction, move_ms)` | `MountPort` contract; upstream signature differs |
+| REQ-2 | `set_park_position() → bool` and `get_park_position() → MountPosition\|None` | `MountPort` ABC compliance; upstream already has `set_park_position_from_current()` and `get_stored_park_position()` — these two methods stay in shim permanently as interface adapters |
+
+## Pending upstream requests
+
+These patches are currently in `mount.py`. They should be evaluated for adoption
+into `onstep_adapter`; raise with the package maintainer.
+
+| ID | Method | Reasoning for upstream adoption |
+|----|--------|----------------------------------|
+| REQ-ST-001 | `ensure_time_location_synced()` | Protocol convenience wrapper — useful for all OnStep hosts |
+| REQ-ST-002 | `sync_onstep_time_location()` (confirmed_by_user extension) | Sets `time_trust_source="user_confirmed"`; base class leaves it unset |
+| REQ-ST-003 | `get_state()` `_explicit_tracking_started` flag | Some firmware auto-starts tracking after `:hR#`; flag disambiguates |
+| REQ-ST-004 | `enable_tracking()` at-home bypass | Positional limits unsound at CWD home (stale RA); safety lock still applies |
+| REQ-ST-005 | `disable_tracking_verified()` flag clear | Consistent flag lifecycle |
+| REQ-ST-006 | `stop()` / `park()` / `unpark()` flag clear | Consistent flag lifecycle |
+| REQ-ST-007 | `motion_safety_preflight()` pier-side guards | (a) terminal_state; (b) axis2 < 15° stale `:Gm#` suppression |
+
+## Upgrading onstep_adapter
+
+1. Update the wheel URL in `pyproject.toml` to the new release.
+2. Run `pip install -e ".[dev]"` to fetch the new wheel.
+3. Review each REQ-ST-* override in `mount.py` — check if the base class now handles it.
+4. Review `client.py` — its `__init__` replicates the base `__init__` body and must be
+   updated if upstream `OnStepClient.__init__` changes.
+5. Run: `python -m pytest tests/unit/ -x -q`
+6. Commit: `git commit -m "chore: upgrade onstep_adapter to vX.Y.Z"`
 
 ---
 

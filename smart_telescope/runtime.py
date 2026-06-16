@@ -138,7 +138,7 @@ def _build_adapters(
     mnt_mode: str
     if onstep_port:
         from . import config as _cfg
-        from .adapters.onstep.client import OnStepClient
+        from .adapters.onstep import OnStepClient
         from .ports.mount import MountState
         safety_config = _cfg.build_onstep_safety_config()
         _log.info("Adapter selected: OnStepClient on port %s", onstep_port)

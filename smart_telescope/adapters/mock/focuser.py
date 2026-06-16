@@ -1,6 +1,6 @@
 import logging
 
-from ...ports.focuser import FocuserPort
+from ...ports.focuser import FocuserMoveResult, FocuserPort, FocuserStatus
 
 _log = logging.getLogger(__name__)
 
@@ -23,6 +23,25 @@ class MockFocuser(FocuserPort):
     @property
     def is_available(self) -> bool:
         return self._available
+
+    def status(self) -> FocuserStatus:
+        avail = self._available
+        return FocuserStatus(
+            available=avail,
+            position=self._position if avail else 0,
+            max_position=self.get_max_position(),
+            moving=False,
+        )
+
+    def move_absolute(self, steps: int) -> FocuserMoveResult:
+        start = self._position
+        self._position = steps
+        return FocuserMoveResult(
+            accepted=True,
+            target_position=steps,
+            start_position=start,
+            onstep_reply="1",
+        )
 
     def move(self, steps: int) -> None:
         self._position += steps

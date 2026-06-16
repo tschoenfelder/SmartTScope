@@ -18,7 +18,7 @@ Table of contents for the SmartTelescope knowledge base.
 - [touptek-sdk](touptek-sdk.md) — ToupTek toupcam SDK: architecture, trigger/RAW/TEC/filter-wheel API, and adapter design
 - [onstep-protocol](onstep-protocol.md) — Full LX200 command reference for OnStep V4: mount, focuser, park, tracking, with adapter implementation notes
 - [OnStep adapter replacement requirements](../resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md) — Safety state machine (9 states), layered architecture, HOME/PARK confirmation, limit readback, LIMIT_HIT recovery; deferred pending external party + Q1–Q10 answers
-- [OnStepAdapter external module](../SYNC.md) — External package tschoenfelder/OnStepAdapter v0.2.0 replaces hand-rolled mount/focuser/serial_bus; active SYNC-OVERRIDEs and enhancement requests REQ-1..5 tracked here
+- [OnStepAdapter external module](../SYNC.md) — External pip package tschoenfelder/OnStepAdapter (currently v0.3.0); migration plan ONS-MIGRATE-001..013 in `docs/todo.md` aims to reduce `smart_telescope/adapters/onstep/` to a ≤30-line MountPort shim; active SYNC-OVERRIDEs, upstream contribution requirements (REQ-1, REQ-2, REQ-ST-001..007), and upgrade procedure in SYNC.md
 - [seestar-s50](seestar-s50.md) — ZWO Seestar S50 reference smart telescope
 - [vaonis-vespera](vaonis-vespera.md) — Vaonis Vespera Pro reference smart telescope
 

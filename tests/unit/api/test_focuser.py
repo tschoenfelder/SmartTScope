@@ -11,7 +11,7 @@ from smart_telescope.api import deps
 from smart_telescope.app import app
 from smart_telescope.domain.frame import FitsFrame
 from smart_telescope.ports.camera import CameraPort
-from smart_telescope.ports.focuser import FocuserPort
+from smart_telescope.ports.focuser import FocuserMoveResult, FocuserPort, FocuserStatus
 
 client = TestClient(app)
 
@@ -27,6 +27,18 @@ def _mock_focuser(
     f.get_position.return_value = position
     f.is_moving.return_value = moving
     f.get_max_position.return_value = max_position
+    f.status.return_value = FocuserStatus(
+        available=available,
+        position=position if available else 0,
+        max_position=max_position if available else 0,
+        moving=moving if available else False,
+    )
+    f.move_absolute.return_value = FocuserMoveResult(
+        accepted=True,
+        target_position=position,
+        start_position=position,
+        onstep_reply="1",
+    )
     return f
 
 
@@ -127,12 +139,11 @@ class TestFocuserStatus:
         data = client.get("/api/focuser/status").json()
         assert data["max_position"] is None
 
-    def test_calls_get_position_and_is_moving_when_available(self) -> None:
+    def test_calls_status_when_available(self) -> None:
         f = _mock_focuser()
         _inject(f)
         client.get("/api/focuser/status")
-        f.get_position.assert_called_once()
-        f.is_moving.assert_called_once()
+        f.status.assert_called_once()
 
 
 # ── POST /api/focuser/move ─────────────────────────────────────────────────────
@@ -147,23 +158,23 @@ class TestFocuserMove:
         _inject(_mock_focuser())
         assert client.post("/api/focuser/move", json={"position": 3000}).json() == {"ok": True}
 
-    def test_calls_move_with_clamped_position(self) -> None:
+    def test_calls_move_absolute_with_clamped_position(self) -> None:
         f = _mock_focuser(max_position=5000)
         _inject(f)
         client.post("/api/focuser/move", json={"position": 3000})
-        f.move.assert_called_once_with(3000)
+        f.move_absolute.assert_called_once_with(3000)
 
     def test_move_clamped_to_max(self) -> None:
         f = _mock_focuser(max_position=5000)
         _inject(f)
         client.post("/api/focuser/move", json={"position": 9999})
-        f.move.assert_called_once_with(5000)
+        f.move_absolute.assert_called_once_with(5000)
 
     def test_move_clamped_to_zero(self) -> None:
         f = _mock_focuser(max_position=5000)
         _inject(f)
         client.post("/api/focuser/move", json={"position": -100})
-        f.move.assert_called_once_with(0)
+        f.move_absolute.assert_called_once_with(0)
 
     def test_returns_503_when_not_available(self) -> None:
         _inject(_mock_focuser(available=False))
@@ -192,11 +203,11 @@ class TestFocuserNudge:
         data = client.post("/api/focuser/nudge", json={"delta": -200}).json()
         assert data["target"] == 800
 
-    def test_calls_move_with_computed_target(self) -> None:
+    def test_calls_move_absolute_with_computed_target(self) -> None:
         f = _mock_focuser(position=500, max_position=5000)
         _inject(f)
         client.post("/api/focuser/nudge", json={"delta": 50})
-        f.move.assert_called_once_with(550)
+        f.move_absolute.assert_called_once_with(550)
 
     def test_returns_503_when_not_available(self) -> None:
         _inject(_mock_focuser(available=False))

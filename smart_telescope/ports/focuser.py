@@ -1,4 +1,21 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FocuserStatus:
+    available: bool
+    position: int
+    max_position: int
+    moving: bool
+
+
+@dataclass(frozen=True)
+class FocuserMoveResult:
+    accepted: bool
+    target_position: int
+    start_position: int
+    onstep_reply: str
 
 
 class FocuserPort(ABC):
@@ -7,6 +24,12 @@ class FocuserPort(ABC):
 
     @abstractmethod
     def disconnect(self) -> None: ...
+
+    @abstractmethod
+    def status(self) -> FocuserStatus: ...
+
+    @abstractmethod
+    def move_absolute(self, steps: int) -> FocuserMoveResult: ...
 
     @abstractmethod
     def move(self, steps: int) -> None: ...

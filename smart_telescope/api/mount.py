@@ -24,10 +24,7 @@ from ..services import mount_operations as mount_ops
 from ..workflow.goto_center import goto_and_center
 from . import deps
 
-try:
-    from ..adapters.onstep.safety import OnStepSafetyError
-except ImportError:
-    OnStepSafetyError = None  # type: ignore[assignment,misc]
+from ..adapters.onstep import OnStepSafetyError
 
 _log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mount")

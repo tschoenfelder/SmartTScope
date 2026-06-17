@@ -33,7 +33,7 @@ async def ws_preview(
     camera_index: int = Query(default=0, ge=0, le=7),
     camera_role: str = Query(default=""),
     autogain: bool = Query(default=False),
-    offset: int = Query(default=0, ge=0, le=10000),
+    offset: int = Query(default=0, ge=0, le=65535),
     stretch: bool = Query(default=True),
 ) -> None:
     """Stream auto-stretched JPEG frames to the client until it disconnects.

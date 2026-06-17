@@ -36,21 +36,35 @@ def _detect_pixel_shift(raw: np.ndarray) -> int:
 
     ToupTek SDK in 16-bit output mode stores data MSB-aligned:
     12-bit ADC → ×16 (shift=4), 14-bit → ×4 (shift=2), true 16-bit → no shift.
-    Returns -1 if the frame has too few non-zero pixels to decide reliably.
+    Returns -1 if the frame has too few distinct non-zero pixels to decide reliably.
 
-    Uses a 99% majority test rather than np.all() so that a small number of
-    hot pixels or saturated values with non-zero lower bits do not defeat
-    detection and leave data in MSB-aligned 16-bit space.
+    Uses the GCD of differences between adjacent distinct values to find the
+    quantization step.  This is robust to non-zero black-level offsets: with
+    offset O applied to MSB-aligned data, pixel values are (ADC×16)+O.  The step
+    between adjacent ADC values is still 16, but (ADC×16+O) % 16 == O%16 ≠ 0 when
+    O is not a multiple of 16 — divisibility/majority tests would wrongly return
+    shift=2, creating a 4-ADU comb artifact in the histogram.
     """
+    from math import gcd
+    from functools import reduce
+
     flat = raw.ravel()
     nonzero = flat[flat > 0]
     if len(nonzero) < 100:
-        return -1  # not enough data — retry on next frame
-    sample = nonzero[:4096].astype(np.int32)
-    for shift in (4, 2):
-        if float(np.mean(sample % (1 << shift) == 0)) >= 0.99:
-            return shift
-    return 0
+        return -1
+    distinct = np.unique(nonzero[:4096].astype(np.int32))
+    if len(distinct) < 4:
+        return -1  # not enough variety — retry on next frame
+    diffs = np.diff(distinct)
+    pos_diffs = diffs[diffs > 0]
+    if len(pos_diffs) == 0:
+        return -1
+    step = int(reduce(gcd, pos_diffs.tolist()))
+    if step >= 16:
+        return 4  # 12-bit ADC
+    if step >= 4:
+        return 2  # 14-bit ADC
+    return 0  # true 16-bit
 _FLAG_BLACKLEVEL  = 0x00400000
 _FLAG_MONO        = 0x00000040  # monochrome / no Bayer filter
 
@@ -346,6 +360,7 @@ class ToupcamCamera(CameraPort):
         if self._cam is not None:
             try:
                 self._cam.put_Option(_OPTION_BLACKLEVEL, max(0, level))
+                self._pixel_shift = -1  # offset changes 16-bit alignment; re-detect on next frame
             except Exception as exc:
                 _log.warning("ToupcamCamera.set_black_level(%d): SDK rejected: %s", level, exc)
 

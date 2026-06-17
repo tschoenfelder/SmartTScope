@@ -117,15 +117,17 @@ async def ws_preview(
     except Exception:
         pass
 
-    # Read back effective offset (camera may clamp the requested value).
-    # Only trust the readback when it is non-zero or zero was explicitly
-    # requested; a zero readback after a non-zero set means the camera
-    # silently rejected the value (unsupported option or SDK error).
+    # Read back effective offset (camera may clamp or silently ignore the value).
+    # Use the actual hardware readback as eff_offset so the UI and log are honest.
     eff_offset = offset
     try:
-        readback = camera.get_black_level()
-        if readback > 0 or offset == 0:
-            eff_offset = readback
+        eff_offset = camera.get_black_level()
+        if eff_offset != offset and offset != 0:
+            _log.warning(
+                "Preview: set_black_level(%d) not reflected — readback=%d "
+                "(camera does not support black level or value is out of range)",
+                offset, eff_offset,
+            )
     except Exception:
         pass
 

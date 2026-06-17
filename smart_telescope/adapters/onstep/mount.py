@@ -3282,6 +3282,15 @@ class OnStepMount(MountPort):
                 margin_deg=margin_deg,
             )
             if preflight.get("motion_refused"):
+                _log.warning(
+                    "motion_safety_preflight refused command=%r reason=%r "
+                    "pier_side=%s ha_hours=%s blockers=%s",
+                    command,
+                    preflight.get("motion_refusal_reason"),
+                    preflight.get("pier_side"),
+                    preflight.get("ha_hours"),
+                    preflight.get("blockers"),
+                )
                 raise OnStepSafetyError(SafetyViolation(
                     reason=str(preflight.get("motion_refusal_reason") or "motion_preflight_failed"),
                     command=command,

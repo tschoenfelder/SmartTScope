@@ -4,6 +4,27 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-17 — FIX — Disable Enable Tracking at HOME; improve pier_side log detail
+
+**Symptoms reported**: Pressing "Enable Tracking" while mount is AT_HOME fails with
+`pier_side_axis_inconsistent` (500 error). Log only showed the bare error code with no context.
+
+**Root cause**: `enable_tracking()` has special at-home handling (skips positional checks), but
+`_at_mechanical_home` is only set by `unpark_to_home_stop_tracking()`, not by the plain `unpark()`.
+After a normal unpark the adapter's `_last_decoded_status` may not carry the `at_home` flag if
+OnStep cleared the H flag before the next serial poll, so `at_home` evaluates to False and the code
+falls through to `_check_target_safe` → `motion_safety_preflight` → `pier_side_axis_inconsistent`.
+
+**Fix 1** (`smart_telescope/static/js/mount.js`): "Enable Tracking" button is now disabled (with
+tooltip "Slew to a target before enabling tracking") when state is `at_home`. Tracking from HOME
+serves no astronomical purpose — the user must slew to a target first.
+
+**Fix 2** (`smart_telescope/adapters/onstep/mount.py`, `_check_target_safe`): Added a `WARNING`
+log line immediately before the `OnStepSafetyError` raise that includes `pier_side`, `ha_hours`,
+and `blockers` from the preflight dict, providing actionable diagnostics in the server log.
+
+---
+
 ## 2026-06-17 — FINDING — onstep_adapter v0.3.0 is a re-export shim, not an independent library
 
 `onstep_adapter` v0.3.0 package (`__init__.py` at Python 3.13 site-packages) contains only

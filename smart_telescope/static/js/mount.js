@@ -154,7 +154,9 @@ function mountCard(data) {
           <span class="adv-only" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex:1">
             ${state === 'tracking'
               ? `<button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>`
-              : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
+              : state === 'at_home'
+                ? `<button class="secondary" disabled title="Slew to a target before enabling tracking">Enable Tracking</button>`
+                : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
             <span class="controls-spacer"></span>
             <span style="display:flex;gap:0.5rem;flex-wrap:nowrap;align-items:center">
               <button class="secondary" onclick="mountHome()"

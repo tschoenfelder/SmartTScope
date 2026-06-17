@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-17 — FIX — Live Preview offset reset to 0 on Start
+
+**Symptom**: Setting offset to 2000 and pressing Start reset the UI field to 0.
+
+**Root cause**: `preview.py` reads back `eff_offset = camera.get_black_level()` after
+`set_black_level(offset)`. The ToupTek SDK's `_try()` helper swallows all exceptions and returns
+None, so `get_black_level()` falls through to `return 0` when the SDK call fails or the camera
+silently rejects the value. This 0 was sent as `effective_offset` in the `camera_info` WebSocket
+message, overwriting the user's field.
+
+**Fix** (`smart_telescope/api/preview.py`): Only accept the readback value when it is non-zero or
+zero was explicitly requested. A zero readback after a non-zero set is treated as a silent rejection
+and the requested value is kept as `eff_offset`.
+
+---
+
 ## 2026-06-17 — FIX — Disable Enable Tracking at HOME; improve pier_side log detail
 
 **Symptoms reported**: Pressing "Enable Tracking" while mount is AT_HOME fails with

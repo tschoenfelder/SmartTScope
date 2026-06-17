@@ -346,8 +346,8 @@ class ToupcamCamera(CameraPort):
         if self._cam is not None:
             try:
                 self._cam.put_Option(_OPTION_BLACKLEVEL, max(0, level))
-            except Exception:
-                pass
+            except Exception as exc:
+                _log.warning("ToupcamCamera.set_black_level(%d): SDK rejected: %s", level, exc)
 
     # ------------------------------------------------------------------
     # CameraPort — conversion gain

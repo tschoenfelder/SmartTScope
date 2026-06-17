@@ -45,6 +45,7 @@ async def analyze_histogram(
     camera_role: str | None = Query(default=None),
     exposure: float = Query(default=2.0, gt=0.0, le=60.0),
     gain: int = Query(default=100, ge=0),
+    offset: int = Query(default=0, ge=0, le=65535),
     bit_depth: int = Query(default=12, ge=8, le=16),
     n_bins: int = Query(default=512, ge=64, le=4096),
 ) -> HistogramResponse:
@@ -55,6 +56,7 @@ async def analyze_histogram(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     camera.set_gain(gain)
+    camera.set_black_level(offset)
     try:
         frame = await asyncio.to_thread(camera.capture, exposure)
     except RuntimeError as exc:

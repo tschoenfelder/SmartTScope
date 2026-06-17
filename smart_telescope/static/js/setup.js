@@ -586,6 +586,8 @@ async function starGoto(ra, dec, name) {
       unlockStage(4);
       setStatus('s3-stars-status', `Slewing to ${name}…`);
       await watchSlew('s3-stars-status', name);
+      // Auto-start live preview so the user can see the star immediately after the slew.
+      previewStart();
     } catch (err) {
       let msg = `GoTo ${name} failed: ${err.message}`;
       try {

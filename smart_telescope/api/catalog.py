@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from .. import config
 from ..domain.catalog import CatalogObject, get_all, search
 from ..domain.solar import is_solar_target
-from ..domain.visibility import HorizonProfile, compute_altaz, compute_visibility_window, load_horizon
+from ..domain.visibility import HorizonProfile, compute_altaz, compute_ha, compute_visibility_window, load_horizon
 
 _STARS_CFG = Path(config.STARS_CFG)
 _HORIZON: HorizonProfile | None = load_horizon(config.HORIZON_DAT)
@@ -172,6 +172,10 @@ def catalog_stars() -> list[CustomTarget]:
     for td in raw:
         t = CustomTarget(**td)
         alt, _ = compute_altaz(t.ra, t.dec, lat, lon)
+        ha = compute_ha(t.ra, lon)
+        # Skip stars beyond the configured mount HA limits — the mount would refuse to slew there.
+        if ha > config.MOUNT_HA_WEST_LIMIT_H or ha < config.MOUNT_HA_EAST_LIMIT_H:
+            continue
         t_alt  = round(alt, 1)
         if alt >= 10.0:
             state: str = "visible_now"

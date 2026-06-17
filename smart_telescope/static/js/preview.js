@@ -27,6 +27,11 @@ function _clearBahtinovOverlay() {
     if (svg) { svg.innerHTML = ''; svg.style.display = 'none'; }
     const res = document.getElementById('s4-bahtinov-result');
     if (res) res.style.display = 'none';
+    const zc = document.getElementById('s4-zoom-canvas');
+    if (zc) zc.style.display = 'none';
+    const zb = document.getElementById('s4-zoom-btn');
+    if (zb) zb.style.display = 'none';
+    _lastBahtinovData = null;
 }
 
 function _drawBahtinovOverlay(data) {
@@ -102,6 +107,52 @@ function _drawBahtinovOverlay(data) {
     }
 }
 
+// ── Bahtinov zoom (picture-in-picture crop around crossing point) ─────────────
+
+let _bahtinovZoomEnabled = false;
+let _lastBahtinovData    = null;
+
+function bahtinovZoomToggle() {
+    _bahtinovZoomEnabled = !_bahtinovZoomEnabled;
+    const btn = document.getElementById('s4-zoom-btn');
+    if (btn) btn.textContent = _bahtinovZoomEnabled ? 'Zoom off' : 'Zoom';
+    if (!_bahtinovZoomEnabled) {
+        const c = document.getElementById('s4-zoom-canvas');
+        if (c) c.style.display = 'none';
+    } else if (_lastBahtinovData) {
+        _drawBahtinovZoom(_lastBahtinovData);
+    }
+}
+
+function _drawBahtinovZoom(data) {
+    if (!_bahtinovZoomEnabled) return;
+    const img = document.getElementById('s4-preview-img');
+    const canvas = document.getElementById('s4-zoom-canvas');
+    if (!img || !canvas || img.style.display === 'none') return;
+    const [natW, natH] = data.image_size_px;
+    const [cx, cy]     = data.common_crossing_point_px;
+    const cropR = Math.max(80, Math.min(natW, natH) / 10);  // crop radius in native pixels
+    const x0 = Math.max(0, Math.round(cx - cropR));
+    const y0 = Math.max(0, Math.round(cy - cropR));
+    const x1 = Math.min(natW, Math.round(cx + cropR));
+    const y1 = Math.min(natH, Math.round(cy + cropR));
+    const cw = x1 - x0, ch = y1 - y0;
+    if (cw < 4 || ch < 4) return;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = natW; offscreen.height = natH;
+    const ctx2 = offscreen.getContext('2d');
+    ctx2.drawImage(img, 0, 0, natW, natH);
+    const ctx = canvas.getContext('2d');
+    canvas.width  = 180; canvas.height = 180;
+    ctx.drawImage(offscreen, x0, y0, cw, ch, 0, 0, 180, 180);
+    // Crosshair at centre of zoom canvas
+    ctx.strokeStyle = 'rgba(250,204,21,0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(90, 80); ctx.lineTo(90, 100); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(80, 90); ctx.lineTo(100, 90); ctx.stroke();
+    canvas.style.display = '';
+}
+
 async function bahtinovAnalyze() {
     const btn     = document.getElementById('s4-analyze-btn');
     const res     = document.getElementById('s4-bahtinov-result');
@@ -127,7 +178,11 @@ async function bahtinovAnalyze() {
       rmsEl.textContent  = rms.toFixed(1) + ' px ' + (rms < 3 ? '✓' : rms < 10 ? '~' : '!');
       confEl.textContent = (conf * 100).toFixed(0) + '%';
       res.style.display = '';
+      _lastBahtinovData = data;
       _drawBahtinovOverlay(data);
+      _drawBahtinovZoom(data);
+      const zb = document.getElementById('s4-zoom-btn');
+      if (zb) zb.style.display = '';
     } catch (err) {
       if (res) res.style.display = '';
       if (errLine) errLine.textContent = 'Analysis failed: ' + err;

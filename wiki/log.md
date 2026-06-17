@@ -4,6 +4,28 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-18 — FIX + FEATURE — Night sky session: solver, HA filtering, dark-sky stretch, camera select, step-3 preview, Bahtinov zoom
+
+**Bugs fixed**
+
+1. **Solver MissingSectionHeaderError** (`adapters/astap/solver.py`): ASTAP writes `.ini` files without a `[section]` header; `configparser` raised `MissingSectionHeaderError`. Fixed in `_parse_ini()`: read file as text, prepend `[Solution]\n` if the first non-blank line is not a section header, then use `cfg.read_string()`. Unblocks "Save solve FITS" and "AF frames" buttons.
+
+2. **Alignment star list shows stars beyond mount HA limits** (`api/catalog.py`, `domain/visibility.py`): `/api/catalog/stars` returned all visible stars without checking if HA was within `MOUNT_HA_WEST_LIMIT_H` / `MOUNT_HA_EAST_LIMIT_H`. Added `compute_ha()` to `domain/visibility.py` (LST − RA via astropy) and filter stars in `catalog_stars()`. Stars past the meridian limit are excluded.
+
+3. **Collimation "use best star" → meridian limit error**: `loadCollimStars()` (in `mount.js`) fetches `/api/catalog/stars` and `collimUseBestStar()` picks the first item. Same catalog HA filter as #2 prevents inaccessible stars from appearing; the "use best star" now always picks a reachable star.
+
+4. **Preview stretch maps noise to mid-grey** (`domain/stretch.py`, `api/preview.py`): The 0.5–99.5 percentile stretch sets lo/hi from the full signal range, making the sky background appear mid-grey in dark conditions. Replaced with a background-subtracted, MAD-based sigma stretch: background = median, sigma = MAD/0.6745, lo = max(0, bg − 1.5σ), hi = bg + 10σ. Falls back to percentile stretch when sigma < 0.5 (uniform/mock frames). Applied per-channel in `_auto_stretch_color()` for colour cameras.
+
+**Features added**
+
+5. **Collimation camera selection** (`api/collimation.py`, `static/index.html`, `static/js/collimation.js`): Added `StartPayload` with `camera_role: str = "main"` to `POST /api/collimation/start`. The assistant singleton is reset when the requested role differs from the current one. A "Main camera" / "Guide camera" dropdown appears before the Start button; it hides once the wizard is active.
+
+6. **Step-3 alignment live preview** (`static/js/setup.js`): After `watchSlew()` completes in `starGoto()`, `previewStart()` is called automatically so the camera feed is visible without a separate manual click.
+
+7. **Bahtinov zoom** (`static/index.html`, `static/js/preview.js`): After a successful Bahtinov analyze, a "Zoom" toggle button appears. Clicking it shows a 180×180px picture-in-picture canvas (`s4-zoom-canvas`) in the top-right corner of the preview frame, cropped around the crossing point (radius ≈ 10% of the shorter image dimension) and scaled up for fine spike assessment.
+
+---
+
 ## 2026-06-17 — FIX — Live Preview offset reset to 0 on Start
 
 **Symptom**: Setting offset to 2000 and pressing Start reset the UI field to 0.

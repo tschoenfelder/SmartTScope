@@ -401,16 +401,24 @@ def _debayer(raw: np.ndarray, pattern: str) -> np.ndarray:
 
 
 def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
-    """Per-channel percentile auto-stretch (H, W, 3) float32 → uint8."""
+    """Per-channel sigma stretch (H, W, 3) float32 → uint8."""
     out = np.empty(rgb.shape, dtype=np.uint8)
     for c in range(3):
-        ch = rgb[:, :, c]
-        lo = float(np.percentile(ch, 0.5))
-        hi = float(np.percentile(ch, 99.5))
-        if hi > lo:
-            scaled = (ch - lo) / (hi - lo) * 255.0
+        ch = rgb[:, :, c].ravel().astype(np.float64)
+        background = float(np.median(ch))
+        mad = float(np.median(np.abs(ch - background)))
+        sigma = mad / 0.6745
+        if sigma < 0.5:
+            lo = float(np.percentile(ch, 0.5))
+            hi = float(np.percentile(ch, 99.5))
         else:
-            scaled = np.zeros_like(ch)
+            lo = max(0.0, background - 1.5 * sigma)
+            hi = background + 10.0 * sigma
+        channel = rgb[:, :, c]
+        if hi > lo:
+            scaled = (channel - lo) / (hi - lo) * 255.0
+        else:
+            scaled = np.zeros_like(channel)
         out[:, :, c] = np.clip(scaled, 0.0, 255.0).astype(np.uint8)
     return out
 

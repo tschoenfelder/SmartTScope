@@ -169,7 +169,9 @@ function _updateCollimWizard(s) {
     // Session report (COMPLETE state)
     _updateCollimReport(s.state);
 
-    // Buttons
+    // Buttons and controls
+    const cameraRoleSel = document.getElementById('s4-wiz-camera-role');
+    if (cameraRoleSel) cameraRoleSel.style.display = idle ? '' : 'none';
     _wizBtn('s4-wiz-start-btn',      idle);
     _wizBtn('s4-wiz-pause-btn',      (active || waiting) && !terminal);
     _wizBtn('s4-wiz-resume-btn',     paused);
@@ -608,7 +610,8 @@ async function collimStart() {
         setStatus('s4-status', '');
       }
       if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Starting…'; }
-      const s = await apiPost('/api/collimation/start');
+      const cameraRole = (document.getElementById('s4-wiz-camera-role') || {}).value || 'main';
+      const s = await apiPost('/api/collimation/start', { camera_role: cameraRole });
       _updateCollimWizard(s);
       _startCollimPoll();
     } catch (err) {

@@ -164,8 +164,12 @@ class AstapSolver(SolverPort):
 
     @staticmethod
     def _parse_ini(ini_path: Path) -> SolveResult:
+        raw = ini_path.read_text(encoding="utf-8", errors="replace")
+        first = next((line.strip() for line in raw.splitlines() if line.strip()), "")
+        if not first.startswith("["):
+            raw = "[Solution]\n" + raw
         cfg = configparser.ConfigParser()
-        cfg.read(ini_path)
+        cfg.read_string(raw)
 
         section = (
             "Solution" if cfg.has_section("Solution")

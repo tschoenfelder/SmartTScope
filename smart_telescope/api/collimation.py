@@ -36,6 +36,7 @@ router = APIRouter(prefix="/api/collimation", tags=["collimation"])
 
 _assistant: CollimationAssistant | None = None
 _assistant_lock = threading.Lock()
+_assistant_camera_role: str = "main"  # tracks which camera role the current singleton uses
 
 _frame_archive: "CollimationFrameArchive | None" = None
 _archive_lock = threading.Lock()
@@ -64,49 +65,61 @@ def _get_archive() -> "CollimationFrameArchive | None":
     return _frame_archive
 
 
-def _get_assistant() -> CollimationAssistant:
-    global _assistant
-    if _assistant is None:
-        with _assistant_lock:
-            if _assistant is None:
-                from ..services.guiding_service import GuidingService
-                from ..services.guide_measurement import CentroidConfig, GuideControllerConfig
-                from .. import config as _cfg_mod
+def _get_assistant(camera_role: str = "main") -> CollimationAssistant:
+    global _assistant, _assistant_camera_role
+    with _assistant_lock:
+        if _assistant is not None and _assistant_camera_role != camera_role:
+            # Camera role changed — discard the old singleton so the new one uses the right camera.
+            _assistant = None
+        if _assistant is None:
+            from ..services.guiding_service import GuidingService
+            from ..services.guide_measurement import CentroidConfig, GuideControllerConfig
+            from .. import config as _cfg_mod
 
-                col_cfg = _cfg_mod.get_collimation_config()
-                guiding_svc: GuidingService | None = None
-                guide_cameras: dict = {}
-                try:
-                    guide_cam = get_camera_by_role(col_cfg.guiding_camera_role)
-                    guide_cameras = {col_cfg.guiding_camera_role: guide_cam}
-                    guiding_svc = GuidingService.from_config(
-                        primary_role=col_cfg.guiding_camera_role,
-                        allow_fallback=False,
-                        fallback_after_bad_frames=5,
-                        max_frame_age_s=col_cfg.guiding_cadence_s * 3,
-                        centroid_config=CentroidConfig(),
-                        controller_config=GuideControllerConfig(),
-                        measure_only=False,
-                    )
-                except Exception:
-                    _log.info(
-                        "CollimationAssistant: guide camera '%s' not available — "
-                        "starting without guiding",
-                        col_cfg.guiding_camera_role,
-                    )
-
-                _assistant = CollimationAssistant(
-                    camera=get_camera(),
-                    mount=get_mount(),
-                    focuser=get_focuser(),
-                    guiding_service=guiding_svc,
-                    guide_cameras=guide_cameras,
-                    frame_archive=_get_archive(),
+            col_cfg = _cfg_mod.get_collimation_config()
+            guiding_svc: GuidingService | None = None
+            guide_cameras: dict = {}
+            try:
+                guide_cam = get_camera_by_role(col_cfg.guiding_camera_role)
+                guide_cameras = {col_cfg.guiding_camera_role: guide_cam}
+                guiding_svc = GuidingService.from_config(
+                    primary_role=col_cfg.guiding_camera_role,
+                    allow_fallback=False,
+                    fallback_after_bad_frames=5,
+                    max_frame_age_s=col_cfg.guiding_cadence_s * 3,
+                    centroid_config=CentroidConfig(),
+                    controller_config=GuideControllerConfig(),
+                    measure_only=False,
                 )
+            except Exception:
+                _log.info(
+                    "CollimationAssistant: guide camera '%s' not available — "
+                    "starting without guiding",
+                    col_cfg.guiding_camera_role,
+                )
+
+            imaging_camera = (
+                get_camera() if camera_role == "main"
+                else get_camera_by_role(camera_role)
+            )
+            _log.info("CollimationAssistant: using camera role=%r for imaging", camera_role)
+            _assistant = CollimationAssistant(
+                camera=imaging_camera,
+                mount=get_mount(),
+                focuser=get_focuser(),
+                guiding_service=guiding_svc,
+                guide_cameras=guide_cameras,
+                frame_archive=_get_archive(),
+            )
+            _assistant_camera_role = camera_role
     return _assistant
 
 
 # ── Request schemas ───────────────────────────────────────────────────────────
+
+class StartPayload(BaseModel):
+    camera_role: str = "main"
+
 
 class NextPayload(BaseModel):
     """Payload for POST /next.
@@ -129,12 +142,12 @@ def collimation_status() -> dict[str, Any]:
 
 
 @router.post("/start")
-def collimation_start() -> dict[str, Any]:
+def collimation_start(payload: StartPayload = StartPayload()) -> dict[str, Any]:
     try:
-        _get_assistant().start()
+        _get_assistant(payload.camera_role).start()
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    return _get_assistant().status
+    return _get_assistant(payload.camera_role).status
 
 
 @router.post("/pause")

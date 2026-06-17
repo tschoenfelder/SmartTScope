@@ -87,6 +87,18 @@ def compute_altaz(
     return float(altaz.alt.deg), float(altaz.az.deg)
 
 
+def compute_ha(
+    ra_hours: float,
+    observer_lon: float,
+    obs_time: Time | None = None,
+) -> float:
+    """Return hour angle in hours (positive = west of meridian)."""
+    if obs_time is None:
+        obs_time = Time.now()
+    lst = obs_time.sidereal_time("apparent", longitude=observer_lon * u.deg)
+    return (float(lst.hour) - ra_hours + 12.0) % 24.0 - 12.0
+
+
 def is_observable(
     ra_hours: float,
     dec_deg: float,

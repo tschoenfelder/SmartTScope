@@ -1487,6 +1487,11 @@
         <div id="s4-wiz-report-body"></div>
       </div>
       <div class="controls" style="flex-wrap:wrap;gap:0.35rem">
+        <select id="s4-wiz-camera-role" class="secondary" title="Camera used for collimation frames"
+                style="padding:0.25rem 0.4rem;font-size:0.8rem;height:auto;width:auto">
+          <option value="main">Main camera</option>
+          <option value="guide">Guide camera</option>
+        </select>
         <button id="s4-wiz-start-btn"  onclick="collimStart()">Start</button>
         <button id="s4-wiz-pause-btn"  onclick="collimPause()"   class="secondary" style="display:none">Pause</button>
         <button id="s4-wiz-resume-btn" onclick="collimResume()"  class="secondary" style="display:none">Resume</button>
@@ -1751,6 +1756,9 @@
             <img id="s4-preview-img" alt="" style="display:none;max-width:100%;max-height:600px">
             <div class="preview-overlay" id="s4-preview-overlay"></div>
             <svg id="s4-bahtinov-svg" style="position:absolute;top:0;left:0;pointer-events:none;display:none" xmlns="http://www.w3.org/2000/svg"></svg>
+            <canvas id="s4-zoom-canvas" style="position:absolute;top:6px;right:6px;
+                    width:180px;height:180px;display:none;border:1px solid rgba(250,204,21,0.7);
+                    border-radius:3px;image-rendering:pixelated"></canvas>
           </div>
 
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
@@ -1766,6 +1774,8 @@
             <button id="s4-start-btn" onclick="s4PreviewStart()">Start</button>
             <button id="s4-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
             <button id="s4-analyze-btn" onclick="bahtinovAnalyze()" style="margin-left:auto" disabled>Analyze</button>
+            <button id="s4-zoom-btn" onclick="bahtinovZoomToggle()" class="secondary"
+                    title="Zoom in on the spike crossing point" style="display:none">Zoom</button>
           </div>
           <!-- Bahtinov analysis results -->
           <div id="s4-bahtinov-result" style="display:none;margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)">

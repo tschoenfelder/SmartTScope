@@ -4,6 +4,21 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-20 — FIX — Field-test bug sprint (11 files, commit ce022fb)
+
+**Bugs fixed**
+- Preview stretch now uses asinh so faint stars stay visible at low signal (mean_adu=9)
+- Frame archive enabled by default — Save FITS / AF buttons no longer greyed out
+- CollimationStarSelector filters by HA limits before altitude; Sirius at HA 8.8h no longer offered
+- Polar alignment step 3 falls back to east-side alternate RA when west HA limit is exceeded
+- Park API now requires `confirmed:true`; mount card shows browser confirm() dialog before parking
+- Auto-gain: `force:true` flag bypasses POSSIBLE_FOCUS_OR_POINTING_ERROR; "Try Anyway" button in UI
+- Mount status card shows explicit clock-sync banner when `onstep_clock_invalid` safety lock is active
+- Plate solver fix (MissingSectionHeaderError) was already in origin/main — Pi needs git reset --hard
+- Collimation camera selector was already wired in HTML/JS (s4-wiz-camera-role) — Pi needs update
+
+---
+
 ## 2026-06-18 — FIX + FEATURE — Night sky session: solver, HA filtering, dark-sky stretch, camera select, step-3 preview, Bahtinov zoom
 
 **Bugs fixed**

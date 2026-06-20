@@ -253,10 +253,15 @@ function s4PreviewStart() {
 async function checkGpsStatus() {
     try {
         const g = await (await fetch('/api/gpsd/status')).json();
-        if (!g.available || g.fix_mode < 2) return;
-        const dist = Math.round(g.distance_m);
         const distRow = document.getElementById('gps-dist-row');
         const distEl  = document.getElementById('gps-dist-value');
+        if (!g.available) return;
+        if (g.fix_mode < 2) {
+            if (distEl) distEl.textContent = 'Acquiring fix…';
+            if (distRow) distRow.style.display = '';
+            return;
+        }
+        const dist = Math.round(g.distance_m);
         if (distEl) { distEl.textContent = dist + ' m'; }
         if (distRow) distRow.style.display = '';
         if (dist > 100) {

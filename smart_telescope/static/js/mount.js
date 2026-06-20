@@ -173,7 +173,7 @@ function mountCard(data) {
               <button class="secondary" onclick="mountAction('unpark')"
                       title="Unpark mount">Unpark</button>
               <button class="secondary" onclick="mountPark()"
-                      title="Park mount — will ask for confirmation">Park</button>
+                      title="Park mount">Park</button>
             </span>
           </span>
           <button class="danger" onclick="mountEmergencyStop()"
@@ -246,7 +246,6 @@ async function mountAction(action) {
 }
 
 async function mountPark() {
-    if (!confirm('Park mount to stored position?\n\nThe mount will slew to the saved park position. Confirm only when the area is clear.')) return;
     setStatus('s1-mount-status', '');
     _mountPendingCmd = 'park';
     await refreshMount();

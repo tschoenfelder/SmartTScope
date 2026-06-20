@@ -781,6 +781,14 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ---
 
+## Deferred — Post-Release 1.0
+
+- [ ] PARK-SET-001 Add "Set Park Position" button to the mount tile `[P3 · UX · Post-1.0]`
+  - *Context:* Park currently slews to the position saved in OnStep EEPROM (set once during initial setup via `:hS#`). There is no UI button to overwrite it.
+  - *Scope:* Add a "Set Park" button that calls `POST /api/mount/set_park` (`:hS#`). Show a confirmation dialog on that button only ("Save current position as park? This overwrites the stored park position."). The Park button itself should remain confirmation-free.
+
+---
+
 ## Deferred — Post-MVP
 
 - [ ] ONSTEP-REPLACE-001 Replace OnStep adapter with layered direct-USB implementation + safety state machine (9 states: DISCONNECTED → READY_UNATTENDED) `[P1 · Hardware · Future]`

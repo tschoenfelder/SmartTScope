@@ -115,7 +115,16 @@ const _OBJ_TYPE_LABELS = {
     AST: 'Asterism', MSC: 'Star Cloud',
 };
 
+async function s5LoadStoragePaths() {
+    try {
+        const d = await (await fetch('/api/status/storage')).json();
+        const el = document.getElementById('s5-storage-paths');
+        if (el) el.textContent = `Sessions: ${d.sessions_dir}`;
+    } catch (_) {}
+}
+
 async function s5LoadTargets() {
+    s5LoadStoragePaths();
     const dot  = document.getElementById('s5-tonight-dot');
     const list = document.getElementById('s5-tonight-list');
     dot.className = 'dot dot-yellow';

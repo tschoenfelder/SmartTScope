@@ -236,12 +236,65 @@ async function refreshHealth() {
 // UX5-001..004: pattern-matched error translation (mount, camera, solver, storage)
 
 function s4PreviewStart() {
-    // Mirror the Stage 3 exposure/gain into the WS, then start
-    const exp  = parseFloat(document.getElementById('s4-exposure').value) || 0.5;
-    const gain = parseInt(document.getElementById('s4-gain').value, 10)   || 100;
+    const exp    = parseFloat(document.getElementById('s4-exposure').value) || 0.5;
+    const gain   = parseInt(document.getElementById('s4-gain').value, 10)   || 100;
+    const offset = parseInt(document.getElementById('s4-offset')?.value, 10) || 0;
+    const ag     = document.getElementById('s4-autogain')?.checked || false;
     document.getElementById('preview-exposure').value = exp;
     document.getElementById('preview-gain').value     = gain;
-    previewStart();
+    const offEl = document.getElementById('preview-offset');
+    if (offEl) offEl.value = offset;
+    const agEl = document.getElementById('preview-autogain-chk');
+    if (agEl) agEl.checked = ag;
+    // Bahtinov preview always uses the main imaging camera
+    previewStart('main');
+}
+
+async function checkGpsStatus() {
+    try {
+        const g = await (await fetch('/api/gpsd/status')).json();
+        if (!g.available || g.fix_mode < 2) return;
+        const dist = Math.round(g.distance_m);
+        const distRow = document.getElementById('gps-dist-row');
+        const distEl  = document.getElementById('gps-dist-value');
+        if (distEl) { distEl.textContent = dist + ' m'; }
+        if (distRow) distRow.style.display = '';
+        if (dist > 100) {
+            const applyRow = document.getElementById('gps-apply-row');
+            const coords   = document.getElementById('gps-apply-coords');
+            const banner   = document.getElementById('gps-banner');
+            const bannerMsg = document.getElementById('gps-banner-msg');
+            if (coords) coords.textContent = `${g.lat.toFixed(4)}°, ${g.lon.toFixed(4)}°`;
+            if (applyRow) applyRow.style.display = '';
+            if (bannerMsg) bannerMsg.textContent =
+                `GPS fix: location is ${dist} m from configured observer position.`;
+            if (banner) banner.style.display = 'flex';
+        }
+    } catch (_) {}
+}
+
+async function applyGpsLocation() {
+    try {
+        const g = await (await fetch('/api/gpsd/status')).json();
+        if (!g.available || g.fix_mode < 2) {
+            setStatus('s1-readiness-status', 'No GPS fix available', true);
+            return;
+        }
+        await fetch('/api/observer/location', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({lat: g.lat, lon: g.lon}),
+        });
+        await initSiteConfig();
+        const banner = document.getElementById('gps-banner');
+        if (banner) banner.style.display = 'none';
+        const applyRow = document.getElementById('gps-apply-row');
+        if (applyRow) applyRow.style.display = 'none';
+        const distEl = document.getElementById('gps-dist-value');
+        if (distEl) distEl.textContent = '< 1 m (applied)';
+    } catch (err) {
+        setStatus('s1-readiness-status', 'GPS location apply failed: ' + err.message, true);
+    }
 }
 
 function s4Done() {

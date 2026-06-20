@@ -632,6 +632,19 @@
       <div id="s1-readiness-caps" style="padding-top:0.4rem;display:flex;flex-wrap:wrap;align-items:center"></div>
     </div>
 
+    <!-- GPS location notification banner (shown when GPS fix differs > 100 m from configured) -->
+    <div id="gps-banner" style="display:none;background:#f5a623;color:#000;
+         border-radius:5px;padding:0.4rem 0.75rem;margin-bottom:0.75rem;
+         font-size:0.85rem;flex-direction:row;align-items:center;gap:0.75rem">
+      <span id="gps-banner-msg"></span>
+      <button onclick="applyGpsLocation()"
+              style="margin-left:auto;padding:0.2rem 0.6rem;font-size:0.8rem">
+        Apply GPS Location
+      </button>
+      <button onclick="document.getElementById('gps-banner').style.display='none'"
+              class="secondary" style="padding:0.2rem 0.5rem;font-size:0.8rem">✕</button>
+    </div>
+
     <!-- Milestone Dashboard (R7-005 / M0-008) -->
     <div class="card" id="s1-milestones-card">
       <div class="card-title">
@@ -668,6 +681,15 @@
           <span class="param-label">Observer Lon</span>
           <span class="param-value mono" id="site-lon">—</span>
         </div>
+        <div class="param" id="gps-dist-row" style="display:none">
+          <span class="param-label">GPS</span>
+          <span class="param-value mono" id="gps-dist-value">—</span>
+        </div>
+      </div>
+      <div id="gps-apply-row" style="display:none;margin-top:0.4rem">
+        <button onclick="applyGpsLocation()" class="secondary"
+                style="font-size:0.8rem;padding:0.2rem 0.6rem">Apply GPS Location</button>
+        <span id="gps-apply-coords" style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem"></span>
       </div>
     </div>
 
@@ -1772,7 +1794,7 @@
                     border-radius:3px;image-rendering:pixelated"></canvas>
           </div>
 
-          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
+          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem;flex-wrap:wrap;gap:0.3rem 0.5rem">
             <label>Exp</label>
             <input type="number" id="s4-exposure" value="0.5" min="0.1" max="30" step="0.1"
                    style="width:7ch">
@@ -1780,6 +1802,12 @@
             <label style="margin-left:0.4rem">Gain</label>
             <input type="number" id="s4-gain" value="100" min="100" max="3200" step="100"
                    style="width:6ch">
+            <label style="margin-left:0.4rem">Offset</label>
+            <input type="number" id="s4-offset" value="0" min="0" max="65535"
+                   style="width:6ch">
+            <label style="margin-left:0.4rem;display:flex;align-items:center;gap:0.25rem">
+              <input type="checkbox" id="s4-autogain"> Auto-gain
+            </label>
           </div>
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center">
             <button id="s4-start-btn" onclick="s4PreviewStart()">Start</button>
@@ -1895,6 +1923,8 @@
         <button id="s5-start-btn" onclick="s5StartSession()">&#x25B6;&nbsp;Start Session</button>
         <button id="s5-stop-btn" class="danger" onclick="s5StopSession()" disabled>&#x25A0;&nbsp;Stop</button>
       </div>
+      <div id="s5-storage-paths"
+           style="margin-top:0.4rem;font-size:0.75rem;color:var(--muted)"></div>
 
       <!-- Live run status — shown while / after a session runs -->
       <div id="s5-run-status" style="display:none;margin-top:1.1rem">

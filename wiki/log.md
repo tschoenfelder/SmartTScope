@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-20 — FEAT — GPSD connector, Bathinov preview fix, storage paths (8 files)
+
+**Changes:**
+
+- `smart_telescope/services/gpsd_service.py` (NEW): One-shot TCP client for the GPSD JSON protocol (port 2947). Sends `?WATCH+?POLL`, waits for first `TPV` class response (5 s timeout), returns `GpsdFix(lat, lon, alt, gps_time, mode, hdop)` or `None` when GPSD is unavailable. `haversine_m(lat1, lon1, lat2, lon2)` computes great-circle distance in metres.
+- `smart_telescope/api/gpsd.py` (NEW): `GET /api/gpsd/status` queries GPSD and returns fix mode, coordinates, distance from configured observer position. `POST /api/observer/location` updates `config.OBSERVER_LAT`/`OBSERVER_LON` in memory and patches `~/.SmartTScope/config.toml` `[observer]` section via regex replacement (no external dep).
+- `smart_telescope/app.py`: Registered `gpsd_router` under `/api`.
+- `smart_telescope/api/health.py`: Added `GET /api/status/storage` returning absolute paths for session stacks (`~/.SmartTScope/sessions`) and collimation frame archive (`~/.SmartTScope/frame_archive`).
+- `smart_telescope/static/js/preview.js`: `_connectWs(camRoleOverride?)` and `previewStart(camRoleOverride?)` accept optional camera role override so callers can hardcode a role without touching `preview-cam-select`.
+- `smart_telescope/static/js/setup.js`: `s4PreviewStart()` now mirrors offset and autogain controls from Stage 4 into the shared preview state and calls `previewStart('main')` — Bathinov preview always uses the main imaging camera. Added `checkGpsStatus()` (called on page load) and `applyGpsLocation()` for GPS location notification + one-click apply.
+- `smart_telescope/static/js/app.js`: `checkGpsStatus()` called alongside `initSiteConfig()` on DOMContentLoaded.
+- `smart_telescope/static/js/session.js`: `s5LoadStoragePaths()` fetches `/api/status/storage` and shows sessions directory in Stage 5.
+- `smart_telescope/static/index.html`: Stage 1 — GPS notification banner (shown when distance > 100 m) + GPS distance row + Apply button in Observer & Time tile. Stage 4 — Offset input and Auto-gain checkbox added to Bathinov preview controls. Stage 5 — Storage path row below Start Session button.
+
+---
+
 ## 2026-06-20 — FIX — Field-test bug sprint (11 files, commit ce022fb)
 
 **Bugs fixed**

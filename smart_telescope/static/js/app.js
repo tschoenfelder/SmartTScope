@@ -162,6 +162,7 @@ async function loadVersion() {
 
 _applyAdvancedMode();
 initSiteConfig();
+checkGpsStatus();
 loadVersion();
 refreshMount();
 _startMountStripPoll();

@@ -21,6 +21,29 @@ router = APIRouter()
 # Estimated float32 FITS frame size for C8 native (2080×3096 px × 4 bytes ≈ 24.6 MB)
 _FITS_FRAME_MB = 25.0
 
+_USER_DIR = Path.home() / ".SmartTScope"
+
+
+@router.get("/api/status/storage")
+def storage_paths() -> dict[str, str]:
+    """Return absolute paths where session stacks and collimation frames are saved."""
+    from .. import config as _cfg
+    sessions_dir = (
+        Path(os.environ["STORAGE_DIR"])
+        if os.environ.get("STORAGE_DIR")
+        else _USER_DIR / "sessions"
+    )
+    try:
+        col_cfg = _cfg.get_collimation_config()
+        arc_dir_str = col_cfg.archive.archive_dir
+        archive_dir = Path(arc_dir_str) if arc_dir_str else _USER_DIR / "frame_archive"
+    except Exception:
+        archive_dir = _USER_DIR / "frame_archive"
+    return {
+        "sessions_dir": str(sessions_dir),
+        "archive_dir": str(archive_dir),
+    }
+
 
 def _read_cpu_temp() -> float | None:
     try:

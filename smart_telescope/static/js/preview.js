@@ -223,9 +223,9 @@ function _updatePreviewBtns(running) {
     if (!running) _clearBahtinovOverlay();
 }
 
-function previewStart() {
+function previewStart(camRoleOverride) {
     _reconnect = true;
-    _connectWs();
+    _connectWs(camRoleOverride);
 }
 
 function previewReconnectIfRunning() {
@@ -258,7 +258,7 @@ function previewStop() {
     if (adEl) { adEl.textContent = ''; adEl.style.color = ''; adEl.style.fontWeight = ''; }
 }
 
-function _connectWs() {
+function _connectWs(camRoleOverride) {
     // Kill histogram poll before opening the socket so no in-flight fetch
     // can hold the camera lock when the WebSocket attempts its first capture.
     clearInterval(_histInterval);
@@ -268,7 +268,7 @@ function _connectWs() {
     const gain       = parseInt(document.getElementById('preview-gain').value, 10) || 100;
     const offset     = parseInt(document.getElementById('preview-offset')?.value, 10) || 0;
     const stretch    = document.getElementById('preview-stretch-chk')?.checked !== false;
-    const camRole    = document.getElementById('preview-cam-select')?.value || 'main';
+    const camRole    = camRoleOverride || document.getElementById('preview-cam-select')?.value || 'main';
     const autoGain   = document.getElementById('preview-autogain-chk')?.checked ? '&autogain=true' : '';
     const proto      = location.protocol === 'https:' ? 'wss' : 'ws';
     const url        = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_role=${encodeURIComponent(camRole)}&offset=${offset}&stretch=${stretch}${autoGain}`;

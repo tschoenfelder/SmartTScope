@@ -163,6 +163,7 @@ async function loadVersion() {
 _applyAdvancedMode();
 initSiteConfig();
 checkGpsStatus();
+setInterval(checkGpsStatus, 30_000);
 loadVersion();
 refreshMount();
 _startMountStripPoll();

@@ -720,6 +720,12 @@ function _agShowResult(d) {
       diagPrompt.style.display =
         (d.status === 'AUTO_GAIN_NO_SIGNAL' && !d.diagnostic) ? '' : 'none';
     }
+    // Show force prompt for POSSIBLE_FOCUS_OR_POINTING_ERROR on a non-force run
+    const forcePrompt = document.getElementById('autogain-force-prompt');
+    if (forcePrompt) {
+      forcePrompt.style.display =
+        (d.status === 'AUTO_GAIN_POSSIBLE_FOCUS_OR_POINTING_ERROR') ? '' : 'none';
+    }
 }
 
 function _agShowDiagResult(d) {
@@ -822,16 +828,54 @@ function autoGainDiagDismiss() {
     if (diagPrompt) diagPrompt.style.display = 'none';
 }
 
+async function autoGainForce() {
+    const forcePrompt = document.getElementById('autogain-force-prompt');
+    if (forcePrompt) forcePrompt.style.display = 'none';
+    const camRole = document.getElementById('preview-cam-select')?.value || 'main';
+    const badge  = document.getElementById('autogain-status-badge');
+    const row    = document.getElementById('autogain-result-row');
+    if (badge) { badge.style.display = ''; badge.style.color = 'var(--muted)'; badge.innerHTML = '<span class="spin"></span> Running…'; }
+    if (row)   { row.style.display = 'none'; }
+    _agLastResult = null;
+    _agIsDiag    = false;
+    _agCancelled = false;
+    _agPreviewWasRunning = _reconnect && _ws !== null;
+    if (_agPreviewWasRunning) previewStop();
+    _agSetBusy(true);
+    try {
+      const r = await fetch('/api/autogain/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ camera_role: camRole, force: true }),
+      });
+      if (!r.ok) {
+        _agSetBusy(false);
+        if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
+        const d = await r.json().catch(() => ({}));
+        if (badge) { badge.textContent = '⚠ ' + (d.detail || r.statusText); }
+        return;
+      }
+    } catch (err) {
+      _agSetBusy(false);
+      if (_agPreviewWasRunning) { _agPreviewWasRunning = false; previewStart(); }
+      if (badge) { badge.textContent = '⚠ Network error'; }
+      return;
+    }
+    _agPollTimer = setInterval(_agPoll, 1500);
+}
+
 async function autoGainRun() {
     const camRole = document.getElementById('preview-cam-select')?.value || 'main';
     const badge  = document.getElementById('autogain-status-badge');
     const row    = document.getElementById('autogain-result-row');
     const diagPrompt = document.getElementById('autogain-diag-prompt');
     const diagResult = document.getElementById('autogain-diag-result');
+    const forcePrompt = document.getElementById('autogain-force-prompt');
     if (badge) { badge.style.display = 'none'; }
     if (row)   { row.style.display = 'none'; }
     if (diagPrompt) diagPrompt.style.display = 'none';
     if (diagResult) diagResult.style.display = 'none';
+    if (forcePrompt) forcePrompt.style.display = 'none';
     _agLastResult = null;
     _agIsDiag    = false;
     _agCancelled = false;

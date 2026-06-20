@@ -413,12 +413,13 @@ def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
             hi = float(np.percentile(ch, 99.5))
         else:
             lo = max(0.0, background - 1.5 * sigma)
-            hi = background + 10.0 * sigma
+            hi = background + 15.0 * sigma
         channel = rgb[:, :, c]
         if hi > lo:
-            scaled = (channel - lo) / (hi - lo) * 255.0
+            x = (channel.astype(np.float64) - lo) / (hi - lo)
+            scaled = np.arcsinh(x * 3.0) / np.arcsinh(3.0) * 255.0
         else:
-            scaled = np.zeros_like(channel)
+            scaled = np.zeros_like(channel, dtype=np.float64)
         out[:, :, c] = np.clip(scaled, 0.0, 255.0).astype(np.uint8)
     return out
 

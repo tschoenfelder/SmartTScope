@@ -41,6 +41,7 @@ class RunRequest(BaseModel):
     camera_model: str | None = Field(default=None, description="Profile model name (e.g. ATR585M)")
     max_iterations: int = Field(default=12, ge=1, le=30)
     diagnostic: bool = Field(default=False, description="Extend max exposure to 10 s for no-signal diagnosis")
+    force: bool = Field(default=False, description="Skip focus/pointing warning and continue iterating")
 
 
 class AutoGainStatusResponse(BaseModel):
@@ -93,6 +94,7 @@ def _worker(
     profile: CameraProfile,
     mode: AutoGainMode,
     max_iterations: int,
+    force: bool = False,
 ) -> None:
     rt = _get_runtime()
     try:
@@ -124,6 +126,7 @@ def _worker(
             max_iterations=max_iterations,
             has_focuser=has_focuser,
             offset_service=rt.camera_offset_service,
+            force=force,
         )
     except Exception as exc:
         _log.error("AutoGain worker error: %s", exc)
@@ -227,7 +230,7 @@ def run_autogain(req: RunRequest) -> dict:
             "autogain",
             {f"camera:{camera_index}"},
             _worker,
-            job, camera_index, profile, mode, req.max_iterations,
+            job, camera_index, profile, mode, req.max_iterations, req.force,
             cancel_event=job.cancel,
             timeout_s=300,
         )

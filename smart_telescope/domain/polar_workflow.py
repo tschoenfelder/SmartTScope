@@ -307,12 +307,25 @@ class PolarAlignmentWorkflow:
     # ── helpers ───────────────────────────────────────────────────────────────
 
     def _slew_to_3(self, lst: float) -> Action:
-        ra3 = self._p3_ovr if self._p3_ovr is not None \
-              else (self._ra1 + 2 * self._step_h) % 24.0
-        try:
-            self._safe_slew(ra3, 89.0, lst, "Position 3")
-        except RuntimeError as e:
-            return Action(kind="FAILED", message=str(e))
+        if self._p3_ovr is not None:
+            ra3 = self._p3_ovr
+            try:
+                self._safe_slew(ra3, 89.0, lst, "Position 3")
+            except RuntimeError as e:
+                return Action(kind="FAILED", message=str(e))
+        else:
+            ra3_primary = (self._ra1 + 2 * self._step_h) % 24.0
+            try:
+                self._safe_slew(ra3_primary, 89.0, lst, "Position 3")
+                ra3 = ra3_primary
+            except RuntimeError:
+                ra3_alt = (self._ra1 - 2 * self._step_h) % 24.0
+                try:
+                    self._safe_slew(ra3_alt, 89.0, lst, "Position 3 (west-limit fallback)")
+                    ra3 = ra3_alt
+                    self._warning = "Position 3 moved to east side to stay within HA limits"
+                except RuntimeError as e2:
+                    return Action(kind="FAILED", message=str(e2))
         self._ws = "WAIT_SLEW_3"
         return Action(kind="SLEW_TO_RA", ra_h=ra3, dec_deg=89.0,
                       message="Slewing to position 3")

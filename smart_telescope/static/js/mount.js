@@ -103,6 +103,14 @@ function mountCard(data) {
               border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:0.35rem 0.6rem;
               margin-top:0.5rem">⚠ ${escHtml(data.watchdog_warning)}</div>`
       : '';
+    const clockWarn = (data.safety_violation === 'onstep_clock_invalid')
+      ? `<div style="font-size:0.78rem;color:var(--warning);background:rgba(210,153,34,0.1);
+              border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:0.35rem 0.6rem;
+              margin-top:0.5rem">
+           ⚠ <b>OnStep clock not synced</b> — GoTo is locked until you sync the OnStep clock.<br>
+           <span style="color:var(--muted)">Setting observer time alone is not enough. Click <b>Sync Clock</b> in the Setup panel.</span>
+         </div>`
+      : '';
     return `
       <div class="card">
         <div class="card-title">
@@ -112,6 +120,7 @@ function mountCard(data) {
           ${badge}
         </div>
         ${wdWarn}
+        ${clockWarn}
         <div class="params">
           <div class="param">
             <span class="param-label" style="color:var(--muted);font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Current</span>
@@ -163,8 +172,8 @@ function mountCard(data) {
                       title="Slew to celestial pole (Dec 85°, HA 0)">Home</button>
               <button class="secondary" onclick="mountAction('unpark')"
                       title="Unpark mount">Unpark</button>
-              <button class="secondary" onclick="mountAction('park')"
-                      title="Park mount">Park</button>
+              <button class="secondary" onclick="mountPark()"
+                      title="Park mount — will ask for confirmation">Park</button>
             </span>
           </span>
           <button class="danger" onclick="mountEmergencyStop()"
@@ -233,6 +242,27 @@ async function mountAction(action) {
     } finally {
       _mountPendingCmd = null;
       await refreshMount();  // render confirmed hardware state
+    }
+}
+
+async function mountPark() {
+    if (!confirm('Park mount to stored position?\n\nThe mount will slew to the saved park position. Confirm only when the area is clear.')) return;
+    setStatus('s1-mount-status', '');
+    _mountPendingCmd = 'park';
+    await refreshMount();
+    try {
+      await apiPost('/api/mount/park', { confirmed: true });
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, i === 0 ? 300 : 1000));
+        const data = await (await fetch('/api/mount/status')).json();
+        _updateMountStrip(data);
+        if (data.state === 'parked') break;
+      }
+    } catch (err) {
+      setStatus('s1-mount-status', `park failed: ${err.message}`, true);
+    } finally {
+      _mountPendingCmd = null;
+      await refreshMount();
     }
 }
 

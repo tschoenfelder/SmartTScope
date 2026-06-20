@@ -23,8 +23,10 @@ def auto_stretch(pixels: np.ndarray[Any, np.dtype[Any]]) -> np.ndarray[Any, np.d
         hi = float(np.percentile(flat, 99.5))
     else:
         lo = max(0.0, background - 1.5 * sigma)
-        hi = background + 10.0 * sigma
+        hi = background + 15.0 * sigma
     if hi <= lo:
         return np.zeros(pixels.shape, dtype=np.uint8)
-    scaled = (pixels.astype(np.float64) - lo) / (hi - lo) * 255.0
+    stretch_range = hi - lo
+    x = (pixels.astype(np.float64) - lo) / stretch_range
+    scaled = np.arcsinh(x * 3.0) / np.arcsinh(3.0) * 255.0
     return np.clip(scaled, 0.0, 255.0).astype(np.uint8)

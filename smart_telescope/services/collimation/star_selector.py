@@ -17,7 +17,8 @@ from pathlib import Path
 
 from astropy.time import Time
 
-from ...domain.visibility import compute_altaz
+from ... import config as _config
+from ...domain.visibility import compute_altaz, compute_ha
 
 _log = logging.getLogger(__name__)
 
@@ -102,6 +103,9 @@ class CollimationStarSelector:
         """
         candidates: list[CollimationStarCandidate] = []
         for star in self._stars:
+            ha = compute_ha(star.ra_hours, self._lon, obs_time)
+            if ha > _config.MOUNT_HA_WEST_LIMIT_H or ha < _config.MOUNT_HA_EAST_LIMIT_H:
+                continue
             alt, az = compute_altaz(star.ra_hours, star.dec_deg, self._lat, self._lon, obs_time)
             candidates.append(CollimationStarCandidate(star=star, altitude_deg=alt, azimuth_deg=az))
 
@@ -131,6 +135,13 @@ class CollimationStarSelector:
         """Manual override — select a specific star by name (case-insensitive)."""
         for star in self._stars:
             if star.name.lower() == name.lower():
+                ha = compute_ha(star.ra_hours, self._lon, obs_time)
+                if ha > _config.MOUNT_HA_WEST_LIMIT_H or ha < _config.MOUNT_HA_EAST_LIMIT_H:
+                    return StarSelectionResult(
+                        candidate=None,
+                        reason="none_visible",
+                        warning=f"{star.name} is outside mount HA limits (HA {ha:.2f}h)",
+                    )
                 alt, az = compute_altaz(star.ra_hours, star.dec_deg, self._lat, self._lon, obs_time)
                 candidate = CollimationStarCandidate(star=star, altitude_deg=alt, azimuth_deg=az)
                 return StarSelectionResult(candidate=candidate, reason="manual", warning=None)

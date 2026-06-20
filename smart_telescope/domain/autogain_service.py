@@ -134,6 +134,7 @@ class AutoGainService:
         max_iterations: int = 12,
         has_focuser: bool = True,
         offset_service: "CameraOffsetService | None" = None,
+        force: bool = False,
     ) -> AutoGainResult:
         """Capture and adjust until histogram is in target band or limits are reached.
 
@@ -370,7 +371,7 @@ class AutoGainService:
                                 histogram_stats=stats,
                                 warning_msg="Histogram consistent with dark frame — check dust cap",
                             )
-                        if not is_guiding and not is_planetary and eff_mean > _FOCUS_ERROR_THRESHOLD:
+                        if not force and not is_guiding and not is_planetary and eff_mean > _FOCUS_ERROR_THRESHOLD:
                             if has_focuser:
                                 return AutoGainResult(
                                     status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,

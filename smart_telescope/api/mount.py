@@ -315,12 +315,22 @@ def mount_home(
     return {"ok": True}
 
 
+class ParkRequest(BaseModel):
+    confirmed: bool = False
+
+
 @router.post("/park")
 def mount_park(
+    body:         ParkRequest        = ParkRequest(),
     mount:        MountPort          = Depends(deps.get_mount),
     coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
     device_state: DeviceStateService = Depends(deps.get_device_state),
-) -> dict[str, bool]:
+) -> dict:
+    if not body.confirmed:
+        return {
+            "confirm_required": True,
+            "message": "Confirm park to stored position. The mount will slew to the saved park position.",
+        }
     device_state.record_command("park")
     try:
         mount_ops.park_sequence(mount, coordinator, device_state)

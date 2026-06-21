@@ -4,6 +4,21 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-21 — FIX — Tracking not active after goto; solve failure visibility (3 files)
+
+**Changes:**
+- `smart_telescope/static/js/mount.js`: after `watchSlew()` confirms slew complete, auto-enable tracking via `/api/mount/track` if mount state is not already `tracking`.
+- `smart_telescope/services/collimation/assistant.py`: `_handle_acquire_star()` now waits up to 90 s for any in-progress slew to finish, then enables tracking if needed — prevents star trailing in MEASURE_DONUT/FINE_FOCUS/MEASURE_SPIKES.
+- `smart_telescope/static/js/session.js`: solve failure/error message now also shown in the `solve-result` div (next to the Solve button), not only in the status banner at the top of the stage.
+
+**Storage locations confirmed (no code change):**
+- Session/alignment logs: `~/.SmartTScope/sessions/` (empty if no imaging session completed yet)
+- Collimation frame archive: `~/.SmartTScope/frame_archive/<session_id>/` (archiving must be enabled via `[collimation.archive] enabled = true` in config.toml)
+- Collimation report and polar alignment state: in-memory only, not persisted
+- Plate solve frames and results: not persisted (temp dir deleted after ASTAP runs)
+
+---
+
 ## 2026-06-20 — FEAT — GPSD connector, Bathinov preview fix, storage paths (8 files)
 
 **Changes:**

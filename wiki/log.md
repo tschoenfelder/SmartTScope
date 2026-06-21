@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-21 — FEAT — R5-012: Mount time/location sync in readiness card (4 files)
+
+**Changes:**
+- `smart_telescope/ports/mount.py`: `get_sync_status() -> dict | None` added as default no-op.
+- `smart_telescope/adapters/onstep/mount.py`: `OnStepMount.get_sync_status()` implemented — calls `read_onstep_clock()` (`:GC#`/`:GL#`) and `read_onstep_site()` (`:Gt#`/`:Gg#`), compares OnStep values against Pi system time and `_safety_config.observer_lat/lon`; location threshold 0.1°.
+- `smart_telescope/services/readiness.py`: `_check_time_location_sync()` added — returns `time_location_sync` `ReadinessItem` (GREEN/YELLOW/RED); skipped (returns `None`) when mount is not connected or adapter doesn't support sync status; wired into `check()` after mount/focuser check.
+- `tests/unit/api/test_readiness.py`: 8 new tests in `TestTimeLLocationSyncCheck` covering all level transitions and None cases.
+
+**Logic:** GREEN = both time and location within thresholds. YELLOW = mount not responding to queries. RED = clock off by > threshold_s OR site off by > 0.1°. Repair hint reminds user that GoTo auto-syncs before every slew.
+
+---
+
 ## 2026-06-21 — CHORE — ONS3 upgrade complete; 4 pre-existing test failures fixed (5 files)
 
 **Changes:**

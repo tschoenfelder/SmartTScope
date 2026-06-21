@@ -2369,6 +2369,51 @@ class OnStepMount(MountPort):
             confirmed_by_user=True,
         )
 
+    def get_sync_status(self) -> dict | None:
+        """Read OnStep clock and site via LX200 commands and compare to Pi/config values."""
+        clock = self.read_onstep_clock()
+        site  = self.read_onstep_site()
+
+        cfg_lat: float = self._safety_config.observer_lat
+        cfg_lon: float = self._safety_config.observer_lon
+
+        time_avail: bool       = bool(clock.get("available"))
+        time_delta_s: float | None = clock.get("delta_s") if time_avail else None
+        threshold_s: float     = float(clock.get("threshold_s") or 60.0)
+        time_ok: bool          = (
+            time_avail
+            and time_delta_s is not None
+            and time_delta_s <= threshold_s
+        )
+
+        loc_avail: bool          = bool(site.get("available"))
+        onstep_lat: float | None = site.get("lat") if loc_avail else None
+        onstep_lon: float | None = site.get("lon") if loc_avail else None
+        lat_delta: float | None  = (abs(onstep_lat - cfg_lat) if onstep_lat is not None else None)
+        lon_delta: float | None  = (abs(onstep_lon - cfg_lon) if onstep_lon is not None else None)
+        loc_ok: bool = (
+            loc_avail
+            and lat_delta is not None
+            and lon_delta is not None
+            and lat_delta < 0.1
+            and lon_delta < 0.1
+        )
+
+        return {
+            "time_available":   time_avail,
+            "time_delta_s":     time_delta_s,
+            "time_threshold_s": threshold_s,
+            "time_ok":          time_ok,
+            "location_available": loc_avail,
+            "onstep_lat":       onstep_lat,
+            "onstep_lon":       onstep_lon,
+            "cfg_lat":          cfg_lat,
+            "cfg_lon":          cfg_lon,
+            "lat_delta_deg":    lat_delta,
+            "lon_delta_deg":    lon_delta,
+            "location_ok":      loc_ok,
+        }
+
     def _read_limit(self, cmd: str) -> float | None:
         reply = self._send(cmd)
         if not reply:

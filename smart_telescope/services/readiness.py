@@ -1,15 +1,16 @@
 """ReadinessService — synthesizes red/yellow/green readiness from all subsystems.
 
 Checks (in display order):
-  config_file   — ~/.SmartTScope/config.toml found
-  stars_cfg     — stars.cfg exists at configured path (RED if missing)
-  horizon_dat   — horizon file exists (YELLOW if missing)
-  storage       — storage directory writable and has space
-  astap_exe     — ASTAP binary found (RED if missing)
-  astap_catalog — ASTAP star catalog found (RED if missing)
-  camera        — at least one camera role configured
-  mount         — OnStep port configured and (if connected) responding
-  focuser       — focuser available (YELLOW if unavailable)
+  config_file         — ~/.SmartTScope/config.toml found
+  stars_cfg           — stars.cfg exists at configured path (RED if missing)
+  horizon_dat         — horizon file exists (YELLOW if missing)
+  storage             — storage directory writable and has space
+  astap_exe           — ASTAP binary found (RED if missing)
+  astap_catalog       — ASTAP star catalog found (RED if missing)
+  camera              — at least one camera role configured
+  mount               — OnStep port configured and (if connected) responding
+  focuser             — focuser available (YELLOW if unavailable)
+  time_location_sync  — OnStep clock and site match Pi time / config (when connected)
 
 The overall level is the worst of all items.
 can_observe is True when overall is not RED and hardware mode is 'real'.
@@ -81,6 +82,9 @@ class ReadinessService:
         items.extend(self._check_astap())
         items.append(self._check_camera())
         items.extend(self._check_mount_focuser())
+        sync = self._check_time_location_sync()
+        if sync is not None:
+            items.append(sync)
         uncfg = self._check_unconfigured_cameras()
         if uncfg is not None:
             items.append(uncfg)
@@ -369,6 +373,68 @@ class ReadinessService:
                 repair="Press 'Connect All' to establish connection.",
             ),
         ]
+
+    def _check_time_location_sync(self) -> ReadinessItem | None:
+        """Check OnStep clock and site coordinates against Pi time and configured location.
+
+        Returns None when the mount is not connected (the mount item already covers that).
+        Returns None when the adapter does not support sync status (e.g. MockMount).
+        """
+        key    = "time_location_sync"
+        label  = "Mount time/location"
+        repair = (
+            "Time and location are synced automatically before each GoTo. "
+            "Run a GoTo or press 'Connect All' to trigger a sync."
+        )
+
+        try:
+            from ..runtime import get_runtime
+            rt = get_runtime()
+            if not rt._adapters_built or rt._mount is None:
+                return None
+            status = rt._mount.get_sync_status()
+        except Exception:
+            return None
+
+        if status is None:
+            return None
+
+        time_avail: bool = bool(status.get("time_available"))
+        loc_avail:  bool = bool(status.get("location_available"))
+
+        if not time_avail and not loc_avail:
+            return ReadinessItem(
+                key=key, label=label,
+                level=Level.YELLOW,
+                message="OnStep not responding to time/location queries",
+                repair=repair,
+            )
+
+        issues: list[str] = []
+        if time_avail and not status.get("time_ok"):
+            dt = status.get("time_delta_s")
+            issues.append(f"clock off by {dt:.0f} s" if dt is not None else "clock mismatch")
+        if loc_avail and not status.get("location_ok"):
+            lat_d = status.get("lat_delta_deg")
+            lon_d = status.get("lon_delta_deg")
+            if lat_d is not None and lon_d is not None:
+                issues.append(f"site off by {max(lat_d, lon_d):.2f}°")
+            else:
+                issues.append("site coordinates mismatch")
+
+        if issues:
+            return ReadinessItem(
+                key=key, label=label,
+                level=Level.RED,
+                message="OnStep " + ", ".join(issues),
+                repair=repair,
+            )
+
+        return ReadinessItem(
+            key=key, label=label,
+            level=Level.GREEN,
+            message="Time and location synced",
+        )
 
     def _check_unconfigured_cameras(self) -> ReadinessItem | None:
         """Return YELLOW item when cameras are connected but not in config.toml."""

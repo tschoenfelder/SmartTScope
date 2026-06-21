@@ -96,6 +96,15 @@ class MountPort(ABC):
         Raises RuntimeError if the sync fails (e.g. system clock not trusted).
         """
 
+    def get_sync_status(self) -> dict | None:
+        """Return a dict describing time/location sync status, or None if unsupported.
+
+        Keys when not None: time_available, time_delta_s, time_threshold_s, time_ok,
+        location_available, onstep_lat, onstep_lon, cfg_lat, cfg_lon,
+        lat_delta_deg, lon_delta_deg, location_ok.
+        """
+        return None
+
     def get_park_position(self) -> MountPosition | None:
         """Return the stored park position, or None if the adapter doesn't support it."""
         return None

@@ -426,3 +426,96 @@ class TestCapabilityFlags:
         flags = ReadinessService._capability_flags(items)
         assert flags["can_preview"] is False
         assert flags["can_goto"] is True
+
+
+# ── R5-012: Mount time/location sync check ────────────────────────────────────
+
+class TestTimeLLocationSyncCheck:
+    _KEY = "time_location_sync"
+    _PATCH = "smart_telescope.runtime.get_runtime"
+
+    @staticmethod
+    def _sync_status(
+        *,
+        time_ok: bool = True,
+        loc_ok: bool  = True,
+        time_avail: bool = True,
+        loc_avail: bool  = True,
+    ) -> dict:
+        return {
+            "time_available":   time_avail,
+            "time_delta_s":     5.0 if time_ok else 120.0,
+            "time_threshold_s": 60,
+            "time_ok":          time_ok,
+            "location_available": loc_avail,
+            "onstep_lat":       50.336,
+            "onstep_lon":       8.533,
+            "cfg_lat":          50.336,
+            "cfg_lon":          8.533,
+            "lat_delta_deg":    0.0 if loc_ok else 0.5,
+            "lon_delta_deg":    0.0 if loc_ok else 0.5,
+            "location_ok":      loc_ok,
+        }
+
+    @staticmethod
+    def _mock_rt(sync_status, *, adapters_built: bool = True, has_mount: bool = True):
+        from unittest.mock import MagicMock
+        mock_mount = MagicMock()
+        mock_mount.get_sync_status.return_value = sync_status
+        rt = MagicMock()
+        rt._adapters_built = adapters_built
+        rt._mount = mock_mount if has_mount else None
+        return rt
+
+    def test_none_when_adapters_not_built(self) -> None:
+        rt = self._mock_rt(self._sync_status(), adapters_built=False)
+        with patch(self._PATCH, return_value=rt):
+            assert ReadinessService()._check_time_location_sync() is None
+
+    def test_none_when_mount_is_none(self) -> None:
+        rt = self._mock_rt(self._sync_status(), has_mount=False)
+        with patch(self._PATCH, return_value=rt):
+            assert ReadinessService()._check_time_location_sync() is None
+
+    def test_none_when_adapter_returns_none(self) -> None:
+        rt = self._mock_rt(None)
+        with patch(self._PATCH, return_value=rt):
+            assert ReadinessService()._check_time_location_sync() is None
+
+    def test_green_when_both_synced(self) -> None:
+        rt = self._mock_rt(self._sync_status(time_ok=True, loc_ok=True))
+        with patch(self._PATCH, return_value=rt):
+            item = ReadinessService()._check_time_location_sync()
+        assert item is not None
+        assert item.key   == self._KEY
+        assert item.level == Level.GREEN
+
+    def test_yellow_when_not_responding(self) -> None:
+        rt = self._mock_rt(self._sync_status(time_avail=False, loc_avail=False,
+                                             time_ok=False, loc_ok=False))
+        with patch(self._PATCH, return_value=rt):
+            item = ReadinessService()._check_time_location_sync()
+        assert item is not None
+        assert item.level == Level.YELLOW
+
+    def test_red_when_clock_mismatch(self) -> None:
+        rt = self._mock_rt(self._sync_status(time_ok=False, loc_ok=True))
+        with patch(self._PATCH, return_value=rt):
+            item = ReadinessService()._check_time_location_sync()
+        assert item is not None
+        assert item.level == Level.RED
+        assert "120" in item.message  # delta_s visible in message
+
+    def test_red_when_location_mismatch(self) -> None:
+        rt = self._mock_rt(self._sync_status(time_ok=True, loc_ok=False))
+        with patch(self._PATCH, return_value=rt):
+            item = ReadinessService()._check_time_location_sync()
+        assert item is not None
+        assert item.level == Level.RED
+        assert "site" in item.message
+
+    def test_has_repair_hint_on_red(self) -> None:
+        rt = self._mock_rt(self._sync_status(time_ok=False))
+        with patch(self._PATCH, return_value=rt):
+            item = ReadinessService()._check_time_location_sync()
+        assert item is not None and item.repair is not None

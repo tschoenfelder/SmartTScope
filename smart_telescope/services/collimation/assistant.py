@@ -515,8 +515,23 @@ class CollimationAssistant:
         self._do_transition(CollimationState.ACQUIRE_STAR)
 
     def _handle_acquire_star(self) -> None:
+        import time
         from ...domain.collimation.processing.frame import normalize_frame
         from ...domain.collimation.processing.star_detection import detect_star
+        from ...ports.mount import MountState
+
+        # Wait for any in-progress GoTo slew to complete before enabling tracking.
+        deadline = time.monotonic() + 90.0
+        while time.monotonic() < deadline:
+            if self._cancel.is_set():
+                return
+            if self._mount.get_state() != MountState.SLEWING:
+                break
+            time.sleep(2.0)
+        if self._mount.get_state() != MountState.TRACKING:
+            _log.info("ACQUIRE_STAR: mount not tracking — enabling tracking")
+            self._mount.enable_tracking()
+            time.sleep(1.0)
 
         bit_depth  = self._camera.get_bit_depth()
         exposure_s = self._camera.get_exposure_ms() / 1000.0

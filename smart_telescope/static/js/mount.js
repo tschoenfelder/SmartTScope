@@ -280,7 +280,10 @@ async function mountGoto() {
       document.getElementById('s3-proceed-btn').title = '';
       unlockStage(4);
       setStatus('s3-status', `Slewing to RA ${ra.toFixed(3)} h  Dec ${dec.toFixed(2)}°…`);
-      await watchSlew('s3-status', `RA ${ra.toFixed(3)} Dec ${dec.toFixed(2)}`);
+      const slewResult = await watchSlew('s3-status', `RA ${ra.toFixed(3)} Dec ${dec.toFixed(2)}`);
+      if (slewResult && slewResult.state !== 'tracking') {
+        try { await apiPost('/api/mount/track'); } catch { /* best-effort */ }
+      }
       _s3GotoData = { ra, dec };
       const arcBtn = document.getElementById('s3-arc-goto-btn');
       if (arcBtn && _s3ArchiveEnabled) arcBtn.disabled = false;

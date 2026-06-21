@@ -67,6 +67,7 @@ async function solveFrame() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Solving…';
     result.style.display = 'none';
+    result.style.color = '';
     setStatus('s3-status', '');
     try {
       const data = await apiPost('/api/solver/solve', { exposure, gain, camera_role: camRole });
@@ -82,10 +83,18 @@ async function solveFrame() {
         const arcBtn = document.getElementById('s3-arc-solve-btn');
         if (arcBtn && _s3ArchiveEnabled) arcBtn.disabled = false;
       } else {
-        setStatus('s3-status', `Solve failed: ${data.error || 'unknown'}`, true);
+        const msg = data.error || 'unknown';
+        setStatus('s3-status', `Solve failed: ${msg}`, true);
+        result.style.display = '';
+        result.style.color = 'var(--error, #e55)';
+        result.textContent = `Solve failed: ${msg}`;
       }
     } catch (err) {
-      setStatus('s3-status', `Solve error: ${err}`, true);
+      const msg = String(err);
+      setStatus('s3-status', `Solve error: ${msg}`, true);
+      result.style.display = '';
+      result.style.color = 'var(--error, #e55)';
+      result.textContent = `Solve error: ${msg}`;
     } finally {
       btn.disabled  = false;
       btn.innerHTML = 'Solve';

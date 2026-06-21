@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-17 (OnStepAdapter migration finalized: no direct serial comms outside adapter layer; FocuserPort consumer API updated)
+**Last updated:** 2026-06-21 (coverage gate resolved: 80.01%, 3103 tests pass; R5-012 OnStep time/location sync in System Readiness card)
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
 

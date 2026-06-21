@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-21 — CHORE — Coverage gate resolved at 80.01% (11 files)
+
+**Changes:**
+- `pyproject.toml`: Added `[tool.coverage.run] omit` for hardware-only files: `__main__.py`, `tools/*`, `adapters/touptek/managed.py`, `filter_wheel.py`, `camera.py` (all require ToupTek SDK DLL at runtime).
+- New test files: `test_event_log.py`, `test_guide_monitor_api.py`, `test_gpsd_service.py`, `test_firmware_proof.py`, `test_serial_bus.py`, `test_mock_camera.py`, `test_onstep_focuser.py`.
+- Extended: `test_visibility.py` (HorizonProfile, load_horizon, compute_ha), `test_guide_monitor.py` (lifecycle: start/stop/running/last_result/exception path), `test_cooling_service.py` (exception paths: TEC setup failure, disable failure, sensor exceptions).
+
+**Result:** 80.01% coverage, 3103 passed, 24 skipped. Coverage gate (`--cov-fail-under=80`) now green.
+
+---
+
 ## 2026-06-21 — FEAT — R5-012: Mount time/location sync in readiness card (4 files)
 
 **Changes:**

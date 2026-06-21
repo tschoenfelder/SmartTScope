@@ -174,6 +174,80 @@ def test_poll_sets_action():
 
 # ── thread safety ─────────────────────────────────────────────────────────────
 
+# ── exception paths ───────────────────────────────────────────────────────────
+
+def test_start_suppresses_set_tec_target_exception():
+    svc = CoolingService()
+    cam = _TecCam()
+
+    class _BrokenSet(_TecCam):
+        def set_tec_target_c(self, t: float) -> None:
+            raise OSError("camera busy")
+
+    svc.start(_BrokenSet(), 0, -10.0)  # must not raise
+    svc.stop()
+
+
+def test_stop_suppresses_set_tec_disabled_exception():
+    svc = CoolingService()
+
+    class _BrokenDisable(_TecCam):
+        def set_tec_enabled(self, on: bool) -> None:
+            if not on:
+                raise OSError("hardware gone")
+            self.tec_enabled = on
+
+    svc.start(_BrokenDisable(), 0, -10.0)
+    svc.stop()  # must not raise
+
+
+def test_poll_suppresses_get_temperature_exception():
+    svc = CoolingService()
+
+    class _NoTempCam(_TecCam):
+        def get_temperature(self) -> float:
+            raise OSError("sensor error")
+
+    svc.start(_NoTempCam(), 0, -10.0)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        s = svc.get_status()
+        if s.enabled:
+            time.sleep(0.05)
+            break
+        time.sleep(0.01)
+    svc.stop()
+
+
+def test_poll_suppresses_get_tec_power_exception():
+    svc = CoolingService()
+
+    class _NoPowerCam(_TecCam):
+        def get_tec_power_pct(self) -> float:
+            raise OSError("power sensor error")
+
+    svc.start(_NoPowerCam(), 0, -10.0)
+    time.sleep(0.1)
+    svc.stop()
+
+
+def test_poll_handles_none_temperature():
+    """When camera returns None for temperature, poll must not crash."""
+    svc = CoolingService()
+
+    class _NoneTemp(_TecCam):
+        def get_temperature(self) -> None:  # type: ignore[override]
+            return None
+
+    svc.start(_NoneTemp(), 0, -10.0)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        s = svc.get_status()
+        time.sleep(0.05)
+        break
+    svc.stop()
+
+
 def test_concurrent_get_status_is_safe():
     svc = CoolingService()
     cam = _TecCam(temp_c=10.0)

@@ -1,6 +1,7 @@
 """Unit tests for domain/guide_monitor.py (AGT-7-2)."""
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -309,3 +310,63 @@ class TestConfig:
         mon = GuideMonitor(cam, GPCMOS02000KPA, cfg)
         r = _check(mon)
         assert r.status == GuideMonitorStatus.GUIDE_GAIN_OK
+
+
+# ── Lifecycle (start / stop / properties) ─────────────────────────────────────
+
+class TestLifecycle:
+    def _make_monitor(self) -> GuideMonitor:
+        cam = _FakeCamera([_guide_frame(0.45)] * 100)
+        return GuideMonitor(cam, GPCMOS02000KPA, GuideMonitorConfig(check_interval_s=0.1))
+
+    def test_running_false_before_start(self) -> None:
+        mon = self._make_monitor()
+        assert mon.running is False
+
+    def test_last_result_none_before_start(self) -> None:
+        mon = self._make_monitor()
+        assert mon.last_result is None
+
+    def test_start_sets_running_true(self) -> None:
+        mon = self._make_monitor()
+        mon.start()
+        assert mon.running is True
+        mon.stop()
+
+    def test_stop_sets_running_false(self) -> None:
+        mon = self._make_monitor()
+        mon.start()
+        mon.stop()
+        assert mon.running is False
+
+    def test_last_result_set_after_first_check(self) -> None:
+        mon = self._make_monitor()
+        mon.start()
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and mon.last_result is None:
+            time.sleep(0.02)
+        mon.stop()
+        assert mon.last_result is not None
+
+    def test_start_is_idempotent(self) -> None:
+        mon = self._make_monitor()
+        mon.start()
+        thread_id = id(mon._thread)
+        mon.start()  # second call: should not spawn a new thread
+        assert id(mon._thread) == thread_id
+        mon.stop()
+
+    def test_capture_exception_produces_star_weak_result(self) -> None:
+        cam = MagicMock(spec=_FakeCamera)
+        cam.get_exposure_ms.return_value = 1000.0
+        cam.get_gain.return_value = 100
+        cam.get_bit_depth.return_value = 16
+        cam.capture.side_effect = RuntimeError("shutter stuck")
+        mon = GuideMonitor(cam, GPCMOS02000KPA, GuideMonitorConfig(check_interval_s=0.1))
+        mon.start()
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and mon.last_result is None:
+            time.sleep(0.02)
+        mon.stop()
+        assert mon.last_result is not None
+        assert mon.last_result.status == GuideMonitorStatus.STAR_WEAK

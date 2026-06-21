@@ -54,6 +54,15 @@ python_version = "3.13"
 strict = true
 ignore_missing_imports = true
 
+[tool.coverage.run]
+omit = [
+    "smart_telescope/__main__.py",
+    "smart_telescope/tools/*",
+    "smart_telescope/adapters/touptek/managed.py",
+    "smart_telescope/adapters/touptek/filter_wheel.py",
+    "smart_telescope/adapters/touptek/camera.py",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
 asyncio_mode = "auto"

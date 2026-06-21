@@ -33,8 +33,10 @@ def _selector(stars: list[BrightStar] | None = None) -> CollimationStarSelector:
     )
 
 
-# Patch compute_altaz in the star_selector module so we can control altitude.
-_MODULE = "smart_telescope.services.collimation.star_selector.compute_altaz"
+# Patch compute_altaz / compute_ha in the star_selector module so we can control altitude
+# and avoid time-dependent HA limit filtering.
+_MODULE    = "smart_telescope.services.collimation.star_selector.compute_altaz"
+_MODULE_HA = "smart_telescope.services.collimation.star_selector.compute_ha"
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ class TestSelectPrimary:
     def test_returns_star_above_primary_threshold(self):
         stars = [_star(name="A", mag=1.0)]
         sel = _selector(stars)
-        with patch(_MODULE, return_value=(70.0, 180.0)):
+        with patch(_MODULE, return_value=(70.0, 180.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.reason == "selected"
         assert result.candidate is not None
@@ -92,13 +94,13 @@ class TestSelectPrimary:
         ]
         sel = _selector(stars)
         # All above 60°
-        with patch(_MODULE, return_value=(65.0, 180.0)):
+        with patch(_MODULE, return_value=(65.0, 180.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.candidate.star.name == "Bright"
 
     def test_altitude_carried_in_candidate(self):
         sel = _selector([_star()])
-        with patch(_MODULE, return_value=(72.5, 200.0)):
+        with patch(_MODULE, return_value=(72.5, 200.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.candidate.altitude_deg == pytest.approx(72.5)
         assert result.candidate.azimuth_deg  == pytest.approx(200.0)
@@ -111,7 +113,7 @@ class TestSelectFallback:
         """50° altitude < 60° primary but >= 45° fallback → reason='fallback'."""
         stars = [_star(name="Low", mag=0.5)]
         sel = _selector(stars)
-        with patch(_MODULE, return_value=(50.0, 90.0)):
+        with patch(_MODULE, return_value=(50.0, 90.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.reason == "fallback"
         assert result.candidate is not None
@@ -120,7 +122,7 @@ class TestSelectFallback:
     def test_fallback_includes_warning(self):
         stars = [_star()]
         sel = _selector(stars)
-        with patch(_MODULE, return_value=(50.0, 90.0)):
+        with patch(_MODULE, return_value=(50.0, 90.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.warning is not None
         assert "fallback" in result.warning.lower()
@@ -132,7 +134,7 @@ class TestSelectFallback:
         ]
         sel = _selector(stars)
         # 50° altitude: above fallback, below primary
-        with patch(_MODULE, return_value=(50.0, 90.0)):
+        with patch(_MODULE, return_value=(50.0, 90.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.candidate.star.name == "A"
 
@@ -170,7 +172,7 @@ class TestSelectNoneVisible:
             call_count[0] += 1
             return (alts[stars[idx].name], 90.0)
 
-        with patch(_MODULE, side_effect=_mock_altaz):
+        with patch(_MODULE, side_effect=_mock_altaz), patch(_MODULE_HA, return_value=0.0):
             result = sel.select()
         assert result.reason == "selected"
         assert result.candidate.star.name == "High"
@@ -182,7 +184,7 @@ class TestSelectByName:
     def test_finds_star_by_exact_name(self):
         stars = [_star(name="Vega"), _star(name="Sirius")]
         sel = _selector(stars)
-        with patch(_MODULE, return_value=(70.0, 180.0)):
+        with patch(_MODULE, return_value=(70.0, 180.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select_by_name("Vega")
         assert result.reason == "manual"
         assert result.candidate.star.name == "Vega"
@@ -190,7 +192,7 @@ class TestSelectByName:
     def test_case_insensitive_match(self):
         stars = [_star(name="Arcturus")]
         sel = _selector(stars)
-        with patch(_MODULE, return_value=(60.0, 90.0)):
+        with patch(_MODULE, return_value=(60.0, 90.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select_by_name("arcturus")
         assert result.candidate.star.name == "Arcturus"
 
@@ -211,7 +213,7 @@ class TestSelectByName:
         stars = [_star(name="LowStar")]
         sel = _selector(stars)
         # Even if below fallback threshold, manual override should succeed
-        with patch(_MODULE, return_value=(10.0, 0.0)):
+        with patch(_MODULE, return_value=(10.0, 0.0)), patch(_MODULE_HA, return_value=0.0):
             result = sel.select_by_name("LowStar")
         assert result.reason == "manual"
         assert result.candidate.star.name == "LowStar"

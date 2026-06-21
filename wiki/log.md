@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-21 — CHORE — ONS3 upgrade complete; 4 pre-existing test failures fixed (5 files)
+
+**Changes:**
+- `smart_telescope/domain/collimation/config.py`: `ArchiveConfig.enabled` default corrected from `True` to `False` — matches `templates/config.toml` template; was causing `_get_archive()` to create an archive in test environments.
+- `tests/unit/api/test_catalog.py`: patch `compute_ha` to `0.0` in `_get_stars()` helper — prevents time-dependent HA limit filtering from removing test stars.
+- `tests/unit/api/test_mount.py` (`TestMountPark`): add `json={"confirmed": True}` to all park POST calls — endpoint added confirmation guard after these tests were written.
+- `tests/unit/services/test_star_selector.py`: patch `compute_ha` alongside `compute_altaz` in every test that checks star selection — same time-dependent HA issue as catalog test.
+- `tests/unit/domain/test_stretch.py`: `test_linear_range_maps_correctly` — removed `flat[-1] == 255` assertion; sigma-stretch does not guarantee max value maps to 255 (only percentile-stretch does).
+- `docs/todo.md`: ONS3-002..006 marked complete.
+
+**ONS3 architecture note:** `onstep_adapter` v0.3.0 is a re-export shim — its `__init__.py` imports everything from `smart_telescope.adapters.onstep.*`. All REQ-ST-001..007 overrides in `mount.py` are therefore permanent (no upstream independent implementation exists).
+
+**Test result:** 2942 passed, 24 skipped.
+
+---
+
 ## 2026-06-21 — FIX — Tracking not active after goto; solve failure visibility (3 files)
 
 **Changes:**

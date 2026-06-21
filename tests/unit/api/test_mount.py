@@ -316,20 +316,20 @@ class TestMountGotoSolarGate:
 class TestMountPark:
     def test_returns_200_on_success(self) -> None:
         _inject(_mock_mount(park_ok=True))
-        assert client.post("/api/mount/park").status_code == 200
+        assert client.post("/api/mount/park", json={"confirmed": True}).status_code == 200
 
     def test_returns_ok_true(self) -> None:
         _inject(_mock_mount(park_ok=True))
-        assert client.post("/api/mount/park").json() == {"ok": True}
+        assert client.post("/api/mount/park", json={"confirmed": True}).json() == {"ok": True}
 
     def test_returns_500_when_park_fails(self) -> None:
         _inject(_mock_mount(park_ok=False))
-        assert client.post("/api/mount/park").status_code == 500
+        assert client.post("/api/mount/park", json={"confirmed": True}).status_code == 500
 
     def test_calls_park_on_mount(self) -> None:
         m = _mock_mount()
         _inject(m)
-        client.post("/api/mount/park")
+        client.post("/api/mount/park", json={"confirmed": True})
         m.park.assert_called_once()
 
 

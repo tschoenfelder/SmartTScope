@@ -47,14 +47,14 @@ class TestAutoStretch:
         assert result[10, 10] == 0
 
     def test_linear_range_maps_correctly(self) -> None:
-        # Linearly spaced values: after stretch, extremes should be ~0 and ~255
+        # Linearly spaced values: after sigma-stretch, minimum maps to 0 and
+        # values are monotonically non-decreasing (max may not reach 255 since
+        # sigma-stretch clips at background + 15σ, not at the data maximum).
         pixels = np.linspace(0.0, 1000.0, 100 * 100, dtype=np.float32).reshape(100, 100)
         result = auto_stretch(pixels)
-        # The 0.5th percentile maps to 0; 99.5th maps to 255
-        # Values in between should be monotonically increasing
         flat = result.flatten()
         assert flat[0] == 0
-        assert flat[-1] == 255
+        assert flat[-1] > 0
         assert np.all(np.diff(flat.astype(np.int16)) >= 0)
 
     def test_values_stay_within_0_255(self) -> None:

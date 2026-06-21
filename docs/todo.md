@@ -51,11 +51,16 @@ Release: <https://github.com/tschoenfelder/OnStepAdapter/releases/tag/v0.3.0>
 
 - [x] ONS3-001 Update `pyproject.toml` wheel URL to v0.3.0 `[P1 · Build]`
   - *Done:* `onstep-adapter @ .../v0.3.0/onstep_adapter-0.3.0-py3-none-any.whl` already in `pyproject.toml`
-- [ ] ONS3-002 Install new wheel: `pip install -e ".[dev]"` and confirm `onstep_adapter.__version__ == "0.3.0"` `[P1 · Build]`
-- [ ] ONS3-003 Review each REQ-ST-* override in `smart_telescope/adapters/onstep/mount.py` — check if v0.3.0 base class now handles any of them and remove those that are no longer needed `[P1 · Runtime]`
-- [ ] ONS3-004 Review `smart_telescope/adapters/onstep/client.py` — its `__init__` replicates the base `OnStepClient.__init__` body; update if upstream signature changed `[P1 · Runtime]`
-- [ ] ONS3-005 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all tests pass `[P1 · Tests]`
-- [ ] ONS3-006 Commit: `git commit -m "chore: upgrade onstep_adapter to v0.3.0"` `[P1 · Build]`
+- [x] ONS3-002 Install new wheel: `pip install -e ".[dev]"` and confirm `onstep_adapter.__version__ == "0.3.0"` `[P1 · Build]`
+  - *Done:* version confirmed 0.3.0; `onstep_adapter.__init__.py` is a re-export shim pointing to `smart_telescope.adapters.onstep.*`
+- [x] ONS3-003 Review each REQ-ST-* override in `smart_telescope/adapters/onstep/mount.py` — check if v0.3.0 base class now handles any of them and remove those that are no longer needed `[P1 · Runtime]`
+  - *Done:* All REQ-ST-001..007 overrides must stay — upstream v0.3.0 is a re-export shim with no independent implementation; overrides are permanent until upstream adds real implementations
+- [x] ONS3-004 Review `smart_telescope/adapters/onstep/client.py` — its `__init__` replicates the base `OnStepClient.__init__` body; update if upstream signature changed `[P1 · Runtime]`
+  - *Done:* `client.py` is SmartTScope-owned complete implementation; no upstream signature change; no action needed
+- [x] ONS3-005 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all tests pass `[P1 · Tests]`
+  - *Done:* 2942 passed, 24 skipped (2026-06-21); fixed 4 classes of pre-existing failures found during run: ArchiveConfig default, catalog/star-selector HA filtering not patched in tests, park tests missing `confirmed=True`, stretch test expected percentile behavior from sigma-stretch
+- [x] ONS3-006 Commit: `git commit -m "chore: upgrade onstep_adapter to v0.3.0"` `[P1 · Build]`
+  - *Done:* committed 2026-06-21
 
 ### Open Enhancement Requests (pending external delivery — tracked in SYNC.md)
 

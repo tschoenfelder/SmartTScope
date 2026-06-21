@@ -231,14 +231,14 @@ class FineCollimationConfig:
 @dataclass(frozen=True)
 class ArchiveConfig:
     """Opt-in frame archive — saves accepted FITS frames and JSON sidecars."""
-    enabled: bool = True
+    enabled: bool = False
     archive_dir: str = ""   # empty → ~/.SmartTScope/frame_archive
     max_frames_per_session: int = 50
 
     @classmethod
     def from_dict(cls, d: dict) -> "ArchiveConfig":
         return cls(
-            enabled=bool(d.get("enabled", True)),
+            enabled=bool(d.get("enabled", False)),
             archive_dir=str(d.get("archive_dir", "")),
             max_frames_per_session=int(d.get("max_frames_per_session", 50)),
         )

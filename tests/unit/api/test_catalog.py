@@ -382,6 +382,7 @@ class TestCatalogVisible:
 
 _PATCH_ALTAZ = "smart_telescope.api.catalog.compute_altaz"
 _PATCH_CVW   = "smart_telescope.api.catalog.compute_visibility_window"
+_PATCH_HA    = "smart_telescope.api.catalog.compute_ha"
 _STARS_CFG   = "smart_telescope.api.catalog._STARS_CFG"
 
 
@@ -427,6 +428,7 @@ class TestCatalogStarsVisibility:
             patch(_STARS_CFG, cfg_path),
             patch(_PATCH_ALTAZ, return_value=altaz),
             patch(_PATCH_CVW, return_value=window),
+            patch(_PATCH_HA, return_value=0.0),   # pin HA to meridian, within any HA limit
         ):
             return client.get("/api/catalog/stars").json()
 

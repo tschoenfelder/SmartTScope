@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-23 — FIX — Pi config: removed duplicate [collimation.archive] section (Pi-side only)
+
+**Change:** Duplicate `[collimation.archive]` table in `~/.SmartTScope/config.toml` on the Pi removed manually. The TOML parse error (line 246) caused the entire config to fail, falling back to `lat=0.0, lon=0.0`, which in turn caused the "Mount time/location" readiness item to show RED after Connect All. Removing the duplicate restores correct config parsing.
+
+**Root cause:** The `[collimation.archive]` section was present twice — once inline under `[collimation]` and once as a standalone table added during an earlier config edit. TOML forbids duplicate table headers.
+
+**Status:** Closed. No code change needed; config template (`templates/config.toml`) was already correct.
+
+---
+
 ## 2026-06-23 — DOC — Operational acceptance checklist: UI naming and pre/post-connect steps (1 file)
 
 **Changes:**

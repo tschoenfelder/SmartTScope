@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-23 — DOC — Operational acceptance checklist: UI naming and pre/post-connect steps (1 file)
+
+**Changes:**
+- `docs/operational-acceptance-checklist.md`: Split old §2 "Connect all devices" into three sections — new §2 (pre-connect System Readiness baseline), §3 (Connect All), §4 (post-connect System Readiness with time/location row). Fixed terminology: "System Readiness card" in Stage 1 (Startup tab) is always visible, not something to "open". Documented that the "Mount time/location" row is absent before connecting and explains GREEN/YELLOW/RED meanings. Renumbered §4–§10 → §5–§11.
+
+**Motivation:** Hardware test R5-012 revealed the checklist used "open System Readiness Card" (implying a modal) and gave no pre/post-connect expectations for the time/location row.
+
+---
+
 ## 2026-06-21 — CHORE — Coverage gate resolved at 80.01% (11 files)
 
 **Changes:**

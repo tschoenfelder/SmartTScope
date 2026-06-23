@@ -17,9 +17,21 @@ Record pass/fail and any notes in the hardware test log.
 
 ---
 
-## 2. Connect all devices
+## 2. Before connecting — System Readiness card (pre-connect baseline)
 
-- [ ] Click **Connect All** (Stage 1 → Setup & Diagnostics → Connect All)
+Navigate to **Stage 1 (Startup tab)**. The **System Readiness** card is always visible
+there; no separate "open" action is needed.
+
+- [ ] System Readiness card is visible and shows items for config, storage, ASTAP, camera, mount
+- [ ] **No "Mount time/location" row** — this row only appears after Connect All; its absence here is correct
+- [ ] Config file item is **green** — if red, fix `~/.SmartTScope/config.toml` and restart before continuing
+- [ ] Note any pre-existing yellow/red items so you can distinguish them from connect-triggered failures
+
+---
+
+## 3. Connect all devices
+
+- [ ] Click **Connect All** (Stage 1 → Startup → Connect All button)
 - [ ] Camera status: **ok**
 - [ ] Mount status: **ok** — logs show `:GVP#` confirmed OnStep product
 - [ ] Focuser status: **ok** or **not available** (acceptable if no focuser hardware)
@@ -30,15 +42,19 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 3. Readiness dashboard
+## 4. System Readiness card (post-connect)
 
-- [ ] Stage 1 readiness card shows all green (or yellow with known-acceptable warnings)
+- [ ] **System Readiness** card in Stage 1 (Startup) shows overall green (or yellow with known-acceptable warnings)
+- [ ] **Mount time/location** row now appears with one of:
+  - Green — "Time and location synced"
+  - Yellow — "OnStep not responding to time/location queries" (mount connected but not answering `:GC#`/`:Gt#`)
+  - Red — clock or location drift details (e.g. "clock off by 120 s" or "site off by 0.05°")
 - [ ] Mount state is **TRACKING** or **PARKED** (not **UNKNOWN**)
 - [ ] No stale-data warning (⚠) on mount state badge
 
 ---
 
-## 4. Setup check
+## 5. Setup check
 
 - [ ] Open **Setup & Diagnostics** → run **Setup Check**
 - [ ] Mount RA moves: check passes (RA reading changes after short slew)
@@ -49,7 +65,7 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 5. Solar safety gate
+## 6. Solar safety gate
 
 - [ ] Verify solar exclusion is active: attempt GoTo with Sun coordinates
   (RA ≈ current Sun RA, Dec ≈ current Sun Dec) without `confirm_solar=true`
@@ -57,7 +73,7 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 6. GoTo a known bright star (alignment verification)
+## 7. GoTo a known bright star (alignment verification)
 
 - [ ] Select a well-known bright star (e.g. Vega, Arcturus, Sirius) visible tonight
 - [ ] Issue GoTo; slew completes within 2 minutes
@@ -66,7 +82,7 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 7. Autofocus
+## 8. Autofocus
 
 - [ ] Run autofocus from UI (Stage 4 or via `/api/focuser/autofocus`)
 - [ ] Focuser sweeps, captures frames, and returns a best position
@@ -75,7 +91,7 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 8. Emergency STOP
+## 9. Emergency STOP
 
 - [ ] While mount is slewing (or immediately after issuing a GoTo), press **STOP**
 - [ ] Mount stops within **1 second** of STOP press
@@ -84,7 +100,7 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 9. Preview and stack
+## 10. Preview and stack
 
 - [ ] Start live preview (Stage 3); camera frames appear within 5 s
 - [ ] Histogram is displayed and shows a reasonable distribution
@@ -94,7 +110,7 @@ consult the hardware test log for prior failures on this component.
 
 ---
 
-## 10. Shutdown
+## 11. Shutdown
 
 - [ ] Issue **Park** command; mount parks successfully
 - [ ] Stop the app (`Ctrl-C` or `systemctl stop smarttscope`)

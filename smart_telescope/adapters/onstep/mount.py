@@ -2362,9 +2362,14 @@ class OnStepMount(MountPort):
 
     def ensure_time_location_synced(self) -> None:
         cfg = self._safety_config
+        try:
+            from ... import config as _cfg
+            lat, lon = _cfg.OBSERVER_LAT, _cfg.OBSERVER_LON
+        except (ImportError, AttributeError):
+            lat, lon = cfg.observer_lat, cfg.observer_lon
         self.sync_onstep_time_location(
-            lat=cfg.observer_lat,
-            lon=cfg.observer_lon,
+            lat=lat,
+            lon=lon,
             alt_m=cfg.observer_alt_m,
             confirmed_by_user=True,
         )

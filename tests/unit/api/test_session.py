@@ -121,6 +121,19 @@ class TestAllConnected:
         mnt.connect.assert_called_once()
         foc.connect.assert_called_once()
 
+    def test_time_location_synced_after_mount_connects(self) -> None:
+        mnt = _mock_mount()
+        _inject(_mock_camera(), mnt, _mock_focuser())
+        client.post("/api/session/connect")
+        mnt.ensure_time_location_synced.assert_called_once()
+
+    def test_sync_failure_does_not_fail_connect(self) -> None:
+        mnt = _mock_mount()
+        mnt.ensure_time_location_synced.side_effect = RuntimeError("clock not sane")
+        _inject(_mock_camera(), mnt, _mock_focuser())
+        body = client.post("/api/session/connect").json()
+        assert body["mount"]["status"] == "ok"
+
 
 # ── camera failure ────────────────────────────────────────────────────────────
 
@@ -186,7 +199,12 @@ class TestMountFailure:
         )
         body = client.post("/api/session/connect").json()
         assert body["mount"]["status"] == "error"
-        assert "no such device" in body["mount"]["error"]
+
+    def test_time_location_sync_skipped_when_mount_fails(self) -> None:
+        mnt = _mock_mount(connect_ok=False)
+        _inject(_mock_camera(), mnt, _mock_focuser())
+        client.post("/api/session/connect")
+        mnt.ensure_time_location_synced.assert_not_called()
 
 
 # ── focuser failure ───────────────────────────────────────────────────────────

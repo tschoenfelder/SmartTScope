@@ -157,11 +157,20 @@ def session_connect(
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
 ) -> ConnectResult:
+    import logging
     from .cameras import invalidate_camera_scan
     invalidate_camera_scan()  # force re-enumeration after hardware may have been plugged in
+    mount_status = _try_connect("mount", mount.connect)
+    if mount_status.status == "ok":
+        try:
+            mount.ensure_time_location_synced()
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Auto time/location sync after connect failed: %s", exc
+            )
     return ConnectResult(
         camera=_try_connect("camera", camera.connect),
-        mount=_try_connect("mount", mount.connect),
+        mount=mount_status,
         focuser=_try_connect("focuser", focuser.connect),
         solver=_check_solver(),
     )

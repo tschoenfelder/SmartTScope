@@ -290,6 +290,11 @@ async function applyGpsLocation() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({lat: g.lat, lon: g.lon}),
         });
+        // Push the updated location (and current Pi time) to OnStep if mounted.
+        // Best-effort: failure is logged but does not block the location update.
+        try {
+            await apiPost('/api/mount/sync_clock');
+        } catch (_) {}
         await initSiteConfig();
         const banner = document.getElementById('gps-banner');
         if (banner) banner.style.display = 'none';

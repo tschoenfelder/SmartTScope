@@ -285,6 +285,22 @@ def mount_sync(
     return {"ok": True}
 
 
+@router.post("/sync_clock")
+def mount_sync_clock(
+    mount: MountPort = Depends(deps.get_mount),
+) -> dict:
+    """Push Pi system time and configured observer location into OnStep.
+
+    Equivalent to the automatic sync that runs before every GoTo.
+    Clears the onstep_clock_invalid safety lock when successful.
+    """
+    try:
+        mount.ensure_time_location_synced()
+        return {"ok": True}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.post("/home")
 def mount_home(
     mount:        MountPort          = Depends(deps.get_mount),

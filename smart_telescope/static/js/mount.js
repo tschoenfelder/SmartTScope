@@ -107,8 +107,10 @@ function mountCard(data) {
       ? `<div style="font-size:0.78rem;color:var(--warning);background:rgba(210,153,34,0.1);
               border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:0.35rem 0.6rem;
               margin-top:0.5rem">
-           ⚠ <b>OnStep clock not synced</b> — GoTo is locked until you sync the OnStep clock.<br>
-           <span style="color:var(--muted)">Setting observer time alone is not enough. Click <b>Sync Clock</b> in the Setup panel.</span>
+           ⚠ <b>OnStep clock not synced</b> — first GoTo will auto-sync, or sync now:<br>
+           <button onclick="mountSyncClock(this)" style="margin-top:0.4rem;font-size:0.78rem;
+                   padding:0.2rem 0.7rem;cursor:pointer">Sync Clock &amp; Location</button>
+           <span id="sync-clock-result" style="margin-left:0.5rem;color:var(--muted)"></span>
          </div>`
       : '';
     return `
@@ -796,5 +798,20 @@ async function loadCollimStars() {
     } catch (err) {
       setStatus('s4-stars-status', 'Could not load targets: ' + err, true);
     }
+}
+
+async function mountSyncClock(btn) {
+  const result = document.getElementById('sync-clock-result');
+  btn.disabled = true;
+  if (result) result.textContent = 'Syncing…';
+  try {
+    await apiPost('/api/mount/sync_clock');
+    if (result) result.textContent = '✓ Synced';
+    setTimeout(() => refreshMount && refreshMount(), 1000);
+  } catch (err) {
+    if (result) result.textContent = '✗ ' + (err.message || 'Failed');
+  } finally {
+    btn.disabled = false;
+  }
 }
 

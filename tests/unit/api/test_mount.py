@@ -519,6 +519,30 @@ class TestMountSync:
         assert client.post("/api/mount/sync", json={}).status_code == 422
 
 
+# ── POST /api/mount/sync_clock ───────────────────────────────────────────────
+
+
+class TestMountSyncClock:
+    def test_returns_200_and_ok(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        resp = client.post("/api/mount/sync_clock")
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+    def test_calls_ensure_time_location_synced(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        client.post("/api/mount/sync_clock")
+        m.ensure_time_location_synced.assert_called_once()
+
+    def test_returns_500_when_sync_raises(self) -> None:
+        m = _mock_mount()
+        m.ensure_time_location_synced.side_effect = RuntimeError("system clock not sane")
+        _inject(m)
+        assert client.post("/api/mount/sync_clock").status_code == 500
+
+
 # ── POST /api/mount/goto_and_center ──────────────────────────────────────────
 
 

@@ -37,6 +37,7 @@ _GAIN_MIN  = 100
 _GAIN_MAX  = 400
 _EXP_MAX   = 4.0    # seconds
 _EXP_MIN   = 0.001  # 1 ms
+_SPARSE_P99_9_THR = 0.10  # p99_9 above this → stars present; halt brightening for sparse fields
 
 
 # ── Conversion-gain mode ──────────────────────────────────────────────────────
@@ -135,6 +136,10 @@ class AutoGainController:
 
         if _LO <= mean_frac <= _HI:
             return  # already in target band — no change
+
+        # Sparse star field: if top 0.1% of pixels show star signal, don't over-brighten.
+        if mean_frac < _LO and stats.p99_9 >= _SPARSE_P99_9_THR and stats.saturation_pct < 1.0:
+            return
 
         safe_mean = max(mean_frac, 1e-4)
         ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, _TARGET / safe_mean))

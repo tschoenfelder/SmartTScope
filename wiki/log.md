@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-23 — FIX — Auto-gain overshoot and plate-solve 422 (4 files)
+
+**Root cause:** ToupTek SDK `get_ExpoAGain()` returns the raw hardware AGC register, which can be stale from a previous session. This value was echoed back to the UI via `camera_info.effective_gain`, overwriting the intended gain in `preview-gain`. `previewSendParams()` then re-applied that stale value to the camera, causing subsequent solve requests to send e.g. gain=7001 which failed the `le=3200` validation with HTTP 422.
+
+**Changes:**
+- `smart_telescope/static/js/preview.js`: Removed the code that writes `camera_info.effective_gain` back into the `preview-gain` UI field. Hardware readback is unreliable for gain on ToupTek cameras; the intended gain is already set in the field.
+- `smart_telescope/static/js/session.js`: Clamp gain to [100, 3200] before sending to `/api/solver/solve` as a safety net.
+- `smart_telescope/domain/autogain_service.py`: Added sparse star field early exit: if `p99_9 ≥ 0.10` and no saturation risk, accept the frame rather than over-brightening until mean_frac reaches the target band. Prevents overshooting to 4 s/high gain when stars are already visible.
+- `smart_telescope/domain/autogain.py`: Same sparse field guard in `AutoGainController.update()` used by the preview WebSocket autogain.
+
+**Tests:** 99/99 pass.
+
+---
+
 ## 2026-06-23 — FIX — Auto-sync OnStep time/location on Connect All and GPS apply (4 files)
 
 **Changes:**

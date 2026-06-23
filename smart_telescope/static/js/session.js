@@ -62,7 +62,7 @@ async function solveFrame() {
     const btn      = document.getElementById('solve-btn');
     const result   = document.getElementById('solve-result');
     const exposure = parseFloat(document.getElementById('preview-exposure').value) || 5.0;
-    const gain     = parseInt(document.getElementById('preview-gain').value, 10) || 100;
+    const gain     = Math.max(100, Math.min(3200, parseInt(document.getElementById('preview-gain').value, 10) || 100));
     const camRole  = document.getElementById('preview-cam-select')?.value || 'main';
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span>Solving…';

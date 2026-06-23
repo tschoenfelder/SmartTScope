@@ -305,10 +305,10 @@ function _connectWs(camRoleOverride) {
             const expEl = document.getElementById('preview-exposure');
             if (expEl) expEl.value = msg.effective_exposure;
           }
-          if (typeof msg.effective_gain === 'number') {
-            const gainEl = document.getElementById('preview-gain');
-            if (gainEl) gainEl.value = msg.effective_gain;
-          }
+          // Note: effective_gain is intentionally NOT written back to preview-gain.
+          // The ToupTek SDK's get_ExpoAGain() can return stale hardware-AGC values
+          // that differ wildly from what was set, which would corrupt the gain field
+          // and cascade into a bad gain in the next preview and solve request.
           if (typeof msg.effective_offset === 'number') {
             const offEl = document.getElementById('preview-offset');
             if (offEl) offEl.value = msg.effective_offset;

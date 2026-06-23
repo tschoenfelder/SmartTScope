@@ -48,6 +48,7 @@ _NO_SIGNAL_THRESHOLD   = 0.02     # effective mean_frac below which we declare n
 _FOCUS_ERROR_THRESHOLD = 0.001    # tiny-but-nonzero signal → focus/pointing issue
 _SAT_LIMIT_PCT         = 1.0      # saturation_pct above which we must dim
 _CLIP_THRESHOLD_PCT    = 1.0      # zero_clipped_pct above which offset needs raising
+_SPARSE_P99_9_THR      = 0.10     # p99_9 above this → stars present; stop early for sparse fields
 _OFFSET_STEP_ADU       = 100      # ADU increment when zero clipping detected
 _OFFSET_MAX_ADU        = 2_000    # hard cap on offset
 
@@ -323,6 +324,27 @@ class AutoGainService:
                 cur_exp_ms, cur_gain, cur_offset,
                 stats.mean_frac, signal, stats.saturation_pct, stats.zero_clipped_pct,
             )
+
+            # Step 5b: sparse star field early exit (DSO only).
+            # mean_frac stays near zero for dark skies even when stars are visible,
+            # so the mean-based signal can never reach band_lo in sparse fields.
+            # If the 99.9th percentile shows detectable star signal, accept the frame
+            # rather than over-brightening until stars saturate.
+            if not is_guiding and not is_planetary and signal < band_lo:
+                if stats.p99_9 >= _SPARSE_P99_9_THR and stats.saturation_pct < _SAT_LIMIT_PCT:
+                    _log.info(
+                        "AutoGain: sparse star field (p99_9=%.3f ≥ %.2f) — "
+                        "stopping at exp=%.1fms gain=%d to avoid over-brightening",
+                        stats.p99_9, _SPARSE_P99_9_THR, cur_exp_ms, cur_gain,
+                    )
+                    return AutoGainResult(
+                        status=AutoGainStatus.OK,
+                        exposure_ms=cur_exp_ms,
+                        gain=cur_gain,
+                        offset=cur_offset,
+                        conversion_gain=cg,
+                        histogram_stats=stats,
+                    )
 
             # Step 6: success check
             if band_lo <= signal <= band_hi and stats.saturation_pct < _SAT_LIMIT_PCT:

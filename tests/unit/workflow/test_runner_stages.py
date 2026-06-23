@@ -154,9 +154,9 @@ class TestStageAlign:
         assert log.state == SessionState.ALIGNED
 
     @pytest.mark.parametrize("profile,expected_scale", [
-        (C8_NATIVE,   0.38),
-        (C8_REDUCER,  0.60),
-        (C8_BARLOW2X, 0.19),
+        (C8_NATIVE,   0.295),
+        (C8_REDUCER,  0.468),
+        (C8_BARLOW2X, 0.147),
     ])
     def test_pixel_scale_comes_from_optical_profile(self, solver_mock, profile, expected_scale):
         ctx = make_stage_ctx(solver=solver_mock, optical_profile=profile)

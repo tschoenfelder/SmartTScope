@@ -30,9 +30,13 @@ class OpticalProfile:
     pixel_scale_arcsec: float  # hint passed to the plate solver
 
 
-C8_NATIVE   = OpticalProfile("C8-native",   pixel_scale_arcsec=0.38)
-C8_REDUCER  = OpticalProfile("C8-reducer",  pixel_scale_arcsec=0.60)
-C8_BARLOW2X = OpticalProfile("C8-barlow2x", pixel_scale_arcsec=0.19)
+# Pixel scales for ATR585M (IMX585, 2.9 µm pixels):
+#   native  2032 mm  →  206.265 × 2.9 / 2032  = 0.295 "/pixel
+#   reducer 1280 mm  →  206.265 × 2.9 / 1280  = 0.468 "/pixel  (0.63× Celestron reducer)
+#   barlow  4064 mm  →  206.265 × 2.9 / 4064  = 0.147 "/pixel  (2× Barlow)
+C8_NATIVE   = OpticalProfile("C8-native",   pixel_scale_arcsec=0.295)
+C8_REDUCER  = OpticalProfile("C8-reducer",  pixel_scale_arcsec=0.468)
+C8_BARLOW2X = OpticalProfile("C8-barlow2x", pixel_scale_arcsec=0.147)
 
 # ── Target ───────────────────────────────────────────────────────────────────
 

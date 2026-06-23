@@ -1,4 +1,5 @@
 import configparser
+import logging
 import os
 import shutil
 import subprocess
@@ -7,6 +8,8 @@ from pathlib import Path
 
 from ...domain.frame import FitsFrame
 from ...ports.solver import SolveResult, SolverPort
+
+_log = logging.getLogger(__name__)
 
 _ASTAP_DEFAULT = Path("C:/Program Files/astap/astap.exe")
 
@@ -138,6 +141,11 @@ class AstapSolver(SolverPort):
             if catalog is not None:
                 cmd += ["-d", str(catalog)]
 
+            _log.info(
+                "ASTAP solve: scale=%.4f\"/px radius=%.1f° cmd=%s",
+                pixel_scale_hint, radius, " ".join(cmd),
+            )
+
             try:
                 proc = subprocess.run(
                     cmd,
@@ -152,6 +160,10 @@ class AstapSolver(SolverPort):
 
             ini_path = fits_path.with_suffix(".ini")
             if not ini_path.exists():
+                _log.warning(
+                    "ASTAP produced no .ini (exit %d). stdout=%r stderr=%r",
+                    proc.returncode, proc.stdout.strip(), proc.stderr.strip(),
+                )
                 return SolveResult(
                     success=False,
                     error=(
@@ -160,7 +172,16 @@ class AstapSolver(SolverPort):
                     ),
                 )
 
-            return self._parse_ini(ini_path)
+            result = self._parse_ini(ini_path)
+            if not result.success:
+                _log.warning(
+                    "ASTAP PLATESOLVED=F: error=%r  stdout=%r  stderr=%r  ini=%r",
+                    result.error,
+                    proc.stdout.strip()[:500],
+                    proc.stderr.strip()[:500],
+                    ini_path.read_text(encoding="utf-8", errors="replace")[:500],
+                )
+            return result
 
     @staticmethod
     def _parse_ini(ini_path: Path) -> SolveResult:

@@ -4,6 +4,25 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-24 — FIX — Pixel scale wrong for C8 + ATR585M; ASTAP failure logging (4 files)
+
+**Root cause:** Pixel scale defaults assumed a different camera (~3.75 µm pixels) rather than ATR585M (2.9 µm). ASTAP only searches ±10% of the given scale, so 0.38 "/px ± 10% never covers the actual 0.295 "/px → `PLATESOLVED=F` on every solve attempt.
+
+**Correct pixel scales for ATR585M (2.9 µm) on C8:**
+- Native (2032 mm): 206.265 × 2.9 / 2032 = **0.295 "/px**
+- 0.63× reducer (1280 mm): **0.468 "/px**
+- 2× Barlow (4064 mm): **0.147 "/px**
+
+**Changes:**
+- `smart_telescope/workflow/_types.py`: C8_NATIVE 0.38 → 0.295, C8_REDUCER 0.60 → 0.468, C8_BARLOW2X 0.19 → 0.147
+- `smart_telescope/config.py`: default `pixel_scale_arcsec` 0.38 → 0.295
+- `smart_telescope/adapters/astap/solver.py`: log scale + radius before each solve; on PLATESOLVED=F log full ASTAP stdout, stderr, and .ini content for diagnosis
+- `tests/unit/workflow/test_runner_stages.py`: updated pixel scale expectations to match corrected values
+
+**Tests:** 3052/3053 pass (1 pre-existing skip); 12/12 for the directly affected tests.
+
+---
+
 ## 2026-06-23 — FIX — Auto-gain overshoot and plate-solve 422 (4 files)
 
 **Root cause:** ToupTek SDK `get_ExpoAGain()` returns the raw hardware AGC register, which can be stale from a previous session. This value was echoed back to the UI via `camera_info.effective_gain`, overwriting the intended gain in `preview-gain`. `previewSendParams()` then re-applied that stale value to the camera, causing subsequent solve requests to send e.g. gain=7001 which failed the `le=3200` validation with HTTP 422.

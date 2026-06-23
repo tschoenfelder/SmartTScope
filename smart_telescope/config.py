@@ -305,7 +305,7 @@ _stars_cfg_raw: str        = _expand(os.environ.get("STARS_CFG",     _get("sessi
 STARS_CFG: str             = _stars_cfg_raw or str(_USER_DIR / "stars.cfg")
 _horizon_raw: str          = _expand(os.environ.get("HORIZON_DAT",   _get("session", "horizon_dat",   "")))
 HORIZON_DAT: str           = _horizon_raw  or str(_USER_DIR / "horizon.dat")
-PIXEL_SCALE_ARCSEC: float  = float(os.environ.get("PIXEL_SCALE_ARCSEC", _get("session", "pixel_scale_arcsec", "0.38")))
+PIXEL_SCALE_ARCSEC: float  = float(os.environ.get("PIXEL_SCALE_ARCSEC", _get("session", "pixel_scale_arcsec", "0.295")))
 
 # STORAGE_DIR keeps env-var override because health.py checks it at module level.
 

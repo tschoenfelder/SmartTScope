@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-23 — FIX — Auto-sync OnStep time/location on Connect All and GPS apply (4 files)
+
+**Changes:**
+- `smart_telescope/api/session.py`: `session_connect()` now calls `mount.ensure_time_location_synced()` automatically after a successful mount connect. Failure is best-effort (logged, does not fail the Connect All response).
+- `smart_telescope/adapters/onstep/mount.py`: `ensure_time_location_synced()` now reads `config.OBSERVER_LAT/LON` at call time (local import, same pattern as `_default_safety_config()`) instead of the stale `_safety_config` built at adapter-construction time. This ensures GPS-updated coordinates flow to OnStep without reconnecting.
+- `smart_telescope/static/js/setup.js`: `applyGpsLocation()` now calls `POST /api/mount/sync_clock` after the observer location update (best-effort) so the GPS fix is immediately pushed into OnStep.
+- `tests/unit/api/test_session.py`: 4 new tests — auto-sync on success, skipped on mount failure, sync exception doesn't fail connect, skip-when-exception variation.
+
+**Root cause:** `session_connect()` connected the mount but never synced time/location, requiring a manual GoTo or button press to initialize the OnStep clock. The stale `_safety_config` also meant GPS updates weren't reaching OnStep.
+
+---
+
 ## 2026-06-23 — FIX — Sync Clock button and API for onstep_clock_invalid (4 files)
 
 **Changes:**

@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-23 — FIX — Sync Clock button and API for onstep_clock_invalid (4 files)
+
+**Changes:**
+- `smart_telescope/api/mount.py`: `POST /api/mount/sync_clock` — pushes Pi time + configured lat/lon into OnStep (same as the auto-sync before every GoTo); clears `onstep_clock_invalid` safety lock on success. HTTP 500 with detail string on failure.
+- `smart_telescope/static/js/mount.js`: Replaced dead "Click **Sync Clock** in the Setup panel" instruction with an actual inline `Sync Clock & Location` button that calls the new endpoint, shows "✓ Synced" / "✗ Failed", and refreshes the mount card.
+- `smart_telescope/services/readiness.py`: Fixed misleading repair hint on `time_location_sync` RED item — Connect All does NOT trigger a time sync; updated to "Click 'Sync Clock & Location' in the mount card, or run a GoTo."
+- `tests/unit/api/test_mount.py`: 3 new tests in `TestMountSyncClock` (200+ok, calls ensure_time_location_synced, 500 on RuntimeError).
+
+**Root cause:** `onstep_clock_invalid` safety lock had no user-facing action. UI referenced a "Sync Clock" button that was never implemented. The auto-sync only fires inside `safe_goto()` and `track_sequence()` — not after Connect All — leaving users unable to clear an uninitialized OnStep RTC without issuing a GoTo first.
+
+---
+
 ## 2026-06-23 — FIX — Pi config: removed duplicate [collimation.archive] section (Pi-side only)
 
 **Change:** Duplicate `[collimation.archive]` table in `~/.SmartTScope/config.toml` on the Pi removed manually. The TOML parse error (line 246) caused the entire config to fail, falling back to `lat=0.0, lon=0.0`, which in turn caused the "Mount time/location" readiness item to show RED after Connect All. Removing the duplicate restores correct config parsing.

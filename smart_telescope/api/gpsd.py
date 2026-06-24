@@ -24,6 +24,8 @@ class GpsdStatusResponse(BaseModel):
     lon: float = 0.0
     alt_m: float | None = None
     gps_time: str | None = None
+    fix_age_s: float | None = None   # seconds since GPS timestamp (CFG-002)
+    is_fresh: bool = False            # True when fix_age_s ≤ 60 min
     distance_m: float = 0.0
     configured_lat: float = 0.0
     configured_lon: float = 0.0
@@ -48,6 +50,8 @@ def gpsd_status() -> GpsdStatusResponse:
         lon=fix.lon,
         alt_m=fix.alt,
         gps_time=fix.gps_time,
+        fix_age_s=fix.fix_age_s,
+        is_fresh=fix.is_fresh(),
         distance_m=round(dist, 1),
         configured_lat=config.OBSERVER_LAT,
         configured_lon=config.OBSERVER_LON,

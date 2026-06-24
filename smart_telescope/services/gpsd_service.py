@@ -2,9 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from math import atan2, cos, radians, sin, sqrt
+
+_log = logging.getLogger(__name__)
+
+_MAX_FIX_AGE_MINUTES = 60  # CFG-002: reject fixes older than this
 
 
 @dataclass
@@ -15,6 +21,13 @@ class GpsdFix:
     gps_time: str | None  # ISO-8601 UTC from GPS receiver
     mode: int             # 0=unknown, 1=no_fix, 2=2D_fix, 3=3D_fix
     hdop: float | None
+    fix_age_s: float | None = field(default=None)  # seconds since GPS timestamp
+
+    def is_fresh(self, max_age_minutes: int = _MAX_FIX_AGE_MINUTES) -> bool:
+        """Return True if the GPS fix is younger than max_age_minutes (CFG-002)."""
+        if self.fix_age_s is None:
+            return False
+        return self.fix_age_s <= max_age_minutes * 60.0
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -59,14 +72,40 @@ class GpsdService:
                         except json.JSONDecodeError:
                             continue
                         if obj.get("class") == "TPV":
-                            return GpsdFix(
+                            gps_time = obj.get("time")
+                            fix_age_s: float | None = None
+                            if gps_time:
+                                try:
+                                    gps_dt = datetime.fromisoformat(
+                                        gps_time.replace("Z", "+00:00")
+                                    )
+                                    fix_age_s = (
+                                        datetime.now(timezone.utc) - gps_dt
+                                    ).total_seconds()
+                                except ValueError:
+                                    pass
+                            fix = GpsdFix(
                                 lat=float(obj.get("lat", 0.0)),
                                 lon=float(obj.get("lon", 0.0)),
                                 alt=float(obj["alt"]) if "alt" in obj else None,
-                                gps_time=obj.get("time"),
+                                gps_time=gps_time,
                                 mode=int(obj.get("mode", 0)),
                                 hdop=float(obj["hdop"]) if "hdop" in obj else None,
+                                fix_age_s=fix_age_s,
                             )
+                            if fix.is_fresh():
+                                _log.debug(
+                                    "GPS master source: GPSD fix age=%.0fs (fresh)",
+                                    fix_age_s,
+                                )
+                            else:
+                                _log.warning(
+                                    "GPS fix is stale (age=%.0fs > %dm) — "
+                                    "falling back to system/config",
+                                    fix_age_s if fix_age_s is not None else -1,
+                                    _MAX_FIX_AGE_MINUTES,
+                                )
+                            return fix
         except (ConnectionRefusedError, TimeoutError, OSError):
             pass
         return None

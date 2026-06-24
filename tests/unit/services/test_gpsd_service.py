@@ -118,3 +118,75 @@ class TestGpsdServiceGetFix:
         with patch("socket.create_connection", return_value=sock):
             fix = self._service().get_fix()
         assert fix is None
+
+
+# ── CFG-002: fix age validation ───────────────────────────────────────────────
+
+class TestGpsdFixAge:
+    def _make_fix(self, age_minutes: float, gps_time: str | None = None) -> "GpsdFix":
+        from datetime import datetime, timezone, timedelta
+        if gps_time is None and age_minutes >= 0:
+            ts = datetime.now(timezone.utc) - timedelta(minutes=age_minutes)
+            gps_time = ts.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        fix_age_s = age_minutes * 60.0 if gps_time is not None else None
+        return GpsdFix(
+            lat=50.0, lon=8.0, alt=None,
+            gps_time=gps_time, mode=3, hdop=1.0,
+            fix_age_s=fix_age_s,
+        )
+
+    def test_fresh_fix_within_60_minutes(self) -> None:
+        fix = self._make_fix(30.0)
+        assert fix.is_fresh() is True
+
+    def test_stale_fix_over_60_minutes(self) -> None:
+        fix = self._make_fix(90.0)
+        assert fix.is_fresh() is False
+
+    def test_fix_exactly_at_boundary_is_fresh(self) -> None:
+        fix = self._make_fix(60.0)
+        assert fix.is_fresh() is True
+
+    def test_no_gps_time_is_not_fresh(self) -> None:
+        fix = GpsdFix(lat=50.0, lon=8.0, alt=None, gps_time=None, mode=3, hdop=None, fix_age_s=None)
+        assert fix.is_fresh() is False
+
+    def test_fix_age_computed_from_gps_time(self) -> None:
+        import json
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        svc = GpsdService(host="127.0.0.1", port=2947, timeout_s=1.0)
+        gps_ts = datetime.now(timezone.utc) - timedelta(minutes=10)
+        gps_time_str = gps_ts.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        tpv = {"class": "TPV", "lat": 51.0, "lon": 9.0, "mode": 3, "time": gps_time_str}
+        payload = (json.dumps(tpv) + "\n").encode()
+        sock = MagicMock()
+        sock.recv.side_effect = [payload, b""]
+        sock.__enter__ = lambda s: s
+        sock.__exit__ = MagicMock(return_value=False)
+        with patch("socket.create_connection", return_value=sock):
+            fix = svc.get_fix()
+        assert fix is not None
+        assert fix.fix_age_s is not None
+        assert 590 <= fix.fix_age_s <= 620  # 10 min ± some tolerance
+
+    def test_stale_fix_logs_warning(self) -> None:
+        import json
+        from unittest.mock import patch
+        from datetime import datetime, timezone, timedelta
+        import logging
+        svc = GpsdService(host="127.0.0.1", port=2947, timeout_s=1.0)
+        gps_ts = datetime.now(timezone.utc) - timedelta(minutes=90)
+        gps_time_str = gps_ts.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        tpv = {"class": "TPV", "lat": 51.0, "lon": 9.0, "mode": 3, "time": gps_time_str}
+        payload = (json.dumps(tpv) + "\n").encode()
+        sock = MagicMock()
+        sock.recv.side_effect = [payload, b""]
+        sock.__enter__ = lambda s: s
+        sock.__exit__ = MagicMock(return_value=False)
+        with patch("socket.create_connection", return_value=sock):
+            with patch("smart_telescope.services.gpsd_service._log") as mock_log:
+                fix = svc.get_fix()
+        assert fix is not None
+        assert not fix.is_fresh()
+        mock_log.warning.assert_called_once()

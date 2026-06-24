@@ -93,6 +93,18 @@ class TestDonutOverlayFields:
     def test_error_magnitude(self):
         assert self.overlay.error_magnitude_px == pytest.approx(8.0)
 
+    def test_circle_center_displacement_equals_error_magnitude(self):
+        # M7-008: circle_center_displacement_px is the Euclidean center distance
+        assert self.overlay.circle_center_displacement_px == pytest.approx(
+            self.overlay.error_magnitude_px
+        )
+
+    def test_circle_center_displacement_zero_when_perfect(self):
+        # 0.0 px displacement → perfectly collimated
+        m = _measurement(inner_cx=128.0)  # inner == outer center
+        overlay = build_donut_overlay(m)
+        assert overlay.circle_center_displacement_px == pytest.approx(0.0, abs=0.5)
+
     def test_three_screws(self):
         assert len(self.overlay.screws) == 3
 

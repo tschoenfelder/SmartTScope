@@ -52,6 +52,7 @@ class DonutOverlay:
     error_x_px: float
     error_y_px: float
     error_magnitude_px: float
+    circle_center_displacement_px: float   # M7-008: alias for error_magnitude_px; 0.0 = perfect
     error_angle_deg: float
     traffic_light: str          # "green" | "yellow" | "red"
     screws: list[ScrewMarker]
@@ -109,6 +110,7 @@ def build_donut_overlay(
         error_x_px=measurement.error_x_px,
         error_y_px=measurement.error_y_px,
         error_magnitude_px=measurement.error_magnitude_px,
+        circle_center_displacement_px=measurement.error_magnitude_px,
         error_angle_deg=measurement.error_angle_deg,
         traffic_light=traffic_light,
         screws=screws,

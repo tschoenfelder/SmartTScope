@@ -265,6 +265,7 @@ def archive_replay(session_id: str, frame_stem: str) -> dict[str, Any]:
                 "error_x_px": d.error_x_px,
                 "error_y_px": d.error_y_px,
                 "error_magnitude_px": d.error_magnitude_px,
+                "circle_center_displacement_px": d.error_magnitude_px,
                 "confidence": d.confidence,
             }
         else:

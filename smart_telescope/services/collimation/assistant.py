@@ -204,13 +204,14 @@ class CollimationAssistant:
                     d = f.donut
                     r = d.outer_ring.mean_radius
                     meas["donut"] = {
-                        "error_x_px":           d.error_x_px,
-                        "error_y_px":           d.error_y_px,
-                        "error_magnitude_px":   d.error_magnitude_px,
-                        "error_fraction":       d.error_magnitude_px / r if r > 0 else 0.0,
-                        "outer_radius_px":      r,
-                        "confidence":           d.confidence,
-                        "is_collimated":        d.is_collimated,
+                        "error_x_px":                    d.error_x_px,
+                        "error_y_px":                    d.error_y_px,
+                        "error_magnitude_px":            d.error_magnitude_px,
+                        "circle_center_displacement_px": d.error_magnitude_px,
+                        "error_fraction":                d.error_magnitude_px / r if r > 0 else 0.0,
+                        "outer_radius_px":               r,
+                        "confidence":                    d.confidence,
+                        "is_collimated":                 d.is_collimated,
                     }
                 if f.spike:
                     s = f.spike
@@ -773,6 +774,7 @@ class CollimationAssistant:
                             "error_x_px": donut.error_x_px,
                             "error_y_px": donut.error_y_px,
                             "error_magnitude_px": donut.error_magnitude_px,
+                            "circle_center_displacement_px": donut.error_magnitude_px,
                             "confidence": donut.confidence,
                         },
                     )

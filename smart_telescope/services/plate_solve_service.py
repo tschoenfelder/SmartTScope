@@ -66,8 +66,9 @@ class PlateSolveService:
         result = svc.solve(frame, scale_hint) # blocks; sets SUCCESS or FAILED
     """
 
-    def __init__(self, solver: "AstapSolver") -> None:
+    def __init__(self, solver: "AstapSolver", max_retries: int = 5) -> None:
         self._solver = solver
+        self._max_retries = max_retries
         self._lock = threading.Lock()
         self._state = PlateSolveState.IDLE
         self._autogain_done: bool = False
@@ -121,6 +122,11 @@ class PlateSolveService:
                 raise PlateSolveError(
                     "Plate solving requires auto-gain with reason PLATE_SOLVE to complete first (PS-001). "
                     "Call mark_autogain_complete() after auto-gain finishes."
+                )
+            if self._retry_count >= self._max_retries:
+                raise PlateSolveError(
+                    f"Plate-solve retry limit reached ({self._max_retries}). "
+                    "Call reset() to start a new session."
                 )
             self._state = PlateSolveState.SOLVING
             self._retry_count += 1

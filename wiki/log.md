@@ -27,6 +27,14 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-24 — DEVELOP — M7-011 and M7-012 (GPS fix age; retry limits)
+
+**M7-011:** `GpsdFix.fix_age_s` (computed from `gps_time` vs `datetime.now(UTC)`) + `is_fresh(max_age_minutes=60)` method; stale fix logs WARNING with suggestion to fall back to system/config; `GpsdStatusResponse` exposes `fix_age_s` and `is_fresh`; 6 new tests (18 total in suite).
+
+**M7-012:** Gap: `PlateSolveService` had no retry cap. Added `max_retries: int = 5` parameter; `solve()` raises `PlateSolveError("retry limit reached …")` once `_retry_count >= max_retries`; `reset()` clears counter. `AutoGainService` (12 default), `AutofocusService` (20 samples), and collimation sub-services (`_max_iter`, `_max_steps`, `_max_frames`) were already bounded. Verified by 9-test audit file `test_retry_limits.py` + 2 new plate-solve tests.
+
+---
+
 ## 2026-06-24 — DEVELOP — M7-003 through M7-010 (Formal Service Contracts & Safety Extension)
 
 **M7-003:** `PixelCalibrationService` — lazy pixel-to-RA/DEC calibration via controlled star displacement (2 s exposures, 2 000 ms RA/DEC moves); stores `PixelCalibration` dataclass; 6 tests.

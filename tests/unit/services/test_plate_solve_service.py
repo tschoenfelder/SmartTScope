@@ -118,3 +118,36 @@ def test_solver_name_is_astap():
     svc.mark_autogain_complete()
     result = svc.solve(_frame(), pixel_scale_hint=0.295)
     assert result.solver_name == "ASTAP"
+
+
+# ── M7-012: max_retries cap (SAFE-004) ───────────────────────────────────────
+
+def test_retry_limit_raises_after_max_retries():
+    """solve() raises PlateSolveError once max_retries is exhausted (SAFE-004)."""
+    solver = _mock_solver(success=False)
+    svc = PlateSolveService(solver, max_retries=3)
+    svc.mark_autogain_complete()
+
+    for _ in range(3):
+        svc.solve(_frame(), pixel_scale_hint=0.295)
+
+    assert svc.retry_count == 3
+    with pytest.raises(PlateSolveError, match="retry limit"):
+        svc.solve(_frame(), pixel_scale_hint=0.295)
+
+
+def test_reset_allows_retries_again():
+    """After reset(), the retry counter resets and solving is permitted again."""
+    solver = _mock_solver(success=False)
+    svc = PlateSolveService(solver, max_retries=2)
+    svc.mark_autogain_complete()
+
+    svc.solve(_frame(), pixel_scale_hint=0.295)
+    svc.solve(_frame(), pixel_scale_hint=0.295)
+    with pytest.raises(PlateSolveError, match="retry limit"):
+        svc.solve(_frame(), pixel_scale_hint=0.295)
+
+    svc.reset()
+    svc.mark_autogain_complete()
+    result = svc.solve(_frame(), pixel_scale_hint=0.295)
+    assert result is not None  # no exception raised

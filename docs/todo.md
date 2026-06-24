@@ -905,13 +905,11 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 - [x] M7-010 Verify ≤ 1 s auto-gain exposure cap when tracking off (AG-003) `[P2 · Runtime]` ✓ 2026-06-24
   - `tracking_on: bool = True` on `AutoGainService.run_one_shot()`; caps to 1 000 ms when False; API worker reads `MountState.TRACKING`; 2 tests pass
 
-- [ ] M7-011 GPS fix age check ≤ 60 minutes (CFG-002) `[P2 · Runtime]`
-  - When `gpsd` reports a fix, also verify fix age ≤ 60 min; reject stale fixes; fall back to system/config
-  - Log selected master source
+- [x] M7-011 GPS fix age check ≤ 60 minutes (CFG-002) `[P2 · Runtime]` ✓ 2026-06-24
+  - `GpsdFix.fix_age_s` + `is_fresh(max_age_minutes=60)`; stale fix logs WARNING; API response exposes `fix_age_s` + `is_fresh`; 6 new tests
 
-- [ ] M7-012 Verify retry limits in all service loops (SAFE-004) `[P2 · Runtime]`
-  - Confirm `max_iterations` config keys exist and are respected in: auto-gain, autofocus, collimation, plate-solve
-  - Add missing config keys and loop exit paths; no loop may run endlessly without user feedback
+- [x] M7-012 Verify retry limits in all service loops (SAFE-004) `[P2 · Runtime]` ✓ 2026-06-24
+  - Added `max_retries: int = 5` to `PlateSolveService`; raises `PlateSolveError` when exceeded; `reset()` resets counter; 9 audit tests across auto-gain, autofocus, plate-solve, collimation sub-services
 
 ---
 

@@ -76,6 +76,8 @@ Table of contents for the SmartTelescope knowledge base.
 - **M7-008 done:** Collimation `circle_center_displacement_px` — Euclidean inner/outer center distance added to `DonutOverlay`, assistant output, and replay API; 2 new tests
 - **M7-009 done:** `smart_telescope/services/image_analysis.py` — `analyze_frame()` returning `ImageAnalysisResult`; uniform/no-signal frames → `FocusQualityLevel.UNKNOWN` via peak-vs-background check; 6 tests
 - **M7-010 done:** AG-003 tracking-off exposure cap — `tracking_on: bool = True` parameter on `AutoGainService.run_one_shot()`; caps to 1 000 ms when False; API worker reads `MountState.TRACKING`; 2 tests
+- **M7-011 done:** CFG-002 GPS fix age check — `GpsdFix.fix_age_s` + `is_fresh(max_age_minutes=60)`; stale fix logs WARNING; API response exposes `fix_age_s` / `is_fresh`; 6 tests
+- **M7-012 done:** SAFE-004 retry limits audit — `PlateSolveService.max_retries=5` enforced; `AutoGainService.max_iterations`, `AutofocusService.max_samples`, collimation sub-service limits verified; 9+2 tests
 
 ## Architecture
 

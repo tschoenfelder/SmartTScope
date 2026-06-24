@@ -118,6 +118,14 @@ def _worker(
                 has_focuser = train.has_focuser and focuser_available
         except Exception:
             pass
+        # AG-003: cap exposure to 1 s when mount is not tracking
+        tracking_on = True
+        try:
+            from ..ports.mount import MountState
+            mount = deps.get_mount()
+            tracking_on = mount.get_state() == MountState.TRACKING
+        except Exception:
+            pass
         result = AutoGainService.run_one_shot(
             camera=camera,
             profile=profile,
@@ -127,6 +135,7 @@ def _worker(
             has_focuser=has_focuser,
             offset_service=rt.camera_offset_service,
             force=force,
+            tracking_on=tracking_on,
         )
     except Exception as exc:
         _log.error("AutoGain worker error: %s", exc)

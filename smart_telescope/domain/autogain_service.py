@@ -136,6 +136,7 @@ class AutoGainService:
         has_focuser: bool = True,
         offset_service: "CameraOffsetService | None" = None,
         force: bool = False,
+        tracking_on: bool = True,
     ) -> AutoGainResult:
         """Capture and adjust until histogram is in target band or limits are reached.
 
@@ -147,6 +148,7 @@ class AutoGainService:
             calibration_stats: HistogramStats from master bias for offset estimation.
             cancellation_flag: Set this Event to abort the loop (returns CANCELLED).
             max_iterations:    Safety cap on the number of capture–adjust cycles.
+            tracking_on:       When False, caps max exposure to 1 s (AG-003).
 
         Returns:
             AutoGainResult with the recommended settings and outcome status.
@@ -160,6 +162,9 @@ class AutoGainService:
         gain_max  = profile.max_gain
         exp_min_ms = profile.min_preview_exp_ms
         exp_max_ms = profile.max_preview_exp_ms
+        # AG-003: hard cap when mount is not tracking to prevent star trails
+        if not tracking_on:
+            exp_max_ms = min(exp_max_ms, 1_000.0)
 
         # Step 2: conversion gain
         cg = _select_conversion_gain(profile, mode)

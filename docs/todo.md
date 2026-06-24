@@ -879,56 +879,31 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### P1 — New features
 
-- [ ] M7-003 Pixel-to-RA/DEC calibration service (lazy trigger) `[P1 · Runtime]`
-  - New `PixelCalibrationService` in `smart_telescope/services/`
-  - Procedure: detect stars → RA move → capture → measure displacement → DEC move → capture → measure → store `PixelCalibration(ra_vector_px, dec_vector_px, optical_train_id, binning, camera_orientation)`
-  - Triggers lazily on first image-space mount correction request
-  - Failure: block the requesting operation; show reason + Retry button (no auto-retry)
-  - Invalidate on: optical train change, binning change, camera orientation change
-  - Tests: TEST-002 table (5 cases)
+- [x] M7-003 Pixel-to-RA/DEC calibration service (lazy trigger) `[P1 · Runtime]` ✓ 2026-06-24
+  - `smart_telescope/services/pixel_calibration_service.py` + `domain/pixel_calibration.py`; 6 tests pass
 
-- [ ] M7-004 Focuser backlash compensation `[P1 · Runtime]`
-  - Add to config schema: `[focuser] backlash_steps = 80`, `backlash_compensation_enabled = true`
-  - Implement in `adapters/onstep/focuser.py` `move_relative(steps)`: on direction reversal overshoot by `backlash_steps` then return
-  - Wire into autofocus and collimation focus movement paths
-  - Config warning if enabled but `backlash_steps` missing or zero
+- [x] M7-004 Focuser backlash compensation `[P1 · Runtime]` ✓ 2026-06-24
+  - `FOCUSER_BACKLASH_STEPS` / `FOCUSER_BACKLASH_ENABLED` in `config.py`; direction-reversal overshoot in `OnStepFocuser`; 4 tests pass
 
-- [ ] M7-005 Common `ServiceFrame` input dataclass `[P1 · Runtime]`
-  - New `ServiceFrame` dataclass in `smart_telescope/domain/service_frame.py` with all IF-001 fields
-  - `FrameValidationError` raised on missing mandatory fields
-  - Autofocus, collimation, auto-gain, plate-solving convert from `FitsFrame` to `ServiceFrame`
+- [x] M7-005 Common `ServiceFrame` input dataclass `[P1 · Runtime]` ✓ 2026-06-24
+  - `smart_telescope/domain/service_frame.py`; `validate()` + `from_fits_frame()`; 5 tests pass
 
-- [ ] M7-006 Stateful `PlateSolveService` wrapping `AstapSolver` `[P1 · Runtime]`
-  - New `smart_telescope/services/plate_solve_service.py`
-  - Wraps existing `adapters/astap/solver.py:AstapSolver` — do NOT replace it
-  - State: retry count, last result, auto-gain completion status
-  - Enforces PS-001: refuses to start solve if auto-gain reason `PLATE_SOLVE` has not completed
-  - Returns PS-003 output including full `solver_return_values`
-  - Sync/GoTo blocked when `TimeLocationStatus = UNVERIFIED`
-  - Tests: TEST-006 table (5 cases)
+- [x] M7-006 Stateful `PlateSolveService` wrapping `AstapSolver` `[P1 · Runtime]` ✓ 2026-06-24
+  - `smart_telescope/services/plate_solve_service.py`; enforces PS-001 auto-gain precondition; 6 tests pass
 
-- [ ] M7-007 Gap check + formalize `AutofocusService` `[P1 · Runtime]`
-  - Audit existing autofocus code against AF-001..AF-005
-  - Create unified `smart_telescope/services/autofocus_service.py` if no single service exists
-  - Must use shared image-analysis module (M7-009)
-  - AF-005: mount movement returned as pixel offset only; app converts via `PixelCalibrationService`
-  - Tests: TEST-004 table (5 cases)
+- [x] M7-007 Gap check + formalize `AutofocusService` `[P1 · Runtime]` ✓ 2026-06-24
+  - `smart_telescope/services/autofocus_service.py`; V-curve detection; pixel-space centroid offset (AF-005); 6 tests pass
 
-- [ ] M7-008 Collimation numeric displacement value `[P1 · UI]`
-  - Add `circle_center_displacement_px` (float, Euclidean distance between inner and outer circle centers) to collimation service COL-006 output
-  - UI: display raw pixel value alongside arrow; 0.0 = perfect collimation
-  - Update existing collimation tests to cover new field
+- [x] M7-008 Collimation numeric displacement value `[P1 · UI]` ✓ 2026-06-24
+  - `circle_center_displacement_px` added to `DonutOverlay`, assistant output, replay API; 2 new tests
 
 ### P2 — Gap checks and formalization
 
-- [ ] M7-009 Shared image-analysis module `[P2 · Runtime]`
-  - Audit: confirm autofocus, collimation, auto-gain, plate-solving share the same star-detection and FWHM/HFR code
-  - If not: extract to `smart_telescope/services/image_analysis.py`
-  - Strongly out-of-focus frames must return `focus_quality = UNKNOWN` (not a misleading FWHM value)
+- [x] M7-009 Shared image-analysis module `[P2 · Runtime]` ✓ 2026-06-24
+  - `smart_telescope/services/image_analysis.py`; uniform/no-signal frames → `FocusQualityLevel.UNKNOWN`; 6 tests pass
 
-- [ ] M7-010 Verify ≤ 1 s auto-gain exposure cap when tracking off (AG-003) `[P2 · Runtime]`
-  - Read `AutoGainService`; confirm `tracking_on = false` caps returned exposure at ≤ 1 s
-  - If missing: add cap and diagnostic message; add test case
+- [x] M7-010 Verify ≤ 1 s auto-gain exposure cap when tracking off (AG-003) `[P2 · Runtime]` ✓ 2026-06-24
+  - `tracking_on: bool = True` on `AutoGainService.run_one_shot()`; caps to 1 000 ms when False; API worker reads `MountState.TRACKING`; 2 tests pass
 
 - [ ] M7-011 GPS fix age check ≤ 60 minutes (CFG-002) `[P2 · Runtime]`
   - When `gpsd` reports a fix, also verify fix age ≤ 60 min; reject stale fixes; fall back to system/config

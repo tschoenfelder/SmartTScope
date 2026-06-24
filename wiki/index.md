@@ -66,6 +66,17 @@ Table of contents for the SmartTelescope knowledge base.
 - [camera-adapter integration design](../docs/superpowers/specs/2026-05-22-camera-adapter-integration-design.md) — Copy-on-release model; ownership table; sync script design; merge steps for 2026-05-22 release
 - [camera-adapter integration plan](../docs/superpowers/plans/2026-05-22-camera-adapter-integration.md) — 8-task implementation plan: new domain/tools files, camera.py replacement, config/runtime updates, sync infrastructure
 
+## Service Contracts (M7)
+
+- **M7-003 done:** `PixelCalibrationService` — lazy pixel-to-RA/DEC calibration via RA/DEC star-displacement moves; stores `PixelCalibration(ra_vector_px, dec_vector_px, optical_train_id, binning, camera_orientation_deg)`; 6 tests
+- **M7-004 done:** Focuser backlash compensation — `FOCUSER_BACKLASH_STEPS` / `FOCUSER_BACKLASH_ENABLED` config; overshoot-then-return in `OnStepFocuser.move_absolute()` on direction reversal; 4 tests
+- **M7-005 done:** `ServiceFrame` common frozen dataclass with all mandatory/optional fields (IF-001); `validate()` raises `FrameValidationError`; `from_fits_frame()` factory; 5 tests
+- **M7-006 done:** `PlateSolveService` — stateful wrapper around `AstapSolver`; enforces auto-gain precondition (PS-001); `SolveOutput` includes back-calculated focal length, pixel scale, field rotation; 6 tests
+- **M7-007 done:** `AutofocusService` — V-curve sampler; returns `AutofocusRecommendation` with signed `focus_movement_steps` and pixel-space centroid offset (not RA/DEC per AF-005); 6 tests
+- **M7-008 done:** Collimation `circle_center_displacement_px` — Euclidean inner/outer center distance added to `DonutOverlay`, assistant output, and replay API; 2 new tests
+- **M7-009 done:** `smart_telescope/services/image_analysis.py` — `analyze_frame()` returning `ImageAnalysisResult`; uniform/no-signal frames → `FocusQualityLevel.UNKNOWN` via peak-vs-background check; 6 tests
+- **M7-010 done:** AG-003 tracking-off exposure cap — `tracking_on: bool = True` parameter on `AutoGainService.run_one_shot()`; caps to 1 000 ms when False; API worker reads `MountState.TRACKING`; 2 tests
+
 ## Architecture
 
 - [job-manager](job-manager.md) — `JobManager` service: resource ownership model, `submit()`/`claim()`/`release()` modes, cancellation, timeout policy

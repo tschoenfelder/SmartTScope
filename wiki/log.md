@@ -27,6 +27,26 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-24 — DEVELOP — M7-003 through M7-010 (Formal Service Contracts & Safety Extension)
+
+**M7-003:** `PixelCalibrationService` — lazy pixel-to-RA/DEC calibration via controlled star displacement (2 s exposures, 2 000 ms RA/DEC moves); stores `PixelCalibration` dataclass; 6 tests.
+
+**M7-004:** Focuser backlash compensation — `FOCUSER_BACKLASH_STEPS` / `FOCUSER_BACKLASH_ENABLED` config; direction-reversal overshoot in `OnStepFocuser.move_absolute()`; 4 tests.
+
+**M7-005:** `ServiceFrame` — common frozen dataclass unifying all image-processing service inputs; `validate()` raises `FrameValidationError` on missing mandatory fields; `from_fits_frame()` factory; 5 tests.
+
+**M7-006:** `PlateSolveService` — stateful wrapper around `AstapSolver`; enforces auto-gain precondition (PS-001); exposes `SolveOutput` with focal-length and pixel-scale back-calculation; 6 tests.
+
+**M7-007:** `AutofocusService` — frame-by-frame V-curve sampler; detects minimum when HFD rises on both sides; returns signed `focus_movement_steps` + pixel-space centroid offset (not RA/DEC); 6 tests.
+
+**M7-008:** Collimation `circle_center_displacement_px` — alias for `error_magnitude_px` (Euclidean inner/outer center distance in pixels) added to `DonutOverlay`, assistant history, live output, and replay endpoint; 2 new tests (27 total in suite).
+
+**M7-009:** `smart_telescope/services/image_analysis.py` — unified `analyze_frame()` returning `ImageAnalysisResult`; classifies uniform/no-signal frames as `FocusQualityLevel.UNKNOWN` via peak-vs-background check; 6 tests.
+
+**M7-010:** AG-003 tracking-off exposure cap — added `tracking_on: bool = True` to `AutoGainService.run_one_shot()`; caps `exp_max_ms = min(exp_max_ms, 1000.0)` when False; API worker reads `MountState.TRACKING` and wires flag; 2 tests.
+
+---
+
 ## 2026-06-24 — FIX — Pixel scale wrong for C8 + ATR585M; ASTAP failure logging (4 files)
 
 **Root cause:** Pixel scale defaults assumed a different camera (~3.75 µm pixels) rather than ATR585M (2.9 µm). ASTAP only searches ±10% of the given scale, so 0.38 "/px ± 10% never covers the actual 0.295 "/px → `PLATESOLVED=F` on every solve attempt.

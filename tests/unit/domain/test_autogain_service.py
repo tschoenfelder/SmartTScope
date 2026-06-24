@@ -776,3 +776,44 @@ class TestCancelLatency:
 
         assert elapsed, "service never returned"
         assert elapsed[0] < 1.0, f"cancel took {elapsed[0]:.2f}s — must be < 1 s"
+
+
+# ── AG-003: exposure cap when tracking is off ─────────────────────────────────
+
+class TestTrackingOffExposureCap:
+    def test_tracking_off_caps_exp_max_to_1000ms(self) -> None:
+        """When tracking_on=False, exp_max_ms is capped at 1000 ms (AG-003)."""
+        captured_exp: list[float] = []
+
+        class _CapturingCamera(_SeqCamera):
+            def capture(self, exposure_s: float) -> "FitsFrame":
+                captured_exp.append(exposure_s * 1000.0)
+                return super().capture(exposure_s)
+
+        # Profile has max 4000 ms; with tracking off we must never exceed 1000 ms
+        cam = _CapturingCamera([_frame(0.5)])  # already in band → exits after 1 capture
+        AutoGainService.run_one_shot(cam, _PROFILE, tracking_on=False, max_iterations=3)
+
+        assert captured_exp, "no capture took place"
+        assert max(captured_exp) <= 1000.0, (
+            f"exposure exceeded 1 s cap: {max(captured_exp):.1f} ms"
+        )
+
+    def test_tracking_on_does_not_cap_exp_max(self) -> None:
+        """When tracking_on=True (default), exp_max is taken from the profile."""
+        captured_exp: list[float] = []
+
+        class _CapturingCamera(_SeqCamera):
+            def capture(self, exposure_s: float) -> "FitsFrame":
+                captured_exp.append(exposure_s * 1000.0)
+                return super().capture(exposure_s)
+
+        # Very dim frame → service will want to increase exposure beyond 1000 ms
+        cam = _CapturingCamera([_frame(0.001)] * 15)
+        AutoGainService.run_one_shot(cam, _PROFILE, tracking_on=True, max_iterations=15)
+
+        # At least one capture should exceed 1000 ms (profile allows up to 4000 ms)
+        assert any(e > 1000.0 for e in captured_exp), (
+            "expected at least one capture > 1000 ms when tracking is on, "
+            f"got: {captured_exp}"
+        )

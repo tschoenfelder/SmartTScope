@@ -28,20 +28,41 @@ class OnStepFocuser(FocuserPort):
 
     Args:
         bus: OnStepSerialBus instance obtained from OnStepMount.serial_bus.
+        backlash_steps: steps to overshoot on direction reversal (0 = disabled).
+        backlash_enabled: master switch; overrides backlash_steps when False.
     """
 
     def __init__(
         self,
         bus: OnStepSerialBus,
         safety_config: OnStepSafetyConfig | None = None,
+        backlash_steps: int | None = None,
+        backlash_enabled: bool | None = None,
     ) -> None:
         if safety_config is None:
             from .mount import _default_safety_config
             safety_config = _default_safety_config()
+
+        if backlash_enabled is None or backlash_steps is None:
+            from ... import config as _cfg
+            if backlash_enabled is None:
+                backlash_enabled = _cfg.FOCUSER_BACKLASH_ENABLED
+            if backlash_steps is None:
+                backlash_steps = _cfg.FOCUSER_BACKLASH_STEPS
+
         self._bus = bus
         self._safety_config = safety_config
         self._available: bool = False
         self._max_position: int = 0
+        # M7-004: backlash compensation
+        self._backlash_steps: int = max(0, backlash_steps)
+        self._backlash_enabled: bool = backlash_enabled
+        self._last_direction: int = 0   # +1 = inward (larger pos), -1 = outward
+        if self._backlash_enabled and self._backlash_steps == 0:
+            _log.warning(
+                "OnStepFocuser: backlash_compensation_enabled=true but backlash_steps=0 "
+                "— compensation will have no effect; set [focuser] backlash_steps in config"
+            )
 
     # ── FocuserPort ───────────────────────────────────────────────────────────
 
@@ -130,7 +151,25 @@ class OnStepFocuser(FocuserPort):
             ))
         _log.info("OnStepFocuser.move(): steps=%d", steps)
         start_position = self.get_position() if self._available else 0
-        reply = self._bus.send_fixed(f":FS{steps}#", size=1, timeout=1.0)
+
+        # M7-004: backlash compensation — overshoot on direction reversal
+        actual_target = steps
+        if self._backlash_enabled and self._backlash_steps > 0:
+            new_direction = 1 if steps > start_position else (-1 if steps < start_position else 0)
+            if new_direction != 0 and self._last_direction != 0 and new_direction != self._last_direction:
+                overshoot = steps - self._backlash_steps * new_direction
+                overshoot = max(min_pos, min(max_pos, overshoot))
+                _log.info(
+                    "OnStepFocuser: backlash reversal detected — overshoot to %d then return to %d",
+                    overshoot, steps,
+                )
+                reply_os = self._bus.send_fixed(f":FS{overshoot}#", size=1, timeout=1.0)
+                if reply_os != "1":
+                    _log.warning("OnStepFocuser: backlash overshoot move rejected (reply=%r)", reply_os)
+            if new_direction != 0:
+                self._last_direction = new_direction
+
+        reply = self._bus.send_fixed(f":FS{actual_target}#", size=1, timeout=1.0)
         if reply != "1":
             raise OnStepSafetyError(SafetyViolation(
                 reason="focuser_move_rejected",

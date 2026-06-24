@@ -261,6 +261,15 @@ CAMERA_OFFSETS: dict[str, dict[str, int]] = _parse_camera_offsets()
 ASTAP_PATH: str        = _get("astap", "path",        "")
 ASTAP_CATALOG_DIR: str = _get("astap", "catalog_dir", "")
 
+# ── focuser backlash (M7-004 / CFG-004) ──────────────────────────────────────
+
+FOCUSER_BACKLASH_STEPS: int = int(os.environ.get(
+    "FOCUSER_BACKLASH_STEPS", _get("focuser", "backlash_steps", "80")
+))
+FOCUSER_BACKLASH_ENABLED: bool = (os.environ.get(
+    "FOCUSER_BACKLASH_ENABLED", _get("focuser", "backlash_compensation_enabled", "false")
+).lower() not in ("false", "0", "no", ""))
+
 # ── mount limits ─────────────────────────────────────────────────────────────
 
 MOUNT_MIN_ALT_DEG: float     = float(os.environ.get("MOUNT_MIN_ALT_DEG",     _get("mount_limits", "min_alt_deg",     "10.0")))

@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 from smart_telescope.api import deps
 from smart_telescope.app import app
 from smart_telescope.domain.solar import SolarPosition
+from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
+from smart_telescope.services.device_state import DeviceStateService
 
 client = TestClient(app)
 
@@ -47,8 +49,17 @@ def _reset_deps() -> None:
     deps.reset()
 
 
-def _inject(mount: MagicMock) -> None:
+def _verified_ds() -> DeviceStateService:
+    """Return a DeviceStateService pre-set to VERIFIED for tests that don't care about tl guards."""
+    ds = DeviceStateService()
+    ds.set_time_location_status(TimeLocationStatus.VERIFIED)
+    return ds
+
+
+def _inject(mount: MagicMock, *, device_state: DeviceStateService | None = None) -> None:
     app.dependency_overrides[deps.get_mount] = lambda: mount
+    ds = device_state if device_state is not None else _verified_ds()
+    app.dependency_overrides[deps.get_device_state] = lambda: ds
 
 
 # ── GET /api/mount/status ──────────────────────────────────────────────────────
@@ -528,7 +539,8 @@ class TestMountSyncClock:
         _inject(m)
         resp = client.post("/api/mount/sync_clock")
         assert resp.status_code == 200
-        assert resp.json() == {"ok": True}
+        assert resp.json()["ok"] is True
+        assert resp.json()["time_location_status"] == "VERIFIED"
 
     def test_calls_ensure_time_location_synced(self) -> None:
         m = _mock_mount()
@@ -552,6 +564,7 @@ def _inject_all(mount, camera=None, solver=None) -> None:
     app.dependency_overrides[deps.get_mount]  = lambda: mount
     app.dependency_overrides[deps.get_camera] = lambda: (camera or MockCamera())
     app.dependency_overrides[deps.get_solver] = lambda: (solver or MockSolver())
+    app.dependency_overrides[deps.get_device_state] = lambda: _verified_ds()
 
 
 class TestMountGotoAndCenter:

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..domain.solar import is_solar_target
+from ..domain.time_location_status import TimeLocationStatus
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
@@ -88,6 +89,8 @@ class MountStatus(BaseModel):
     watchdog_warning: str | None = None
     # adapter safety lock (populated when OnStep safety system blocks movement)
     safety_violation: str | None = None
+    # M7-002: time/location verification status (UNKNOWN / VERIFIED / UNVERIFIED)
+    time_location_status: str = "UNKNOWN"
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -205,6 +208,7 @@ def mount_status(
         last_command_error=cmd_err,
         watchdog_warning=device_state.get_watchdog_warning(),
         safety_violation=observed.safety_violation if observed else None,
+        time_location_status=device_state.get_time_location_status().name,
     )
 
 
@@ -227,6 +231,14 @@ def mount_track(
     mount:        MountPort          = Depends(deps.get_mount),
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
+    # M7-002: block tracking when time/location is unverified or unknown
+    tl = device_state.get_time_location_status()
+    if tl != TimeLocationStatus.VERIFIED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Tracking blocked: time/location status is {tl.name}. "
+                   "Verify OnStep time and location before enabling tracking.",
+        )
     device_state.record_command("track")
     try:
         mount_ops.track_sequence(mount)
@@ -255,6 +267,14 @@ def mount_goto(
     device_state: DeviceStateService = Depends(deps.get_device_state),
     confirm_solar: bool = Query(default=False),
 ) -> dict[str, bool]:
+    # M7-002: block automatic GoTo when time/location is not verified
+    tl = device_state.get_time_location_status()
+    if tl != TimeLocationStatus.VERIFIED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"GoTo blocked: time/location status is {tl.name}. "
+                   "Verify OnStep time and location before issuing a GoTo.",
+        )
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:
@@ -277,8 +297,17 @@ class SyncRequest(BaseModel):
 def mount_sync(
     body: SyncRequest,
     mount: MountPort = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
     """Tell the mount it is currently pointing at the given RA/Dec."""
+    # M7-002: automatic sync (plate-solve sync) is blocked when time/location unverified
+    tl = device_state.get_time_location_status()
+    if tl != TimeLocationStatus.VERIFIED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Mount sync blocked: time/location status is {tl.name}. "
+                   "Verify OnStep time and location first.",
+        )
     ok = mount.sync(body.ra, body.dec)
     if not ok:
         raise HTTPException(status_code=500, detail="Mount sync failed")
@@ -288,17 +317,33 @@ def mount_sync(
 @router.post("/sync_clock")
 def mount_sync_clock(
     mount: MountPort = Depends(deps.get_mount),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict:
     """Push Pi system time and configured observer location into OnStep.
 
-    Equivalent to the automatic sync that runs before every GoTo.
-    Clears the onstep_clock_invalid safety lock when successful.
+    This is the user-confirmation endpoint for the M7-001 interactive startup
+    dialog: the UI calls this after the user approves the time/location push.
+    Sets TimeLocationStatus to VERIFIED on success.
     """
     try:
         mount.ensure_time_location_synced()
-        return {"ok": True}
+        device_state.set_time_location_status(TimeLocationStatus.VERIFIED)
+        return {"ok": True, "time_location_status": "VERIFIED"}
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/time_location_skip")
+def mount_time_location_skip(
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict:
+    """User chose to skip the time/location push.
+
+    Sets TimeLocationStatus to UNVERIFIED.  GoTo, tracking enable and automatic
+    sync will be blocked until the user reconnects and verifies.
+    """
+    device_state.set_time_location_status(TimeLocationStatus.UNVERIFIED)
+    return {"ok": True, "time_location_status": "UNVERIFIED"}
 
 
 @router.post("/home")
@@ -505,9 +550,18 @@ async def mount_goto_and_center(
     mount:       MountPort  = Depends(deps.get_mount),
     solver:      SolverPort = Depends(deps.get_solver),
     coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
     confirm_solar: bool = Query(default=False),
 ) -> GotoAndCenterResponse:
     """Goto target, plate-solve, sync, and refine until centered."""
+    # M7-002: block automatic GoTo when time/location is not verified
+    tl = device_state.get_time_location_status()
+    if tl != TimeLocationStatus.VERIFIED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"GoTo blocked: time/location status is {tl.name}. "
+                   "Verify OnStep time and location before issuing a GoTo.",
+        )
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:

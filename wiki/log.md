@@ -4,6 +4,29 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-24 — INGEST — smarttscope_additional_requirements.md v1.0
+
+**Source:** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
+
+**New milestone M7 added to `docs/todo.md`** (12 tasks, M7-001..M7-012):
+
+- M7-001/M7-002 (P0): Replace silent `ensure_time_location_synced()` auto-sync with interactive startup dialog; add `TimeLocationStatus {UNKNOWN, VERIFIED, UNVERIFIED}` as orthogonal flag in `DeviceStateService`; gate tracking/GoTo/sync on verification state
+- M7-003 (P1): Lazy pixel-to-RA/DEC calibration service — controlled star displacement measurements; blocked-with-retry on failure; invalidated on optical train/binning/orientation change
+- M7-004 (P1): Focuser backlash compensation — new `[focuser] backlash_steps` config key; direction-reversal overshoot in `move_relative()`
+- M7-005 (P1): Common `ServiceFrame` input dataclass unifying frame metadata across all image-processing services
+- M7-006 (P1): Stateful `PlateSolveService` wrapping existing `AstapSolver`; enforces auto-gain precondition before solve
+- M7-007 (P1): Formalize `AutofocusService` after gap check against AF-001..AF-005
+- M7-008 (P1): Add `circle_center_displacement_px` (raw pixel float) to collimation output; display in UI alongside arrow
+- M7-009..M7-012 (P2): Shared image-analysis module audit; AG-003 tracking-off exposure cap; GPS fix age check; retry-limit verification
+
+**Key design decisions recorded:**
+- TimeLocationStatus is orthogonal to MountState (not merged)
+- Bahtinov collimation method deferred post-MVP
+- ASTAP solver wrapped, not replaced
+- Collimation displacement in raw pixels
+
+---
+
 ## 2026-06-24 — FIX — Pixel scale wrong for C8 + ATR585M; ASTAP failure logging (4 files)
 
 **Root cause:** Pixel scale defaults assumed a different camera (~3.75 µm pixels) rather than ATR585M (2.9 µm). ASTAP only searches ±10% of the given scale, so 0.38 "/px ± 10% never covers the actual 0.295 "/px → `PLATESOLVED=F` on every solve attempt.

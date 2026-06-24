@@ -41,7 +41,8 @@ def safe_goto(
         CommandConflictError: coordinator is busy with another command
         RuntimeError: mount rejected the goto command
     """
-    mount.ensure_time_location_synced()
+    # Time/location verification is enforced at the API layer (M7-002).
+    # safe_goto() trusts that the caller has already checked TimeLocationStatus.
     try:
         with coordinator.mount_command():
             if mount.is_slewing():
@@ -92,7 +93,7 @@ def track_sequence(mount: MountPort) -> None:
     Raises:
         RuntimeError: auto-unpark or enable-tracking failed
     """
-    mount.ensure_time_location_synced()
+    # Time/location verification is enforced at the API layer (M7-002).
     if mount.get_state() == MountState.PARKED:
         if not mount.unpark():
             raise RuntimeError("Auto-unpark before tracking failed")

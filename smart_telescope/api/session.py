@@ -23,9 +23,11 @@ from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..domain.catalog import get_by_name as _catalog_get
 from ..domain.solar import is_solar_target
 from ..domain.states import SessionState
+from ..domain.time_location_status import TimeLocationStatus
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
+from ..services.device_state import DeviceStateService
 from ..services.optical_train_registry import OpticalTrainRegistry
 from ..workflow.runner import C8_BARLOW2X, C8_NATIVE, C8_REDUCER, OpticalProfile, VerticalSliceRunner
 from . import deps
@@ -104,6 +106,9 @@ class ConnectResult(BaseModel):
     mount: DeviceResult
     focuser: DeviceResult
     solver: DeviceResult
+    # M7-001: time/location check result after mount connect
+    time_location_status: str = "UNKNOWN"
+    time_location_check: dict | None = None  # populated when mismatch detected
 
 
 def _try_connect(device: str, connect_fn: object) -> DeviceResult:
@@ -156,23 +161,50 @@ def session_connect(
     camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> ConnectResult:
-    import logging
     from .cameras import invalidate_camera_scan
     invalidate_camera_scan()  # force re-enumeration after hardware may have been plugged in
     mount_status = _try_connect("mount", mount.connect)
+
+    tl_status = TimeLocationStatus.UNKNOWN
+    tl_check: dict | None = None
     if mount_status.status == "ok":
+        # M7-001: compare OnStep time/location against master; do NOT auto-push.
+        # If within tolerance → VERIFIED.  If not → return mismatch so UI can
+        # show a dialog; status stays UNKNOWN until the user approves or skips.
         try:
-            mount.ensure_time_location_synced()
+            sync = mount.get_sync_status()
+            if sync is not None:
+                time_ok     = bool(sync.get("time_ok"))
+                location_ok = bool(sync.get("location_ok"))
+                if time_ok and location_ok:
+                    tl_status = TimeLocationStatus.VERIFIED
+                    _log.info(
+                        "Time/location check: within tolerance — VERIFIED "
+                        "(time_delta=%.1fs lat_delta=%.4f° lon_delta=%.4f°)",
+                        sync.get("time_delta_s") or 0,
+                        sync.get("lat_delta_deg") or 0,
+                        sync.get("lon_delta_deg") or 0,
+                    )
+                else:
+                    tl_check = sync
+                    _log.info(
+                        "Time/location check: mismatch — awaiting user decision "
+                        "(time_ok=%s location_ok=%s)",
+                        time_ok, location_ok,
+                    )
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                "Auto time/location sync after connect failed: %s", exc
-            )
+            _log.warning("Time/location check failed: %s", exc)
+        device_state.set_time_location_status(tl_status)
+
     return ConnectResult(
         camera=_try_connect("camera", camera.connect),
         mount=mount_status,
         focuser=_try_connect("focuser", focuser.connect),
         solver=_check_solver(),
+        time_location_status=tl_status.name,
+        time_location_check=tl_check,
     )
 
 

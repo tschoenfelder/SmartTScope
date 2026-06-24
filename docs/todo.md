@@ -3,7 +3,8 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-21 (coverage gate resolved: 80.01%, 3103 tests pass; R5-012 OnStep time/location sync in System Readiness card)
+**Last updated:** 2026-06-24 (M7 ingested: smarttscope_additional_requirements.md v1.0 — interactive startup sync, TimeLocationStatus, pixel calibration, backlash, ServiceFrame, PlateSolveService)
+**New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
 
@@ -853,6 +854,89 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 - [x] `stale: true` from API shown as `⚠ state` badge / strip label suffix
 - [x] `mountAction()`, `mountHome()`, `mountGoto()` all set/clear `_mountPendingCmd`
 - [x] Card re-renders immediately on command acceptance (pending) and on poll confirmation (final)
+
+---
+
+## M7 — Formal Service Contracts & Safety Extension
+
+*Source: `smarttscope_additional_requirements.md` v1.0 — ingested 2026-06-24*
+
+### P0 — Safety behavioral change
+
+- [x] M7-001 Interactive time/location startup dialog — replace silent auto-sync with user-confirmation flow `[P0 · Safety]`
+  - Remove `ensure_time_location_synced()` call from `adapters/onstep/mount.py` `session_connect()`
+  - After ST-002 query: compare OnStep time/location against GPS (fix ≤ 60 min old) or system/config fallback
+  - Within tolerance → set `TimeLocationStatus = VERIFIED`, log, continue
+  - Out of tolerance → show dialog (OnStep values, master values, differences, source); user: Approve → push via adapter; Skip → set `UNVERIFIED`
+  - Tests: TEST-001 table (9 cases: within tolerance, time diff > 10 s, location diff > tolerance, approve push, reject push, unverified blocks tracking/GoTo/sync, startup while parked, startup while unparked, tracking disabled)
+
+- [x] M7-002 Add `TimeLocationStatus` orthogonal flag to `DeviceStateService` `[P0 · Safety]`
+  - New enum `TimeLocationStatus = {UNKNOWN, VERIFIED, UNVERIFIED}` in `smart_telescope/domain/`
+  - Add field to `DeviceStateService`; default `UNKNOWN` at startup; set by M7-001 sequence
+  - `HardwareCommandCoordinator.mount_command()` checks `TimeLocationStatus` before tracking enable, GoTo, sync
+  - Camera-only and manual movement (with warning) remain permitted when `UNVERIFIED`
+  - Config flags from CFG-001 (`allow_*_when_time_location_unverified`) respected
+
+### P1 — New features
+
+- [ ] M7-003 Pixel-to-RA/DEC calibration service (lazy trigger) `[P1 · Runtime]`
+  - New `PixelCalibrationService` in `smart_telescope/services/`
+  - Procedure: detect stars → RA move → capture → measure displacement → DEC move → capture → measure → store `PixelCalibration(ra_vector_px, dec_vector_px, optical_train_id, binning, camera_orientation)`
+  - Triggers lazily on first image-space mount correction request
+  - Failure: block the requesting operation; show reason + Retry button (no auto-retry)
+  - Invalidate on: optical train change, binning change, camera orientation change
+  - Tests: TEST-002 table (5 cases)
+
+- [ ] M7-004 Focuser backlash compensation `[P1 · Runtime]`
+  - Add to config schema: `[focuser] backlash_steps = 80`, `backlash_compensation_enabled = true`
+  - Implement in `adapters/onstep/focuser.py` `move_relative(steps)`: on direction reversal overshoot by `backlash_steps` then return
+  - Wire into autofocus and collimation focus movement paths
+  - Config warning if enabled but `backlash_steps` missing or zero
+
+- [ ] M7-005 Common `ServiceFrame` input dataclass `[P1 · Runtime]`
+  - New `ServiceFrame` dataclass in `smart_telescope/domain/service_frame.py` with all IF-001 fields
+  - `FrameValidationError` raised on missing mandatory fields
+  - Autofocus, collimation, auto-gain, plate-solving convert from `FitsFrame` to `ServiceFrame`
+
+- [ ] M7-006 Stateful `PlateSolveService` wrapping `AstapSolver` `[P1 · Runtime]`
+  - New `smart_telescope/services/plate_solve_service.py`
+  - Wraps existing `adapters/astap/solver.py:AstapSolver` — do NOT replace it
+  - State: retry count, last result, auto-gain completion status
+  - Enforces PS-001: refuses to start solve if auto-gain reason `PLATE_SOLVE` has not completed
+  - Returns PS-003 output including full `solver_return_values`
+  - Sync/GoTo blocked when `TimeLocationStatus = UNVERIFIED`
+  - Tests: TEST-006 table (5 cases)
+
+- [ ] M7-007 Gap check + formalize `AutofocusService` `[P1 · Runtime]`
+  - Audit existing autofocus code against AF-001..AF-005
+  - Create unified `smart_telescope/services/autofocus_service.py` if no single service exists
+  - Must use shared image-analysis module (M7-009)
+  - AF-005: mount movement returned as pixel offset only; app converts via `PixelCalibrationService`
+  - Tests: TEST-004 table (5 cases)
+
+- [ ] M7-008 Collimation numeric displacement value `[P1 · UI]`
+  - Add `circle_center_displacement_px` (float, Euclidean distance between inner and outer circle centers) to collimation service COL-006 output
+  - UI: display raw pixel value alongside arrow; 0.0 = perfect collimation
+  - Update existing collimation tests to cover new field
+
+### P2 — Gap checks and formalization
+
+- [ ] M7-009 Shared image-analysis module `[P2 · Runtime]`
+  - Audit: confirm autofocus, collimation, auto-gain, plate-solving share the same star-detection and FWHM/HFR code
+  - If not: extract to `smart_telescope/services/image_analysis.py`
+  - Strongly out-of-focus frames must return `focus_quality = UNKNOWN` (not a misleading FWHM value)
+
+- [ ] M7-010 Verify ≤ 1 s auto-gain exposure cap when tracking off (AG-003) `[P2 · Runtime]`
+  - Read `AutoGainService`; confirm `tracking_on = false` caps returned exposure at ≤ 1 s
+  - If missing: add cap and diagnostic message; add test case
+
+- [ ] M7-011 GPS fix age check ≤ 60 minutes (CFG-002) `[P2 · Runtime]`
+  - When `gpsd` reports a fix, also verify fix age ≤ 60 min; reject stale fixes; fall back to system/config
+  - Log selected master source
+
+- [ ] M7-012 Verify retry limits in all service loops (SAFE-004) `[P2 · Runtime]`
+  - Confirm `max_iterations` config keys exist and are respected in: auto-gain, autofocus, collimation, plate-solve
+  - Add missing config keys and loop exit paths; no loop may run endlessly without user feedback
 
 ---
 

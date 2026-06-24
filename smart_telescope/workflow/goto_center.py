@@ -47,15 +47,8 @@ async def goto_and_center(
     last_ra,  last_dec    = target_ra, target_dec
     last_offset: float    = 999.0
 
-    try:
-        await asyncio.to_thread(mount.ensure_time_location_synced)
-    except RuntimeError as exc:
-        return CenterResult(
-            success=False, final_ra=target_ra, final_dec=target_dec,
-            iterations=0, offset_arcmin=last_offset,
-            error=f"Time/location sync failed: {exc}",
-        )
-
+    # Time/location verification is enforced at the API layer (M7-002) before
+    # goto_and_center() is called.  No per-slew sync needed here.
     for iteration in range(1, max_iterations + 1):
         # ── 1. GoTo ───────────────────────────────────────────────────────────
         try:

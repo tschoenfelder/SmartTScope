@@ -16,6 +16,7 @@ import logging
 import threading
 import time
 
+from ..domain.time_location_status import TimeLocationStatus
 from ..ports.mount import MountPort, MountPosition, MountState
 
 _log = logging.getLogger(__name__)
@@ -71,6 +72,8 @@ class DeviceStateService:
         self._watchdog_fired_at:  float | None = None  # time.monotonic() of last log
         # serial reconnect throttle
         self._last_reconnect_at:  float | None = None
+        # M7-002: time/location verification — orthogonal to MountState
+        self._time_location_status: TimeLocationStatus = TimeLocationStatus.UNKNOWN
         # Sticky AT_HOME: OnStep only sets 'H' in :GU# briefly after hC# completes.
         # We preserve AT_HOME until the mount actually moves or starts tracking.
         self._sticky_at_home: bool = False
@@ -182,6 +185,19 @@ class DeviceStateService:
         """Return the active watchdog warning string, or None if hardware is responding normally."""
         with self._lock:
             return self._watchdog_warning
+
+    # ── M7-002: time/location verification status ─────────────────────────────
+
+    def get_time_location_status(self) -> TimeLocationStatus:
+        """Return the current time/location verification status."""
+        with self._lock:
+            return self._time_location_status
+
+    def set_time_location_status(self, status: TimeLocationStatus) -> None:
+        """Set the time/location verification status and log the transition."""
+        with self._lock:
+            self._time_location_status = status
+        _log.info("TimeLocationStatus → %s", status.name)
 
     # ── R2-005: state convergence helpers ────────────────────────────────────
 

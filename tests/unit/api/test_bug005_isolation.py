@@ -25,10 +25,12 @@ from smart_telescope.api import deps, session as session_module
 from smart_telescope.app import app
 from smart_telescope.domain.session import SessionLog
 from smart_telescope.domain.states import SessionState
+from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort
 from smart_telescope.runtime import get_runtime
+from smart_telescope.services.device_state import DeviceStateService
 from smart_telescope.workflow.runner import WorkflowError
 
 client = TestClient(app)
@@ -245,6 +247,12 @@ class TestMountCommandsAfterSessionCrash:
             client.post("/api/session/run?target=M42")
 
         _wait_for_session_done(timeout=2.0)
+
+        # Provide VERIFIED time/location status so the goto check passes.
+        # The test verifies the coordinator lock is released, not the tl guard.
+        ds = DeviceStateService()
+        ds.set_time_location_status(TimeLocationStatus.VERIFIED)
+        app.dependency_overrides[deps.get_device_state] = lambda: ds
 
         # Goto should not be rejected with 409 (resource conflict) after the crash
         with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)):

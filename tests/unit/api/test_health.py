@@ -459,3 +459,82 @@ class TestMountStateCategories:
         with _patch_solver_ok():
             body = client.get("/api/status").json()
         assert body["mount_states"]["operation_gate_states"] == {}
+
+    # ── mount_readiness (M8-002) ──────────────────────────────────────────────
+
+    def test_mount_readiness_present_in_mount_states(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state())
+        with _patch_solver_ok():
+            ms = client.get("/api/status").json()["mount_states"]
+        assert "mount_readiness" in ms
+
+    def test_mount_readiness_disconnected_when_not_started(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=False))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_readiness"] == "DISCONNECTED"
+
+    def test_mount_readiness_connected_restricted_when_time_location_unknown(self) -> None:
+        obs = MountObservedState(
+            state=MountState.UNPARKED, ra=None, dec=None, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(
+            _mock_device_state(
+                started=True,
+                observed_state=obs,
+                time_location_status=TimeLocationStatus.UNKNOWN,
+            )
+        )
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_readiness"] == "CONNECTED_RESTRICTED"
+
+    def test_mount_readiness_connected_time_location_unverified(self) -> None:
+        obs = MountObservedState(
+            state=MountState.UNPARKED, ra=None, dec=None, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(
+            _mock_device_state(
+                started=True,
+                observed_state=obs,
+                time_location_status=TimeLocationStatus.UNVERIFIED,
+            )
+        )
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_readiness"] == "CONNECTED_TIME_LOCATION_UNVERIFIED"
+
+    def test_mount_readiness_raspberry_time_untrusted_when_tl_verified(self) -> None:
+        # With the current NOT_TRUSTED stub, VERIFIED TL → RASPBERRY_TIME_UNTRUSTED
+        obs = MountObservedState(
+            state=MountState.TRACKING, ra=5.0, dec=30.0, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(
+            _mock_device_state(
+                started=True,
+                observed_state=obs,
+                time_location_status=TimeLocationStatus.VERIFIED,
+            )
+        )
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_readiness"] == "CONNECTED_RASPBERRY_TIME_UNTRUSTED"
+
+    def test_mount_readiness_error_when_health_failed(self) -> None:
+        obs = MountObservedState(
+            state=MountState.UNKNOWN,
+            ra=None,
+            dec=None,
+            polled_at=time.monotonic(),
+            error="serial timeout",
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=True, observed_state=obs))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_readiness"] == "ERROR"

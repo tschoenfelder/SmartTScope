@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
+from ..domain.mount_readiness import derive_mount_readiness
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
 from ..services.device_state import DeviceStateService
@@ -92,13 +93,14 @@ class CpuHealth(BaseModel):
 
 
 class MountStateCategories(BaseModel):
-    """REQ-STATE-001 — six separate state categories exposed by /api/status."""
+    """REQ-STATE-001/002 — six state categories + derived readiness."""
     adapter_connection_state: str   # OPEN | CLOSED
     adapter_health_state: str       # OK | FAILED | UNKNOWN
     mount_operational_state: str    # mirrors MountState enum name
     onstep_time_location_state: str # UNKNOWN | VERIFIED | UNVERIFIED
     raspberry_time_trust_state: str # NOT_TRUSTED (stub; full impl in M8-007)
     operation_gate_states: dict     # {} (stub; full impl in M8-003)
+    mount_readiness: str            # derived composite — MountReadinessState.name
 
 
 class SystemHealth(BaseModel):
@@ -130,13 +132,22 @@ def _build_mount_state_categories(device_state: DeviceStateService) -> MountStat
 
     tl_status = device_state.get_time_location_status()
 
+    raspberry_trust = "NOT_TRUSTED"  # stub until M8-007
+    readiness = derive_mount_readiness(
+        adapter_connection=adapter_connection,
+        adapter_health=adapter_health,
+        onstep_time_location=tl_status.name,
+        raspberry_time_trust=raspberry_trust,
+    )
+
     return MountStateCategories(
         adapter_connection_state=adapter_connection,
         adapter_health_state=adapter_health,
         mount_operational_state=operational,
         onstep_time_location_state=tl_status.name,
-        raspberry_time_trust_state="NOT_TRUSTED",
+        raspberry_time_trust_state=raspberry_trust,
         operation_gate_states={},
+        mount_readiness=readiness.name,
     )
 
 

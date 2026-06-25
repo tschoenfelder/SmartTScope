@@ -123,6 +123,10 @@ class DeviceStateService:
 
     # ── state access ──────────────────────────────────────────────────────────
 
+    def is_started(self) -> bool:
+        """Return True if the polling thread is running (adapter was connected)."""
+        return self._thread is not None and self._thread.is_alive()
+
     def get_mount_state(self) -> MountObservedState | None:
         """Return the last observed mount state, or None if no poll has run yet."""
         with self._lock:

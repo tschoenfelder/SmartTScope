@@ -1,5 +1,6 @@
 """Unit tests for GET /api/status."""
 import os
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps, session as session_module
 from smart_telescope.app import app
+from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountState
+from smart_telescope.services.device_state import MountObservedState
 
 client = TestClient(app)
 
@@ -309,3 +312,150 @@ class TestStorageCapacity:
         with _patch_solver_ok():
             body = client.get("/api/status").json()
         assert body["storage"]["frames_capacity"] is None
+
+
+# ── mount state categories (M8-001 / REQ-STATE-001) ──────────────────────────
+
+
+def _mock_device_state(
+    started: bool = False,
+    observed_state: MountObservedState | None = None,
+    time_location_status: TimeLocationStatus = TimeLocationStatus.UNKNOWN,
+) -> MagicMock:
+    m = MagicMock()
+    m.is_started.return_value = started
+    m.get_mount_state.return_value = observed_state
+    m.get_time_location_status.return_value = time_location_status
+    return m
+
+
+def _inject_device_state(ds: MagicMock) -> None:
+    app.dependency_overrides[deps.get_device_state] = lambda: ds
+
+
+class TestMountStateCategories:
+    def test_mount_states_present_in_response(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert "mount_states" in body
+
+    def test_mount_states_has_all_six_categories(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state())
+        with _patch_solver_ok():
+            ms = client.get("/api/status").json()["mount_states"]
+        for key in (
+            "adapter_connection_state",
+            "adapter_health_state",
+            "mount_operational_state",
+            "onstep_time_location_state",
+            "raspberry_time_trust_state",
+            "operation_gate_states",
+        ):
+            assert key in ms
+
+    def test_adapter_connection_closed_when_not_started(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=False))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["adapter_connection_state"] == "CLOSED"
+
+    def test_adapter_connection_open_when_started(self) -> None:
+        obs = MountObservedState(
+            state=MountState.TRACKING, ra=5.0, dec=30.0, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=True, observed_state=obs))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["adapter_connection_state"] == "OPEN"
+
+    def test_adapter_health_unknown_when_no_observed_state(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=True, observed_state=None))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["adapter_health_state"] == "UNKNOWN"
+
+    def test_adapter_health_ok_when_last_poll_succeeded(self) -> None:
+        obs = MountObservedState(
+            state=MountState.TRACKING, ra=5.0, dec=30.0, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=True, observed_state=obs))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["adapter_health_state"] == "OK"
+
+    def test_adapter_health_failed_when_last_poll_errored(self) -> None:
+        obs = MountObservedState(
+            state=MountState.UNKNOWN,
+            ra=None,
+            dec=None,
+            polled_at=time.monotonic(),
+            error="serial timeout",
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=True, observed_state=obs))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["adapter_health_state"] == "FAILED"
+
+    def test_mount_operational_state_from_observed_state(self) -> None:
+        obs = MountObservedState(
+            state=MountState.PARKED, ra=None, dec=None, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=True, observed_state=obs))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_operational_state"] == "PARKED"
+
+    def test_mount_operational_state_unknown_when_not_started(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state(started=False, observed_state=None))
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["mount_operational_state"] == "UNKNOWN"
+
+    def test_onstep_time_location_state_verified(self) -> None:
+        obs = MountObservedState(
+            state=MountState.TRACKING, ra=5.0, dec=30.0, polled_at=time.monotonic()
+        )
+        _inject_mount(_mock_mount())
+        _inject_device_state(
+            _mock_device_state(
+                started=True,
+                observed_state=obs,
+                time_location_status=TimeLocationStatus.VERIFIED,
+            )
+        )
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["onstep_time_location_state"] == "VERIFIED"
+
+    def test_onstep_time_location_state_unverified(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(
+            _mock_device_state(time_location_status=TimeLocationStatus.UNVERIFIED)
+        )
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["onstep_time_location_state"] == "UNVERIFIED"
+
+    def test_raspberry_time_trust_state_defaults_not_trusted(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["raspberry_time_trust_state"] == "NOT_TRUSTED"
+
+    def test_operation_gate_states_is_empty_dict(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        assert body["mount_states"]["operation_gate_states"] == {}

@@ -13,6 +13,7 @@ from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
+from ..services.device_state import DeviceStateService
 from . import deps
 from .session import get_active_runner, get_session_running
 
@@ -90,6 +91,16 @@ class CpuHealth(BaseModel):
     temp_c: float | None = None
 
 
+class MountStateCategories(BaseModel):
+    """REQ-STATE-001 — six separate state categories exposed by /api/status."""
+    adapter_connection_state: str   # OPEN | CLOSED
+    adapter_health_state: str       # OK | FAILED | UNKNOWN
+    mount_operational_state: str    # mirrors MountState enum name
+    onstep_time_location_state: str # UNKNOWN | VERIFIED | UNVERIFIED
+    raspberry_time_trust_state: str # NOT_TRUSTED (stub; full impl in M8-007)
+    operation_gate_states: dict     # {} (stub; full impl in M8-003)
+
+
 class SystemHealth(BaseModel):
     mount: MountHealth
     camera: DeviceHealth
@@ -98,12 +109,42 @@ class SystemHealth(BaseModel):
     storage: StorageHealth
     session: SessionHealth
     cpu: CpuHealth
+    mount_states: MountStateCategories
+
+
+def _build_mount_state_categories(device_state: DeviceStateService) -> MountStateCategories:
+    started = device_state.is_started()
+    observed = device_state.get_mount_state()
+
+    adapter_connection = "OPEN" if started else "CLOSED"
+
+    if observed is None:
+        adapter_health = "UNKNOWN"
+        operational = "UNKNOWN"
+    elif observed.error:
+        adapter_health = "FAILED"
+        operational = observed.state.name
+    else:
+        adapter_health = "OK"
+        operational = observed.state.name
+
+    tl_status = device_state.get_time_location_status()
+
+    return MountStateCategories(
+        adapter_connection_state=adapter_connection,
+        adapter_health_state=adapter_health,
+        mount_operational_state=operational,
+        onstep_time_location_state=tl_status.name,
+        raspberry_time_trust_state="NOT_TRUSTED",
+        operation_gate_states={},
+    )
 
 
 @router.get("/api/status", response_model=SystemHealth)
 def system_status(
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> SystemHealth:
     """Return the health of every subsystem. Always 200."""
     # ── Mount ────────────────────────────────────────────────────────────────
@@ -176,4 +217,5 @@ def system_status(
         storage=storage_health,
         session=session_health,
         cpu=cpu_health,
+        mount_states=_build_mount_state_categories(device_state),
     )

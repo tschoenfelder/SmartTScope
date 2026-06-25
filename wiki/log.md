@@ -4,6 +4,32 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-25 — INGEST — smarttscope_incident_requirements_final_v1_2.md v1.2
+
+**Source:** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_incident_requirements_final_v1_2.md`  
+**Copied to:** `resources/hlrequirements/smarttscope_incident_requirements_final_v1_2.md`
+
+**New milestone M8 added to `docs/todo.md`** (30 tasks, M8-001..M8-030):
+
+- M8-001..005 (P1): Split runtime state into 6 categories; mount readiness enum (7 states); `OperationGateService` (13 gated ops); fix `/api/mount/status`; UI disabled-control reasons
+- M8-006..010 (P1): Master source selection; 5 Raspberry time trust sources; meter-based location tolerance (100 m); UTF-8-safe logs; trust session expiry; Stage 1 UI panel (20 fields)
+- M8-011..013 (P1): `CommandHistoryService` (JSONL, 7 statuses); `/api/commands`; GoTo gate-before-issue; bright-star preconditions
+- M8-014..018 (P2): 12 per-section log namespaces; service-call logs per iteration; user-action log (18 actions); FITS diagnostic storage; FITS filename/header spec
+- M8-019..023 (P2): Extended Setup Check per-camera report; plate-solve readiness pre-check; ASTAP logging; auto-gain 6 purpose modes; exposure capability test
+- M8-024..028 (P2): Collimation modes (Bahtinov + Defocus Donut); click-to-center in 3 views; click refinement; calibration hard block + wizard; iterative bounded centering
+- M8-029..030 (P3): `scripts/delivery_audit.py`; delivery log JSONL
+
+**Key design decisions from grilling session:**
+- Push Pi time → OnStep verified → ONSTEP_COMPARISON is intentional trust chain (clarify in code comment per DEC-006)
+- REQ-AG-002 tracking quality = star elongation/FWHM from captured frames only (no plate-solve dependency)
+- Click-to-center cold start = hard block + calibration wizard; no manual override
+- REQ-GIT items tracked in todo.md as Priority 7
+
+**Updated wiki pages:**
+- `wiki/index.md` — new Planning entry for incident requirements v1.2
+
+---
+
 ## 2026-06-24 — INGEST — smarttscope_additional_requirements.md v1.0
 
 **Source:** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`

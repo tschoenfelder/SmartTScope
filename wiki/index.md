@@ -30,6 +30,7 @@ Table of contents for the SmartTelescope knowledge base.
 - [requirements-addon-20260501](requirements-addon-20260501.md) — First hardware test session bugs and mount safety requirements (2026-05-01)
 - [requirements-addon-20260502b](requirements-addon-20260502b.md) — README update instructions + focuser always-expected policy, shared serial delegation, is_available (2026-05-02)
 - [requirements-addon-20260506](requirements-addon-20260506.md) — Fix/update requirements: camera naming, Live Preview backend, histogram, exposure/gain UI, Startup polish (2026-05-06)
+- [smarttscope-incident-requirements-v1-2](../resources/hlrequirements/smarttscope_incident_requirements_final_v1_2.md) — M8 source: runtime state model, operation gates, Stage 1 trust, command history, FITS diagnostics, click-to-center (v1.2, 2026-06-25; 18 DEC, 12 INC, ~40 REQ)
 - [vertical-slice-mvp](vertical-slice-mvp.md) — End-to-end MVP slice: power-on → align → GoTo M42 → recenter → stack 10 frames → save
 - [quickstart](quickstart.md) — First-time setup guide: Raspberry Pi OS Trixie (Debian 13), ToupTek camera, ASTAP, no libcamera
 

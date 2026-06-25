@@ -913,6 +913,191 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ---
 
+## M8 — Incident-Driven Runtime Hardening
+
+*Source: `resources/hlrequirements/smarttscope_incident_requirements_final_v1_2.md` v1.2 — ingested 2026-06-25*  
+*Resolves: INC-001..INC-012 (field incidents); covers REQ-STATE, REQ-TIME, REQ-CONN, REQ-GOTO, REQ-CMD, REQ-UI, REQ-SETUP, REQ-PS, REQ-AG, REQ-LOG, REQ-FRAME, REQ-CLICK, REQ-API, REQ-GIT*
+
+**Grilling clarifications (binding):**
+- Push Pi time → OnStep verified → ONSTEP_COMPARISON is a valid trust chain (intentional; document in code comment)
+- REQ-AG-002 tracking quality = star elongation/FWHM from captured frames only, no plate-solve dependency
+- Click-to-center cold start = hard block + launch calibration wizard; no manual override
+- REQ-GIT items tracked here as Priority 7
+
+### Priority 1 — State model and operation gates
+
+- [ ] M8-001 Separate `/api/status` into 6 state categories `[P1 · API]`
+  - `adapter_connection_state`, `adapter_health_state`, `mount_operational_state`, `onstep_time_location_state`, `raspberry_time_trust_state`, `operation_gate_states`
+  - Acceptance: REQ-STATE-001; INC-001 (connected-but-restricted no longer shown as disconnected)
+
+- [ ] M8-002 Mount readiness enum — 7 states `[P1 · Domain]`
+  - `DISCONNECTED`, `CONNECTED_HEALTH_UNKNOWN`, `CONNECTED_RESTRICTED`, `CONNECTED_READY`, `CONNECTED_TIME_LOCATION_UNVERIFIED`, `CONNECTED_RASPBERRY_TIME_UNTRUSTED`, `ERROR`
+  - Trust/time failures shown as trust failures, not connection failures; reconnect guidance only when reconnecting helps
+  - Acceptance: REQ-STATE-002, REQ-CONN-003; TEST-001
+
+- [ ] M8-003 `OperationGateService` with 13 gated operations `[P1 · Runtime]`
+  - Operations: `camera_capture`, `manual_mount_move`, `tracking_enable`, `goto`, `bright_star_goto`, `sync`, `plate_solve`, `plate_solve_mount_correction`, `collimation_preview`, `collimation_slew_to_target`, `collimation_mount_centering`, `autofocus`, `click_to_center`
+  - Gate response: `allowed`, `reason_code`, `human_message`, `required_user_action`, `blocking_states`
+  - HTTP 409 uses gate result; rejected commands not logged as issued
+  - Acceptance: REQ-STATE-003; TEST-003
+
+- [ ] M8-004 Fix `/api/mount/status` — `connected = adapter_open AND health_check_ok` `[P1 · API]`
+  - `adapter_open`, `health_check_ok`, `connected`, `park_state`, `tracking_state`, `last_error`
+  - Connect All idempotent: repeated calls reuse existing connections without contradictory UI state
+  - Acceptance: REQ-CONN-001, REQ-CONN-002, REQ-API-002; INC-001
+
+- [ ] M8-005 UI — disabled controls show exact gate reason; 409 includes structured diagnostics `[P1 · UI]`
+  - Applies to: goto, bright_star_goto, sync, tracking_enable, plate_solve, plate_solve_correction, collimation_slew_to_target, click_to_center, autofocus
+  - Reason from backend gate result; UI refreshes after Stage 1 changes; stale frontend state cannot keep controls disabled
+  - Rejected GoTo logged as `REJECTED` not `ISSUED`
+  - Acceptance: REQ-UI-001, REQ-GOTO-001; INC-003, INC-005
+
+### Priority 2 — Stage 1 time/location and Raspberry trust
+
+- [ ] M8-006 Master source selection: GPS > NTP > USER_CONFIRMED > fallback `[P1 · Runtime]`
+  - Fallback (untrusted time, config-only location) does not unlock mount automation
+  - Master source visible in UI and logs
+  - Acceptance: REQ-TIME-001
+
+- [ ] M8-007 Raspberry Pi time trust sources — 5 enums with rules `[P1 · Runtime]`
+  - `NTP`, `GPSD_FIX`, `USER_CONFIRMED`, `ONSTEP_COMPARISON`, `NOT_TRUSTED`
+  - `ONSTEP_COMPARISON`: valid only if OnStep trusted via GPS/NTP/previous verified Stage 1 **or** via successful push in current session (intentional trust chain — clarify in code comment per DEC-006)
+  - Pushing Pi time to OnStep alone does NOT auto-trust Raspberry Pi time (trust needs the subsequent re-comparison step)
+  - `USER_CONFIRMED`: warning shown; logged; valid for session or `session_trust_expiry_minutes`
+  - Acceptance: REQ-TIME-002, REQ-TIME-004; INC-003, INC-009
+
+- [ ] M8-008 Meter-based location tolerance (100 m default); UTF-8-safe logs `[P1 · Runtime]`
+  - Primary check: `location_delta_m ≤ onstep_location_tolerance_m (default 100)`; degree fallback only for backward-compat
+  - Active tolerances logged on every check; `lat_delta=0.0027°` fails at 100 m; `lon_delta=0.0337°` fails at 100 m
+  - No mojibake (`窶・`, `竊・`, `ﾂｰ`) in logs; degree values as `°` or ASCII `deg`
+  - Acceptance: REQ-TIME-003, REQ-TIME-006; INC-002; TEST-002
+
+- [ ] M8-009 Trust session expiry; no cross-restart persistence `[P1 · Runtime]`
+  - `persist_trust_across_restart = false`; `session_trust_expiry_minutes = 120`
+  - Within session: trust has timestamp and source; recalculated if source stale/unavailable/contradicted
+  - Acceptance: DEC-004, DEC-005
+
+- [ ] M8-010 Stage 1 UI panel — 20 required fields `[P1 · UI]`
+  - Shows: OnStep adapter state, OnStep health state, focuser state, Raspberry Pi time trust, trust source, GPS fix availability, master source, OnStep time, master time, time delta, OnStep location, master location, location delta in meters, active tolerances, verification result, last verification timestamp, last push timestamp, available actions
+  - User can rerun check, manually confirm Raspberry time, push time/location to OnStep
+  - Acceptance: REQ-TIME-005, REQ-API-004; INC-009
+
+### Priority 3 — Command history
+
+- [ ] M8-011 `CommandHistoryService` — persists per-session JSONL `[P1 · Runtime]`
+  - Statuses: `REQUESTED`, `REJECTED`, `ISSUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`
+  - Fields: `command_id`, `session_id`, `timestamp`, `user_action`, `operation`, `requested_parameters`, `status`, `reason_code`, `human_message`, `backend_response`, `related_log_file`, `related_frame_file_if_any`
+  - Acceptance: REQ-CMD-001
+
+- [ ] M8-012 `/api/commands` endpoint; command history frontend panel `[P1 · API · UI]`
+  - Rejected commands visible with reason; user can distinguish blocked commands from hardware failures
+  - Acceptance: REQ-API-003; INC-005
+
+- [ ] M8-013 GoTo gate-checked before marking issued; bright-star GoTo preconditions `[P1 · Runtime]`
+  - Bright-star GoTo requires: `mount_connected`, `mount_health_ok`, `raspberry_time_trusted`, `onstep_time_location_verified`, `mount_unparked`, `target_above_horizon`, `goto_gate_allowed`
+  - Direct RA/DEC GoTo: default blocked without Raspberry trust (`allow_direct_radec_goto_without_raspberry_time_trust = false`)
+  - Acceptance: REQ-GOTO-001..003; INC-005; TEST-003
+
+### Priority 4 — Observability and diagnostic frames
+
+- [ ] M8-014 12 per-section log namespaces; session ID links all logs `[P2 · Runtime]`
+  - Sections: `startup`, `stage1_time_location`, `mount`, `camera`, `auto_gain`, `autofocus`, `collimation`, `plate_solve`, `goto`, `click_to_center`, `extended_setup_check`, `github_delivery`
+  - Log paths available via diagnostics or API
+  - Acceptance: REQ-LOG-001
+
+- [ ] M8-015 Service-call logs per iteration `[P2 · Runtime]`
+  - Per auto-gain/autofocus/collimation/plate-solve call: `session_id`, `service_name`, `run_id`, `iteration`, `timestamp`, `input_frame_filename`, `request_payload`, `response_payload`, `duration_ms`, `status`, `error_if_any`
+  - Image data referenced by filename, not embedded
+  - Acceptance: REQ-LOG-002; INC-010
+
+- [ ] M8-016 User-action log — 18 named actions `[P2 · Runtime]`
+  - `connect_all_clicked`, `time_location_push_confirmed`, `time_location_push_rejected`, `raspberry_time_manually_confirmed`, `goto_requested`, `goto_rejected`, `bright_star_goto_requested`, `tracking_enable_requested`, `tracking_enable_rejected`, `plate_solve_requested`, `autofocus_started`, `autofocus_cancelled`, `collimation_started`, `collimation_mode_selected`, `click_to_center_requested`, `click_to_center_cancelled`, `diagnostic_exposure_test_started`, `github_push_requested`
+  - Each action has timestamp; linked to backend result; rejections include gate reason
+  - Acceptance: REQ-LOG-003
+
+- [ ] M8-017 FITS diagnostic frame storage `[P2 · Runtime]`
+  - Default: `enabled=true`, `store_mode=debug_or_failure`, `retention_days=2`
+  - Modes: `always`, `debug_only`, `failure_only`, `debug_or_failure`, `off`
+  - Retention cleanup preserves active-session files
+  - Acceptance: REQ-FRAME-001; INC-010; TEST-006
+
+- [ ] M8-018 FITS filename pattern + 16 required headers `[P2 · Runtime]`
+  - Pattern: `YYYYMMDDTHHMMSS_session-<id>_<section>_<run_id>_iter-<n>_<camera_id>_<optical_train_id>_exp-<s>s_gain-<g>_offset-<o>_bin-<x>x<y>_ra-<ra>_dec-<dec>.fits`
+  - Required headers: `SESSION`, `SECTION`, `RUNID`, `ITER`, `CAMERA`, `OPTTRAIN`, `EXPTIME`, `GAIN`, `OFFSET`, `BINX`, `BINY`, `PIXSIZE`, `FOCALLEN`, `RA`, `DEC`, `TRACKING`, `DATE-OBS`
+  - Filename Linux/Windows safe; full path logged
+  - Acceptance: REQ-FRAME-002, REQ-FRAME-003
+
+### Priority 5 — Plate solve and auto-gain
+
+- [ ] M8-019 Extended Setup Check per-camera diagnostic report (19 fields) `[P2 · Runtime]`
+  - Active camera criteria: `enabled in config` + `assigned to optical train or setup role` + `SDK-detected` + `not disabled in UI`; disconnected configured cameras → `disconnected`, not `failed`
+  - Statuses: `not_attempted`, `disconnected`, `inactive`, `capture_failed`, `auto_gain_failed`, `insufficient_stars`, `astap_failed`, `metadata_missing`, `operation_blocked`, `solved`
+  - Acceptance: REQ-SETUP-001, REQ-SETUP-002; INC-004; DEC-016
+
+- [ ] M8-020 Plate-solve readiness pre-check (8 conditions) `[P2 · Runtime]`
+  - Check: `frame_exists`, `frame_saved_as_fits`, `optical_train_metadata_available`, `pixel_size_available`, `focal_length_or_hint_available`, `star_count_measured`, `astap_available`, `operation_gate_allows_plate_solve`
+  - Each missing condition gives specific failure reason; readiness result logged
+  - Acceptance: REQ-PS-001; TEST-004
+
+- [ ] M8-021 ASTAP logging → structured diagnostics `[P2 · Runtime]`
+  - Log: ASTAP input FITS path, command/wrapper call, output, exit status; convert failure to structured diagnostics
+  - Local star threshold: `min_detected_stars_before_solve = 15`, `allow_astap_below_min_star_count = true` (OPEN-003: revisit after real frames)
+  - Acceptance: REQ-PS-002, REQ-PS-003; INC-004, INC-008
+
+- [ ] M8-022 Auto-gain 6 purpose modes; PLATE_SOLVE tracking-quality via frame blur only `[P2 · Runtime]`
+  - Modes: `PLATE_SOLVE`, `DSO`, `PLANET`, `MOON`, `COLLIMATION`, `AUTOFOCUS`
+  - `PLATE_SOLVE`: keep offset low; increase exposure while tracking quality supports it (measured by star elongation ratio / FWHM growth from captured frames — no plate-solve dependency)
+  - Acceptance: REQ-AG-001, REQ-AG-002; INC-008
+
+- [ ] M8-023 Exposure capability test + 13-field auto-gain diagnostics `[P2 · Runtime]`
+  - Test sequence: `0.5 s, 1 s, 2 s, 4 s, 8 s`; stop on elongation/FWHM degradation/saturation
+  - Diagnostics: `number_of_stars_detected`, `background_median_adu`, `background_stddev_adu`, `saturated_pixel_ratio`, `black_clipped_pixel_ratio`, `median_fwhm_px`, `median_hfr_px`, `exposure_limit_reached`, `gain_limit_reached`, `offset_limit_reached`, `tracking_blur_suspected`, `reason_for_next_step`, `reason_for_stop`
+  - Suggested values not written to config without user confirmation (OPEN-004: revisit after real tracking data)
+  - Acceptance: REQ-AG-003, REQ-AG-004
+
+### Priority 6 — Collimation and click-to-center
+
+- [ ] M8-024 Collimation modes: "Bahtinov Preview" + "Defocus Donut" (correct spelling) `[P2 · UI]`
+  - Both modes visible; if unavailable, reason shown; "Bahtinov" spelling verified
+  - Collimation preview allowed without Raspberry Pi time trust if camera capture works
+  - Slew-to-target and mount-assisted centering remain gated
+  - Acceptance: REQ-UI-002, REQ-UI-003; INC-006, INC-007; TEST-005
+
+- [ ] M8-025 Click-to-center in collimation, plate-solve, autofocus views `[P2 · UI]`
+  - User can click star or donut; if unavailable, exact reason shown
+  - Acceptance: REQ-CLICK-001
+
+- [ ] M8-026 Click refinement — star centroid / donut-circle center / raw fallback `[P2 · Runtime]`
+  - Raw click logged; refined target logged and displayed; if refinement fails, user can use raw click or cancel
+  - Acceptance: REQ-CLICK-002
+
+- [ ] M8-027 Click-to-center calibration (hard block; calibration wizard on cold start) `[P2 · Runtime]`
+  - Missing/stale calibration blocks movement and launches calibration wizard (no manual override — grilling clarification #3)
+  - Calibration stored per optical-train × camera-orientation × binning; invalidated on change
+  - Mount not moved without valid calibration
+  - Acceptance: REQ-CLICK-003
+
+- [ ] M8-028 Iterative bounded click-to-center loop `[P2 · Runtime]`
+  - Config defaults: `max_iterations=5`, `center_tolerance_px=20`, `max_single_move_px=300`, `start_with_fraction_of_calculated_move=0.5`, `allow_when_tracking_off=true`, `allow_when_parked=false`
+  - Works tracking-on; works tracking-off with drift warning; blocked while parked; user can cancel; every iteration logged
+  - OPEN-002: review defaults after first calibration results on real mount
+  - Acceptance: REQ-CLICK-004, DEC-010..012; TEST-005
+
+### Priority 7 — Dev workflow: GitHub delivery audit
+
+- [ ] M8-029 `scripts/delivery_audit.py` — git delivery checks `[P3 · DevWorkflow]`
+  - Runs: `git status --short`, `git diff --stat`, `git log -1 --stat`, `git branch --show-current`, `git remote -v`
+  - Confirms branch, commit, source/test/doc file categories, push result
+  - Acceptance: REQ-GIT-002; INC-012; TEST-007
+
+- [ ] M8-030 Delivery log JSONL + pre-push checklist `[P3 · DevWorkflow]`
+  - Fields: `timestamp`, `branch`, `commit_hash`, `commit_message`, `files_changed`, `source_files_changed`, `test_files_changed`, `docs_changed`, `push_result`, `remote_url`
+  - Documentation-only commits not marked implementation-complete
+  - OPEN-005: split this requirements doc into runtime/UI/diagnostics/delivery after M8 closure
+  - Acceptance: REQ-GIT-001, REQ-GIT-003
+
+---
+
 ## Safety Regression Checklist
 
 *Run before every milestone demo and release. STOP response time target: **< 1 s** (POD-002).*

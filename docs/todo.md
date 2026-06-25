@@ -935,7 +935,7 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Trust/time failures shown as trust failures, not connection failures; reconnect guidance only when reconnecting helps
   - Acceptance: REQ-STATE-002, REQ-CONN-003; TEST-001
 
-- [ ] M8-003 `OperationGateService` with 13 gated operations `[P1 · Runtime]`
+- [x] M8-003 `OperationGateService` with 13 gated operations `[P1 · Runtime]` ✓ 2026-06-26
   - Operations: `camera_capture`, `manual_mount_move`, `tracking_enable`, `goto`, `bright_star_goto`, `sync`, `plate_solve`, `plate_solve_mount_correction`, `collimation_preview`, `collimation_slew_to_target`, `collimation_mount_centering`, `autofocus`, `click_to_center`
   - Gate response: `allowed`, `reason_code`, `human_message`, `required_user_action`, `blocking_states`
   - HTTP 409 uses gate result; rejected commands not logged as issued

@@ -453,12 +453,24 @@ class TestMountStateCategories:
             body = client.get("/api/status").json()
         assert body["mount_states"]["raspberry_time_trust_state"] == "NOT_TRUSTED"
 
-    def test_operation_gate_states_is_empty_dict(self) -> None:
+    def test_operation_gate_states_contains_all_13_operations(self) -> None:
         _inject_mount(_mock_mount())
         _inject_device_state(_mock_device_state())
         with _patch_solver_ok():
             body = client.get("/api/status").json()
-        assert body["mount_states"]["operation_gate_states"] == {}
+        gates = body["mount_states"]["operation_gate_states"]
+        assert len(gates) == 13
+        for op in ("camera_capture", "goto", "tracking_enable", "autofocus"):
+            assert op in gates, f"{op} missing from operation_gate_states"
+
+    def test_gate_result_shape_in_api_response(self) -> None:
+        _inject_mount(_mock_mount())
+        _inject_device_state(_mock_device_state())
+        with _patch_solver_ok():
+            body = client.get("/api/status").json()
+        gate = body["mount_states"]["operation_gate_states"]["goto"]
+        for field in ("allowed", "reason_code", "human_message", "required_user_action", "blocking_states"):
+            assert field in gate, f"field {field!r} missing from gate result"
 
     # ── mount_readiness (M8-002) ──────────────────────────────────────────────
 

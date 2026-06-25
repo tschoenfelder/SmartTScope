@@ -15,6 +15,7 @@ from ..domain.mount_readiness import derive_mount_readiness
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
 from ..services.device_state import DeviceStateService
+from ..services.operation_gate import GateResult, evaluate_all_gates
 from . import deps
 from .session import get_active_runner, get_session_running
 
@@ -99,8 +100,8 @@ class MountStateCategories(BaseModel):
     mount_operational_state: str    # mirrors MountState enum name
     onstep_time_location_state: str # UNKNOWN | VERIFIED | UNVERIFIED
     raspberry_time_trust_state: str # NOT_TRUSTED (stub; full impl in M8-007)
-    operation_gate_states: dict     # {} (stub; full impl in M8-003)
-    mount_readiness: str            # derived composite — MountReadinessState.name
+    operation_gate_states: dict[str, dict]  # GateResult per operation (REQ-STATE-003)
+    mount_readiness: str                    # derived composite — MountReadinessState.name
 
 
 class SystemHealth(BaseModel):
@@ -139,6 +140,23 @@ def _build_mount_state_categories(device_state: DeviceStateService) -> MountStat
         onstep_time_location=tl_status.name,
         raspberry_time_trust=raspberry_trust,
     )
+    gate_results = evaluate_all_gates(
+        adapter_connection=adapter_connection,
+        adapter_health=adapter_health,
+        mount_operational_state=operational,
+        onstep_time_location=tl_status.name,
+        raspberry_time_trust=raspberry_trust,
+    )
+    gate_states = {
+        op: {
+            "allowed": r.allowed,
+            "reason_code": r.reason_code,
+            "human_message": r.human_message,
+            "required_user_action": r.required_user_action,
+            "blocking_states": r.blocking_states,
+        }
+        for op, r in gate_results.items()
+    }
 
     return MountStateCategories(
         adapter_connection_state=adapter_connection,
@@ -146,7 +164,7 @@ def _build_mount_state_categories(device_state: DeviceStateService) -> MountStat
         mount_operational_state=operational,
         onstep_time_location_state=tl_status.name,
         raspberry_time_trust_state=raspberry_trust,
-        operation_gate_states={},
+        operation_gate_states=gate_states,
         mount_readiness=readiness.name,
     )
 

@@ -4,6 +4,12 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-26 — DEVELOP — M8-003 (OperationGateService — 13 gated operations)
+
+**REQ-STATE-003 implemented.** `evaluate_all_gates()` in `smart_telescope/services/operation_gate.py` evaluates all 13 gated operations from the current system state strings. Gate result includes `allowed`, `reason_code`, `human_message`, `required_user_action`, `blocking_states`. `operation_gate_states` field in `/api/status → mount_states` now returns the full gate map (was stub `{}`). Priority ordering: ADAPTER_DISCONNECTED > ADAPTER_HEALTH_FAILED > ADAPTER_HEALTH_UNKNOWN > TIME_LOCATION_UNVERIFIED > RASPBERRY_TIME_UNTRUSTED > MOUNT_PARKED. Camera-only operations (camera_capture, plate_solve, collimation_preview) always allowed per DEC-009. 59 new unit tests in `tests/unit/services/test_operation_gate.py`, 106 total passing.
+
+---
+
 ## 2026-06-26 — DEVELOP — M8-002 (MountReadinessState enum + derive function)
 
 **REQ-STATE-002 implemented.** `mount_readiness` derived composite state added to `/api/status → mount_states`.

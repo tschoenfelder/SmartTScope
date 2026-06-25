@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-26 — DEVELOP — M8-002 (MountReadinessState enum + derive function)
+
+**REQ-STATE-002 implemented.** `mount_readiness` derived composite state added to `/api/status → mount_states`.
+
+**New file:** `smart_telescope/domain/mount_readiness.py`
+- `MountReadinessState` enum (7 values)
+- `derive_mount_readiness(adapter_connection, adapter_health, onstep_time_location, raspberry_time_trust) → MountReadinessState` — pure function, priority chain top-to-bottom
+
+**Priority chain:** DISCONNECTED > ERROR > CONNECTED_HEALTH_UNKNOWN > CONNECTED_RESTRICTED (Stage 1 not run) > CONNECTED_TIME_LOCATION_UNVERIFIED > CONNECTED_RASPBERRY_TIME_UNTRUSTED > CONNECTED_READY
+
+**INC-001 fix:** adapter open but Stage 1 not run → CONNECTED_RESTRICTED, not DISCONNECTED. Reconnect guidance only for DISCONNECTED/ERROR.
+
+**Tests:** 9 domain tests (`test_mount_readiness.py`) + 6 API tests; exit 0 full suite.
+
+---
+
 ## 2026-06-26 — DEVELOP — M8-001 (6 mount state categories in /api/status)
 
 **REQ-STATE-001 implemented.** `/api/status` now exposes `mount_states` with all six separate state categories required by INC-001.

@@ -930,7 +930,7 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - `adapter_connection_state`, `adapter_health_state`, `mount_operational_state`, `onstep_time_location_state`, `raspberry_time_trust_state`, `operation_gate_states`
   - Acceptance: REQ-STATE-001; INC-001 (connected-but-restricted no longer shown as disconnected)
 
-- [ ] M8-002 Mount readiness enum — 7 states `[P1 · Domain]`
+- [x] M8-002 Mount readiness enum — 7 states `[P1 · Domain]` ✓ 2026-06-26
   - `DISCONNECTED`, `CONNECTED_HEALTH_UNKNOWN`, `CONNECTED_RESTRICTED`, `CONNECTED_READY`, `CONNECTED_TIME_LOCATION_UNVERIFIED`, `CONNECTED_RASPBERRY_TIME_UNTRUSTED`, `ERROR`
   - Trust/time failures shown as trust failures, not connection failures; reconnect guidance only when reconnecting helps
   - Acceptance: REQ-STATE-002, REQ-CONN-003; TEST-001

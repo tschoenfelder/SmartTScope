@@ -926,7 +926,7 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 1 — State model and operation gates
 
-- [ ] M8-001 Separate `/api/status` into 6 state categories `[P1 · API]`
+- [x] M8-001 Separate `/api/status` into 6 state categories `[P1 · API]` ✓ 2026-06-26
   - `adapter_connection_state`, `adapter_health_state`, `mount_operational_state`, `onstep_time_location_state`, `raspberry_time_trust_state`, `operation_gate_states`
   - Acceptance: REQ-STATE-001; INC-001 (connected-but-restricted no longer shown as disconnected)
 

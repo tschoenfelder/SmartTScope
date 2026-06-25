@@ -4,6 +4,26 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-26 — DEVELOP — M8-001 (6 mount state categories in /api/status)
+
+**REQ-STATE-001 implemented.** `/api/status` now exposes `mount_states` with all six separate state categories required by INC-001.
+
+**Code changes:**
+- `smart_telescope/services/device_state.py` — added `is_started() -> bool` (polling thread alive check)
+- `smart_telescope/api/health.py` — added `MountStateCategories` Pydantic model; `_build_mount_state_categories(device_state)` helper; `device_state` dependency on `GET /api/status`
+
+**New fields in `/api/status` → `mount_states`:**
+- `adapter_connection_state`: OPEN (polling started) | CLOSED
+- `adapter_health_state`: OK (no poll error) | FAILED (poll error) | UNKNOWN (no poll yet)
+- `mount_operational_state`: mirrors `MountState` enum name
+- `onstep_time_location_state`: from `DeviceStateService.get_time_location_status()`
+- `raspberry_time_trust_state`: NOT_TRUSTED (stub; full impl M8-007)
+- `operation_gate_states`: {} (stub; full impl M8-003)
+
+**Tests:** 13 new tests in `TestMountStateCategories`; 3194 passed total.
+
+---
+
 ## 2026-06-25 — INGEST — smarttscope_incident_requirements_final_v1_2.md v1.2
 
 **Source:** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_incident_requirements_final_v1_2.md`  

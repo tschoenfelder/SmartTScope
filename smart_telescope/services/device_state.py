@@ -74,6 +74,8 @@ class DeviceStateService:
         self._last_reconnect_at:  float | None = None
         # M7-002: time/location verification — orthogonal to MountState
         self._time_location_status: TimeLocationStatus = TimeLocationStatus.UNKNOWN
+        # M8-006: USER_CONFIRMED master time source — set by explicit user action
+        self._user_time_confirmed: bool = False
         # Sticky AT_HOME: OnStep only sets 'H' in :GU# briefly after hC# completes.
         # We preserve AT_HOME until the mount actually moves or starts tracking.
         self._sticky_at_home: bool = False
@@ -202,6 +204,19 @@ class DeviceStateService:
         with self._lock:
             self._time_location_status = status
         _log.info("TimeLocationStatus → %s", status.name)
+
+    # ── M8-006: USER_CONFIRMED master time source ─────────────────────────────
+
+    def is_user_time_confirmed(self) -> bool:
+        """Return True if the user has explicitly confirmed the Raspberry Pi clock."""
+        with self._lock:
+            return self._user_time_confirmed
+
+    def set_user_time_confirmed(self, confirmed: bool) -> None:
+        """Mark Raspberry Pi time as user-confirmed (M8-006 USER_CONFIRMED source)."""
+        with self._lock:
+            self._user_time_confirmed = confirmed
+        _log.info("UserTimeConfirmed → %s", confirmed)
 
     # ── R2-005: state convergence helpers ────────────────────────────────────
 

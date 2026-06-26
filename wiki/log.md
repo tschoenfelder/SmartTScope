@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-26 — DEVELOP — M8-006 (Master time source selection: GPS > NTP > USER_CONFIRMED > FALLBACK)
+
+**REQ-TIME-001 implemented.**
+- `domain/master_time_source.py`: `MasterTimeSource` enum (GPS_FIX | NTP | USER_CONFIRMED | FALLBACK)
+- `services/master_source.py`: `MasterSourceService.evaluate()` — priority chain; `_check_ntp_sync()` via `timedatectl` (silent fallback on non-Linux); FALLBACK = NOT_TRUSTED → mount automation blocked
+- `services/device_state.py`: `is_user_time_confirmed()` / `set_user_time_confirmed()` flag for USER_CONFIRMED trust path
+- `services/operation_gate.py`: `gate_inputs_from_device_state()` accepts optional `master_source_svc`; adds `master_time_source` to returned dict; `_evaluate_one()`, `evaluate_gate()`, `evaluate_all_gates()` accept `**_` to forward-compat extra inputs
+- `api/health.py`: `MountStateCategories` gains `master_time_source` field; `system_status` injects `MasterSourceService`
+- `api/mount.py` + `api/deps.py` + `runtime.py`: `MasterSourceService` wired as singleton; 4 gated endpoints pass it to `_gate_check()`
+- 23 new tests; 3368 passed, 39 skipped
+
+---
+
 ## 2026-06-26 — DEVELOP — M8-005 (Structured gate diagnostics for disabled UI controls and 409 responses)
 
 **REQ-UI-001, REQ-GOTO-001 implemented; INC-003, INC-005 resolved.**

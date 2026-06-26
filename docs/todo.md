@@ -957,10 +957,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 2 — Stage 1 time/location and Raspberry trust
 
-- [ ] M8-006 Master source selection: GPS > NTP > USER_CONFIRMED > fallback `[P1 · Runtime]`
+- [x] M8-006 Master source selection: GPS > NTP > USER_CONFIRMED > fallback `[P1 · Runtime]` ✓ 2026-06-26
   - Fallback (untrusted time, config-only location) does not unlock mount automation
   - Master source visible in UI and logs
   - Acceptance: REQ-TIME-001
+  - `domain/master_time_source.py`: `MasterTimeSource` enum (GPS_FIX | NTP | USER_CONFIRMED | FALLBACK)
+  - `services/master_source.py`: `MasterSourceService.evaluate()` priority chain; `_check_ntp_sync()` via timedatectl; `is_trusted()` staticmethod
+  - `services/device_state.py`: `is_user_time_confirmed()` / `set_user_time_confirmed()` flag
+  - `services/operation_gate.py`: `gate_inputs_from_device_state()` accepts optional `master_source_svc`; adds `master_time_source` key; `_evaluate_one()`/`evaluate_gate()`/`evaluate_all_gates()` accept `**_` for extra inputs
+  - `api/health.py`: `MountStateCategories.master_time_source` field; `system_status` injects `MasterSourceService` via deps
+  - `api/mount.py`: `_gate_check()` accepts `master_source_svc`; 4 gated endpoints inject it
+  - `api/deps.py` + `runtime.py`: `get_master_source_service()` dep; `RuntimeContext.master_source_svc` (reset in tests)
+  - 23 new tests in `tests/unit/services/test_master_source.py`; 3368 passed, 39 skipped
 
 - [ ] M8-007 Raspberry Pi time trust sources — 5 enums with rules `[P1 · Runtime]`
   - `NTP`, `GPSD_FIX`, `USER_CONFIRMED`, `ONSTEP_COMPARISON`, `NOT_TRUSTED`

@@ -27,6 +27,7 @@ from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
 from .services.device_state import DeviceStateService
+from .services.master_source import MasterSourceService
 from .services.job_manager import JobManager
 
 _log = logging.getLogger(__name__)
@@ -213,11 +214,12 @@ class RuntimeContext:
         self._filter_wheel: object | None = None
         self._adapters_built: bool = False
         self._adapters_lock: threading.Lock = threading.Lock()
-        self.coordinator     = HardwareCommandCoordinator()
-        self.cooling_service = CoolingService()
-        self.device_state    = DeviceStateService()
-        self.dawn_watcher    = DawnWatcher()
-        self.job_manager     = JobManager()
+        self.coordinator       = HardwareCommandCoordinator()
+        self.cooling_service   = CoolingService()
+        self.device_state      = DeviceStateService()
+        self.master_source_svc = MasterSourceService()
+        self.dawn_watcher      = DawnWatcher()
+        self.job_manager       = JobManager()
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
@@ -400,11 +402,12 @@ class RuntimeContext:
         self._preview_cameras = {}
         self._role_cameras = {}
         self._filter_wheel = None
-        self.coordinator     = HardwareCommandCoordinator()
-        self.cooling_service = CoolingService()
-        self.device_state    = DeviceStateService()
-        self.dawn_watcher    = DawnWatcher()
-        self.job_manager     = JobManager()
+        self.coordinator       = HardwareCommandCoordinator()
+        self.cooling_service   = CoolingService()
+        self.device_state      = DeviceStateService()
+        self.master_source_svc = MasterSourceService()
+        self.dawn_watcher      = DawnWatcher()
+        self.job_manager       = JobManager()
         self.camera_offset_service = CameraOffsetService.from_config()
         with self.session_lock:
             self._active_runner = None

@@ -45,6 +45,7 @@ from ..services.cooling import CoolingService
 from ..services.hardware_coordinator import HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
 from ..services.job_manager import JobManager
+from ..services.master_source import MasterSourceService
 from ..services.optical_train_registry import OpticalTrainRegistry
 
 
@@ -100,6 +101,10 @@ def get_coordinator() -> HardwareCommandCoordinator:
 
 def get_device_state() -> DeviceStateService:
     return get_runtime().device_state
+
+
+def get_master_source_service() -> MasterSourceService:
+    return get_runtime().master_source_svc
 
 
 def get_job_manager() -> JobManager:

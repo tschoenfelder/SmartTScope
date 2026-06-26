@@ -114,10 +114,13 @@ camera         = "oag"         # add "oag" to [cameras] when a third camera is c
 reducer_factor = 1.0
 focuser        = "onstep"      # OAG shares main focuser
 
-# ── Time / location trust (M8-007..M8-009) ───────────────────────────────────
-# Raspberry Pi time trust is currently stubbed as TRUSTED.
-# Uncomment and fill in when M8-007 (real trust sources) is implemented.
+# ── Time / location trust (M8-006..M8-009) ───────────────────────────────────
+# M8-006: MasterSourceService selects master source in priority order:
+#   GPS_FIX (gpsd) > NTP (timedatectl) > USER_CONFIRMED > FALLBACK (untrusted)
+# FALLBACK does not unlock mount automation (raspberry_time_trust = NOT_TRUSTED).
+# GPS port is configured under [hardware].gps_port above.
 #
+# Uncomment and fill in when M8-007..M8-009 are implemented:
 # [time_location]
 # session_trust_expiry_minutes = 120   # M8-009: how long USER_CONFIRMED trust lasts
 # persist_trust_across_restart = false # M8-009: trust never survives a restart

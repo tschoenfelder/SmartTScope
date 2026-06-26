@@ -99,7 +99,8 @@ class MountStateCategories(BaseModel):
     adapter_health_state: str       # OK | FAILED | UNKNOWN
     mount_operational_state: str    # mirrors MountState enum name
     onstep_time_location_state: str # UNKNOWN | VERIFIED | UNVERIFIED
-    raspberry_time_trust_state: str # NOT_TRUSTED (stub; full impl in M8-007)
+    raspberry_time_trust_state: str # TRUSTED | NOT_TRUSTED
+    master_time_source: str         # GPS_FIX | NTP | USER_CONFIRMED | FALLBACK | STUB
     operation_gate_states: dict[str, dict]  # GateResult per operation (REQ-STATE-003)
     mount_readiness: str                    # derived composite — MountReadinessState.name
 
@@ -115,13 +116,17 @@ class SystemHealth(BaseModel):
     mount_states: MountStateCategories
 
 
-def _build_mount_state_categories(device_state: DeviceStateService) -> MountStateCategories:
-    inputs = gate_inputs_from_device_state(device_state)
+def _build_mount_state_categories(
+    device_state: DeviceStateService,
+    master_source_svc: object = None,
+) -> MountStateCategories:
+    inputs = gate_inputs_from_device_state(device_state, master_source_svc=master_source_svc)
     adapter_connection = inputs["adapter_connection"]
     adapter_health = inputs["adapter_health"]
     operational = inputs["mount_operational_state"]
     tl_name = inputs["onstep_time_location"]
     raspberry_trust = inputs["raspberry_time_trust"]
+    master_src = inputs["master_time_source"]
 
     readiness = derive_mount_readiness(
         adapter_connection=adapter_connection,
@@ -147,6 +152,7 @@ def _build_mount_state_categories(device_state: DeviceStateService) -> MountStat
         mount_operational_state=operational,
         onstep_time_location_state=tl_name,
         raspberry_time_trust_state=raspberry_trust,
+        master_time_source=master_src,
         operation_gate_states=gate_states,
         mount_readiness=readiness.name,
     )
@@ -157,6 +163,7 @@ def system_status(
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
     device_state: DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object = Depends(deps.get_master_source_service),
 ) -> SystemHealth:
     """Return the health of every subsystem. Always 200."""
     # ── Mount ────────────────────────────────────────────────────────────────
@@ -229,5 +236,5 @@ def system_status(
         storage=storage_health,
         session=session_health,
         cpu=cpu_health,
-        mount_states=_build_mount_state_categories(device_state),
+        mount_states=_build_mount_state_categories(device_state, master_source_svc=master_source_svc),
     )

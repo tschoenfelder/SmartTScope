@@ -94,6 +94,7 @@ def _evaluate_one(
     mount_operational_state: str,
     onstep_time_location: str,
     raspberry_time_trust: str,
+    **_: str,  # accept and ignore extra inputs (e.g. master_time_source)
 ) -> GateResult:
     if op in _CAMERA_ONLY:
         return _allowed()
@@ -127,6 +128,7 @@ def evaluate_all_gates(
     mount_operational_state: str,
     onstep_time_location: str,
     raspberry_time_trust: str,
+    **_: str,  # accept and ignore extra inputs (e.g. master_time_source)
 ) -> dict[str, GateResult]:
     """Return a GateResult for every gated operation given the current system state."""
     return {
@@ -142,8 +144,18 @@ def evaluate_all_gates(
     }
 
 
-def gate_inputs_from_device_state(device_state: object) -> dict[str, str]:
-    """Extract gate input strings from a DeviceStateService instance."""
+def gate_inputs_from_device_state(
+    device_state: object,
+    master_source_svc: object = None,
+) -> dict[str, str]:
+    """Extract gate input strings from a DeviceStateService instance.
+
+    Args:
+        device_state: DeviceStateService (typed as object to avoid circular imports).
+        master_source_svc: MasterSourceService instance (M8-006).  When None the
+            raspberry_time_trust stub returns "TRUSTED" and master_time_source
+            returns "STUB" until the service is wired into all callers.
+    """
     started: bool = device_state.is_started()  # type: ignore[union-attr]
     observed = device_state.get_mount_state()  # type: ignore[union-attr]
     adapter_connection = "OPEN" if started else "CLOSED"
@@ -157,12 +169,23 @@ def gate_inputs_from_device_state(device_state: object) -> dict[str, str]:
         adapter_health = "OK"
         mount_operational_state = observed.state.name
     tl_status = device_state.get_time_location_status()  # type: ignore[union-attr]
+
+    if master_source_svc is not None:
+        user_confirmed: bool = device_state.is_user_time_confirmed()  # type: ignore[union-attr]
+        source = master_source_svc.evaluate(user_confirmed=user_confirmed)  # type: ignore[union-attr]
+        raspberry_trust = "TRUSTED" if master_source_svc.is_trusted(source) else "NOT_TRUSTED"  # type: ignore[union-attr]
+        master_time_source = source.value  # type: ignore[union-attr]
+    else:
+        raspberry_trust = "TRUSTED"  # stub: replaced when MasterSourceService is wired in
+        master_time_source = "STUB"
+
     return {
         "adapter_connection": adapter_connection,
         "adapter_health": adapter_health,
         "mount_operational_state": mount_operational_state,
         "onstep_time_location": tl_status.name,
-        "raspberry_time_trust": "TRUSTED",  # stub: M8-007 will determine actual source
+        "raspberry_time_trust": raspberry_trust,
+        "master_time_source": master_time_source,
     }
 
 

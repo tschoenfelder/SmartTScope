@@ -71,9 +71,13 @@ def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
         })
 
 
-def _gate_check(device_state: DeviceStateService, operation: str) -> None:
+def _gate_check(
+    device_state: DeviceStateService,
+    operation: str,
+    master_source_svc: object = None,
+) -> None:
     """Raise structured HTTPException(409) if the gate blocks this operation."""
-    inputs = gate_inputs_from_device_state(device_state)
+    inputs = gate_inputs_from_device_state(device_state, master_source_svc=master_source_svc)
     result = evaluate_gate(operation, **inputs)
     if not result.allowed:
         raise HTTPException(status_code=409, detail={
@@ -287,10 +291,11 @@ def mount_unpark(
 
 @router.post("/track")
 def mount_track(
-    mount:        MountPort          = Depends(deps.get_mount),
-    device_state: DeviceStateService = Depends(deps.get_device_state),
+    mount:             MountPort          = Depends(deps.get_mount),
+    device_state:      DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object             = Depends(deps.get_master_source_service),
 ) -> dict[str, bool]:
-    _gate_check(device_state, "tracking_enable")
+    _gate_check(device_state, "tracking_enable", master_source_svc=master_source_svc)
     device_state.record_command("track")
     try:
         mount_ops.track_sequence(mount)
@@ -313,13 +318,14 @@ def mount_stop(
 
 @router.post("/goto")
 def mount_goto(
-    body:         GotoRequest,
-    mount:        MountPort          = Depends(deps.get_mount),
-    coordinator:  HardwareCommandCoordinator = Depends(deps.get_coordinator),
-    device_state: DeviceStateService = Depends(deps.get_device_state),
-    confirm_solar: bool = Query(default=False),
+    body:              GotoRequest,
+    mount:             MountPort          = Depends(deps.get_mount),
+    coordinator:       HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state:      DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object             = Depends(deps.get_master_source_service),
+    confirm_solar:     bool = Query(default=False),
 ) -> dict[str, bool]:
-    _gate_check(device_state, "goto")
+    _gate_check(device_state, "goto", master_source_svc=master_source_svc)
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:
@@ -340,12 +346,13 @@ class SyncRequest(BaseModel):
 
 @router.post("/sync")
 def mount_sync(
-    body: SyncRequest,
-    mount: MountPort = Depends(deps.get_mount),
-    device_state: DeviceStateService = Depends(deps.get_device_state),
+    body:              SyncRequest,
+    mount:             MountPort          = Depends(deps.get_mount),
+    device_state:      DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object             = Depends(deps.get_master_source_service),
 ) -> dict[str, bool]:
     """Tell the mount it is currently pointing at the given RA/Dec."""
-    _gate_check(device_state, "sync")
+    _gate_check(device_state, "sync", master_source_svc=master_source_svc)
     ok = mount.sync(body.ra, body.dec)
     if not ok:
         raise HTTPException(status_code=500, detail="Mount sync failed")
@@ -584,15 +591,16 @@ class GotoAndCenterResponse(BaseModel):
 
 @router.post("/goto_and_center", response_model=GotoAndCenterResponse)
 async def mount_goto_and_center(
-    body:        GotoAndCenterRequest,
-    mount:       MountPort  = Depends(deps.get_mount),
-    solver:      SolverPort = Depends(deps.get_solver),
-    coordinator: HardwareCommandCoordinator = Depends(deps.get_coordinator),
-    device_state: DeviceStateService = Depends(deps.get_device_state),
-    confirm_solar: bool = Query(default=False),
+    body:              GotoAndCenterRequest,
+    mount:             MountPort  = Depends(deps.get_mount),
+    solver:            SolverPort = Depends(deps.get_solver),
+    coordinator:       HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state:      DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object             = Depends(deps.get_master_source_service),
+    confirm_solar:     bool = Query(default=False),
 ) -> GotoAndCenterResponse:
     """Goto target, plate-solve, sync, and refine until centered."""
-    _gate_check(device_state, "goto")
+    _gate_check(device_state, "goto", master_source_svc=master_source_svc)
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:

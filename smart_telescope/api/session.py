@@ -165,7 +165,13 @@ def session_connect(
 ) -> ConnectResult:
     from .cameras import invalidate_camera_scan
     invalidate_camera_scan()  # force re-enumeration after hardware may have been plugged in
-    mount_status = _try_connect("mount", mount.connect)
+    # REQ-CONN-002: idempotent — if the poller thread is already running the mount
+    # is connected; skip reconnect to avoid a contradictory "error" status from
+    # managed.py returning False on a second connect() call (SYNC-OVERRIDE 2026-05-22).
+    if device_state.is_started():
+        mount_status = DeviceResult(status="ok")
+    else:
+        mount_status = _try_connect("mount", mount.connect)
 
     tl_status = TimeLocationStatus.UNKNOWN
     tl_check: dict | None = None

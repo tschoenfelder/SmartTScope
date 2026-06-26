@@ -941,7 +941,7 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - HTTP 409 uses gate result; rejected commands not logged as issued
   - Acceptance: REQ-STATE-003; TEST-003
 
-- [ ] M8-004 Fix `/api/mount/status` — `connected = adapter_open AND health_check_ok` `[P1 · API]`
+- [x] M8-004 Fix `/api/mount/status` — `connected = adapter_open AND health_check_ok` `[P1 · API]` ✓ 2026-06-26
   - `adapter_open`, `health_check_ok`, `connected`, `park_state`, `tracking_state`, `last_error`
   - Connect All idempotent: repeated calls reuse existing connections without contradictory UI state
   - Acceptance: REQ-CONN-001, REQ-CONN-002, REQ-API-002; INC-001

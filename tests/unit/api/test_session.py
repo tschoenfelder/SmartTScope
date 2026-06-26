@@ -14,6 +14,7 @@ from smart_telescope.domain.states import SessionState
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
 from smart_telescope.ports.mount import MountPort
+from smart_telescope.services.device_state import DeviceStateService
 from smart_telescope.workflow.runner import C8_NATIVE, M42_DEC, M42_RA
 
 
@@ -72,6 +73,7 @@ def _inject(
     camera: MagicMock | None = None,
     mount: MagicMock | None = None,
     focuser: MagicMock | None = None,
+    device_state: MagicMock | None = None,
 ) -> None:
     if camera is not None:
         app.dependency_overrides[deps.get_camera] = lambda: camera
@@ -79,6 +81,8 @@ def _inject(
         app.dependency_overrides[deps.get_mount] = lambda: mount
     if focuser is not None:
         app.dependency_overrides[deps.get_focuser] = lambda: focuser
+    if device_state is not None:
+        app.dependency_overrides[deps.get_device_state] = lambda: device_state
 
 
 @pytest.fixture(autouse=True)
@@ -675,3 +679,42 @@ class TestExposureAndDepth:
         _inject(_mock_camera(), _mock_mount(), _mock_focuser())
         r = client.post("/api/session/run?stack_depth=101")
         assert r.status_code == 422
+
+
+# ── REQ-CONN-002: Connect All idempotency ─────────────────────────────────────
+
+
+def _mock_started_device_state() -> MagicMock:
+    """DeviceStateService mock that reports the poller thread is already running."""
+    ds = MagicMock(spec=DeviceStateService)
+    ds.is_started.return_value = True
+    ds.get_mount_state.return_value = None
+    ds.get_time_location_status.return_value.__name__ = "UNKNOWN"
+    return ds
+
+
+class TestConnectAllIdempotent:
+    def test_connect_skips_mount_when_already_started(self) -> None:
+        mnt = _mock_mount()
+        ds = _mock_started_device_state()
+        _inject(_mock_camera(), mnt, _mock_focuser(), device_state=ds)
+        with _patch_solver_ok():
+            client.post("/api/session/connect")
+        mnt.connect.assert_not_called()
+
+    def test_connect_returns_ok_for_mount_when_already_started(self) -> None:
+        ds = _mock_started_device_state()
+        _inject(_mock_camera(), _mock_mount(), _mock_focuser(), device_state=ds)
+        with _patch_solver_ok():
+            body = client.post("/api/session/connect").json()
+        assert body["mount"]["status"] == "ok"
+
+    def test_connect_calls_mount_when_not_started(self) -> None:
+        mnt = _mock_mount()
+        ds = MagicMock(spec=DeviceStateService)
+        ds.is_started.return_value = False
+        ds.get_mount_state.return_value = None
+        _inject(_mock_camera(), mnt, _mock_focuser(), device_state=ds)
+        with _patch_solver_ok():
+            client.post("/api/session/connect")
+        mnt.connect.assert_called_once()

@@ -91,6 +91,34 @@ class MountStatus(BaseModel):
     safety_violation: str | None = None
     # M7-002: time/location verification status (UNKNOWN / VERIFIED / UNVERIFIED)
     time_location_status: str = "UNKNOWN"
+    # M8-004: REQ-CONN-001 — explicit connection state breakdown
+    adapter_open: bool = False
+    health_check_ok: bool | None = None
+    connected: bool = False
+    park_state: str = "UNKNOWN"       # PARKED | UNPARKED | UNKNOWN
+    tracking_state: str = "UNKNOWN"   # TRACKING | NOT_TRACKING | UNKNOWN
+    last_error: str | None = None
+
+
+_PARK_STATE: dict[MountState, str] = {
+    MountState.PARKED:   "PARKED",
+    MountState.UNPARKED: "UNPARKED",
+    MountState.TRACKING: "UNPARKED",
+    MountState.SLEWING:  "UNPARKED",
+    MountState.AT_LIMIT: "UNPARKED",
+    MountState.AT_HOME:  "UNPARKED",
+    MountState.UNKNOWN:  "UNKNOWN",
+}
+
+_TRACKING_STATE: dict[MountState, str] = {
+    MountState.PARKED:   "NOT_TRACKING",
+    MountState.UNPARKED: "NOT_TRACKING",
+    MountState.TRACKING: "TRACKING",
+    MountState.SLEWING:  "NOT_TRACKING",
+    MountState.AT_LIMIT: "NOT_TRACKING",
+    MountState.AT_HOME:  "NOT_TRACKING",
+    MountState.UNKNOWN:  "UNKNOWN",
+}
 
 
 def _compute_ha_alt(ra_hours: float, dec_deg: float) -> tuple[float, float]:
@@ -192,6 +220,16 @@ def mount_status(
     cmd, cmd_at, cmd_err = device_state.get_last_command()
     cmd_age = round(time.monotonic() - cmd_at, 1) if cmd_at is not None else None
 
+    # M8-004: REQ-CONN-001 — derive explicit connection state fields
+    adapter_open = device_state.is_started()
+    if observed is None:
+        health_check_ok: bool | None = None
+    elif observed.error:
+        health_check_ok = False
+    else:
+        health_check_ok = True
+    connected = adapter_open and health_check_ok is True
+
     return MountStatus(
         state=state.name.lower(),
         ra=ra,
@@ -209,6 +247,12 @@ def mount_status(
         watchdog_warning=device_state.get_watchdog_warning(),
         safety_violation=observed.safety_violation if observed else None,
         time_location_status=device_state.get_time_location_status().name,
+        adapter_open=adapter_open,
+        health_check_ok=health_check_ok,
+        connected=connected,
+        park_state=_PARK_STATE.get(state, "UNKNOWN"),
+        tracking_state=_TRACKING_STATE.get(state, "UNKNOWN"),
+        last_error=observed.error if observed else None,
     )
 
 

@@ -1,5 +1,6 @@
 """Unit tests for mount API endpoints — no hardware required."""
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +11,7 @@ from smart_telescope.app import app
 from smart_telescope.domain.solar import SolarPosition
 from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
-from smart_telescope.services.device_state import DeviceStateService
+from smart_telescope.services.device_state import DeviceStateService, MountObservedState
 
 client = TestClient(app)
 
@@ -113,6 +114,125 @@ class TestMountStatus:
         _inject(_mock_mount(state=MountState.SLEWING))
         data = client.get("/api/mount/status").json()
         assert data["state"] == "slewing"
+
+
+# ── GET /api/mount/status — M8-004 new fields ────────────────────────────────
+
+
+def _mock_ds_for_status(
+    started: bool = True,
+    state: MountState = MountState.TRACKING,
+    error: str | None = None,
+    tl_status: TimeLocationStatus = TimeLocationStatus.VERIFIED,
+) -> MagicMock:
+    """Return a DeviceStateService mock configured for M8-004 status field tests."""
+    observed = MountObservedState(
+        state=state, ra=5.58, dec=-5.39, polled_at=time.monotonic(), error=error
+    ) if started else None
+    m = MagicMock(spec=DeviceStateService)
+    m.is_started.return_value = started
+    m.get_mount_state.return_value = observed
+    m.get_time_location_status.return_value = tl_status
+    m.get_last_command.return_value = (None, None, None)
+    m.get_watchdog_warning.return_value = None
+    return m
+
+
+class TestMountStatusM8004:
+    def test_adapter_open_present_in_response(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status())
+        data = client.get("/api/mount/status").json()
+        assert "adapter_open" in data
+
+    def test_adapter_open_true_when_poller_running(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(started=True))
+        data = client.get("/api/mount/status").json()
+        assert data["adapter_open"] is True
+
+    def test_adapter_open_false_when_poller_not_started(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(started=False))
+        data = client.get("/api/mount/status").json()
+        assert data["adapter_open"] is False
+
+    def test_health_check_ok_true_when_no_error(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(error=None))
+        data = client.get("/api/mount/status").json()
+        assert data["health_check_ok"] is True
+
+    def test_health_check_ok_false_when_error(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(error="serial timeout"))
+        data = client.get("/api/mount/status").json()
+        assert data["health_check_ok"] is False
+
+    def test_health_check_ok_none_when_no_observation(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(started=False))
+        data = client.get("/api/mount/status").json()
+        assert data["health_check_ok"] is None
+
+    def test_connected_true_when_adapter_open_and_health_ok(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(started=True, error=None))
+        data = client.get("/api/mount/status").json()
+        assert data["connected"] is True
+
+    def test_connected_false_when_adapter_closed(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(started=False))
+        data = client.get("/api/mount/status").json()
+        assert data["connected"] is False
+
+    def test_connected_false_when_health_check_failed(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(error="hardware fault"))
+        data = client.get("/api/mount/status").json()
+        assert data["connected"] is False
+
+    def test_park_state_parked(self) -> None:
+        _inject(_mock_mount(state=MountState.PARKED), device_state=_mock_ds_for_status(state=MountState.PARKED))
+        data = client.get("/api/mount/status").json()
+        assert data["park_state"] == "PARKED"
+
+    def test_park_state_unparked_when_unparked(self) -> None:
+        _inject(_mock_mount(state=MountState.UNPARKED), device_state=_mock_ds_for_status(state=MountState.UNPARKED))
+        data = client.get("/api/mount/status").json()
+        assert data["park_state"] == "UNPARKED"
+
+    def test_park_state_unparked_when_tracking(self) -> None:
+        _inject(_mock_mount(state=MountState.TRACKING), device_state=_mock_ds_for_status(state=MountState.TRACKING))
+        data = client.get("/api/mount/status").json()
+        assert data["park_state"] == "UNPARKED"
+
+    def test_park_state_unknown_when_mount_unknown(self) -> None:
+        _inject(_mock_mount(state=MountState.UNKNOWN), device_state=_mock_ds_for_status(started=False))
+        data = client.get("/api/mount/status").json()
+        assert data["park_state"] == "UNKNOWN"
+
+    def test_tracking_state_tracking(self) -> None:
+        _inject(_mock_mount(state=MountState.TRACKING), device_state=_mock_ds_for_status(state=MountState.TRACKING))
+        data = client.get("/api/mount/status").json()
+        assert data["tracking_state"] == "TRACKING"
+
+    def test_tracking_state_not_tracking_when_unparked(self) -> None:
+        _inject(_mock_mount(state=MountState.UNPARKED), device_state=_mock_ds_for_status(state=MountState.UNPARKED))
+        data = client.get("/api/mount/status").json()
+        assert data["tracking_state"] == "NOT_TRACKING"
+
+    def test_tracking_state_not_tracking_when_parked(self) -> None:
+        _inject(_mock_mount(state=MountState.PARKED), device_state=_mock_ds_for_status(state=MountState.PARKED))
+        data = client.get("/api/mount/status").json()
+        assert data["tracking_state"] == "NOT_TRACKING"
+
+    def test_tracking_state_unknown_when_mount_unknown(self) -> None:
+        _inject(_mock_mount(state=MountState.UNKNOWN), device_state=_mock_ds_for_status(started=False))
+        data = client.get("/api/mount/status").json()
+        assert data["tracking_state"] == "UNKNOWN"
+
+    def test_last_error_none_when_no_error(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(error=None))
+        data = client.get("/api/mount/status").json()
+        assert data["last_error"] is None
+
+    def test_last_error_populated_when_error_in_observed_state(self) -> None:
+        _inject(_mock_mount(), device_state=_mock_ds_for_status(error="serial timeout"))
+        data = client.get("/api/mount/status").json()
+        assert data["last_error"] == "serial timeout"
 
 
 # ── POST /api/mount/unpark ─────────────────────────────────────────────────────

@@ -114,6 +114,15 @@ camera         = "oag"         # add "oag" to [cameras] when a third camera is c
 reducer_factor = 1.0
 focuser        = "onstep"      # OAG shares main focuser
 
+# ── Time / location trust (M8-007..M8-009) ───────────────────────────────────
+# Raspberry Pi time trust is currently stubbed as TRUSTED.
+# Uncomment and fill in when M8-007 (real trust sources) is implemented.
+#
+# [time_location]
+# session_trust_expiry_minutes = 120   # M8-009: how long USER_CONFIRMED trust lasts
+# persist_trust_across_restart = false # M8-009: trust never survives a restart
+# onstep_location_tolerance_m  = 100   # M8-008: max acceptable location delta in metres
+
 [astap]
 path        = ""   # empty = auto-detect via PATH
 catalog_dir = ""   # empty = auto-search standard locations

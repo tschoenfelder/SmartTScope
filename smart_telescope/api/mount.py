@@ -18,6 +18,7 @@ from .. import config
 from ..domain.solar import is_solar_target
 from ..domain.time_location_status import TimeLocationStatus
 from ..ports.mount import MountPort, MountState
+from ..services.operation_gate import evaluate_gate, gate_inputs_from_device_state
 from ..ports.solver import SolverPort
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
 from ..services.device_state import DeviceStateService
@@ -67,6 +68,20 @@ def _check_mount_limits(ra_hours: float, dec_deg: float) -> None:
         raise HTTPException(status_code=400, detail={
             "error": "mount_limit", "reason": "zenith_exclusion",
             "altitude_deg": round(alt_deg, 2), "limit_deg": config.MOUNT_MAX_ALT_DEG,
+        })
+
+
+def _gate_check(device_state: DeviceStateService, operation: str) -> None:
+    """Raise structured HTTPException(409) if the gate blocks this operation."""
+    inputs = gate_inputs_from_device_state(device_state)
+    result = evaluate_gate(operation, **inputs)
+    if not result.allowed:
+        raise HTTPException(status_code=409, detail={
+            "gate_blocked": True,
+            "reason_code": result.reason_code,
+            "human_message": result.human_message,
+            "required_user_action": result.required_user_action,
+            "blocking_states": result.blocking_states,
         })
 
 
@@ -275,14 +290,7 @@ def mount_track(
     mount:        MountPort          = Depends(deps.get_mount),
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
-    # M7-002: block tracking when time/location is unverified or unknown
-    tl = device_state.get_time_location_status()
-    if tl != TimeLocationStatus.VERIFIED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Tracking blocked: time/location status is {tl.name}. "
-                   "Verify OnStep time and location before enabling tracking.",
-        )
+    _gate_check(device_state, "tracking_enable")
     device_state.record_command("track")
     try:
         mount_ops.track_sequence(mount)
@@ -311,14 +319,7 @@ def mount_goto(
     device_state: DeviceStateService = Depends(deps.get_device_state),
     confirm_solar: bool = Query(default=False),
 ) -> dict[str, bool]:
-    # M7-002: block automatic GoTo when time/location is not verified
-    tl = device_state.get_time_location_status()
-    if tl != TimeLocationStatus.VERIFIED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"GoTo blocked: time/location status is {tl.name}. "
-                   "Verify OnStep time and location before issuing a GoTo.",
-        )
+    _gate_check(device_state, "goto")
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:
@@ -344,14 +345,7 @@ def mount_sync(
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> dict[str, bool]:
     """Tell the mount it is currently pointing at the given RA/Dec."""
-    # M7-002: automatic sync (plate-solve sync) is blocked when time/location unverified
-    tl = device_state.get_time_location_status()
-    if tl != TimeLocationStatus.VERIFIED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Mount sync blocked: time/location status is {tl.name}. "
-                   "Verify OnStep time and location first.",
-        )
+    _gate_check(device_state, "sync")
     ok = mount.sync(body.ra, body.dec)
     if not ok:
         raise HTTPException(status_code=500, detail="Mount sync failed")
@@ -598,14 +592,7 @@ async def mount_goto_and_center(
     confirm_solar: bool = Query(default=False),
 ) -> GotoAndCenterResponse:
     """Goto target, plate-solve, sync, and refine until centered."""
-    # M7-002: block automatic GoTo when time/location is not verified
-    tl = device_state.get_time_location_status()
-    if tl != TimeLocationStatus.VERIFIED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"GoTo blocked: time/location status is {tl.name}. "
-                   "Verify OnStep time and location before issuing a GoTo.",
-        )
+    _gate_check(device_state, "goto")
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:

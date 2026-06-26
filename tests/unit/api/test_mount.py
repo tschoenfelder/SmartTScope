@@ -50,17 +50,30 @@ def _reset_deps() -> None:
     deps.reset()
 
 
-def _verified_ds() -> DeviceStateService:
-    """Return a DeviceStateService pre-set to VERIFIED for tests that don't care about tl guards."""
-    ds = DeviceStateService()
-    ds.set_time_location_status(TimeLocationStatus.VERIFIED)
-    return ds
+def _verified_ds(state: MountState = MountState.TRACKING) -> MagicMock:
+    """Return a mock DeviceStateService: adapter open, healthy, TL VERIFIED — passes all gates."""
+    return _mock_ds_for_status(started=True, state=state, tl_status=TimeLocationStatus.VERIFIED)
 
 
-def _inject(mount: MagicMock, *, device_state: DeviceStateService | None = None) -> None:
+def _inject(mount: MagicMock, *, device_state: MagicMock | None = None) -> None:
     app.dependency_overrides[deps.get_mount] = lambda: mount
-    ds = device_state if device_state is not None else _verified_ds()
-    app.dependency_overrides[deps.get_device_state] = lambda: ds
+    if device_state is None:
+        # Mirror mount mock's state/position into the device_state so mount_status uses
+        # the cache path and returns the same state that was injected via _mock_mount().
+        inferred_state = mount.get_state.return_value
+        if mount.get_position.side_effect is not None:
+            inferred_ra = inferred_dec = None
+        else:
+            pos = mount.get_position.return_value
+            inferred_ra = pos.ra if pos is not None else None
+            inferred_dec = pos.dec if pos is not None else None
+        if inferred_state == MountState.UNKNOWN:
+            inferred_ra = inferred_dec = None
+        device_state = _mock_ds_for_status(
+            started=True, state=inferred_state, tl_status=TimeLocationStatus.VERIFIED,
+            ra=inferred_ra, dec=inferred_dec,
+        )
+    app.dependency_overrides[deps.get_device_state] = lambda: device_state
 
 
 # ── GET /api/mount/status ──────────────────────────────────────────────────────
@@ -124,10 +137,12 @@ def _mock_ds_for_status(
     state: MountState = MountState.TRACKING,
     error: str | None = None,
     tl_status: TimeLocationStatus = TimeLocationStatus.VERIFIED,
+    ra: float | None = 5.58,
+    dec: float | None = -5.39,
 ) -> MagicMock:
     """Return a DeviceStateService mock configured for M8-004 status field tests."""
     observed = MountObservedState(
-        state=state, ra=5.58, dec=-5.39, polled_at=time.monotonic(), error=error
+        state=state, ra=ra, dec=dec, polled_at=time.monotonic(), error=error
     ) if started else None
     m = MagicMock(spec=DeviceStateService)
     m.is_started.return_value = started
@@ -1005,3 +1020,94 @@ class TestMountNudge:
         self._inject_nudge_mount()
         r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 10})
         assert r.status_code == 422
+
+
+# ── M8-005: Structured 409 gate responses ────────────────────────────────────
+
+
+class TestMountApiGatedResponses:
+    """Gate check returns structured 409 with reason_code/human_message (REQ-GOTO-001, INC-003/005)."""
+
+    @pytest.fixture(autouse=True)
+    def _bypass_checks(self, monkeypatch):
+        monkeypatch.setattr("smart_telescope.api.mount._check_mount_limits", lambda ra, dec: None)
+        monkeypatch.setattr("smart_telescope.api.mount.is_solar_target", lambda ra, dec: (False, 120.0))
+
+    def _closed_ds(self) -> MagicMock:
+        return _mock_ds_for_status(started=False, tl_status=TimeLocationStatus.VERIFIED)
+
+    def _unverified_ds(self) -> MagicMock:
+        return _mock_ds_for_status(started=True, tl_status=TimeLocationStatus.UNVERIFIED)
+
+    # ── tracking_enable ───────────────────────────────────────────────────────
+
+    def test_track_409_when_adapter_closed(self) -> None:
+        _inject(_mock_mount(), device_state=self._closed_ds())
+        r = client.post("/api/mount/track")
+        assert r.status_code == 409
+
+    def test_track_409_body_has_gate_blocked(self) -> None:
+        _inject(_mock_mount(), device_state=self._closed_ds())
+        r = client.post("/api/mount/track")
+        assert r.json()["detail"].get("gate_blocked") is True
+
+    def test_track_409_reason_code_adapter_disconnected(self) -> None:
+        _inject(_mock_mount(), device_state=self._closed_ds())
+        r = client.post("/api/mount/track")
+        assert r.json()["detail"]["reason_code"] == "ADAPTER_DISCONNECTED"
+
+    def test_track_409_has_human_message_and_action(self) -> None:
+        _inject(_mock_mount(), device_state=self._closed_ds())
+        detail = client.post("/api/mount/track").json()["detail"]
+        assert detail["human_message"]
+        assert detail["required_user_action"] == "run_connect_all"
+
+    def test_track_409_when_tl_unverified(self) -> None:
+        _inject(_mock_mount(), device_state=self._unverified_ds())
+        r = client.post("/api/mount/track")
+        assert r.status_code == 409
+        assert r.json()["detail"]["reason_code"] == "TIME_LOCATION_UNVERIFIED"
+
+    # ── goto ──────────────────────────────────────────────────────────────────
+
+    def test_goto_409_when_adapter_closed(self) -> None:
+        _inject(_mock_mount(), device_state=self._closed_ds())
+        r = client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39})
+        assert r.status_code == 409
+        assert r.json()["detail"].get("gate_blocked") is True
+
+    def test_goto_409_reason_adapter_disconnected(self) -> None:
+        _inject(_mock_mount(), device_state=self._closed_ds())
+        r = client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39})
+        assert r.json()["detail"]["reason_code"] == "ADAPTER_DISCONNECTED"
+
+    def test_goto_command_not_recorded_when_gate_blocks(self) -> None:
+        ds = self._closed_ds()
+        _inject(_mock_mount(), device_state=ds)
+        r = client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39})
+        assert r.status_code == 409
+        ds.record_command.assert_not_called()
+
+    def test_goto_409_when_tl_unverified(self) -> None:
+        _inject(_mock_mount(), device_state=self._unverified_ds())
+        r = client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39})
+        assert r.status_code == 409
+        assert r.json()["detail"]["reason_code"] == "TIME_LOCATION_UNVERIFIED"
+
+    # ── sync ──────────────────────────────────────────────────────────────────
+
+    def test_sync_409_when_adapter_closed(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = True
+        _inject(m, device_state=self._closed_ds())
+        r = client.post("/api/mount/sync", json={"ra": 5.58, "dec": -5.39})
+        assert r.status_code == 409
+        assert r.json()["detail"].get("gate_blocked") is True
+
+    def test_sync_409_when_tl_unverified(self) -> None:
+        m = _mock_mount()
+        m.sync.return_value = True
+        _inject(m, device_state=self._unverified_ds())
+        r = client.post("/api/mount/sync", json={"ra": 5.58, "dec": -5.39})
+        assert r.status_code == 409
+        assert r.json()["detail"]["reason_code"] == "TIME_LOCATION_UNVERIFIED"

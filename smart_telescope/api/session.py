@@ -339,6 +339,8 @@ def session_run(
             def _session_thread() -> None:
                 try:
                     runner.run(session_id=session_id)
+                except Exception as exc:
+                    _log.warning("Session thread terminated with exception: %s", exc)
                 finally:
                     rt.job_manager.release(jm_job.job_id)
 

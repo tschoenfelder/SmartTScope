@@ -946,11 +946,14 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Connect All idempotent: repeated calls reuse existing connections without contradictory UI state
   - Acceptance: REQ-CONN-001, REQ-CONN-002, REQ-API-002; INC-001
 
-- [ ] M8-005 UI — disabled controls show exact gate reason; 409 includes structured diagnostics `[P1 · UI]`
+- [x] M8-005 UI — disabled controls show exact gate reason; 409 includes structured diagnostics `[P1 · UI]` ✓ 2026-06-26
   - Applies to: goto, bright_star_goto, sync, tracking_enable, plate_solve, plate_solve_correction, collimation_slew_to_target, click_to_center, autofocus
   - Reason from backend gate result; UI refreshes after Stage 1 changes; stale frontend state cannot keep controls disabled
   - Rejected GoTo logged as `REJECTED` not `ISSUED`
   - Acceptance: REQ-UI-001, REQ-GOTO-001; INC-003, INC-005
+  - Backend: `_gate_check()` in `mount.py`; `gate_inputs_from_device_state()`+`evaluate_gate()` in `operation_gate.py`; replaced all 4 M7-002 ad-hoc tl checks
+  - Frontend: `_gateStates`+`_applyGateStates()` in `app.js`; `refreshHealth()` stores gate states; `_updateMountStrip()` calls `_applyGateStates()`; gate-blocked parsing in `mountGoto()`/`mountAction()` catch blocks
+  - raspberry_time_trust stub changed to "TRUSTED" until M8-007
 
 ### Priority 2 — Stage 1 time/location and Raspberry trust
 

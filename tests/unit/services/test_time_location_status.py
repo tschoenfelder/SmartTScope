@@ -13,6 +13,7 @@ Covers TEST-001 cases:
 """
 from __future__ import annotations
 
+import time as _time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ from smart_telescope.api.session import DeviceResult
 from smart_telescope.app import app
 from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountState
-from smart_telescope.services.device_state import DeviceStateService
+from smart_telescope.services.device_state import DeviceStateService, MountObservedState
 
 _OK = DeviceResult(status="ok")
 _ERR = DeviceResult(status="error", error="not connected", action="check cable")
@@ -57,6 +58,20 @@ def _make_device_state(status: TimeLocationStatus = TimeLocationStatus.UNKNOWN) 
     ds = DeviceStateService()
     ds.set_time_location_status(status)
     return ds
+
+
+def _mock_ds_tl(status: TimeLocationStatus) -> MagicMock:
+    """Mock device_state: adapter open and healthy so gate reaches TL check."""
+    m = MagicMock(spec=DeviceStateService)
+    m.is_started.return_value = True
+    obs = MountObservedState(
+        state=MountState.UNPARKED, ra=5.5, dec=-5.0, polled_at=_time.monotonic(), error=None
+    )
+    m.get_mount_state.return_value = obs
+    m.get_time_location_status.return_value = status
+    m.get_last_command.return_value = (None, None, None)
+    m.get_watchdog_warning.return_value = None
+    return m
 
 
 @pytest.fixture(autouse=True)
@@ -198,18 +213,18 @@ def test_time_location_skip_sets_unverified():
 @pytest.mark.parametrize("status", [TimeLocationStatus.UNKNOWN, TimeLocationStatus.UNVERIFIED])
 def test_track_blocked_when_not_verified(status):
     """POST /api/mount/track → 409 when time/location is not VERIFIED."""
-    ds = _make_device_state(status)
+    ds = _mock_ds_tl(status)
     mount = _make_mount()
     app.dependency_overrides[deps.get_mount] = lambda: mount
     app.dependency_overrides[deps.get_device_state] = lambda: ds
     resp = client.post("/api/mount/track")
     assert resp.status_code == 409
-    assert status.name in resp.json()["detail"]
+    assert resp.json()["detail"]["reason_code"] == "TIME_LOCATION_UNVERIFIED"
 
 
 def test_track_allowed_when_verified():
     """POST /api/mount/track → 200 when time/location is VERIFIED."""
-    ds = _make_device_state(TimeLocationStatus.VERIFIED)
+    ds = _mock_ds_tl(TimeLocationStatus.VERIFIED)
     mount = _make_mount()
     app.dependency_overrides[deps.get_mount] = lambda: mount
     app.dependency_overrides[deps.get_device_state] = lambda: ds
@@ -222,13 +237,15 @@ def test_track_allowed_when_verified():
 @pytest.mark.parametrize("status", [TimeLocationStatus.UNKNOWN, TimeLocationStatus.UNVERIFIED])
 def test_goto_blocked_when_not_verified(status):
     """POST /api/mount/goto → 409 when time/location is not VERIFIED."""
-    ds = _make_device_state(status)
+    ds = _mock_ds_tl(status)
     mount = _make_mount()
     app.dependency_overrides[deps.get_mount] = lambda: mount
     app.dependency_overrides[deps.get_device_state] = lambda: ds
-    resp = client.post("/api/mount/goto", json={"ra": 5.5, "dec": -5.0})
+    with patch("smart_telescope.api.mount.is_solar_target", return_value=(False, 120.0)), \
+         patch("smart_telescope.api.mount._check_mount_limits"):
+        resp = client.post("/api/mount/goto", json={"ra": 5.5, "dec": -5.0})
     assert resp.status_code == 409
-    assert status.name in resp.json()["detail"]
+    assert resp.json()["detail"]["reason_code"] == "TIME_LOCATION_UNVERIFIED"
 
 
 # ── Automatic sync blocked when not VERIFIED ─────────────────────────────────
@@ -236,13 +253,13 @@ def test_goto_blocked_when_not_verified(status):
 @pytest.mark.parametrize("status", [TimeLocationStatus.UNKNOWN, TimeLocationStatus.UNVERIFIED])
 def test_sync_blocked_when_not_verified(status):
     """POST /api/mount/sync → 409 when time/location is not VERIFIED."""
-    ds = _make_device_state(status)
+    ds = _mock_ds_tl(status)
     mount = _make_mount()
     app.dependency_overrides[deps.get_mount] = lambda: mount
     app.dependency_overrides[deps.get_device_state] = lambda: ds
     resp = client.post("/api/mount/sync", json={"ra": 5.5, "dec": -5.0})
     assert resp.status_code == 409
-    assert status.name in resp.json()["detail"]
+    assert resp.json()["detail"]["reason_code"] == "TIME_LOCATION_UNVERIFIED"
 
 
 # ── Mount status exposes time_location_status field ──────────────────────────

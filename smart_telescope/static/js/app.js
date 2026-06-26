@@ -6,6 +6,31 @@ let _focuserOk       = false;
 let _mountPendingCmd = null;   // set to command name while hardware is catching up
 let _focusCamRole    = 'main';  // optical train role used for autofocus (set in Stage 1 focuser tile)
 let _opticalTrains   = [];      // cached optical train list from /api/optical_trains
+let _gateStates      = {};      // M8-005: gate states per operation from /api/status
+
+function _applyGateStates() {
+    const gotoGate = _gateStates['goto'];
+    if (gotoGate && !gotoGate.allowed) {
+        for (const id of ['s2-goto-btn', 's3-goto-btn']) {
+            const btn = document.getElementById(id);
+            if (btn && !_mountPendingCmd) { btn.disabled = true; btn.title = gotoGate.human_message || ''; }
+        }
+    }
+    const moveGate = _gateStates['manual_mount_move'];
+    if (moveGate && !moveGate.allowed) {
+        for (const padId of ['s2-guide-pad', 's4-guide-pad', 's4-st-mount-btns']) {
+            const el = document.getElementById(padId);
+            if (!el) continue;
+            el.querySelectorAll('button').forEach(b => { b.disabled = true; b.title = moveGate.human_message || ''; });
+        }
+    }
+    const trackGate = _gateStates['tracking_enable'];
+    const trackBtn = document.getElementById('s1-track-btn');
+    if (trackBtn && trackGate && !trackGate.allowed) { trackBtn.disabled = true; trackBtn.title = trackGate.human_message || ''; }
+    const afGate = _gateStates['autofocus'];
+    const afBtn = document.getElementById('preview-af-btn');
+    if (afBtn && afGate && !afGate.allowed) { afBtn.disabled = true; afBtn.title = afGate.human_message || ''; }
+}
 
 /* ── Advanced mode (UX4-001/002/003) ─────────────────────────────────── */
 let _advancedMode = localStorage.getItem('tsc_advanced_mode') === '1';

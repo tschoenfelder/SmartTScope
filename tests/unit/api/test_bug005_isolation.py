@@ -28,9 +28,9 @@ from smart_telescope.domain.states import SessionState
 from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.camera import CameraPort
 from smart_telescope.ports.focuser import FocuserPort
-from smart_telescope.ports.mount import MountPort
+from smart_telescope.ports.mount import MountPort, MountState
 from smart_telescope.runtime import get_runtime
-from smart_telescope.services.device_state import DeviceStateService
+from smart_telescope.services.device_state import DeviceStateService, MountObservedState
 from smart_telescope.workflow.runner import WorkflowError
 
 client = TestClient(app)
@@ -48,6 +48,10 @@ def _mock_mount() -> MagicMock:
     m = MagicMock(spec=MountPort)
     m.connect.return_value = True
     m.stop.return_value = True
+    m.is_slewing.return_value = False
+    m.goto.return_value = True
+    m.get_state.return_value = MountState.UNPARKED
+    m.get_position.return_value = None
     return m
 
 
@@ -248,10 +252,16 @@ class TestMountCommandsAfterSessionCrash:
 
         _wait_for_session_done(timeout=2.0)
 
-        # Provide VERIFIED time/location status so the goto check passes.
-        # The test verifies the coordinator lock is released, not the tl guard.
-        ds = DeviceStateService()
-        ds.set_time_location_status(TimeLocationStatus.VERIFIED)
+        # Provide VERIFIED time/location status and open adapter so gate passes.
+        # This test verifies the coordinator lock is released, not the gate guards.
+        ds = MagicMock(spec=DeviceStateService)
+        ds.is_started.return_value = True
+        ds.get_mount_state.return_value = MountObservedState(
+            state=MountState.UNPARKED, ra=5.5, dec=-5.4, polled_at=0.0
+        )
+        ds.get_time_location_status.return_value = TimeLocationStatus.VERIFIED
+        ds.get_last_command.return_value = (None, None, None)
+        ds.get_watchdog_warning.return_value = None
         app.dependency_overrides[deps.get_device_state] = lambda: ds
 
         # Goto should not be rejected with 409 (resource conflict) after the crash

@@ -446,12 +446,12 @@ class TestMountStateCategories:
             body = client.get("/api/status").json()
         assert body["mount_states"]["onstep_time_location_state"] == "UNVERIFIED"
 
-    def test_raspberry_time_trust_state_defaults_not_trusted(self) -> None:
+    def test_raspberry_time_trust_state_defaults_trusted(self) -> None:
         _inject_mount(_mock_mount())
         _inject_device_state(_mock_device_state())
         with _patch_solver_ok():
             body = client.get("/api/status").json()
-        assert body["mount_states"]["raspberry_time_trust_state"] == "NOT_TRUSTED"
+        assert body["mount_states"]["raspberry_time_trust_state"] == "TRUSTED"
 
     def test_operation_gate_states_contains_all_13_operations(self) -> None:
         _inject_mount(_mock_mount())
@@ -520,8 +520,8 @@ class TestMountStateCategories:
             body = client.get("/api/status").json()
         assert body["mount_states"]["mount_readiness"] == "CONNECTED_TIME_LOCATION_UNVERIFIED"
 
-    def test_mount_readiness_raspberry_time_untrusted_when_tl_verified(self) -> None:
-        # With the current NOT_TRUSTED stub, VERIFIED TL → RASPBERRY_TIME_UNTRUSTED
+    def test_mount_readiness_connected_ready_when_tl_verified(self) -> None:
+        # With TRUSTED stub (M8-005+), VERIFIED TL → CONNECTED_READY
         obs = MountObservedState(
             state=MountState.TRACKING, ra=5.0, dec=30.0, polled_at=time.monotonic()
         )
@@ -535,7 +535,7 @@ class TestMountStateCategories:
         )
         with _patch_solver_ok():
             body = client.get("/api/status").json()
-        assert body["mount_states"]["mount_readiness"] == "CONNECTED_RASPBERRY_TIME_UNTRUSTED"
+        assert body["mount_states"]["mount_readiness"] == "CONNECTED_READY"
 
     def test_mount_readiness_error_when_health_failed(self) -> None:
         obs = MountObservedState(

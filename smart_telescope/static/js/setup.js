@@ -223,11 +223,13 @@ async function refreshHealth() {
       const d = await (await fetch('/api/status')).json();
       _renderHealthCard(d);
       _focuserOk = d.focuser?.ok ?? false;
+      _gateStates = d.mount_states?.operation_gate_states || {};
       const afBtn = document.getElementById('preview-af-btn');
       if (afBtn) {
         afBtn.disabled = !_focuserOk;
         afBtn.title = _focuserOk ? 'Autofocus with preview camera' : 'Focuser not connected';
       }
+      _applyGateStates();
       const focusRow = document.getElementById('s3-focus-row');
       if (focusRow) focusRow.style.display = _focuserOk ? 'flex' : 'none';
     } catch (_) {}

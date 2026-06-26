@@ -1225,7 +1225,7 @@
             <input type="number" id="goto-ra" step="0.001" placeholder="h" style="width:9ch">
             <label>Dec</label>
             <input type="number" id="goto-dec" step="0.001" placeholder="°" style="width:9ch">
-            <button onclick="mountGoto()">GoTo</button>
+            <button id="s3-goto-btn" onclick="mountGoto()">GoTo</button>
             <button id="s3-center-btn" class="secondary" onclick="mountGotoAndCenter()"
                     title="GoTo then plate-solve + sync until centred">&#x2316;&nbsp;Center</button>
             <button id="s3-arc-goto-btn" class="secondary" disabled onclick="s3ArchiveTag('goto')"

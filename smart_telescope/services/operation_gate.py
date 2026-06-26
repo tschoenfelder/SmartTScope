@@ -140,3 +140,32 @@ def evaluate_all_gates(
         )
         for op in GATED_OPERATIONS
     }
+
+
+def gate_inputs_from_device_state(device_state: object) -> dict[str, str]:
+    """Extract gate input strings from a DeviceStateService instance."""
+    started: bool = device_state.is_started()  # type: ignore[union-attr]
+    observed = device_state.get_mount_state()  # type: ignore[union-attr]
+    adapter_connection = "OPEN" if started else "CLOSED"
+    if observed is None:
+        adapter_health = "UNKNOWN"
+        mount_operational_state = "UNKNOWN"
+    elif observed.error:
+        adapter_health = "FAILED"
+        mount_operational_state = observed.state.name
+    else:
+        adapter_health = "OK"
+        mount_operational_state = observed.state.name
+    tl_status = device_state.get_time_location_status()  # type: ignore[union-attr]
+    return {
+        "adapter_connection": adapter_connection,
+        "adapter_health": adapter_health,
+        "mount_operational_state": mount_operational_state,
+        "onstep_time_location": tl_status.name,
+        "raspberry_time_trust": "TRUSTED",  # stub: M8-007 will determine actual source
+    }
+
+
+def evaluate_gate(operation: str, **inputs: str) -> GateResult:
+    """Evaluate a single operation gate using pre-extracted input strings."""
+    return _evaluate_one(operation, **inputs)

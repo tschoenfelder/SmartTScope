@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-26 — DEVELOP — M8-005 (Structured gate diagnostics for disabled UI controls and 409 responses)
+
+**REQ-UI-001, REQ-GOTO-001 implemented; INC-003, INC-005 resolved.**
+- `operation_gate.py`: added `gate_inputs_from_device_state()` and `evaluate_gate()` helpers
+- `api/health.py`: `_build_mount_state_categories()` uses `gate_inputs_from_device_state()`; `raspberry_trust` stub changed to `TRUSTED` (M8-007 will do real trust determination)
+- `api/mount.py`: replaced 4 ad-hoc TL checks with `_gate_check()` → structured HTTPException 409 (fields: `gate_blocked`, `reason_code`, `human_message`, `required_user_action`, `blocking_states`)
+- `api/session.py`: `_session_thread` catches all exceptions (prevents pytest 9 `PytestUnhandledThreadExceptionWarning`)
+- Frontend: `_applyGateStates()` in `app.js` disables GoTo/track/manual-move/autofocus buttons with gate `human_message` as tooltip; `setup.js` stores gate states from `/api/status`; `mount.js` shows `human_message` from gate-blocked 409s
+- 11 new tests in `TestMountApiGatedResponses`; 3345 passed, 39 skipped
+
+---
+
 ## 2026-06-26 — DEVELOP — M8-004 (Fix /api/mount/status connection fields)
 
 **REQ-CONN-001 / REQ-CONN-002 implemented.** Added 6 new fields to `MountStatus` in `/api/mount/status`: `adapter_open` (is_started()), `health_check_ok` (None/True/False), `connected` (adapter_open AND health_ok), `park_state` (PARKED|UNPARKED|UNKNOWN), `tracking_state` (TRACKING|NOT_TRACKING|UNKNOWN), `last_error`. Made `POST /api/session/connect` idempotent: skips mount.connect() when DeviceStateService.is_started() is True, returning status="ok" without calling into managed.py again (avoids SYNC-OVERRIDE False-return contradiction). 22 new unit tests.

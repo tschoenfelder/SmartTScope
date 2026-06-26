@@ -66,6 +66,7 @@ function _updateMountStrip(data) {
     }
     const gotoBtn = document.getElementById('s2-goto-btn');
     if (gotoBtn && !_mountPendingCmd) gotoBtn.disabled = _parked;
+    if (typeof _applyGateStates === 'function') _applyGateStates();
 }
 
 function mountEmergencyStop() {
@@ -167,7 +168,7 @@ function mountCard(data) {
               ? `<button class="secondary" onclick="mountAction('disable_tracking')">Disable Tracking</button>`
               : state === 'at_home'
                 ? `<button class="secondary" disabled title="Slew to a target before enabling tracking">Enable Tracking</button>`
-                : `<button class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
+                : `<button id="s1-track-btn" class="secondary" onclick="mountAction('track')">Enable Tracking</button>`}
             <span class="controls-spacer"></span>
             <span style="display:flex;gap:0.5rem;flex-wrap:nowrap;align-items:center">
               <button class="secondary" onclick="mountHome()"
@@ -240,7 +241,12 @@ async function mountAction(action) {
         unlockStage(4);
       }
     } catch (err) {
-      setStatus('s1-mount-status', `${action} failed: ${err.message}`, true);
+      let msg = `${action} failed: ${err.message}`;
+      try {
+        const d = JSON.parse(err.message);
+        if (d?.gate_blocked) msg = d.human_message || 'Operation blocked — check connection and Stage 1.';
+      } catch {}
+      setStatus('s1-mount-status', msg, true);
     } finally {
       _mountPendingCmd = null;
       await refreshMount();  // render confirmed hardware state
@@ -293,7 +299,9 @@ async function mountGoto() {
       let msg = `GoTo failed: ${err.message}`;
       try {
         const d = JSON.parse(err.message);
-        if (d?.error === 'solar_exclusion')
+        if (d?.gate_blocked)
+          msg = d.human_message || 'Operation blocked — check connection and Stage 1.';
+        else if (d?.error === 'solar_exclusion')
           msg = `Solar exclusion — target is only ${d.sun_separation_deg}° from the Sun.`;
         else if (d?.error === 'mount_limit')
           msg = `Mount limit (${d.reason}): alt ${d.altitude_deg?.toFixed(1) ?? '—'}° or HA ${d.ha_hours?.toFixed(2) ?? '—'} h.`;

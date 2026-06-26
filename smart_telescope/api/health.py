@@ -15,7 +15,7 @@ from ..domain.mount_readiness import derive_mount_readiness
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
 from ..services.device_state import DeviceStateService
-from ..services.operation_gate import GateResult, evaluate_all_gates
+from ..services.operation_gate import GateResult, evaluate_all_gates, gate_inputs_from_device_state
 from . import deps
 from .session import get_active_runner, get_session_running
 
@@ -116,37 +116,20 @@ class SystemHealth(BaseModel):
 
 
 def _build_mount_state_categories(device_state: DeviceStateService) -> MountStateCategories:
-    started = device_state.is_started()
-    observed = device_state.get_mount_state()
+    inputs = gate_inputs_from_device_state(device_state)
+    adapter_connection = inputs["adapter_connection"]
+    adapter_health = inputs["adapter_health"]
+    operational = inputs["mount_operational_state"]
+    tl_name = inputs["onstep_time_location"]
+    raspberry_trust = inputs["raspberry_time_trust"]
 
-    adapter_connection = "OPEN" if started else "CLOSED"
-
-    if observed is None:
-        adapter_health = "UNKNOWN"
-        operational = "UNKNOWN"
-    elif observed.error:
-        adapter_health = "FAILED"
-        operational = observed.state.name
-    else:
-        adapter_health = "OK"
-        operational = observed.state.name
-
-    tl_status = device_state.get_time_location_status()
-
-    raspberry_trust = "NOT_TRUSTED"  # stub until M8-007
     readiness = derive_mount_readiness(
         adapter_connection=adapter_connection,
         adapter_health=adapter_health,
-        onstep_time_location=tl_status.name,
+        onstep_time_location=tl_name,
         raspberry_time_trust=raspberry_trust,
     )
-    gate_results = evaluate_all_gates(
-        adapter_connection=adapter_connection,
-        adapter_health=adapter_health,
-        mount_operational_state=operational,
-        onstep_time_location=tl_status.name,
-        raspberry_time_trust=raspberry_trust,
-    )
+    gate_results = evaluate_all_gates(**inputs)
     gate_states = {
         op: {
             "allowed": r.allowed,
@@ -162,7 +145,7 @@ def _build_mount_state_categories(device_state: DeviceStateService) -> MountStat
         adapter_connection_state=adapter_connection,
         adapter_health_state=adapter_health,
         mount_operational_state=operational,
-        onstep_time_location_state=tl_status.name,
+        onstep_time_location_state=tl_name,
         raspberry_time_trust_state=raspberry_trust,
         operation_gate_states=gate_states,
         mount_readiness=readiness.name,

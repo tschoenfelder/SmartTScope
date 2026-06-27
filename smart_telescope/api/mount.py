@@ -75,9 +75,14 @@ def _gate_check(
     device_state: DeviceStateService,
     operation: str,
     master_source_svc: object = None,
+    raspberry_trust_svc: object = None,
 ) -> None:
     """Raise structured HTTPException(409) if the gate blocks this operation."""
-    inputs = gate_inputs_from_device_state(device_state, master_source_svc=master_source_svc)
+    inputs = gate_inputs_from_device_state(
+        device_state,
+        master_source_svc=master_source_svc,
+        raspberry_trust_svc=raspberry_trust_svc,
+    )
     result = evaluate_gate(operation, **inputs)
     if not result.allowed:
         raise HTTPException(status_code=409, detail={
@@ -291,11 +296,12 @@ def mount_unpark(
 
 @router.post("/track")
 def mount_track(
-    mount:             MountPort          = Depends(deps.get_mount),
-    device_state:      DeviceStateService = Depends(deps.get_device_state),
-    master_source_svc: object             = Depends(deps.get_master_source_service),
+    mount:               MountPort          = Depends(deps.get_mount),
+    device_state:        DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc:   object             = Depends(deps.get_master_source_service),
+    raspberry_trust_svc: object             = Depends(deps.get_raspberry_trust_service),
 ) -> dict[str, bool]:
-    _gate_check(device_state, "tracking_enable", master_source_svc=master_source_svc)
+    _gate_check(device_state, "tracking_enable", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
     device_state.record_command("track")
     try:
         mount_ops.track_sequence(mount)
@@ -318,14 +324,15 @@ def mount_stop(
 
 @router.post("/goto")
 def mount_goto(
-    body:              GotoRequest,
-    mount:             MountPort          = Depends(deps.get_mount),
-    coordinator:       HardwareCommandCoordinator = Depends(deps.get_coordinator),
-    device_state:      DeviceStateService = Depends(deps.get_device_state),
-    master_source_svc: object             = Depends(deps.get_master_source_service),
-    confirm_solar:     bool = Query(default=False),
+    body:                GotoRequest,
+    mount:               MountPort          = Depends(deps.get_mount),
+    coordinator:         HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state:        DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc:   object             = Depends(deps.get_master_source_service),
+    raspberry_trust_svc: object             = Depends(deps.get_raspberry_trust_service),
+    confirm_solar:       bool = Query(default=False),
 ) -> dict[str, bool]:
-    _gate_check(device_state, "goto", master_source_svc=master_source_svc)
+    _gate_check(device_state, "goto", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:
@@ -346,13 +353,14 @@ class SyncRequest(BaseModel):
 
 @router.post("/sync")
 def mount_sync(
-    body:              SyncRequest,
-    mount:             MountPort          = Depends(deps.get_mount),
-    device_state:      DeviceStateService = Depends(deps.get_device_state),
-    master_source_svc: object             = Depends(deps.get_master_source_service),
+    body:                SyncRequest,
+    mount:               MountPort          = Depends(deps.get_mount),
+    device_state:        DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc:   object             = Depends(deps.get_master_source_service),
+    raspberry_trust_svc: object             = Depends(deps.get_raspberry_trust_service),
 ) -> dict[str, bool]:
     """Tell the mount it is currently pointing at the given RA/Dec."""
-    _gate_check(device_state, "sync", master_source_svc=master_source_svc)
+    _gate_check(device_state, "sync", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
     ok = mount.sync(body.ra, body.dec)
     if not ok:
         raise HTTPException(status_code=500, detail="Mount sync failed")
@@ -361,18 +369,28 @@ def mount_sync(
 
 @router.post("/sync_clock")
 def mount_sync_clock(
-    mount: MountPort = Depends(deps.get_mount),
-    device_state: DeviceStateService = Depends(deps.get_device_state),
+    mount:             MountPort          = Depends(deps.get_mount),
+    device_state:      DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object             = Depends(deps.get_master_source_service),
 ) -> dict:
     """Push Pi system time and configured observer location into OnStep.
 
     This is the user-confirmation endpoint for the M7-001 interactive startup
     dialog: the UI calls this after the user approves the time/location push.
     Sets TimeLocationStatus to VERIFIED on success.
+
+    M8-007: When the master time source at verification time is GPS_FIX or NTP,
+    ONSTEP_COMPARISON trust is established for the Raspberry Pi clock (DEC-006 chain).
     """
     try:
         mount.ensure_time_location_synced()
         device_state.set_time_location_status(TimeLocationStatus.VERIFIED)
+        # M8-007: if OnStep's reference was GPS/NTP, Pi clock is validated via DEC-006 trust chain
+        from ..domain.master_time_source import MasterTimeSource
+        user_confirmed: bool = device_state.is_user_time_confirmed()
+        ms = master_source_svc.evaluate(user_confirmed=user_confirmed)  # type: ignore[union-attr]
+        if ms in (MasterTimeSource.GPS_FIX, MasterTimeSource.NTP):
+            device_state.set_onstep_comparison_established()
         return {"ok": True, "time_location_status": "VERIFIED"}
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -591,16 +609,17 @@ class GotoAndCenterResponse(BaseModel):
 
 @router.post("/goto_and_center", response_model=GotoAndCenterResponse)
 async def mount_goto_and_center(
-    body:              GotoAndCenterRequest,
-    mount:             MountPort  = Depends(deps.get_mount),
-    solver:            SolverPort = Depends(deps.get_solver),
-    coordinator:       HardwareCommandCoordinator = Depends(deps.get_coordinator),
-    device_state:      DeviceStateService = Depends(deps.get_device_state),
-    master_source_svc: object             = Depends(deps.get_master_source_service),
-    confirm_solar:     bool = Query(default=False),
+    body:                GotoAndCenterRequest,
+    mount:               MountPort  = Depends(deps.get_mount),
+    solver:              SolverPort = Depends(deps.get_solver),
+    coordinator:         HardwareCommandCoordinator = Depends(deps.get_coordinator),
+    device_state:        DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc:   object             = Depends(deps.get_master_source_service),
+    raspberry_trust_svc: object             = Depends(deps.get_raspberry_trust_service),
+    confirm_solar:       bool = Query(default=False),
 ) -> GotoAndCenterResponse:
     """Goto target, plate-solve, sync, and refine until centered."""
-    _gate_check(device_state, "goto", master_source_svc=master_source_svc)
+    _gate_check(device_state, "goto", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:

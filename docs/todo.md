@@ -970,12 +970,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - `api/deps.py` + `runtime.py`: `get_master_source_service()` dep; `RuntimeContext.master_source_svc` (reset in tests)
   - 23 new tests in `tests/unit/services/test_master_source.py`; 3368 passed, 39 skipped
 
-- [ ] M8-007 Raspberry Pi time trust sources — 5 enums with rules `[P1 · Runtime]`
+- [x] M8-007 Raspberry Pi time trust sources — 5 enums with rules `[P1 · Runtime]` ✓ 2026-06-27
   - `NTP`, `GPSD_FIX`, `USER_CONFIRMED`, `ONSTEP_COMPARISON`, `NOT_TRUSTED`
   - `ONSTEP_COMPARISON`: valid only if OnStep trusted via GPS/NTP/previous verified Stage 1 **or** via successful push in current session (intentional trust chain — clarify in code comment per DEC-006)
   - Pushing Pi time to OnStep alone does NOT auto-trust Raspberry Pi time (trust needs the subsequent re-comparison step)
   - `USER_CONFIRMED`: warning shown; logged; valid for session or `session_trust_expiry_minutes`
   - Acceptance: REQ-TIME-002, REQ-TIME-004; INC-003, INC-009
+  - `domain/raspberry_time_trust.py`: `RaspberryTimeTrustSource` enum + `is_trusted()` helper
+  - `services/raspberry_time_trust.py`: `RaspberryTimeTrustService` with priority chain (GPSD_FIX > NTP > ONSTEP_COMPARISON > USER_CONFIRMED > NOT_TRUSTED); expiry via monotonic timestamp
+  - `services/device_state.py`: added `set_onstep_comparison_established()`, `get_onstep_comparison_established_at()`, `get_user_time_confirmed_at()`
+  - `services/operation_gate.py`: M8-007 path with isinstance guards for mock safety; M8-006 fallback when `raspberry_trust_svc=None`
+  - `api/health.py`, `api/mount.py`, `api/deps.py`, `runtime.py`: wired into all gated endpoints
+  - 35 new tests in `tests/unit/services/test_raspberry_time_trust.py`; 3360 passed, 24 skipped
 
 - [ ] M8-008 Meter-based location tolerance (100 m default); UTF-8-safe logs `[P1 · Runtime]`
   - Primary check: `location_delta_m ≤ onstep_location_tolerance_m (default 100)`; degree fallback only for backward-compat

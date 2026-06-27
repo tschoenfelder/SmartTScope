@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-007 (Raspberry Pi time trust sources: 5-state enum + evaluation service)
+
+**REQ-TIME-002, REQ-TIME-004 implemented. Addresses INC-003, INC-009.**
+- `domain/raspberry_time_trust.py`: `RaspberryTimeTrustSource` enum (GPSD_FIX | NTP | ONSTEP_COMPARISON | USER_CONFIRMED | NOT_TRUSTED) + module-level `is_trusted()` helper
+- `services/raspberry_time_trust.py`: `RaspberryTimeTrustService` — priority chain GPSD_FIX > NTP > ONSTEP_COMPARISON > USER_CONFIRMED > NOT_TRUSTED; session expiry via monotonic timestamps; `_check_gpsd_fix()` + `_check_ntp_sync()` (silent fallback on non-Linux); DEC-006 trust chain documented in module docstring
+- `services/device_state.py`: added `set_onstep_comparison_established()`, `get_onstep_comparison_established_at()`, `get_user_time_confirmed_at()` methods
+- `services/operation_gate.py`: M8-007 path in `gate_inputs_from_device_state()`; isinstance guards prevent MagicMock leaking as float timestamps; M8-006 fallback when `raspberry_trust_svc=None`; gate check order: `TIME_LOCATION_UNVERIFIED` before `RASPBERRY_TIME_UNTRUSTED`
+- `api/health.py`: `MountStateCategories` gains `raspberry_trust_source` field; `system_status` injects `RaspberryTimeTrustService`
+- `api/mount.py`: 4 gated endpoints (`track`, `goto`, `sync`, `goto_and_center`) pass `raspberry_trust_svc`; `mount_sync_clock()` calls `device_state.set_onstep_comparison_established()` when master source is GPS_FIX or NTP
+- `api/deps.py` + `runtime.py`: `get_raspberry_trust_service()` dep; `RuntimeContext.raspberry_trust_svc` singleton (reset in tests)
+- 35 new tests in `tests/unit/services/test_raspberry_time_trust.py`; 3360 passed, 24 skipped
+
+---
+
 ## 2026-06-26 — DEVELOP — M8-006 (Master time source selection: GPS > NTP > USER_CONFIRMED > FALLBACK)
 
 **REQ-TIME-001 implemented.**

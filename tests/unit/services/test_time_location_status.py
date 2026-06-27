@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from smart_telescope.api import deps
 from smart_telescope.api.session import DeviceResult
 from smart_telescope.app import app
+from smart_telescope.domain.raspberry_time_trust import RaspberryTimeTrustSource
 from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountState
 from smart_telescope.services.device_state import DeviceStateService, MountObservedState
@@ -226,8 +227,12 @@ def test_track_allowed_when_verified():
     """POST /api/mount/track → 200 when time/location is VERIFIED."""
     ds = _mock_ds_tl(TimeLocationStatus.VERIFIED)
     mount = _make_mount()
+    trusted_svc = MagicMock()
+    trusted_svc.evaluate.return_value = RaspberryTimeTrustSource.ONSTEP_COMPARISON
+    trusted_svc.is_trusted.return_value = True
     app.dependency_overrides[deps.get_mount] = lambda: mount
     app.dependency_overrides[deps.get_device_state] = lambda: ds
+    app.dependency_overrides[deps.get_raspberry_trust_service] = lambda: trusted_svc
     resp = client.post("/api/mount/track")
     assert resp.status_code == 200
 

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps, session as session_module
 from smart_telescope.app import app
+from smart_telescope.domain.raspberry_time_trust import RaspberryTimeTrustSource
 from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountState
 from smart_telescope.services.device_state import MountObservedState
@@ -329,8 +330,21 @@ def _mock_device_state(
     return m
 
 
+def _inject_trusted_raspberry_svc() -> None:
+    """Override the raspberry trust service with a mock that always returns ONSTEP_COMPARISON.
+
+    Called by _inject_device_state() so mount state tests don't hit real GPSD/NTP.
+    Tests that want NOT_TRUSTED can override deps.get_raspberry_trust_service afterward.
+    """
+    mock_svc = MagicMock()
+    mock_svc.evaluate.return_value = RaspberryTimeTrustSource.ONSTEP_COMPARISON
+    mock_svc.is_trusted.return_value = True
+    app.dependency_overrides[deps.get_raspberry_trust_service] = lambda: mock_svc
+
+
 def _inject_device_state(ds: MagicMock) -> None:
     app.dependency_overrides[deps.get_device_state] = lambda: ds
+    _inject_trusted_raspberry_svc()
 
 
 class TestMountStateCategories:

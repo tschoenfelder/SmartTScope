@@ -147,14 +147,18 @@ def evaluate_all_gates(
 def gate_inputs_from_device_state(
     device_state: object,
     master_source_svc: object = None,
+    raspberry_trust_svc: object = None,
 ) -> dict[str, str]:
     """Extract gate input strings from a DeviceStateService instance.
 
     Args:
         device_state: DeviceStateService (typed as object to avoid circular imports).
-        master_source_svc: MasterSourceService instance (M8-006).  When None the
-            raspberry_time_trust stub returns "TRUSTED" and master_time_source
-            returns "STUB" until the service is wired into all callers.
+        master_source_svc: MasterSourceService instance (M8-006).  Provides the
+            master_time_source display value.  When None, master_time_source = "STUB".
+        raspberry_trust_svc: RaspberryTimeTrustService instance (M8-007).  When provided,
+            evaluates 5-state Raspberry Pi clock trust.  Falls back to master_source_svc
+            binary trust when None (backward compat), or to the "TRUSTED" stub when both
+            are None.
     """
     started: bool = device_state.is_started()  # type: ignore[union-attr]
     observed = device_state.get_mount_state()  # type: ignore[union-attr]
@@ -169,15 +173,37 @@ def gate_inputs_from_device_state(
         adapter_health = "OK"
         mount_operational_state = observed.state.name
     tl_status = device_state.get_time_location_status()  # type: ignore[union-attr]
+    user_confirmed: bool = device_state.is_user_time_confirmed()  # type: ignore[union-attr]
 
+    # Master time source (M8-006): reference source for time/location data display
     if master_source_svc is not None:
-        user_confirmed: bool = device_state.is_user_time_confirmed()  # type: ignore[union-attr]
-        source = master_source_svc.evaluate(user_confirmed=user_confirmed)  # type: ignore[union-attr]
-        raspberry_trust = "TRUSTED" if master_source_svc.is_trusted(source) else "NOT_TRUSTED"  # type: ignore[union-attr]
-        master_time_source = source.value  # type: ignore[union-attr]
+        ms_source = master_source_svc.evaluate(user_confirmed=user_confirmed)  # type: ignore[union-attr]
+        master_time_source = ms_source.value  # type: ignore[union-attr]
     else:
-        raspberry_trust = "TRUSTED"  # stub: replaced when MasterSourceService is wired in
+        ms_source = None
         master_time_source = "STUB"
+
+    # Raspberry Pi clock trust (M8-007 when available; M8-006 fallback; stub otherwise)
+    if raspberry_trust_svc is not None:
+        _oc_raw = device_state.get_onstep_comparison_established_at()  # type: ignore[union-attr]
+        oc_at: float | None = _oc_raw if isinstance(_oc_raw, (int, float)) else None
+        _uc_raw = device_state.get_user_time_confirmed_at()  # type: ignore[union-attr]
+        uc_at: float | None = _uc_raw if isinstance(_uc_raw, (int, float)) else None
+        rt_source = raspberry_trust_svc.evaluate(  # type: ignore[union-attr]
+            time_location_verified=(tl_status.name == "VERIFIED"),
+            onstep_comparison_established_at=oc_at,
+            user_confirmed=user_confirmed,
+            user_confirmed_at=uc_at,
+        )
+        raspberry_trust = "TRUSTED" if raspberry_trust_svc.is_trusted(rt_source) else "NOT_TRUSTED"  # type: ignore[union-attr]
+        raspberry_trust_source = rt_source.value  # type: ignore[union-attr]
+    elif ms_source is not None:
+        # M8-006 backward compat: use master source binary trust
+        raspberry_trust = "TRUSTED" if master_source_svc.is_trusted(ms_source) else "NOT_TRUSTED"  # type: ignore[union-attr]
+        raspberry_trust_source = ms_source.value  # type: ignore[union-attr]
+    else:
+        raspberry_trust = "TRUSTED"  # stub: replaced when services are wired in
+        raspberry_trust_source = "STUB"
 
     return {
         "adapter_connection": adapter_connection,
@@ -185,6 +211,7 @@ def gate_inputs_from_device_state(
         "mount_operational_state": mount_operational_state,
         "onstep_time_location": tl_status.name,
         "raspberry_time_trust": raspberry_trust,
+        "raspberry_trust_source": raspberry_trust_source,
         "master_time_source": master_time_source,
     }
 

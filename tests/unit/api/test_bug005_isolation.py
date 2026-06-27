@@ -262,6 +262,10 @@ class TestMountCommandsAfterSessionCrash:
         ds.get_time_location_status.return_value = TimeLocationStatus.VERIFIED
         ds.get_last_command.return_value = (None, None, None)
         ds.get_watchdog_warning.return_value = None
+        # M8-007: establish ONSTEP_COMPARISON trust so the raspberry_time gate passes
+        ds.is_user_time_confirmed.return_value = False
+        ds.get_user_time_confirmed_at.return_value = None
+        ds.get_onstep_comparison_established_at.return_value = time.monotonic()
         app.dependency_overrides[deps.get_device_state] = lambda: ds
 
         # Goto should not be rejected with 409 (resource conflict) after the crash

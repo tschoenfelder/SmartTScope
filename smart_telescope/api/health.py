@@ -100,6 +100,7 @@ class MountStateCategories(BaseModel):
     mount_operational_state: str    # mirrors MountState enum name
     onstep_time_location_state: str # UNKNOWN | VERIFIED | UNVERIFIED
     raspberry_time_trust_state: str # TRUSTED | NOT_TRUSTED
+    raspberry_trust_source: str     # M8-007: GPSD_FIX | NTP | USER_CONFIRMED | ONSTEP_COMPARISON | NOT_TRUSTED | STUB
     master_time_source: str         # GPS_FIX | NTP | USER_CONFIRMED | FALLBACK | STUB
     operation_gate_states: dict[str, dict]  # GateResult per operation (REQ-STATE-003)
     mount_readiness: str                    # derived composite — MountReadinessState.name
@@ -119,13 +120,19 @@ class SystemHealth(BaseModel):
 def _build_mount_state_categories(
     device_state: DeviceStateService,
     master_source_svc: object = None,
+    raspberry_trust_svc: object = None,
 ) -> MountStateCategories:
-    inputs = gate_inputs_from_device_state(device_state, master_source_svc=master_source_svc)
+    inputs = gate_inputs_from_device_state(
+        device_state,
+        master_source_svc=master_source_svc,
+        raspberry_trust_svc=raspberry_trust_svc,
+    )
     adapter_connection = inputs["adapter_connection"]
     adapter_health = inputs["adapter_health"]
     operational = inputs["mount_operational_state"]
     tl_name = inputs["onstep_time_location"]
     raspberry_trust = inputs["raspberry_time_trust"]
+    raspberry_src = inputs.get("raspberry_trust_source", "STUB")
     master_src = inputs["master_time_source"]
 
     readiness = derive_mount_readiness(
@@ -152,6 +159,7 @@ def _build_mount_state_categories(
         mount_operational_state=operational,
         onstep_time_location_state=tl_name,
         raspberry_time_trust_state=raspberry_trust,
+        raspberry_trust_source=raspberry_src,
         master_time_source=master_src,
         operation_gate_states=gate_states,
         mount_readiness=readiness.name,
@@ -164,6 +172,7 @@ def system_status(
     focuser: FocuserPort = Depends(deps.get_focuser),
     device_state: DeviceStateService = Depends(deps.get_device_state),
     master_source_svc: object = Depends(deps.get_master_source_service),
+    raspberry_trust_svc: object = Depends(deps.get_raspberry_trust_service),
 ) -> SystemHealth:
     """Return the health of every subsystem. Always 200."""
     # ── Mount ────────────────────────────────────────────────────────────────
@@ -236,5 +245,9 @@ def system_status(
         storage=storage_health,
         session=session_health,
         cpu=cpu_health,
-        mount_states=_build_mount_state_categories(device_state, master_source_svc=master_source_svc),
+        mount_states=_build_mount_state_categories(
+            device_state,
+            master_source_svc=master_source_svc,
+            raspberry_trust_svc=raspberry_trust_svc,
+        ),
     )

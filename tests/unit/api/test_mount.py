@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps
 from smart_telescope.app import app
+from smart_telescope.domain.raspberry_time_trust import RaspberryTimeTrustSource
 from smart_telescope.domain.solar import SolarPosition
 from smart_telescope.domain.time_location_status import TimeLocationStatus
 from smart_telescope.ports.mount import MountPort, MountPosition, MountState
@@ -55,6 +56,14 @@ def _verified_ds(state: MountState = MountState.TRACKING) -> MagicMock:
     return _mock_ds_for_status(started=True, state=state, tl_status=TimeLocationStatus.VERIFIED)
 
 
+def _inject_trusted_raspberry_svc() -> None:
+    """Override the raspberry trust service so gated endpoints don't block on real GPSD/NTP."""
+    mock_svc = MagicMock()
+    mock_svc.evaluate.return_value = RaspberryTimeTrustSource.ONSTEP_COMPARISON
+    mock_svc.is_trusted.return_value = True
+    app.dependency_overrides[deps.get_raspberry_trust_service] = lambda: mock_svc
+
+
 def _inject(mount: MagicMock, *, device_state: MagicMock | None = None) -> None:
     app.dependency_overrides[deps.get_mount] = lambda: mount
     if device_state is None:
@@ -74,6 +83,7 @@ def _inject(mount: MagicMock, *, device_state: MagicMock | None = None) -> None:
             ra=inferred_ra, dec=inferred_dec,
         )
     app.dependency_overrides[deps.get_device_state] = lambda: device_state
+    _inject_trusted_raspberry_svc()
 
 
 # ── GET /api/mount/status ──────────────────────────────────────────────────────
@@ -700,6 +710,7 @@ def _inject_all(mount, camera=None, solver=None) -> None:
     app.dependency_overrides[deps.get_camera] = lambda: (camera or MockCamera())
     app.dependency_overrides[deps.get_solver] = lambda: (solver or MockSolver())
     app.dependency_overrides[deps.get_device_state] = lambda: _verified_ds()
+    _inject_trusted_raspberry_svc()
 
 
 class TestMountGotoAndCenter:

@@ -76,6 +76,11 @@ class DeviceStateService:
         self._time_location_status: TimeLocationStatus = TimeLocationStatus.UNKNOWN
         # M8-006: USER_CONFIRMED master time source — set by explicit user action
         self._user_time_confirmed: bool = False
+        # M8-007: Raspberry Pi trust timestamps
+        # _onstep_comparison_established_at: set when Stage 1 VERIFIED with GPS/NTP master source
+        # _user_time_confirmed_at: set when user confirms Pi clock (for session expiry)
+        self._onstep_comparison_established_at: float | None = None
+        self._user_time_confirmed_at: float | None = None
         # Sticky AT_HOME: OnStep only sets 'H' in :GU# briefly after hC# completes.
         # We preserve AT_HOME until the mount actually moves or starts tracking.
         self._sticky_at_home: bool = False
@@ -213,10 +218,37 @@ class DeviceStateService:
             return self._user_time_confirmed
 
     def set_user_time_confirmed(self, confirmed: bool) -> None:
-        """Mark Raspberry Pi time as user-confirmed (M8-006 USER_CONFIRMED source)."""
+        """Mark Raspberry Pi time as user-confirmed (M8-006/M8-007 USER_CONFIRMED source).
+
+        Records a monotonic timestamp on confirmation for session expiry tracking.
+        """
         with self._lock:
             self._user_time_confirmed = confirmed
+            self._user_time_confirmed_at = time.monotonic() if confirmed else None
         _log.info("UserTimeConfirmed → %s", confirmed)
+
+    def get_user_time_confirmed_at(self) -> float | None:
+        """Return the monotonic timestamp of the last user confirmation, or None."""
+        with self._lock:
+            return self._user_time_confirmed_at
+
+    # ── M8-007: ONSTEP_COMPARISON trust establishment ─────────────────────────
+
+    def set_onstep_comparison_established(self) -> None:
+        """Record that ONSTEP_COMPARISON Pi time trust was established now.
+
+        Called by mount_sync_clock() when Stage 1 is VERIFIED and the master
+        time source at that moment was GPS_FIX or NTP — meaning OnStep's clock
+        was trusted, making the OnStep→Pi comparison valid (DEC-006 trust chain).
+        """
+        with self._lock:
+            self._onstep_comparison_established_at = time.monotonic()
+        _log.info("ONSTEP_COMPARISON trust established (Pi clock validated via trusted OnStep)")
+
+    def get_onstep_comparison_established_at(self) -> float | None:
+        """Return the monotonic timestamp when ONSTEP_COMPARISON trust was established, or None."""
+        with self._lock:
+            return self._onstep_comparison_established_at
 
     # ── R2-005: state convergence helpers ────────────────────────────────────
 

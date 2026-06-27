@@ -1,12 +1,16 @@
-"""Click-to-center API — M8-025/M8-026 / REQ-CLICK-001..002.
+"""Click-to-center API — M8-025/026/027 / REQ-CLICK-001..003.
 
 Endpoints:
-  GET  /api/click_to_center/readiness — gate check
-  POST /api/click_to_center/refine    — refine raw click to star centroid or ring center
+  GET  /api/click_to_center/readiness       — gate + calibration check
+  POST /api/click_to_center/refine          — refine raw click to centroid / ring center
+  GET  /api/click_to_center/calibration     — current calibration status
+  POST /api/click_to_center/calibration     — store a calibration record
+  DELETE /api/click_to_center/calibration   — invalidate calibration for a key
 """
 from __future__ import annotations
 
 import logging
+import time
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -14,27 +18,78 @@ from pydantic import BaseModel
 from . import deps as _deps
 from .preview import get_last_preview_pixels
 from ..domain.click_refinement import refine_click
+from ..domain.ctc_calibration import CTCCalibration
 from ..services.operation_gate import evaluate_gate, gate_inputs_from_device_state
 
 _log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/click_to_center", tags=["click_to_center"])
 
+_CALIBRATION_REQUIRED_MSG = (
+    "Click-to-center calibration is missing or expired. "
+    "Run the calibration wizard to map pixels to sky coordinates."
+)
+
+
+def _check_calibration(optical_train: str, binning: int = 1) -> tuple[bool, str | None]:
+    """Return (calibrated, reason_if_not)."""
+    store = _deps.get_ctc_calibration_store()
+    cal = store.get(optical_train, binning)
+    if cal is None:
+        return False, _CALIBRATION_REQUIRED_MSG
+    if not cal.is_valid():
+        age = round(cal.age_hours(), 1)
+        return False, (
+            f"Click-to-center calibration expired ({age} h old, max {cal.max_age_hours} h). "
+            "Run the calibration wizard to refresh."
+        )
+    return True, None
+
+
+# ── Readiness ────────────────────────────────────────────────────────────────
 
 @router.get("/readiness")
-def click_to_center_readiness() -> dict:
-    """Return whether click-to-center is currently allowed and why if not."""
+def click_to_center_readiness(
+    optical_train: str = "default",
+    binning: int = 1,
+) -> dict:
+    """Return whether click-to-center is currently allowed and why if not.
+
+    Checks both the OperationGate (adapter + Stage 1) and calibration validity.
+    """
+    # 1. Gate check
     inputs = gate_inputs_from_device_state(
         _deps.get_device_state(),
         master_source_svc=_deps.get_master_source_service(),
         raspberry_trust_svc=_deps.get_raspberry_trust_service(),
     )
-    result = evaluate_gate("click_to_center", **inputs)
+    gate = evaluate_gate("click_to_center", **inputs)
+    if not gate.allowed:
+        return {
+            "allowed": False,
+            "reason": gate.human_message,
+            "required_action": gate.required_user_action,
+            "calibration_ok": None,
+        }
+
+    # 2. Calibration check
+    cal_ok, cal_reason = _check_calibration(optical_train, binning)
+    if not cal_ok:
+        return {
+            "allowed": False,
+            "reason": cal_reason,
+            "required_action": "run_ctc_calibration",
+            "calibration_ok": False,
+        }
+
     return {
-        "allowed": result.allowed,
-        "reason": result.human_message,
-        "required_action": result.required_user_action,
+        "allowed": True,
+        "reason": None,
+        "required_action": None,
+        "calibration_ok": True,
     }
 
+
+# ── Refine click ─────────────────────────────────────────────────────────────
 
 class RefineRequest(BaseModel):
     x_px: int
@@ -48,12 +103,10 @@ class RefineRequest(BaseModel):
 def click_to_center_refine(req: RefineRequest) -> dict:
     """Refine a raw click coordinate using the latest preview frame.
 
-    Returns a RefinedClick dict with refined_x/y, method, and confidence.
     Falls back to raw coords if no frame is cached or no feature is found.
     """
     pixels = get_last_preview_pixels(req.camera_index)
     if pixels is None:
-        # No frame cached — return raw fallback with explicit note
         _log.info("CLICK_REFINE no_frame camera_index=%d raw=(%d,%d)", req.camera_index, req.x_px, req.y_px)
         return {
             "raw_x": req.x_px, "raw_y": req.y_px,
@@ -78,3 +131,67 @@ def click_to_center_refine(req: RefineRequest) -> dict:
         if result.fallback else None
     )
     return d
+
+
+# ── Calibration management ───────────────────────────────────────────────────
+
+@router.get("/calibration")
+def get_calibration(optical_train: str = "default", binning: int = 1) -> dict:
+    """Return calibration status for the given optical_train/binning."""
+    store = _deps.get_ctc_calibration_store()
+    cal = store.get(optical_train, binning)
+    if cal is None:
+        return {
+            "found": False,
+            "valid": False,
+            "optical_train": optical_train,
+            "binning": binning,
+            "reason": _CALIBRATION_REQUIRED_MSG,
+        }
+    d = cal.to_dict()
+    d["found"] = True
+    if not cal.is_valid():
+        d["reason"] = (
+            f"Calibration expired ({round(cal.age_hours(), 1)} h old, "
+            f"max {cal.max_age_hours} h)."
+        )
+    else:
+        d["reason"] = None
+    return d
+
+
+class SetCalibrationRequest(BaseModel):
+    optical_train: str = "default"
+    binning: int = 1
+    arcsec_per_px_x: float
+    arcsec_per_px_y: float
+    rotation_deg: float
+    max_age_hours: float = 24.0
+
+
+@router.post("/calibration")
+def set_calibration(req: SetCalibrationRequest) -> dict:
+    """Store a calibration record for the given optical_train/binning.
+
+    In the initial implementation, calibration is entered manually or by the
+    plate-solve pipeline. The full calibration wizard is M8-027 future work.
+    """
+    cal = CTCCalibration(
+        arcsec_per_px_x=req.arcsec_per_px_x,
+        arcsec_per_px_y=req.arcsec_per_px_y,
+        rotation_deg=req.rotation_deg,
+        optical_train=req.optical_train,
+        binning=req.binning,
+        measured_at=time.time(),
+        max_age_hours=req.max_age_hours,
+    )
+    _deps.get_ctc_calibration_store().put(cal)
+    _log.info("CTC calibration stored: %s", cal.key)
+    return {"ok": True, "key": cal.key, "calibration": cal.to_dict()}
+
+
+@router.delete("/calibration")
+def delete_calibration(optical_train: str = "default", binning: int = 1) -> dict:
+    """Invalidate (delete) the calibration for the given optical_train/binning."""
+    deleted = _deps.get_ctc_calibration_store().delete(optical_train, binning)
+    return {"deleted": deleted, "key": f"{optical_train}:{binning}"}

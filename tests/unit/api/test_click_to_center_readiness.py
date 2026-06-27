@@ -1,6 +1,8 @@
 """Tests for GET /api/click_to_center/readiness (M8-025 / REQ-CLICK-001)."""
 from __future__ import annotations
 
+import time
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +10,18 @@ from fastapi.testclient import TestClient
 
 from smart_telescope.app import app
 from smart_telescope.api import deps
+from smart_telescope.domain.ctc_calibration import CTCCalibration
+from smart_telescope.services.ctc_calibration_store import CTCCalibrationStore
+
+
+def _fresh_cal_store(tmp_path: Path) -> CTCCalibrationStore:
+    store = CTCCalibrationStore(path=tmp_path / "ctc.json")
+    store.put(CTCCalibration(
+        arcsec_per_px_x=1.2, arcsec_per_px_y=1.2, rotation_deg=0.0,
+        optical_train="default", binning=1,
+        measured_at=time.time(), max_age_hours=24.0,
+    ))
+    return store
 
 
 def _make_device_state(
@@ -41,8 +55,8 @@ def client_disconnected(monkeypatch):
 
 
 @pytest.fixture()
-def client_full_stage1(monkeypatch):
-    """Full Stage 1 available, mount not parked — click_to_center must be allowed."""
+def client_full_stage1(monkeypatch, tmp_path):
+    """Full Stage 1 available, mount not parked, calibration present — must be allowed."""
     mount_state = MagicMock()
     mount_state.error = False
     mount_state.state = MagicMock()
@@ -58,6 +72,8 @@ def client_full_stage1(monkeypatch):
     ))
     monkeypatch.setattr(deps, "get_master_source_service", lambda: None)
     monkeypatch.setattr(deps, "get_raspberry_trust_service", lambda: None)
+    store = _fresh_cal_store(tmp_path)
+    monkeypatch.setattr(deps, "get_ctc_calibration_store", lambda: store)
     return TestClient(app, raise_server_exceptions=False)
 
 

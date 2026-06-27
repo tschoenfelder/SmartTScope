@@ -48,6 +48,7 @@ from ..services.job_manager import JobManager
 from ..services.master_source import MasterSourceService
 from ..services.raspberry_time_trust import RaspberryTimeTrustService
 from ..services.optical_train_registry import OpticalTrainRegistry
+from ..services.ctc_calibration_store import CTCCalibrationStore
 
 
 def get_runtime() -> RuntimeContext:
@@ -120,8 +121,21 @@ def get_optical_train_registry() -> OpticalTrainRegistry:
     return get_runtime().get_optical_train_registry()  # type: ignore[return-value]
 
 
+_ctc_calibration_store: CTCCalibrationStore | None = None
+
+
+def get_ctc_calibration_store() -> CTCCalibrationStore:
+    """Return the singleton CTCCalibrationStore."""
+    global _ctc_calibration_store
+    if _ctc_calibration_store is None:
+        _ctc_calibration_store = CTCCalibrationStore()
+    return _ctc_calibration_store
+
+
 def reset() -> None:
     """Reset all cached singletons (used in tests)."""
+    global _ctc_calibration_store
+    _ctc_calibration_store = None
     get_runtime().reset_for_tests()
 
 

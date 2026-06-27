@@ -1,8 +1,8 @@
 /* ══════════════════════════════════════════════════════════════════════
-     Click-to-center — M8-025/M8-026 / REQ-CLICK-001..002
+     Click-to-center — M8-025/026/027 / REQ-CLICK-001..003
      Handles preview-frame clicks in Stage 3 (plate-solve) and Stage 4
      (Bahtinov Preview + Defocus Donut). Refines to star centroid or
-     ring center; shows exact gate reason when unavailable.
+     ring center; shows exact gate/calibration reason when unavailable.
 ══════════════════════════════════════════════════════════════════════ */
 
 // Map frame key → banner id + camera_index + default refinement mode
@@ -179,4 +179,32 @@ function _ctcClearMarker(frameKey) {
 /** Returns the last refined click for a given frame, or null. */
 function ctcGetLastClick(frameKey) {
     return _ctcLastClick[frameKey] || null;
+}
+
+// ── Calibration helpers (M8-027) ───────────────────────────────────────────
+
+/**
+ * Fetch calibration status for optical_train/binning and update a status element.
+ * Called on stage entry to warn the user when calibration is missing.
+ */
+async function ctcRefreshCalibrationStatus(elementId, opticalTrain = 'default', binning = 1) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    try {
+        const data = await (await fetch(
+            `/api/click_to_center/calibration?optical_train=${encodeURIComponent(opticalTrain)}&binning=${binning}`
+        )).json();
+        if (data.found && data.is_valid) {
+            const age = data.age_hours !== undefined ? ` (${data.age_hours.toFixed(1)} h ago)` : '';
+            el.style.display = '';
+            el.style.color = 'var(--muted)';
+            el.textContent = `CTC calibration OK${age} — click a star to center.`;
+        } else {
+            el.style.display = '';
+            el.style.color = 'var(--warn, #f5a623)';
+            el.textContent = data.reason || 'CTC calibration missing — click will be blocked.';
+        }
+    } catch {
+        el.style.display = 'none';
+    }
 }

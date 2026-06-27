@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-27 (M8-026 done: click refinement — star centroid / ring center / raw fallback)
+**Last updated:** 2026-06-27 (M8-027 done: click-to-center calibration gate — hard block + file-backed store)
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1158,10 +1158,16 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 15 unit tests in `tests/unit/domain/test_click_refinement.py`, 9 in `tests/unit/api/test_click_to_center_refine.py`
   - Acceptance: REQ-CLICK-002
 
-- [ ] M8-027 Click-to-center calibration (hard block; calibration wizard on cold start) `[P2 · Runtime]`
+- [x] M8-027 Click-to-center calibration (hard block; calibration wizard on cold start) `[P2 · Runtime]`
   - Missing/stale calibration blocks movement and launches calibration wizard (no manual override — grilling clarification #3)
   - Calibration stored per optical-train × camera-orientation × binning; invalidated on change
   - Mount not moved without valid calibration
+  - `smart_telescope/domain/ctc_calibration.py`: `CTCCalibration` dataclass (arcsec_per_px_x/y, rotation_deg, optical_train, binning, measured_at, max_age_hours); `is_valid()`, `age_hours()`, `to_dict()`, `from_dict()`; keyed by `"optical_train:binning"`
+  - `smart_telescope/services/ctc_calibration_store.py`: file-backed JSON store at `~/.SmartTScope/ctc_calibration.json`; `get()`, `put()`, `delete()`, `all()`
+  - `smart_telescope/api/deps.py`: `get_ctc_calibration_store()` singleton
+  - `smart_telescope/api/click_to_center.py`: readiness endpoint updated to check calibration; `GET /calibration`, `POST /calibration`, `DELETE /calibration`
+  - `smart_telescope/static/js/click_to_center.js`: `ctcRefreshCalibrationStatus()` for calibration status display
+  - Tests: 9 domain + 9 store + 12 API tests (42 total for M8-027)
   - Acceptance: REQ-CLICK-003
 
 - [ ] M8-028 Iterative bounded click-to-center loop `[P2 · Runtime]`

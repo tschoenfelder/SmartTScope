@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-027 (Click-to-center calibration gate; REQ-CLICK-003)
+
+**Missing or expired calibration hard-blocks click-to-center. File-backed store keyed per optical-train × binning.**
+- `smart_telescope/domain/ctc_calibration.py`: `CTCCalibration` dataclass — fields: `arcsec_per_px_x/y`, `rotation_deg`, `optical_train`, `binning`, `measured_at`, `max_age_hours`; `is_valid()` (checks age), `age_hours()`, `to_dict()`/`from_dict()`; key = `"optical_train:binning"`
+- `smart_telescope/services/ctc_calibration_store.py`: JSON file store at `~/.SmartTScope/ctc_calibration.json`; thread-safe; `get()`, `put()`, `delete()`, `all()`
+- `smart_telescope/api/deps.py`: `get_ctc_calibration_store()` singleton
+- `smart_telescope/api/click_to_center.py`: readiness updated — gate checked first, then calibration checked (missing → `required_action="run_ctc_calibration"`); `GET /calibration`, `POST /calibration`, `DELETE /calibration` endpoints
+- `smart_telescope/static/js/click_to_center.js`: `ctcRefreshCalibrationStatus()` helper for per-stage calibration banners
+- Tests: 9 domain + 9 store + 12 API; 3696 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-026 (Click refinement; REQ-CLICK-002)
 
 **Star centroid and ring-center refinement on last preview frame; raw fallback when no feature found.**

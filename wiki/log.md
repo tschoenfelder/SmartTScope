@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-024 (Collimation modes UI; REQ-UI-002..003)
+
+**Two collimation modes (Bahtinov Preview + Defocus Donut) visible in Stage 4 with per-mode availability.**
+- `smart_telescope/api/collimation.py`: `GET /api/collimation/modes` — evaluates camera availability and OperationGate for `collimation_preview` (camera-only, always allowed), `collimation_slew_to_target`, `collimation_mount_centering`; returns two mode dicts with `preview_available`, `slew_allowed`, `centering_allowed` and human reasons
+- `smart_telescope/static/index.html`: `s4-modes-card` with clickable Bahtinov Preview and Defocus Donut tiles; new `s4-donut-section` with Defocus Donut preview controls (initially hidden); Stage 4 comment corrected
+- `smart_telescope/static/js/collimation.js`: `refreshCollimationModes()` fetches mode availability and updates tiles; `selectCollimationMode()` shows/hides sections; `s4DonutPreviewStart()` preview launcher
+- `smart_telescope/static/js/app.js`: `goToStage(4)` now calls `refreshCollimationModes()`
+- Tests: 11 unit tests in `tests/unit/api/test_collimation_modes.py`; full suite: 3630 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-023 (Exposure capability test; REQ-AG-003..004)
 
 **5-step exposure sweep with 13-field per-step diagnostics. Advisory only — no config writes.**

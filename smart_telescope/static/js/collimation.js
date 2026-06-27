@@ -795,3 +795,81 @@ function _drawCollimOverlay(d) {
     svg.innerHTML = arrowDef + body;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+     Collimation Modes (M8-024 / REQ-UI-002..003)
+══════════════════════════════════════════════════════════════════════ */
+
+let _collimationMode = null;  // "bahtinov_preview" | "defocus_donut" | null
+
+async function refreshCollimationModes() {
+    let data;
+    try {
+        data = await (await fetch('/api/collimation/modes')).json();
+    } catch (e) {
+        return;
+    }
+    let anyAvail = false;
+    for (const mode of (data.modes || [])) {
+        const tileId = mode.name === 'bahtinov_preview' ? 's4-mode-bahtinov' : 's4-mode-donut';
+        const availId = tileId + '-avail';
+        const reasonId = tileId + '-reason';
+        const tile = document.getElementById(tileId);
+        const availEl = document.getElementById(availId);
+        const reasonEl = document.getElementById(reasonId);
+        if (!tile) continue;
+        if (mode.preview_available) {
+            availEl.textContent = 'Preview available';
+            availEl.style.color = 'var(--success, green)';
+            reasonEl.style.display = 'none';
+            tile.style.opacity = '1';
+            tile.style.cursor = 'pointer';
+            anyAvail = true;
+        } else {
+            availEl.textContent = 'Preview unavailable';
+            availEl.style.color = 'var(--danger)';
+            if (mode.preview_unavailable_reason) {
+                reasonEl.textContent = mode.preview_unavailable_reason;
+                reasonEl.style.display = '';
+            }
+            tile.style.opacity = '0.5';
+            tile.style.cursor = 'not-allowed';
+        }
+        // Slew/center gate
+        if (!mode.slew_allowed && tile.title !== undefined) {
+            tile.title = 'Slew to target: ' + (mode.slew_unavailable_reason || 'gated');
+        }
+    }
+    const dot = document.getElementById('s4-modes-dot');
+    if (dot) {
+        dot.className = anyAvail ? 'dot dot-green' : 'dot dot-red';
+    }
+}
+
+function selectCollimationMode(name) {
+    _collimationMode = name;
+    // Highlight selected tile
+    for (const id of ['s4-mode-bahtinov', 's4-mode-donut']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const isSelected = (id === 's4-mode-bahtinov' && name === 'bahtinov_preview')
+                        || (id === 's4-mode-donut'    && name === 'defocus_donut');
+        el.style.borderColor = isSelected ? 'var(--accent, #3b82f6)' : 'var(--border)';
+    }
+    // Show/hide relevant preview sections
+    const bahtinovSection = document.querySelector('#s4 .stage-columns') || document.getElementById('s4-preview-frame')?.closest('.card')?.parentElement?.parentElement;
+    const donutSection = document.getElementById('s4-donut-section');
+    // The Bahtinov preview is inside the 2-column layout (stage-columns div)
+    const cols = document.querySelector('#s4 .stage-columns');
+    if (cols) cols.style.display = name === 'bahtinov_preview' ? '' : 'none';
+    if (donutSection) donutSection.style.display = name === 'defocus_donut' ? '' : 'none';
+}
+
+function s4DonutPreviewStart() {
+    const exp  = parseFloat(document.getElementById('s4-donut-exposure').value) || 1.0;
+    const gain = parseInt(document.getElementById('s4-donut-gain').value, 10)   || 100;
+    document.getElementById('preview-exposure').value = exp;
+    document.getElementById('preview-gain').value     = gain;
+    // Defocus Donut uses the main imaging camera
+    previewStart('main');
+}
+

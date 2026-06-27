@@ -1131,10 +1131,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 6 — Collimation and click-to-center
 
-- [ ] M8-024 Collimation modes: "Bahtinov Preview" + "Defocus Donut" (correct spelling) `[P2 · UI]`
+- [x] M8-024 Collimation modes: "Bahtinov Preview" + "Defocus Donut" (correct spelling) `[P2 · UI]`
   - Both modes visible; if unavailable, reason shown; "Bahtinov" spelling verified
   - Collimation preview allowed without Raspberry Pi time trust if camera capture works
   - Slew-to-target and mount-assisted centering remain gated
+  - API: `GET /api/collimation/modes` — per-mode availability (preview / slew / centering); camera-only preview always allowed; slew/center gated via OperationGate
+  - UI: `s4-modes-card` in Stage 4 — two clickable tiles (Bahtinov Preview, Defocus Donut) with availability dot, reason text; `Defocus Donut` section with preview controls hidden until selected; `refreshCollimationModes()` called on stage entry
+  - Tests: 11 unit tests in `tests/unit/api/test_collimation_modes.py`
   - Acceptance: REQ-UI-002, REQ-UI-003; INC-006, INC-007; TEST-005
 
 - [ ] M8-025 Click-to-center in collimation, plate-solve, autofocus views `[P2 · UI]`

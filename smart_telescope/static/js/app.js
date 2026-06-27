@@ -93,7 +93,7 @@ function goToStage(n) {
     _startMountStripPoll();
     _renderStageBar();
     if (n === 3) { _s3CheckArchiveEnabled(); }
-    if (n === 4) { refreshFocuser(); loadCollimStars(); _refreshCollimWizardOnce(); }
+    if (n === 4) { refreshFocuser(); loadCollimStars(); _refreshCollimWizardOnce(); refreshCollimationModes(); }
     if (n === 5) { s5LoadTargets(); }
 }
 

@@ -137,6 +137,68 @@ class NextPayload(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+@router.get("/modes")
+def collimation_modes() -> dict[str, Any]:
+    """List collimation modes with per-mode availability (M8-024 / REQ-UI-002..003).
+
+    ``collimation_preview`` is a camera-only operation — always allowed regardless
+    of mount connection or Stage 1 time/location status.  Slew-to-target and
+    mount-centering require full Stage 1 verification.
+    """
+    from ..services.operation_gate import evaluate_all_gates, gate_inputs_from_device_state
+
+    # Camera availability
+    camera_ok = False
+    camera_reason: str | None = None
+    try:
+        _deps.get_camera()
+        camera_ok = True
+    except Exception as exc:
+        camera_reason = f"Camera not available: {exc}"
+
+    # Gate evaluation for mount-dependent operations
+    try:
+        inputs = gate_inputs_from_device_state(
+            _deps.get_device_state(),
+            master_source_svc=_deps.get_master_source_service(),
+            raspberry_trust_svc=_deps.get_raspberry_trust_service(),
+        )
+        gates = evaluate_all_gates(**inputs)
+        preview_gate    = gates["collimation_preview"]
+        slew_gate       = gates["collimation_slew_to_target"]
+        centering_gate  = gates["collimation_mount_centering"]
+    except Exception:
+        from ..services.operation_gate import GateResult
+        preview_gate    = GateResult(allowed=True)
+        slew_gate       = GateResult(allowed=False, human_message="Gate evaluation unavailable")
+        centering_gate  = GateResult(allowed=False, human_message="Gate evaluation unavailable")
+
+    def _mode(name: str, label: str, preview_ok: bool, preview_reason: str | None) -> dict:
+        return {
+            "name": name,
+            "label": label,
+            # Preview (live feed) — camera-only, no time trust required
+            "preview_available":        preview_ok,
+            "preview_unavailable_reason": preview_reason,
+            # Slew-to-target requires Stage 1 time trust
+            "slew_allowed":             slew_gate.allowed,
+            "slew_unavailable_reason":  slew_gate.human_message if not slew_gate.allowed else None,
+            # Mount-assisted centering requires Stage 1 time trust
+            "centering_allowed":        centering_gate.allowed,
+            "centering_unavailable_reason": centering_gate.human_message if not centering_gate.allowed else None,
+        }
+
+    preview_ok     = camera_ok and preview_gate.allowed
+    preview_reason = camera_reason or (preview_gate.human_message if not preview_gate.allowed else None)
+
+    return {
+        "modes": [
+            _mode("bahtinov_preview", "Bahtinov Preview", preview_ok, preview_reason),
+            _mode("defocus_donut",    "Defocus Donut",    preview_ok, preview_reason),
+        ]
+    }
+
+
 @router.get("/status")
 def collimation_status() -> dict[str, Any]:
     return _get_assistant().status

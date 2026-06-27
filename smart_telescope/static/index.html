@@ -1452,12 +1452,46 @@
   </section>
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
-  <!-- STAGE 4 — Collimation (Bahtinov mask)                              -->
+  <!-- STAGE 4 — Collimation (Bahtinov Preview + Defocus Donut)           -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <section class="stage-panel" id="s4">
 
     <div class="toolbar"><h2>Collimation</h2></div>
     <div id="s4-status" class="status-line"></div>
+
+    <!-- ── Collimation Modes (M8-024 / REQ-UI-002..003) ── -->
+    <div class="card" id="s4-modes-card" style="margin-bottom:1rem">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s4-modes-dot"></span>
+        Collimation Mode
+        <span id="s4-modes-refresh-btn"
+              onclick="refreshCollimationModes()"
+              style="margin-left:auto;cursor:pointer;font-size:0.85rem;color:var(--muted)"
+              title="Refresh mode availability">↺</span>
+      </div>
+      <div id="s4-modes-list" style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.25rem">
+        <!-- Bahtinov Preview tile -->
+        <div id="s4-mode-bahtinov" onclick="selectCollimationMode('bahtinov_preview')"
+             style="flex:1;min-width:10rem;padding:0.75rem 1rem;border:2px solid var(--border);
+                    border-radius:6px;cursor:pointer;transition:border-color 0.15s">
+          <div style="font-weight:600;margin-bottom:0.25rem">Bahtinov Preview</div>
+          <div id="s4-mode-bahtinov-avail" style="font-size:0.82rem;color:var(--muted)">Checking…</div>
+          <div id="s4-mode-bahtinov-reason" style="font-size:0.78rem;color:var(--danger);display:none;margin-top:0.2rem"></div>
+        </div>
+        <!-- Defocus Donut tile -->
+        <div id="s4-mode-donut" onclick="selectCollimationMode('defocus_donut')"
+             style="flex:1;min-width:10rem;padding:0.75rem 1rem;border:2px solid var(--border);
+                    border-radius:6px;cursor:pointer;transition:border-color 0.15s">
+          <div style="font-weight:600;margin-bottom:0.25rem">Defocus Donut</div>
+          <div id="s4-mode-donut-avail" style="font-size:0.82rem;color:var(--muted)">Checking…</div>
+          <div id="s4-mode-donut-reason" style="font-size:0.78rem;color:var(--danger);display:none;margin-top:0.2rem"></div>
+        </div>
+      </div>
+      <div style="font-size:0.78rem;color:var(--muted);margin-top:0.6rem">
+        Preview requires camera only — no time/location trust needed.
+        Slew-to-target and mount-assisted centering require Stage 1 verification.
+      </div>
+    </div>
 
     <!-- ── Hardware Self-Test (COL-022) ── -->
     <div class="card" id="s4-selftest-card" style="margin-bottom:1rem">
@@ -1874,6 +1908,44 @@
                 <span class="param-value mono" id="s4-bahtinov-conf">—</span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Defocus Donut Preview (M8-024 / REQ-UI-003) — initially hidden ── -->
+    <div id="s4-donut-section" style="display:none">
+      <div>
+        <div class="card">
+          <div class="card-title">
+            <span class="dot dot-grey"></span>
+            Defocus Donut
+            <span id="s4-donut-ws-status" style="font-size:0.78rem;color:var(--muted);margin-left:auto">
+              <span class="ws-dot ws-stopped"></span>Stopped
+            </span>
+          </div>
+          <div class="preview-frame large" id="s4-donut-preview-frame">
+            <div class="preview-placeholder" id="s4-donut-preview-ph">
+              Select Defocus Donut mode and defocus the telescope slightly, then press Start.
+            </div>
+            <img id="s4-donut-preview-img" alt="" style="display:none;max-width:100%;max-height:600px">
+          </div>
+          <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem;flex-wrap:wrap;gap:0.3rem 0.5rem">
+            <label>Exp</label>
+            <input type="number" id="s4-donut-exposure" value="1.0" min="0.1" max="30" step="0.1"
+                   style="width:7ch">
+            <label>s</label>
+            <label style="margin-left:0.4rem">Gain</label>
+            <input type="number" id="s4-donut-gain" value="100" min="100" max="3200" step="100"
+                   style="width:6ch">
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center">
+            <button id="s4-donut-start-btn" onclick="s4DonutPreviewStart()">Start</button>
+            <button id="s4-donut-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+          </div>
+          <div style="font-size:0.82rem;color:var(--muted);margin-top:0.5rem">
+            Defocus the scope until stars appear as rings (donuts). The obstruction
+            shadow in the centre reveals collimation errors — it should be concentric.
           </div>
         </div>
       </div>

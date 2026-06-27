@@ -1015,9 +1015,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 3 — Command history
 
-- [ ] M8-011 `CommandHistoryService` — persists per-session JSONL `[P1 · Runtime]`
-  - Statuses: `REQUESTED`, `REJECTED`, `ISSUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`
-  - Fields: `command_id`, `session_id`, `timestamp`, `user_action`, `operation`, `requested_parameters`, `status`, `reason_code`, `human_message`, `backend_response`, `related_log_file`, `related_frame_file_if_any`
+- [x] M8-011 `CommandHistoryService` — persists per-session JSONL `[P1 · Runtime]`
+  - `smart_telescope/domain/command_status.py`: `CommandStatus` enum (7 values)
+  - `smart_telescope/services/command_history.py`: `CommandRecord` dataclass (12 fields) + `CommandHistoryService`; thread-safe; in-memory dict + append-only JSONL; `record()`, `update()`, `get_all()`, `get_by_id()`
+  - `config.py`: `COMMAND_HISTORY_DIR` (default `~/.SmartTScope/commands/`); `templates/config.toml` updated
+  - `runtime.py`: `_app_session_id` UUID per session; `self.command_history = CommandHistoryService(...)`; reset in `reset_for_tests()`
+  - `api/deps.py`: `get_command_history_service()`
+  - 19 new tests in `tests/unit/services/test_command_history.py`; 3435 passed, 24 skipped
   - Acceptance: REQ-CMD-001
 
 - [ ] M8-012 `/api/commands` endpoint; command history frontend panel `[P1 · API · UI]`

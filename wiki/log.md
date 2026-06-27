@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-011 (CommandHistoryService; REQ-CMD-001)
+
+**Per-session JSONL command audit log.**
+- `smart_telescope/domain/command_status.py` (new): `CommandStatus` enum — REQUESTED / REJECTED / ISSUED / RUNNING / SUCCEEDED / FAILED / CANCELLED
+- `smart_telescope/services/command_history.py` (new): `CommandRecord` dataclass (12 REQ-CMD-001 fields) + `CommandHistoryService`; thread-safe `threading.Lock`; append-only JSONL (one line per `record()`/`update()` call); in-memory `dict[command_id, CommandRecord]` for query
+- `smart_telescope/config.py`: `COMMAND_HISTORY_DIR` (default `~/.SmartTScope/commands/`; env-var + TOML `[session].command_history_dir`)
+- `templates/config.toml`: added `command_history_dir = ""` stub to `[session]`
+- `smart_telescope/runtime.py`: generates `_app_session_id` UUID per `RuntimeContext.__init__`; creates `self.command_history = CommandHistoryService(session_id, path)`; `reset_for_tests()` creates a no-file instance
+- `smart_telescope/api/deps.py`: `get_command_history_service()`
+- 19 new tests in `tests/unit/services/test_command_history.py`: record lifecycle, update, get_all, JSONL content, thread safety; 3435 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-010 (Stage 1 time/location UI panel; REQ-TIME-005, REQ-API-004, INC-009)
 
 **New `GET /api/stage1/time-location` endpoint and Stage 1 UI card.**

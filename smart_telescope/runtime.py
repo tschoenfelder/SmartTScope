@@ -24,6 +24,7 @@ from .ports.solver import SolverPort
 from .ports.stacker import StackerPort
 from .ports.storage import StoragePort
 from .services.camera_offset_service import CameraOffsetService
+from .services.command_history import CommandHistoryService
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
@@ -205,6 +206,8 @@ class RuntimeContext:
     """
 
     def __init__(self) -> None:
+        import uuid as _uuid
+        from pathlib import Path
         self._camera: CameraPort | None = None
         self._mount: MountPort | None = None
         self._focuser: FocuserPort | None = None
@@ -216,6 +219,7 @@ class RuntimeContext:
         self._filter_wheel: object | None = None
         self._adapters_built: bool = False
         self._adapters_lock: threading.Lock = threading.Lock()
+        self._app_session_id: str = str(_uuid.uuid4())
         self.coordinator         = HardwareCommandCoordinator()
         self.cooling_service     = CoolingService()
         self.device_state        = DeviceStateService()
@@ -223,6 +227,11 @@ class RuntimeContext:
         self.raspberry_trust_svc = RaspberryTimeTrustService()
         self.dawn_watcher        = DawnWatcher()
         self.job_manager         = JobManager()
+        _cmd_dir = config.COMMAND_HISTORY_DIR
+        self.command_history     = CommandHistoryService(
+            session_id=self._app_session_id,
+            path=Path(_cmd_dir) / f"{self._app_session_id[:8]}.jsonl" if _cmd_dir else None,
+        )
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
@@ -405,6 +414,9 @@ class RuntimeContext:
         self._preview_cameras = {}
         self._role_cameras = {}
         self._filter_wheel = None
+        import uuid as _uuid
+        from pathlib import Path
+        self._app_session_id     = str(_uuid.uuid4())
         self.coordinator         = HardwareCommandCoordinator()
         self.cooling_service     = CoolingService()
         self.device_state        = DeviceStateService()
@@ -415,6 +427,7 @@ class RuntimeContext:
         self.dawn_watcher        = DawnWatcher()
         self.job_manager         = JobManager()
         self.camera_offset_service = CameraOffsetService.from_config()
+        self.command_history     = CommandHistoryService(session_id=self._app_session_id, path=None)
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None

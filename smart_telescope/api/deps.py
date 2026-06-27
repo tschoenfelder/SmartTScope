@@ -145,3 +145,7 @@ def resolve_camera_index(camera_index: int, camera_role: str | None) -> int:
 def get_guiding_service() -> GuidingService:
     """Return the lazily-created GuidingService from the runtime context."""
     return get_runtime().guiding_service
+
+
+def get_command_history_service() -> "CommandHistoryService":
+    return get_runtime().command_history

@@ -1110,9 +1110,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 13 unit tests in `tests/unit/adapters/test_astap_diagnostic.py`
   - Acceptance: REQ-PS-002, REQ-PS-003; INC-004, INC-008
 
-- [ ] M8-022 Auto-gain 6 purpose modes; PLATE_SOLVE tracking-quality via frame blur only `[P2 · Runtime]`
+- [x] M8-022 Auto-gain 6 purpose modes; PLATE_SOLVE tracking-quality via frame blur only `[P2 · Runtime]`
   - Modes: `PLATE_SOLVE`, `DSO`, `PLANET`, `MOON`, `COLLIMATION`, `AUTOFOCUS`
   - `PLATE_SOLVE`: keep offset low; increase exposure while tracking quality supports it (measured by star elongation ratio / FWHM growth from captured frames — no plate-solve dependency)
+  - `domain/autogain.py`: 9-value `AutoGainMode` enum (6 purpose + 3 legacy aliases); `measure_elongation_ratio()` gradient-anisotropy metric; `_select_conversion_gain()` updated for new modes
+  - `domain/autogain_service.py`: `PLATE_SOLVE` mode forces offset=0; per-frame elongation-ratio check (fires when ratio > 2.0 AND grew by > 50% vs previous frame) caps exposure and returns OK with warning_msg
+  - `COLLIMATION`/`AUTOFOCUS`/`PLANET`/`MOON`: routed to DSO or planetary signal metric respectively; backward-compatible aliases retained
+  - Tests: 18 unit tests in `tests/unit/domain/test_autogain_modes.py`
   - Acceptance: REQ-AG-001, REQ-AG-002; INC-008
 
 - [ ] M8-023 Exposure capability test + 13-field auto-gain diagnostics `[P2 · Runtime]`

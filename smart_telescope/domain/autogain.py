@@ -43,10 +43,28 @@ _SPARSE_P99_9_THR = 0.10  # p99_9 above this → stars present; halt brightening
 # ── Conversion-gain mode ──────────────────────────────────────────────────────
 
 class AutoGainMode(str, Enum):
-    DSO       = "DSO"        # deep-sky: HCG preferred
-    PLANETARY = "PLANETARY"  # planets/lunar: LCG preferred
-    LUNAR     = "LUNAR"      # same policy as PLANETARY
-    GUIDING   = "GUIDING"    # guide star: HCG preferred
+    # M8-022 purpose modes
+    PLATE_SOLVE = "PLATE_SOLVE"  # low offset; exposure capped by tracking quality (blur metric)
+    DSO         = "DSO"          # deep-sky: HCG preferred
+    PLANET      = "PLANET"       # planet/lunar: LCG preferred, peak-metric signal
+    MOON        = "MOON"         # same policy as PLANET
+    COLLIMATION = "COLLIMATION"  # defocus-donut: brightness-optimised, DSO behavior
+    AUTOFOCUS   = "AUTOFOCUS"    # star FWHM focus: brightness-optimised, DSO behavior
+    # backward-compatible names kept for existing callers
+    PLANETARY   = "PLANETARY"    # alias for PLANET behavior
+    LUNAR       = "LUNAR"        # alias for MOON/PLANET behavior
+    GUIDING     = "GUIDING"      # guide-star: HCG preferred
+
+
+_HCG_MODES = {
+    AutoGainMode.DSO, AutoGainMode.GUIDING,
+    AutoGainMode.PLATE_SOLVE, AutoGainMode.COLLIMATION, AutoGainMode.AUTOFOCUS,
+}
+
+_PLANET_MODES = {
+    AutoGainMode.PLANET, AutoGainMode.MOON,
+    AutoGainMode.PLANETARY, AutoGainMode.LUNAR,
+}
 
 
 def _select_conversion_gain(
@@ -55,17 +73,36 @@ def _select_conversion_gain(
 ) -> ConversionGain:
     """Return the recommended conversion gain per FR-AG-080.
 
-    DSO / GUIDING → HCG when available; otherwise LCG.
-    PLANETARY / LUNAR → LCG when available; otherwise LCG (no HCG needed).
+    DSO / GUIDING / PLATE_SOLVE / COLLIMATION / AUTOFOCUS → HCG when available.
+    PLANET / MOON / PLANETARY / LUNAR → LCG.
     """
     if profile is None:
         return ConversionGain.LCG
-    if mode in (AutoGainMode.DSO, AutoGainMode.GUIDING):
-        if profile.unity_gain_hcg is not None:
-            return ConversionGain.HCG
+    if mode in _HCG_MODES and profile.unity_gain_hcg is not None:
+        return ConversionGain.HCG
     if profile.unity_gain_lcg is not None:
         return ConversionGain.LCG
     return ConversionGain.LCG  # safe fallback
+
+
+def measure_elongation_ratio(pixels: "np.ndarray") -> float:  # type: ignore[type-arg]
+    """Return gradient-anisotropy ratio as a star-trailing proxy.
+
+    Compares mean absolute gradient energy in the horizontal vs vertical
+    direction.  Ratio > 2.0 indicates significant elongation in one axis
+    (typical RA trailing).  Ratio near 1.0 means stars are round.  Returns
+    1.0 for uniform frames (no gradients in either axis → no elongation).
+
+    Used by PLATE_SOLVE mode to cap exposure when tracking degrades.
+    """
+    px = pixels.astype(np.float32)
+    g_x = float(np.abs(np.diff(px, axis=1)).mean())
+    g_y = float(np.abs(np.diff(px, axis=0)).mean())
+    if g_x < 1e-6 and g_y < 1e-6:
+        return 1.0  # no gradients → uniform frame → no elongation detected
+    lo = min(g_x, g_y) + 1e-6
+    hi = max(g_x, g_y)
+    return hi / lo
 
 
 # ── Controller ────────────────────────────────────────────────────────────────

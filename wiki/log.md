@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-022 (Auto-gain 6 purpose modes; REQ-AG-001..002)
+
+**6 purpose modes for auto-gain with PLATE_SOLVE tracking-quality gate.**
+- `smart_telescope/domain/autogain.py`: `AutoGainMode` extended to 9 values — purpose modes: `PLATE_SOLVE`, `DSO`, `PLANET`, `MOON`, `COLLIMATION`, `AUTOFOCUS`; legacy aliases: `PLANETARY`, `LUNAR`, `GUIDING` retained. `_HCG_MODES`/`_PLANET_MODES` sets for mode classification. `measure_elongation_ratio()` — gradient-anisotropy ratio metric (round stars ≈1.0, horizontal trailing >2.0, uniform frame returns 1.0). `_select_conversion_gain()` updated.
+- `smart_telescope/domain/autogain_service.py`: `PLATE_SOLVE` mode forces `cur_offset=0`; per-frame elongation check caps exposure and returns `OK` with warning when ratio >2.0 AND grew >50% vs previous frame. `PLANET`/`MOON`/`PLANETARY`/`LUNAR` routed to planetary signal metric. `COLLIMATION`/`AUTOFOCUS` use DSO behavior.
+- Tests: 18 unit tests in `tests/unit/domain/test_autogain_modes.py`; full suite: 3602 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-021 (ASTAP logging → structured diagnostics; REQ-PS-002..003)
 
 **Structured ASTAP diagnostic record attached to every solve attempt.**

@@ -28,7 +28,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ..ports.camera import CameraPort, CaptureAbortedError
-from .autogain import AutoGainMode, _LO, _HI, _MAX_RATIO, _TARGET, _select_conversion_gain
+from .autogain import (
+    AutoGainMode, _LO, _HI, _MAX_RATIO, _TARGET,
+    _PLANET_MODES, _select_conversion_gain, measure_elongation_ratio,
+)
 from .camera_capabilities import ConversionGain
 from .camera_profile import CameraProfile
 from .histogram import HistogramStats, analyze as _hist_analyze
@@ -204,9 +207,10 @@ class AutoGainService:
         last_stats: HistogramStats | None = None
         last_detected: DetectedObject | None = None
 
-        # Mode-specific parameters (FR-GUIDE-001, FR-PLANET-001)
-        is_guiding   = (mode == AutoGainMode.GUIDING)
-        is_planetary = (mode == AutoGainMode.PLANETARY)
+        # Mode-specific parameters (FR-GUIDE-001, FR-PLANET-001, REQ-AG-001..002)
+        is_guiding    = (mode == AutoGainMode.GUIDING)
+        is_planetary  = (mode in _PLANET_MODES)
+        is_plate_solve = (mode == AutoGainMode.PLATE_SOLVE)
         if is_guiding:
             band_lo, band_hi, band_tgt = _GUIDE_LO, _GUIDE_HI, _GUIDE_TARGET
             ns_signal_thr = _GUIDE_NO_SIGNAL_THR
@@ -216,9 +220,16 @@ class AutoGainService:
             ns_signal_thr = _PLANET_NO_SIGNAL_THR
             ns_exp_ms     = exp_max_ms
         else:
+            # DSO / PLATE_SOLVE / COLLIMATION / AUTOFOCUS all use DSO band
             band_lo, band_hi, band_tgt = _LO, _HI, _TARGET
             ns_signal_thr = _NO_SIGNAL_THRESHOLD
             ns_exp_ms     = _NO_SIGNAL_EXP_MS
+
+        if is_plate_solve:
+            # PLATE_SOLVE: keep offset at zero to preserve sky background for ASTAP
+            cur_offset = 0
+
+        _prev_elongation: float | None = None  # used by PLATE_SOLVE mode only
 
         # Abort-watcher: when caller sets cancellation_flag, immediately interrupt
         # any blocking camera.capture() call so cancel responds within one poll cycle.
@@ -310,13 +321,44 @@ class AutoGainService:
             stats = _hist_analyze(frame.pixels, bit_depth=bit_depth)
             last_stats = stats
             eff_mean = _effective_mean(stats, cur_offset, adc_max)
+
+            # PLATE_SOLVE tracking-quality gate (REQ-AG-001): measure star elongation
+            # via gradient-anisotropy ratio.  Cap exposure if ratio exceeds 2.0 AND has
+            # grown since the previous frame — indicating mount trailing has started.
+            if is_plate_solve:
+                elong = measure_elongation_ratio(frame.pixels)
+                if (
+                    _prev_elongation is not None
+                    and elong > 2.0
+                    and elong > _prev_elongation * 1.5
+                ):
+                    _log.info(
+                        "AutoGain PLATE_SOLVE: tracking blur detected "
+                        "(elongation=%.2f > 2.0, prev=%.2f) — "
+                        "capping exposure at %.1f ms",
+                        elong, _prev_elongation, cur_exp_ms,
+                    )
+                    return AutoGainResult(
+                        status=AutoGainStatus.OK,
+                        exposure_ms=cur_exp_ms,
+                        gain=cur_gain,
+                        offset=cur_offset,
+                        conversion_gain=cg,
+                        histogram_stats=stats,
+                        warning_msg=(
+                            f"Exposure capped at {cur_exp_ms:.0f} ms "
+                            f"(tracking quality: elongation ratio {elong:.1f})"
+                        ),
+                    )
+                _prev_elongation = elong
+
             # Signal metric depends on mode:
             # - GUIDING: p99_9 (guide-star peak in dark field)
-            # - PLANETARY: detected planet peak_frac (FR-PLANET-001)
-            # - DSO/LUNAR: effective mean
+            # - PLANETARY / PLANET / MOON: detected planet peak_frac (FR-PLANET-001)
+            # - DSO / PLATE_SOLVE / COLLIMATION / AUTOFOCUS: effective mean
             if is_guiding:
                 signal = stats.p99_9
-            elif is_planetary:
+            elif is_planetary:  # PLANET / MOON / PLANETARY / LUNAR
                 last_detected = detect_planet(frame.pixels, bit_depth=bit_depth)
                 signal = last_detected.peak_frac if last_detected is not None else eff_mean
             else:
@@ -490,7 +532,7 @@ class AutoGainService:
             eff_mean_final = _effective_mean(last_stats, cur_offset, adc_max)
             if is_guiding:
                 signal_final = last_stats.p99_9
-            elif is_planetary and last_detected is not None:
+            elif is_planetary and last_detected is not None:  # PLANET/MOON/PLANETARY/LUNAR
                 signal_final = last_detected.peak_frac
             else:
                 signal_final = eff_mean_final

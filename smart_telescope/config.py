@@ -266,6 +266,15 @@ ASTAP_CATALOG_DIR: str = _get("astap", "catalog_dir", "")
 MIN_DETECTED_STARS_BEFORE_SOLVE: int   = int(_get("plate_solve", "min_detected_stars_before_solve", "15"))
 ALLOW_ASTAP_BELOW_MIN_STAR_COUNT: bool = _get("plate_solve", "allow_astap_below_min_star_count", "true").lower() == "true"
 
+# ── click-to-center loop (M8-028 / REQ-CLICK-004) ────────────────────────────
+
+CTC_MAX_ITERATIONS: int             = int(_get("click_to_center", "max_iterations", "5"))
+CTC_CENTER_TOLERANCE_PX: float      = float(_get("click_to_center", "center_tolerance_px", "20"))
+CTC_MAX_SINGLE_MOVE_PX: float       = float(_get("click_to_center", "max_single_move_px", "300"))
+CTC_MOVE_FRACTION: float            = float(_get("click_to_center", "start_with_fraction_of_calculated_move", "0.5"))
+CTC_ALLOW_TRACKING_OFF: bool        = _get("click_to_center", "allow_when_tracking_off", "true").lower() == "true"
+CTC_CENTER_RATE_ARCSEC_PER_SEC: float = float(_get("click_to_center", "center_rate_arcsec_per_sec", "120.0"))
+
 # ── focuser backlash (M7-004 / CFG-004) ──────────────────────────────────────
 
 FOCUSER_BACKLASH_STEPS: int = int(os.environ.get(

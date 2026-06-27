@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-028 (Iterative click-to-center loop; REQ-CLICK-004)
+
+**Iterative centering loop: capture → refine → compute move → issue move → repeat until centred or max_iterations.**
+- `smart_telescope/config.py`: 6 new `CTC_*` settings from `[click_to_center]` section
+- `templates/config.toml`: `[click_to_center]` section with defaults + OPEN-002 comment
+- `smart_telescope/services/ctc_loop_service.py`: `run_centering_loop()` — per-iteration camera capture, click refinement, pixel-to-angular conversion with rotation + max_px clamp + fraction; `mount.move()` for RA and DEC; cancellation via `threading.Event`; `CTCIterationLog.to_json_line()`; `CTCLoopResult.to_dict()`; `_pixel_offset_to_move()` helper
+- `smart_telescope/api/click_to_center.py`: `POST /center` (synchronous, blocking until done/cancelled); `POST /cancel` (sets global Event)
+- Tests: 14 service tests in `tests/unit/services/test_ctc_loop_service.py`; full suite: 3710 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-027 (Click-to-center calibration gate; REQ-CLICK-003)
 
 **Missing or expired calibration hard-blocks click-to-center. File-backed store keyed per optical-train × binning.**

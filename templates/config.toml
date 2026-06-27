@@ -132,6 +132,14 @@ catalog_dir = ""   # empty = auto-search standard locations
 min_detected_stars_before_solve   = 15    # advisory star-count threshold (OPEN-003: revisit after real frames)
 allow_astap_below_min_star_count  = true  # proceed even below threshold; gate failure is logged only
 
+[click_to_center]
+max_iterations                         = 5       # max centering attempts per click (REQ-CLICK-004)
+center_tolerance_px                    = 20      # success when target within this many pixels of frame centre
+max_single_move_px                     = 300     # safety clamp on any single move (pixels)
+start_with_fraction_of_calculated_move = 0.5     # first-iteration damping; reduces overshoot
+allow_when_tracking_off                = true    # permit centering even when sidereal tracking is disabled
+center_rate_arcsec_per_sec             = 120.0   # mount center-rate in arcsec/s (OPEN-002: calibrate after first run)
+
 [mount]
 onstep_time_tolerance_s     = 10     # M8-008: max clock delta for VERIFIED (seconds)
 onstep_location_tolerance_m = 100    # M8-008: max location delta for VERIFIED (metres)

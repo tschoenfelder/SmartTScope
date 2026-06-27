@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-27 (M8-027 done: click-to-center calibration gate — hard block + file-backed store)
+**Last updated:** 2026-06-27 (M8-028 done: iterative click-to-center centering loop)
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1170,10 +1170,15 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 9 domain + 9 store + 12 API tests (42 total for M8-027)
   - Acceptance: REQ-CLICK-003
 
-- [ ] M8-028 Iterative bounded click-to-center loop `[P2 · Runtime]`
-  - Config defaults: `max_iterations=5`, `center_tolerance_px=20`, `max_single_move_px=300`, `start_with_fraction_of_calculated_move=0.5`, `allow_when_tracking_off=true`, `allow_when_parked=false`
+- [x] M8-028 Iterative bounded click-to-center loop `[P2 · Runtime]`
+  - Config defaults: `max_iterations=5`, `center_tolerance_px=20`, `max_single_move_px=300`, `start_with_fraction_of_calculated_move=0.5`, `allow_when_tracking_off=true`; `center_rate_arcsec_per_sec=120.0`
   - Works tracking-on; works tracking-off with drift warning; blocked while parked; user can cancel; every iteration logged
   - OPEN-002: review defaults after first calibration results on real mount
+  - `smart_telescope/config.py`: `CTC_MAX_ITERATIONS`, `CTC_CENTER_TOLERANCE_PX`, `CTC_MAX_SINGLE_MOVE_PX`, `CTC_MOVE_FRACTION`, `CTC_ALLOW_TRACKING_OFF`, `CTC_CENTER_RATE_ARCSEC_PER_SEC` from `[click_to_center]`
+  - `templates/config.toml`: `[click_to_center]` section with all 6 settings + comments
+  - `smart_telescope/services/ctc_loop_service.py`: `run_centering_loop()` — iterative per-frame capture → refine → offset → move loop; `CTCIterationLog.to_json_line()`; `CTCLoopResult.to_dict()`; `_pixel_offset_to_move()` with rotation support, fraction, max_px clamp
+  - `smart_telescope/api/click_to_center.py`: `POST /api/click_to_center/center` (blocking run); `POST /api/click_to_center/cancel` (set cancellation flag)
+  - Tests: 14 service tests in `tests/unit/services/test_ctc_loop_service.py`
   - Acceptance: REQ-CLICK-004, DEC-010..012; TEST-005
 
 ### Priority 7 — Dev workflow: GitHub delivery audit

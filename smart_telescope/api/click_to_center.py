@@ -1,4 +1,4 @@
-"""Click-to-center API — M8-025/026/027 / REQ-CLICK-001..003.
+"""Click-to-center API — M8-025/026/027/028 / REQ-CLICK-001..004.
 
 Endpoints:
   GET  /api/click_to_center/readiness       — gate + calibration check
@@ -6,10 +6,12 @@ Endpoints:
   GET  /api/click_to_center/calibration     — current calibration status
   POST /api/click_to_center/calibration     — store a calibration record
   DELETE /api/click_to_center/calibration   — invalidate calibration for a key
+  POST /api/click_to_center/center          — start iterative centering loop (blocking)
 """
 from __future__ import annotations
 
 import logging
+import threading
 import time
 
 from fastapi import APIRouter, HTTPException
@@ -20,6 +22,7 @@ from .preview import get_last_preview_pixels
 from ..domain.click_refinement import refine_click
 from ..domain.ctc_calibration import CTCCalibration
 from ..services.operation_gate import evaluate_gate, gate_inputs_from_device_state
+from ..services.ctc_loop_service import run_centering_loop
 
 _log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/click_to_center", tags=["click_to_center"])
@@ -195,3 +198,81 @@ def delete_calibration(optical_train: str = "default", binning: int = 1) -> dict
     """Invalidate (delete) the calibration for the given optical_train/binning."""
     deleted = _deps.get_ctc_calibration_store().delete(optical_train, binning)
     return {"deleted": deleted, "key": f"{optical_train}:{binning}"}
+
+
+# ── Centering loop (M8-028 / REQ-CLICK-004) ─────────────────────────────────
+
+# Global cancellation event for the centering loop (one loop at a time)
+_ctc_cancel_event: threading.Event = threading.Event()
+
+
+class CenterRequest(BaseModel):
+    x_px: int
+    y_px: int
+    optical_train: str = "default"
+    binning: int = 1
+    camera_role: str = "main"
+    refinement_mode: str = "star_centroid"
+    exposure_s: float = 2.0
+    gain: int = 100
+
+
+@router.post("/center")
+def click_to_center_center(req: CenterRequest) -> dict:
+    """Run the iterative centering loop synchronously (blocks until done or cancelled).
+
+    Requires valid calibration and an unparked, non-blocked mount.
+    """
+    from .. import config as _cfg
+
+    # Gate check
+    inputs = gate_inputs_from_device_state(
+        _deps.get_device_state(),
+        master_source_svc=_deps.get_master_source_service(),
+        raspberry_trust_svc=_deps.get_raspberry_trust_service(),
+    )
+    gate = evaluate_gate("click_to_center", **inputs)
+    if not gate.allowed:
+        raise HTTPException(status_code=409, detail=gate.human_message)
+
+    # Calibration check
+    cal = _deps.get_ctc_calibration_store().get(req.optical_train, req.binning)
+    if cal is None or not cal.is_valid():
+        raise HTTPException(status_code=409, detail=_CALIBRATION_REQUIRED_MSG)
+
+    # Resolve camera + mount
+    try:
+        camera = _deps.get_camera_by_role(req.camera_role)
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail=f"Camera unavailable: {exc}")
+    try:
+        mount = _deps.get_mount()
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail=f"Mount unavailable: {exc}")
+
+    _ctc_cancel_event.clear()
+    result = run_centering_loop(
+        camera=camera,
+        mount=mount,
+        calibration=cal,
+        target_x_px=req.x_px,
+        target_y_px=req.y_px,
+        refinement_mode=req.refinement_mode,
+        exposure_s=req.exposure_s,
+        gain=req.gain,
+        max_iterations=_cfg.CTC_MAX_ITERATIONS,
+        center_tolerance_px=_cfg.CTC_CENTER_TOLERANCE_PX,
+        max_single_move_px=_cfg.CTC_MAX_SINGLE_MOVE_PX,
+        move_fraction=_cfg.CTC_MOVE_FRACTION,
+        center_rate_arcsec_per_sec=_cfg.CTC_CENTER_RATE_ARCSEC_PER_SEC,
+        allow_tracking_off=_cfg.CTC_ALLOW_TRACKING_OFF,
+        cancellation_flag=_ctc_cancel_event,
+    )
+    return result.to_dict()
+
+
+@router.post("/cancel")
+def click_to_center_cancel() -> dict:
+    """Cancel a running centering loop."""
+    _ctc_cancel_event.set()
+    return {"cancelled": True}

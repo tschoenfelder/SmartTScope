@@ -62,6 +62,7 @@ from .api.setup_check import router as setup_check_router
 from .api.gpsd import router as gpsd_router
 from .api.stage1 import router as stage1_router
 from .api.commands import router as commands_router
+from .api.logs import router as logs_router
 
 _STATIC = Path(__file__).parent / "static"
 
@@ -112,6 +113,7 @@ app.include_router(setup_check_router)
 app.include_router(gpsd_router)
 app.include_router(stage1_router)
 app.include_router(commands_router)
+app.include_router(logs_router)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -83,6 +83,7 @@ Table of contents for the SmartTelescope knowledge base.
 ## Architecture
 
 - [job-manager](job-manager.md) — `JobManager` service: resource ownership model, `submit()`/`claim()`/`release()` modes, cancellation, timeout policy
+- **M8-014 done (REQ-LOG-001):** `SectionLogger` — 12 named log sections (startup, stage1_time_location, mount, camera, auto_gain, autofocus, collimation, plate_solve, goto, click_to_center, extended_setup_check, github_delivery); each section gets its own `Logger` under `smart_telescope.section.<name>` with `propagate=True`; per-section `FileHandler` to `{LOG_DIR}/{session_id[:8]}/{section}.log` when configured; `_SectionAdapter` injects `session_id` + `section` into every record; `GET /api/logs` returns `{section: path_or_null}` for all 12; `config.LOG_DIR` from `[session].log_dir` (env `LOG_DIR`); 19 + 5 tests
 
 ## Collimation Assistant
 

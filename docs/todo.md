@@ -1041,9 +1041,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 4 — Observability and diagnostic frames
 
-- [ ] M8-014 12 per-section log namespaces; session ID links all logs `[P2 · Runtime]`
-  - Sections: `startup`, `stage1_time_location`, `mount`, `camera`, `auto_gain`, `autofocus`, `collimation`, `plate_solve`, `goto`, `click_to_center`, `extended_setup_check`, `github_delivery`
-  - Log paths available via diagnostics or API
+- [x] M8-014 12 per-section log namespaces; session ID links all logs `[P2 · Runtime]` ✓ 2026-06-27
+  - `smart_telescope/services/section_logger.py`: `SectionLogger(session_id, log_dir)` with 12 named sections; `_SectionAdapter` injects `session_id` + `section` into every record; optional per-section `FileHandler` to `{log_dir}/{session_id[:8]}/{section}.log`; `get(section)` + `get_paths()` + `close()`; loggers under `smart_telescope.section.*` with `propagate=True`
+  - `smart_telescope/api/logs.py`: `GET /api/logs` returns `{section: path_or_null}` for all 12 sections
+  - `config.py`: `LOG_DIR` from `[session].log_dir` (default `~/.SmartTScope/logs/`); `templates/config.toml` updated
+  - `runtime.py`: `self.section_logger = SectionLogger(...)` in `__init__`; reset in `reset_for_tests()`; `close()` in `shutdown()`
+  - `api/deps.py`: `get_section_logger()`; `app.py`: `logs_router` registered
+  - 14 tests in `tests/unit/services/test_section_logger.py` + 5 tests in `tests/unit/api/test_logs.py`; 3469 passed, 24 skipped
   - Acceptance: REQ-LOG-001
 
 - [ ] M8-015 Service-call logs per iteration `[P2 · Runtime]`

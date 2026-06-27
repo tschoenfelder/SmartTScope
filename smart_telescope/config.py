@@ -324,6 +324,7 @@ STORAGE_DIR: str           = _expand(os.environ.get("STORAGE_DIR",  _get("sessio
 IMAGE_ROOT: str            = _expand(os.environ.get("IMAGE_ROOT",    _get("session", "image_root",    "")))
 APP_STATE_DIR: str         = _expand(os.environ.get("APP_STATE_DIR", _get("session", "app_state_dir", "")))
 COMMAND_HISTORY_DIR: str   = _expand(os.environ.get("COMMAND_HISTORY_DIR", _get("session", "command_history_dir", str(_USER_DIR / "commands"))))
+LOG_DIR: str               = _expand(os.environ.get("LOG_DIR",               _get("session", "log_dir",               str(_USER_DIR / "logs"))))
 
 # ── Operation policy (M8-013 / REQ-GOTO-003) ─────────────────────────────────
 # When true, direct RA/DEC GoTo is allowed even when Raspberry Pi time is not trusted.

@@ -149,3 +149,7 @@ def get_guiding_service() -> GuidingService:
 
 def get_command_history_service() -> "CommandHistoryService":
     return get_runtime().command_history
+
+
+def get_section_logger() -> "SectionLogger":
+    return get_runtime().section_logger

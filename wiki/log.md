@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-014 (12 per-section log namespaces; REQ-LOG-001)
+
+**Per-section log namespaces with session ID correlation.**
+- `smart_telescope/services/section_logger.py` (new): `SectionLogger(session_id, log_dir)` — 12 named sections (startup, stage1_time_location, mount, camera, auto_gain, autofocus, collimation, plate_solve, goto, click_to_center, extended_setup_check, github_delivery); each section gets its own `Logger` under `smart_telescope.section.<name>` with `propagate=True`; optional `FileHandler` per section to `{log_dir}/{session_id[:8]}/{section}.log`; `_SectionAdapter` injects `session_id` and `section` into every log record; `get(section)` returns adapter, `get_paths()` returns `{section: path_or_None}`, `close()` removes file handlers
+- `smart_telescope/api/logs.py` (new): `GET /api/logs` returns `{"logs": {section: path_or_null}}` for all 12 sections; depends on `SectionLogger` via `deps.get_section_logger()`
+- `smart_telescope/config.py`: `LOG_DIR` from `[session].log_dir` (default `~/.SmartTScope/logs/`; env-var `LOG_DIR`)
+- `templates/config.toml`: added `log_dir = ""` to `[session]` section
+- `smart_telescope/runtime.py`: `self.section_logger = SectionLogger(session_id=self._app_session_id, log_dir=config.LOG_DIR)` in `__init__`; `SectionLogger(session_id=self._app_session_id)` (no log_dir) in `reset_for_tests()`; `self.section_logger.close()` in `shutdown()`
+- `smart_telescope/api/deps.py`: added `get_section_logger() -> SectionLogger`
+- `smart_telescope/app.py`: registered `logs_router`
+- Tests: 14 `test_section_logger.py` (section names, paths, adapters, file creation, close) + 5 `test_logs.py`; suite: 3489 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-012 + M8-013 (Command history API + GoTo wiring; REQ-API-003, REQ-GOTO-001..003, INC-005)
 
 **M8-012: `GET /api/commands` + UI panel**

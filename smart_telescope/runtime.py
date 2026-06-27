@@ -25,6 +25,7 @@ from .ports.stacker import StackerPort
 from .ports.storage import StoragePort
 from .services.camera_offset_service import CameraOffsetService
 from .services.command_history import CommandHistoryService
+from .services.section_logger import SectionLogger
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
@@ -232,6 +233,10 @@ class RuntimeContext:
             session_id=self._app_session_id,
             path=Path(_cmd_dir) / f"{self._app_session_id[:8]}.jsonl" if _cmd_dir else None,
         )
+        self.section_logger      = SectionLogger(
+            session_id=self._app_session_id,
+            log_dir=config.LOG_DIR,
+        )
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
@@ -343,6 +348,8 @@ class RuntimeContext:
         self.cooling_service.stop()
         self.dawn_watcher.stop()
         self.device_state.stop()
+        with contextlib.suppress(Exception):
+            self.section_logger.close()
         if self._focuser is not None:
             with contextlib.suppress(Exception):
                 self._focuser.stop()
@@ -428,6 +435,7 @@ class RuntimeContext:
         self.job_manager         = JobManager()
         self.camera_offset_service = CameraOffsetService.from_config()
         self.command_history     = CommandHistoryService(session_id=self._app_session_id, path=None)
+        self.section_logger      = SectionLogger(session_id=self._app_session_id)
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None

@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-025 (Click-to-center UI entry point; REQ-CLICK-001)
+
+**Click handlers on three preview frames. Gate readiness shown inline; exact reason displayed when unavailable.**
+- `smart_telescope/api/click_to_center.py`: `GET /api/click_to_center/readiness` — evaluates `click_to_center` OperationGate; returns `{allowed, reason, required_action}`
+- `smart_telescope/app.py`: registered `click_to_center_router`
+- `smart_telescope/static/index.html`: `onclick="ctcHandlePreviewClick(event,'...')"` + `cursor:crosshair` on `s3-preview-frame`, `s4-preview-frame`, `s4-donut-preview-frame`; CTC banners (`s3-ctc-banner`, `s4-ctc-banner`, `s4-donut-ctc-banner`) below each frame; `click_to_center.js` script tag added
+- `smart_telescope/static/js/click_to_center.js`: `ctcHandlePreviewClick()` — checks readiness, places amber circle+crosshair marker, shows banner (error or confirmed pixel); `ctcGetLastClick()` for M8-026/028; `ctcClearBanner()`
+- Tests: 12 unit tests in `tests/unit/api/test_click_to_center_readiness.py`
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-024 (Collimation modes UI; REQ-UI-002..003)
 
 **Two collimation modes (Bahtinov Preview + Defocus Donut) visible in Stage 4 with per-mode availability.**

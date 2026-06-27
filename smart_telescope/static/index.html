@@ -1292,11 +1292,13 @@
             </span>
           </div>
 
-          <div class="preview-frame" id="s3-preview-frame">
+          <div class="preview-frame" id="s3-preview-frame"
+               onclick="ctcHandlePreviewClick(event,'s3')" style="cursor:crosshair">
             <div class="preview-placeholder" id="s3-preview-ph">Press Start to begin</div>
             <img id="s3-preview-img" alt="" style="display:none">
             <div class="preview-overlay" id="s3-preview-overlay"></div>
           </div>
+          <div id="s3-ctc-banner" style="display:none;font-size:0.82rem;margin-top:0.3rem;padding:0.25rem 0.5rem;border-radius:3px;background:var(--bg)"></div>
 
           <!-- Row 1: camera settings + display toggles + solve/focus actions -->
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem">
@@ -1861,7 +1863,8 @@
             </span>
           </div>
 
-          <div class="preview-frame large" id="s4-preview-frame">
+          <div class="preview-frame large" id="s4-preview-frame"
+               onclick="ctcHandlePreviewClick(event,'s4')" style="cursor:crosshair">
             <div class="preview-placeholder" id="s4-preview-ph">
               Press Start — the live feed from Stage 3 carries over
             </div>
@@ -1872,6 +1875,7 @@
                     width:180px;height:180px;display:none;border:1px solid rgba(250,204,21,0.7);
                     border-radius:3px;image-rendering:pixelated"></canvas>
           </div>
+          <div id="s4-ctc-banner" style="display:none;font-size:0.82rem;margin-top:0.3rem;padding:0.25rem 0.5rem;border-radius:3px;background:var(--bg)"></div>
 
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem;flex-wrap:wrap;gap:0.3rem 0.5rem">
             <label>Exp</label>
@@ -1924,12 +1928,14 @@
               <span class="ws-dot ws-stopped"></span>Stopped
             </span>
           </div>
-          <div class="preview-frame large" id="s4-donut-preview-frame">
+          <div class="preview-frame large" id="s4-donut-preview-frame"
+               onclick="ctcHandlePreviewClick(event,'s4-donut')" style="cursor:crosshair">
             <div class="preview-placeholder" id="s4-donut-preview-ph">
               Select Defocus Donut mode and defocus the telescope slightly, then press Start.
             </div>
             <img id="s4-donut-preview-img" alt="" style="display:none;max-width:100%;max-height:600px">
           </div>
+          <div id="s4-donut-ctc-banner" style="display:none;font-size:0.82rem;margin-top:0.3rem;padding:0.25rem 0.5rem;border-radius:3px;background:var(--bg)"></div>
           <div class="controls" style="margin-top:0.5rem;padding-top:0.5rem;flex-wrap:wrap;gap:0.3rem 0.5rem">
             <label>Exp</label>
             <input type="number" id="s4-donut-exposure" value="1.0" min="0.1" max="30" step="0.1"
@@ -2269,6 +2275,7 @@
 <script src="/static/js/session.js"></script>
 <script src="/static/js/bias_estimation.js"></script>
 <script src="/static/js/guiding.js"></script>
+<script src="/static/js/click_to_center.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

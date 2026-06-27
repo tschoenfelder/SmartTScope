@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-24 (M7 ingested: smarttscope_additional_requirements.md v1.0 — interactive startup sync, TimeLocationStatus, pixel calibration, backlash, ServiceFrame, PlateSolveService)
+**Last updated:** 2026-06-27 (M8-025 done: click-to-center UI + readiness endpoint)
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1140,8 +1140,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 11 unit tests in `tests/unit/api/test_collimation_modes.py`
   - Acceptance: REQ-UI-002, REQ-UI-003; INC-006, INC-007; TEST-005
 
-- [ ] M8-025 Click-to-center in collimation, plate-solve, autofocus views `[P2 · UI]`
+- [x] M8-025 Click-to-center in collimation, plate-solve, autofocus views `[P2 · UI]`
   - User can click star or donut; if unavailable, exact reason shown
+  - `GET /api/click_to_center/readiness` — evaluates `click_to_center` gate; returns `{allowed, reason, required_action}`
+  - Click handlers on `s3-preview-frame`, `s4-preview-frame`, `s4-donut-preview-frame` (crosshair cursor + amber circle marker)
+  - CTC banners below each frame: show exact gate reason when unavailable; pixel coords when allowed
+  - `smart_telescope/static/js/click_to_center.js` — `ctcHandlePreviewClick()`, `ctcGetLastClick()`, `ctcClearBanner()`
+  - Tests: 12 unit tests in `tests/unit/api/test_click_to_center_readiness.py`
   - Acceptance: REQ-CLICK-001
 
 - [ ] M8-026 Click refinement — star centroid / donut-circle center / raw fallback `[P2 · Runtime]`

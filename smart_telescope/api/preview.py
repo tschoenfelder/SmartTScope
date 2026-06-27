@@ -24,6 +24,15 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Latest preview pixels per camera_index — populated after each capture.
+# Used by click-to-center refinement (M8-026).
+_last_preview_pixels: dict[int, "np.ndarray"] = {}
+
+
+def get_last_preview_pixels(camera_index: int) -> "np.ndarray | None":
+    """Return the most recent preview frame pixels for the given camera index, or None."""
+    return _last_preview_pixels.get(camera_index)
+
 
 @router.websocket("/ws/preview")
 async def ws_preview(
@@ -325,6 +334,9 @@ async def ws_preview(
                 (stats.p99 * stats.adc_max) if stats else 0.0,
                 stats.saturation_pct if stats else 0.0,
             )
+
+            # --- cache latest pixels for click-to-center refinement (M8-026) ---
+            _last_preview_pixels[camera_index] = frame.pixels
 
             # --- encode and send JPEG ---
             try:

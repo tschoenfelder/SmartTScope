@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-026 (Click refinement; REQ-CLICK-002)
+
+**Star centroid and ring-center refinement on last preview frame; raw fallback when no feature found.**
+- `smart_telescope/domain/click_refinement.py`: `refine_click(pixels, x, y, mode, search_radius)` → `RefinedClick`; two modes: `star_centroid` (tight threshold) and `ring_center` (low threshold for ring breadth); robust background via 25th-percentile + sub-median std; `RefinedClick.to_dict()` + `to_json_line()`
+- `smart_telescope/api/preview.py`: `_last_preview_pixels` dict (keyed by camera_index) populated after each capture; `get_last_preview_pixels(idx)` accessor for refine endpoint
+- `smart_telescope/api/click_to_center.py`: `POST /api/click_to_center/refine` — reads cached frame; applies refinement; returns `{raw_x/y, refined_x/y, method, confidence, fallback, fallback_reason}`
+- `smart_telescope/static/js/click_to_center.js`: updated `ctcHandlePreviewClick()` calls refine endpoint, draws green marker at refined position or amber for fallback, shows centroid method + confidence in banner
+- Tests: 15 domain tests in `tests/unit/domain/test_click_refinement.py`; 9 API tests in `tests/unit/api/test_click_to_center_refine.py`; full suite: 3666 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-025 (Click-to-center UI entry point; REQ-CLICK-001)
 
 **Click handlers on three preview frames. Gate readiness shown inline; exact reason displayed when unavailable.**

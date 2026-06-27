@@ -1,23 +1,23 @@
 /* ══════════════════════════════════════════════════════════════════════
-     Click-to-center — M8-025 / REQ-CLICK-001
+     Click-to-center — M8-025/M8-026 / REQ-CLICK-001..002
      Handles preview-frame clicks in Stage 3 (plate-solve) and Stage 4
-     (Bahtinov Preview + Defocus Donut). When unavailable, shows the
-     exact gate reason.
+     (Bahtinov Preview + Defocus Donut). Refines to star centroid or
+     ring center; shows exact gate reason when unavailable.
 ══════════════════════════════════════════════════════════════════════ */
 
-// Map frame prefix → banner element id + overlay element id (if any)
+// Map frame key → banner id + camera_index + default refinement mode
 const _CTC_FRAMES = {
-    's3':       { banner: 's3-ctc-banner',       overlay: 's3-preview-overlay'  },
-    's4':       { banner: 's4-ctc-banner',       overlay: 's4-preview-overlay'  },
-    's4-donut': { banner: 's4-donut-ctc-banner', overlay: null                  },
+    's3':       { banner: 's3-ctc-banner',       cameraIndex: 0, mode: 'star_centroid' },
+    's4':       { banner: 's4-ctc-banner',       cameraIndex: 0, mode: 'star_centroid' },
+    's4-donut': { banner: 's4-donut-ctc-banner', cameraIndex: 0, mode: 'ring_center'   },
 };
 
-// Last registered click per frame (used by M8-026/028 for refinement + centering)
+// Last refined click per frame (used by M8-028 centering loop)
 const _ctcLastClick = {};
 
 /**
  * Called by onclick on each preview frame div.
- * Normalises pixel coordinates to the image dimensions.
+ * Normalises coordinates to image pixel space, checks gate, refines click.
  */
 async function ctcHandlePreviewClick(event, frameKey) {
     const frame = event.currentTarget;
@@ -26,45 +26,85 @@ async function ctcHandlePreviewClick(event, frameKey) {
     // Ignore clicks when no image is visible
     if (!img || img.style.display === 'none') return;
 
-    // Convert click position to image-relative normalised coordinates
     const rect = img.getBoundingClientRect();
     const relX = event.clientX - rect.left;
     const relY = event.clientY - rect.top;
 
-    // Ignore clicks outside image bounds
     if (relX < 0 || relY < 0 || relX > rect.width || relY > rect.height) return;
 
-    // Scale to natural image pixel coords
     const scaleX = img.naturalWidth  / rect.width;
     const scaleY = img.naturalHeight / rect.height;
-    const px = Math.round(relX * scaleX);
-    const py = Math.round(relY * scaleY);
+    const rawPx = Math.round(relX * scaleX);
+    const rawPy = Math.round(relY * scaleY);
 
-    const banner = document.getElementById(_CTC_FRAMES[frameKey].banner);
+    const cfg = _CTC_FRAMES[frameKey];
+    const banner = document.getElementById(cfg.banner);
     if (!banner) return;
 
-    // Show marker immediately for visual feedback
-    _ctcDrawMarker(frameKey, relX, relY);
+    // Show raw marker immediately for visual feedback
+    _ctcDrawMarker(frameKey, relX, relY, 'raw');
 
-    // Check gate readiness
-    let data;
+    // 1. Check gate readiness
+    let readiness;
     try {
-        data = await (await fetch('/api/click_to_center/readiness')).json();
+        readiness = await (await fetch('/api/click_to_center/readiness')).json();
     } catch {
         _ctcShowBanner(banner, 'Could not reach server — click-to-center unavailable.', true);
+        _ctcClearMarker(frameKey);
         return;
     }
 
-    if (!data.allowed) {
-        const reason = data.reason || 'Click-to-center is not available right now.';
+    if (!readiness.allowed) {
+        const reason = readiness.reason || 'Click-to-center is not available right now.';
         _ctcShowBanner(banner, 'Click-to-center unavailable: ' + reason, true);
         _ctcClearMarker(frameKey);
         return;
     }
 
-    // Store click for M8-026 refinement + M8-028 centering loop
-    _ctcLastClick[frameKey] = { px, py, frameKey };
-    _ctcShowBanner(banner, `Click registered at pixel (${px}, ${py}) — ready to center.`, false);
+    // 2. Refine click
+    _ctcShowBanner(banner, 'Refining click…', false);
+    let refined;
+    try {
+        refined = await (await fetch('/api/click_to_center/refine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                x_px: rawPx,
+                y_px: rawPy,
+                camera_index: cfg.cameraIndex,
+                mode: cfg.mode,
+            }),
+        })).json();
+    } catch {
+        refined = {
+            raw_x: rawPx, raw_y: rawPy,
+            refined_x: rawPx, refined_y: rawPy,
+            method: 'raw_fallback', confidence: 0, fallback: true,
+            fallback_reason: 'Refinement request failed.',
+        };
+    }
+
+    // Store result for M8-028 centering loop
+    _ctcLastClick[frameKey] = refined;
+
+    // 3. Show refined marker (draw on top of raw)
+    const refinedRelX = refined.refined_x / scaleX;
+    const refinedRelY = refined.refined_y / scaleY;
+    _ctcDrawMarker(frameKey, refinedRelX, refinedRelY, refined.fallback ? 'raw' : 'refined');
+
+    // 4. Update banner
+    if (refined.fallback) {
+        const why = refined.fallback_reason || 'No feature found.';
+        _ctcShowBanner(banner,
+            `Using raw click (${rawPx}, ${rawPy}) — ${why}`, false);
+    } else {
+        const method = refined.method === 'star_centroid' ? 'star centroid'
+                     : refined.method === 'ring_center'   ? 'ring center'
+                     : refined.method;
+        const conf = Math.round(refined.confidence * 100);
+        _ctcShowBanner(banner,
+            `${method} at (${refined.refined_x}, ${refined.refined_y}) — confidence ${conf}%`, false);
+    }
 }
 
 function _ctcShowBanner(el, text, isError) {
@@ -86,19 +126,21 @@ function ctcClearBanner(frameKey) {
 
 let _ctcMarkerEls = {};
 
-function _ctcDrawMarker(frameKey, x, y) {
-    const cfg = _CTC_FRAMES[frameKey];
-    const frame = document.getElementById(
-        frameKey === 's3' ? 's3-preview-frame' :
-        frameKey === 's4' ? 's4-preview-frame' :
-        's4-donut-preview-frame'
-    );
+const _FRAME_ID = {
+    's3':       's3-preview-frame',
+    's4':       's4-preview-frame',
+    's4-donut': 's4-donut-preview-frame',
+};
+
+function _ctcDrawMarker(frameKey, x, y, kind) {
+    const frame = document.getElementById(_FRAME_ID[frameKey]);
     if (!frame) return;
 
-    // Remove old marker if present
     _ctcClearMarker(frameKey);
 
     const SIZE = 20;
+    // Amber for raw/fallback, green for refined
+    const COLOR = kind === 'refined' ? '#22c55e' : '#f59e0b';
     const el = document.createElement('div');
     el.style.cssText = [
         'position:absolute',
@@ -107,19 +149,18 @@ function _ctcDrawMarker(frameKey, x, y) {
         `top:${Math.round(y - SIZE / 2)}px`,
         `width:${SIZE}px`,
         `height:${SIZE}px`,
-        'border:2px solid #f59e0b',
+        `border:2px solid ${COLOR}`,
         'border-radius:50%',
         'box-shadow:0 0 4px rgba(0,0,0,0.7)',
         'z-index:10',
     ].join(';');
 
-    // Crosshair lines
     ['horizontal', 'vertical'].forEach(dir => {
         const line = document.createElement('div');
         if (dir === 'horizontal') {
-            line.style.cssText = `position:absolute;top:50%;left:-6px;width:${SIZE + 12}px;height:2px;margin-top:-1px;background:#f59e0b;`;
+            line.style.cssText = `position:absolute;top:50%;left:-6px;width:${SIZE + 12}px;height:2px;margin-top:-1px;background:${COLOR};`;
         } else {
-            line.style.cssText = `position:absolute;left:50%;top:-6px;width:2px;height:${SIZE + 12}px;margin-left:-1px;background:#f59e0b;`;
+            line.style.cssText = `position:absolute;left:50%;top:-6px;width:2px;height:${SIZE + 12}px;margin-left:-1px;background:${COLOR};`;
         }
         el.appendChild(line);
     });
@@ -135,7 +176,7 @@ function _ctcClearMarker(frameKey) {
     delete _ctcMarkerEls[frameKey];
 }
 
-/** Returns the last registered click for a given frame, or null. */
+/** Returns the last refined click for a given frame, or null. */
 function ctcGetLastClick(frameKey) {
     return _ctcLastClick[frameKey] || null;
 }

@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-27 (M8-025 done: click-to-center UI + readiness endpoint)
+**Last updated:** 2026-06-27 (M8-026 done: click refinement — star centroid / ring center / raw fallback)
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1149,8 +1149,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 12 unit tests in `tests/unit/api/test_click_to_center_readiness.py`
   - Acceptance: REQ-CLICK-001
 
-- [ ] M8-026 Click refinement — star centroid / donut-circle center / raw fallback `[P2 · Runtime]`
+- [x] M8-026 Click refinement — star centroid / donut-circle center / raw fallback `[P2 · Runtime]`
   - Raw click logged; refined target logged and displayed; if refinement fails, user can use raw click or cancel
+  - `smart_telescope/domain/click_refinement.py`: `refine_click(pixels, x, y, mode)` → `RefinedClick`; modes `star_centroid` (half-peak threshold) and `ring_center` (0.2-threshold for ring breadth); robust background via 25th-percentile + sub-median std; raw fallback when no feature found
+  - `smart_telescope/api/preview.py`: `_last_preview_pixels[camera_index]` cache populated after each frame; `get_last_preview_pixels(camera_index)` accessor
+  - `smart_telescope/api/click_to_center.py`: `POST /api/click_to_center/refine` — reads cached frame, applies refinement, returns `{raw_x/y, refined_x/y, method, confidence, fallback, fallback_reason}`
+  - `smart_telescope/static/js/click_to_center.js`: updated `ctcHandlePreviewClick()` — calls refine endpoint, shows green marker for refined or amber for fallback, updates banner with method + confidence
+  - Tests: 15 unit tests in `tests/unit/domain/test_click_refinement.py`, 9 in `tests/unit/api/test_click_to_center_refine.py`
   - Acceptance: REQ-CLICK-002
 
 - [ ] M8-027 Click-to-center calibration (hard block; calibration wizard on cold start) `[P2 · Runtime]`

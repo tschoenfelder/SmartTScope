@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-016 (User-action log — 18 named actions; REQ-LOG-003)
+
+**Structured user-action log for all 18 named UI interactions.**
+- `smart_telescope/domain/user_action_log.py` (new): `USER_ACTIONS` 18-name tuple + `UserActionRecord` (action, timestamp, result, gate_reason); `to_json_line()`
+- `smart_telescope/services/user_action_logger.py` (new): `UserActionLogger` with `_ACTION_SECTIONS` mapping; `log(action, result, gate_reason)` writes JSON line to the right section logger
+- `smart_telescope/runtime.py` + `api/deps.py`: `user_action_logger` constructed on init + in `reset_for_tests()`; `get_user_action_logger()` injector
+- Wired into 9 existing endpoints: `session_connect`, `mount_track` (track_requested/rejected), `mount_goto` (goto_requested/rejected/bright_star), `mount_sync_clock` (push_confirmed/rejected), `mount_confirm_time`, `run_autogain` (diagnostic), `focuser_autofocus`, `collimation_start`, `solver_solve`
+- Tests: 17 unit tests in `tests/unit/services/test_user_action_logger.py`; suite: 3501 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-015 (Service-call logs per iteration; REQ-LOG-002)
 
 **Structured per-iteration logging for auto-gain, plate-solve, and autofocus.**

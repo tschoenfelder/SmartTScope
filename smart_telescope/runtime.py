@@ -26,6 +26,8 @@ from .ports.storage import StoragePort
 from .services.camera_offset_service import CameraOffsetService
 from .services.command_history import CommandHistoryService
 from .services.section_logger import SectionLogger
+from .services.service_call_logger import ServiceCallLogger
+from .services.user_action_logger import UserActionLogger
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
@@ -237,6 +239,14 @@ class RuntimeContext:
             session_id=self._app_session_id,
             log_dir=config.LOG_DIR,
         )
+        self.service_call_logger = ServiceCallLogger(
+            section_logger=self.section_logger,
+            session_id=self._app_session_id,
+        )
+        self.user_action_logger = UserActionLogger(
+            section_logger=self.section_logger,
+            session_id=self._app_session_id,
+        )
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
@@ -436,6 +446,14 @@ class RuntimeContext:
         self.camera_offset_service = CameraOffsetService.from_config()
         self.command_history     = CommandHistoryService(session_id=self._app_session_id, path=None)
         self.section_logger      = SectionLogger(session_id=self._app_session_id)
+        self.service_call_logger = ServiceCallLogger(
+            section_logger=self.section_logger,
+            session_id=self._app_session_id,
+        )
+        self.user_action_logger = UserActionLogger(
+            section_logger=self.section_logger,
+            session_id=self._app_session_id,
+        )
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None

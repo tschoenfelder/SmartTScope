@@ -153,3 +153,11 @@ def get_command_history_service() -> "CommandHistoryService":
 
 def get_section_logger() -> "SectionLogger":
     return get_runtime().section_logger
+
+
+def get_service_call_logger() -> "ServiceCallLogger":
+    return get_runtime().service_call_logger
+
+
+def get_user_action_logger() -> "UserActionLogger":
+    return get_runtime().user_action_logger

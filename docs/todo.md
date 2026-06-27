@@ -1058,9 +1058,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 15 unit tests in `tests/unit/services/test_service_call_logger.py`
   - Acceptance: REQ-LOG-002; INC-010
 
-- [ ] M8-016 User-action log — 18 named actions `[P2 · Runtime]`
-  - `connect_all_clicked`, `time_location_push_confirmed`, `time_location_push_rejected`, `raspberry_time_manually_confirmed`, `goto_requested`, `goto_rejected`, `bright_star_goto_requested`, `tracking_enable_requested`, `tracking_enable_rejected`, `plate_solve_requested`, `autofocus_started`, `autofocus_cancelled`, `collimation_started`, `collimation_mode_selected`, `click_to_center_requested`, `click_to_center_cancelled`, `diagnostic_exposure_test_started`, `github_push_requested`
-  - Each action has timestamp; linked to backend result; rejections include gate reason
+- [x] M8-016 User-action log — 18 named actions `[P2 · Runtime]` ✓ 2026-06-27
+  - `smart_telescope/domain/user_action_log.py`: `USER_ACTIONS` tuple (18 names) + `UserActionRecord` dataclass (action, timestamp, result, gate_reason)
+  - `smart_telescope/services/user_action_logger.py`: `UserActionLogger` with `_ACTION_SECTIONS` mapping each action to its section; `log(action, result, gate_reason)` writes JSON line to section logger
+  - Runtime: constructed in `__init__` and `reset_for_tests()`; `deps.get_user_action_logger()` injector
+  - Wired into: `session.py::session_connect` (connect_all_clicked); `mount.py::mount_track` (tracking_enable_requested/rejected); `mount.py::mount_goto` (goto_requested/rejected/bright_star_goto_requested); `mount.py::mount_sync_clock` (time_location_push_confirmed/rejected); `mount.py::mount_confirm_time` (raspberry_time_manually_confirmed); `autogain.py::run_autogain` (diagnostic_exposure_test_started when req.diagnostic); `focuser.py::focuser_autofocus` (autofocus_started); `collimation.py::collimation_start` (collimation_started); `solver.py::solver_solve` (plate_solve_requested)
+  - Remaining 6 actions (autofocus_cancelled, collimation_mode_selected, click_to_center_*, github_push_requested) wired when those endpoints are built
+  - Tests: 17 unit tests in `tests/unit/services/test_user_action_logger.py`
   - Acceptance: REQ-LOG-003
 
 - [ ] M8-017 FITS diagnostic frame storage `[P2 · Runtime]`

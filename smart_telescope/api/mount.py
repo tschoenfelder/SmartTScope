@@ -303,7 +303,15 @@ def mount_track(
     master_source_svc:   object             = Depends(deps.get_master_source_service),
     raspberry_trust_svc: object             = Depends(deps.get_raspberry_trust_service),
 ) -> dict[str, bool]:
-    _gate_check(device_state, "tracking_enable", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
+    ual = deps.get_user_action_logger()
+    try:
+        _gate_check(device_state, "tracking_enable", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        ual.log("tracking_enable_rejected", result="rejected",
+                gate_reason=detail.get("reason_code") or str(exc.detail))
+        raise
+    ual.log("tracking_enable_requested", result="ok")
     device_state.record_command("track")
     try:
         mount_ops.track_sequence(mount)
@@ -345,17 +353,20 @@ def mount_goto(
     gate_op = "bright_star_goto" if bright_star else "goto"
     params  = {"ra": body.ra, "dec": body.dec, "bright_star": bright_star}
     rec = command_history.record("goto", gate_op, params)
+    ual = deps.get_user_action_logger()
 
     try:
         _gate_check(device_state, gate_op, master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
     except HTTPException as exc:
         detail = exc.detail if isinstance(exc.detail, dict) else {}
+        reason = detail.get("reason_code") or str(exc.detail)
         command_history.update(
             rec.command_id, CommandStatus.REJECTED,
             reason_code=detail.get("reason_code"),
             human_message=detail.get("human_message"),
             backend_response=detail,
         )
+        ual.log("goto_rejected", result="rejected", gate_reason=reason)
         raise
 
     if not confirm_solar:
@@ -385,6 +396,10 @@ def mount_goto(
         raise
 
     command_history.update(rec.command_id, CommandStatus.ISSUED)
+    if bright_star:
+        ual.log("bright_star_goto_requested", result="ok")
+    else:
+        ual.log("goto_requested", result="ok")
     device_state.record_command(f"goto ra={body.ra:.4f}h dec={body.dec:.2f}°")
     try:
         _safe_goto(mount, coordinator, body.ra, body.dec)
@@ -431,6 +446,7 @@ def mount_sync_clock(
     M8-007: When the master time source at verification time is GPS_FIX or NTP,
     ONSTEP_COMPARISON trust is established for the Raspberry Pi clock (DEC-006 chain).
     """
+    ual = deps.get_user_action_logger()
     try:
         mount.ensure_time_location_synced()
         device_state.set_time_location_status(TimeLocationStatus.VERIFIED)
@@ -441,8 +457,10 @@ def mount_sync_clock(
         ms = master_source_svc.evaluate(user_confirmed=user_confirmed)  # type: ignore[union-attr]
         if ms in (MasterTimeSource.GPS_FIX, MasterTimeSource.NTP):
             device_state.set_onstep_comparison_established()
+        ual.log("time_location_push_confirmed", result="ok")
         return {"ok": True, "time_location_status": "VERIFIED"}
     except RuntimeError as exc:
+        ual.log("time_location_push_rejected", result="rejected", gate_reason=str(exc))
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -470,6 +488,7 @@ def mount_confirm_time(
     session_trust_expiry_minutes (config [time_location] section, default 120 min).
     """
     device_state.set_user_time_confirmed(True)
+    deps.get_user_action_logger().log("raspberry_time_manually_confirmed", result="ok")
     return {"ok": True, "raspberry_trust_source": "USER_CONFIRMED"}
 
 

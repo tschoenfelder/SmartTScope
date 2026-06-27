@@ -164,6 +164,7 @@ def focuser_autofocus(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    deps.get_user_action_logger().log("autofocus_started", result="ok")
     try:
         with coordinator.focuser_command(timeout=0):
             try:

@@ -25,6 +25,7 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from . import deps as _deps
 from .deps import get_camera, get_camera_by_role, get_focuser, get_mount
 from ..ports.camera import CameraPort, CaptureAbortedError
 from ..ports.focuser import FocuserPort
@@ -147,6 +148,7 @@ def collimation_start(payload: StartPayload = StartPayload()) -> dict[str, Any]:
         _get_assistant(payload.camera_role).start()
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    _deps.get_user_action_logger().log("collimation_started", result="ok")
     return _get_assistant(payload.camera_role).status
 
 

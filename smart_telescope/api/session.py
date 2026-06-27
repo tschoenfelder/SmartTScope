@@ -163,6 +163,7 @@ def session_connect(
     focuser: FocuserPort = Depends(deps.get_focuser),
     device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> ConnectResult:
+    deps.get_user_action_logger().log("connect_all_clicked")
     from .cameras import invalidate_camera_scan
     invalidate_camera_scan()  # force re-enumeration after hardware may have been plugged in
     # REQ-CONN-002: idempotent — if the poller thread is already running the mount

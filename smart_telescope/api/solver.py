@@ -13,6 +13,7 @@ from .. import config
 from ..adapters.astap.solver import find_astap as _find_astap
 from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..ports.solver import SolverPort
+from . import deps as _deps
 from .deps import get_preview_camera, get_solver, resolve_camera_index
 
 router = APIRouter(prefix="/api/solver")
@@ -63,6 +64,7 @@ async def solver_solve(
         camera.set_gain(body.gain)  # type: ignore[union-attr]
     scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
 
+    _deps.get_user_action_logger().log("plate_solve_requested", result="ok")
     t0 = time.perf_counter()
     frame  = await asyncio.to_thread(camera.capture, body.exposure)
     result = await asyncio.to_thread(solver.solve, frame, scale)

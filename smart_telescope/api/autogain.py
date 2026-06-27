@@ -263,6 +263,8 @@ def run_autogain(req: RunRequest) -> dict:
         raise HTTPException(status_code=409, detail=str(exc))
     with rt.autogain_lock:
         _set_job(job)
+    if req.diagnostic:
+        deps.get_user_action_logger().log("diagnostic_exposure_test_started", result="ok")
     _log.info("AutoGain started: camera_index=%d camera_role=%s model=%s mode=%s",
               camera_index, req.camera_role or "(by index)", profile.model, mode.value)
     return {"started": True}

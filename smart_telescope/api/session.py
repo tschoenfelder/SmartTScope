@@ -343,6 +343,7 @@ def session_run(
                 enable_frame_quality=enable_quality_filter,
                 frame_quality_min_snr=quality_min_snr,
                 frame_quality_baseline_frames=quality_baseline_frames,
+                service_call_logger=deps.get_service_call_logger(),
             )
 
             def _session_thread() -> None:

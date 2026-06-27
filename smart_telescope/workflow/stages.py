@@ -12,6 +12,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..services.service_call_logger import ServiceCallLogger
 
 from .. import config as _cfg
 from ..domain.autofocus import FocusRunConfig
@@ -69,6 +73,7 @@ class StageContext:
     focus_config: FocusRunConfig = field(default_factory=FocusRunConfig)
     refocus_tracker: RefocusTracker | None = None        # None = triggers disabled
     frame_quality_filter: FrameQualityFilter | None = None  # None = accept all frames
+    service_call_logger: "ServiceCallLogger | None" = None
 
 
 # ── Stage functions ──────────────────────────────────────────────────────────
@@ -103,7 +108,16 @@ def stage_align(ctx: StageContext, log: SessionLog) -> None:
         log.plate_solve_attempts += 1
         frame = ctx.camera.capture(exposure)
         radius = ctx.wide_field_search_radius_deg if i > 0 else None
-        result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec, search_radius_deg=radius)
+        if ctx.service_call_logger is not None:
+            with ctx.service_call_logger.call(
+                "plate_solve", "SolverPort.solve",
+                request_payload={"exposure_s": exposure, "search_radius_deg": radius},
+                iteration=i,
+            ) as _scl:
+                result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec, search_radius_deg=radius)
+                _scl.set_response({"success": result.success, "ra": result.ra, "dec": result.dec})
+        else:
+            result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec, search_radius_deg=radius)
         if result.success:
             if not ctx.mount.sync(result.ra, result.dec):
                 raise WorkflowError("align", "Mount sync after plate solve failed")
@@ -127,7 +141,16 @@ def stage_recenter(ctx: StageContext, log: SessionLog) -> None:
     for i in range(1, MAX_RECENTER_ITERATIONS + 1):
         log.centering_iterations = i
         frame = ctx.camera.capture(10.0)
-        result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec)
+        if ctx.service_call_logger is not None:
+            with ctx.service_call_logger.call(
+                "plate_solve", "SolverPort.solve",
+                request_payload={"exposure_s": 10.0, "stage": "recenter"},
+                iteration=i - 1,
+            ) as _scl:
+                result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec)
+                _scl.set_response({"success": result.success, "ra": result.ra, "dec": result.dec})
+        else:
+            result = ctx.solver.solve(frame, ctx.profile.pixel_scale_arcsec)
         if not result.success:
             raise WorkflowError(
                 "recenter",
@@ -160,7 +183,18 @@ def stage_autofocus(ctx: StageContext, log: SessionLog) -> None:
         return
     ctx.on_transition(log, SessionState.FOCUSING)
     try:
-        result = run_autofocus(ctx.focuser, ctx.camera, ctx.focus_config.to_params())
+        if ctx.service_call_logger is not None:
+            with ctx.service_call_logger.call(
+                "autofocus", "run_autofocus",
+                request_payload={"params": repr(ctx.focus_config.to_params())},
+            ) as _scl:
+                result = run_autofocus(ctx.focuser, ctx.camera, ctx.focus_config.to_params())
+                _scl.set_response({
+                    "best_position": result.best_position,
+                    "metric_gain": round(result.metric_gain, 4),
+                })
+        else:
+            result = run_autofocus(ctx.focuser, ctx.camera, ctx.focus_config.to_params())
     except RuntimeError as exc:
         raise WorkflowError("autofocus", str(exc)) from exc
     log.autofocus_best_position = result.best_position

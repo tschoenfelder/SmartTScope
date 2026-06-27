@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-015 (Service-call logs per iteration; REQ-LOG-002)
+
+**Structured per-iteration logging for auto-gain, plate-solve, and autofocus.**
+- `smart_telescope/domain/service_call_log.py` (new): `ServiceCallRecord` dataclass — 11 required fields; `to_json_line()` serializes to one JSON line per call
+- `smart_telescope/services/service_call_logger.py` (new): `ServiceCallLogger` + `_CallContext` context manager; status priority: `_explicit_error` → failed; `_cancelled` → cancelled; `exc_val` → failed; else → ok; `set_error()` for caught exceptions that exit early; `set_response()` for success; emits JSON line to section logger on `__exit__`
+- `smart_telescope/api/autogain.py`: `_worker()` now wraps `AutoGainService.run_one_shot()` in `rt.service_call_logger.call("auto_gain", ...)` context manager; `set_error()` on caught exception, `set_response()` on success
+- `smart_telescope/workflow/stages.py`: `StageContext` dataclass gains `service_call_logger: "ServiceCallLogger | None" = None`; `stage_align()`, `stage_recenter()`, `stage_autofocus()` each wrap their primary service call when logger is present
+- `smart_telescope/workflow/runner.py`: `VerticalSliceRunner.__init__()` gains `service_call_logger=None` kwarg; stored and passed to `StageContext`
+- `smart_telescope/api/session.py`: `session_run()` passes `service_call_logger=deps.get_service_call_logger()` to runner
+- `smart_telescope/runtime.py` + `api/deps.py`: `ServiceCallLogger` constructed in `__init__` and `reset_for_tests()`; `get_service_call_logger()` injector
+- Tests: 15 unit tests in `tests/unit/services/test_service_call_logger.py`; suite: 3484 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-014 (12 per-section log namespaces; REQ-LOG-001)
 
 **Per-section log namespaces with session ID correlation.**

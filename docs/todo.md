@@ -1050,9 +1050,12 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - 14 tests in `tests/unit/services/test_section_logger.py` + 5 tests in `tests/unit/api/test_logs.py`; 3469 passed, 24 skipped
   - Acceptance: REQ-LOG-001
 
-- [ ] M8-015 Service-call logs per iteration `[P2 · Runtime]`
-  - Per auto-gain/autofocus/collimation/plate-solve call: `session_id`, `service_name`, `run_id`, `iteration`, `timestamp`, `input_frame_filename`, `request_payload`, `response_payload`, `duration_ms`, `status`, `error_if_any`
-  - Image data referenced by filename, not embedded
+- [x] M8-015 Service-call logs per iteration `[P2 · Runtime]` ✓ 2026-06-27
+  - `smart_telescope/domain/service_call_log.py`: `ServiceCallRecord` — 11 fields; `to_json_line()` emits one JSON line per call
+  - `smart_telescope/services/service_call_logger.py`: `ServiceCallLogger` + `_CallContext` context manager; status priority: `_explicit_error` → failed; `_cancelled` → cancelled; `exc_val` → failed; else → ok
+  - Wired into `api/autogain.py::_worker()`, `workflow/stages.py` (align/recenter/autofocus) via `StageContext.service_call_logger`
+  - `workflow/runner.py` accepts `service_call_logger=` kwarg; `api/session.py` injects `deps.get_service_call_logger()`
+  - Tests: 15 unit tests in `tests/unit/services/test_service_call_logger.py`
   - Acceptance: REQ-LOG-002; INC-010
 
 - [ ] M8-016 User-action log — 18 named actions `[P2 · Runtime]`

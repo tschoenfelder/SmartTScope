@@ -105,44 +105,60 @@ def _worker(
             job.error = str(exc)
         return
 
-    try:
-        focuser_available = deps.get_focuser().is_available
-        # Per-train focuser capability (BUG-024): a guide camera with no focuser
-        # configured should never receive POSSIBLE_FOCUS_OR_POINTING_ERROR even
-        # when the mount's focuser (for the main train) is available.
-        has_focuser = focuser_available
+    with rt.service_call_logger.call(
+        "auto_gain", "AutoGainService",
+        request_payload={
+            "camera_index":   camera_index,
+            "mode":           mode.value if hasattr(mode, "value") else str(mode),
+            "max_iterations": max_iterations,
+            "force":          force,
+        },
+    ) as _scl:
         try:
-            registry = deps.get_optical_train_registry()
-            train = registry.by_camera_index(camera_index)
-            if train is not None:
-                has_focuser = train.has_focuser and focuser_available
-        except Exception:
-            pass
-        # AG-003: cap exposure to 1 s when mount is not tracking
-        tracking_on = True
-        try:
-            from ..ports.mount import MountState
-            mount = deps.get_mount()
-            tracking_on = mount.get_state() == MountState.TRACKING
-        except Exception:
-            pass
-        result = AutoGainService.run_one_shot(
-            camera=camera,
-            profile=profile,
-            mode=mode,
-            cancellation_flag=job.cancel,
-            max_iterations=max_iterations,
-            has_focuser=has_focuser,
-            offset_service=rt.camera_offset_service,
-            force=force,
-            tracking_on=tracking_on,
-        )
-    except Exception as exc:
-        _log.error("AutoGain worker error: %s", exc)
-        with rt.autogain_lock:
-            job.running = False
-            job.error = str(exc)
-        return
+            focuser_available = deps.get_focuser().is_available
+            # Per-train focuser capability (BUG-024): a guide camera with no focuser
+            # configured should never receive POSSIBLE_FOCUS_OR_POINTING_ERROR even
+            # when the mount's focuser (for the main train) is available.
+            has_focuser = focuser_available
+            try:
+                registry = deps.get_optical_train_registry()
+                train = registry.by_camera_index(camera_index)
+                if train is not None:
+                    has_focuser = train.has_focuser and focuser_available
+            except Exception:
+                pass
+            # AG-003: cap exposure to 1 s when mount is not tracking
+            tracking_on = True
+            try:
+                from ..ports.mount import MountState
+                mount = deps.get_mount()
+                tracking_on = mount.get_state() == MountState.TRACKING
+            except Exception:
+                pass
+            result = AutoGainService.run_one_shot(
+                camera=camera,
+                profile=profile,
+                mode=mode,
+                cancellation_flag=job.cancel,
+                max_iterations=max_iterations,
+                has_focuser=has_focuser,
+                offset_service=rt.camera_offset_service,
+                force=force,
+                tracking_on=tracking_on,
+            )
+            _scl.set_response({
+                "status":      result.status.value if hasattr(result.status, "value") else str(result.status),
+                "exposure_ms": result.exposure_ms,
+                "gain":        result.gain,
+                "offset":      result.offset,
+            })
+        except Exception as exc:
+            _scl.set_error(str(exc))
+            _log.error("AutoGain worker error: %s", exc)
+            with rt.autogain_lock:
+                job.running = False
+                job.error = str(exc)
+            return
 
     # Persist last-good on success
     if result.status == AutoGainStatus.OK:

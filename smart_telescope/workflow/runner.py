@@ -14,6 +14,10 @@ import threading
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..services.service_call_logger import ServiceCallLogger
 
 from ..domain.session import SessionLog, StageTimestamp
 from ..domain.states import SessionState
@@ -103,6 +107,7 @@ class VerticalSliceRunner:
         enable_frame_quality: bool = True,
         frame_quality_min_snr: float = 0.3,
         frame_quality_baseline_frames: int = 3,
+        service_call_logger: "ServiceCallLogger | None" = None,
     ) -> None:
         self._camera = camera
         self._mount = mount
@@ -133,6 +138,7 @@ class VerticalSliceRunner:
             min_snr_factor=frame_quality_min_snr,
             baseline_frames=frame_quality_baseline_frames,
         )
+        self._service_call_logger = service_call_logger
 
     @property
     def current_log(self) -> SessionLog | None:
@@ -182,6 +188,7 @@ class VerticalSliceRunner:
                 if self._enable_frame_quality
                 else None
             ),
+            service_call_logger=self._service_call_logger,
         )
 
         try:

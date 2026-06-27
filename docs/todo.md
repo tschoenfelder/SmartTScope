@@ -1090,9 +1090,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 17 unit tests in `tests/unit/services/test_camera_diagnostic.py`
   - Acceptance: REQ-SETUP-001, REQ-SETUP-002; INC-004; DEC-016
 
-- [ ] M8-020 Plate-solve readiness pre-check (8 conditions) `[P2 · Runtime]`
+- [x] M8-020 Plate-solve readiness pre-check (8 conditions) `[P2 · Runtime]`
   - Check: `frame_exists`, `frame_saved_as_fits`, `optical_train_metadata_available`, `pixel_size_available`, `focal_length_or_hint_available`, `star_count_measured`, `astap_available`, `operation_gate_allows_plate_solve`
   - Each missing condition gives specific failure reason; readiness result logged
+  - Domain: `domain/plate_solve_readiness.py` — `READINESS_CONDITIONS` (8), `ReadinessCondition`, `PlateSolveReadinessResult`
+  - Service: `services/plate_solve_readiness.py` — `check_plate_solve_readiness()` evaluates all 8 conditions, logs to `plate_solve` section
+  - Endpoint: `GET /api/solver/readiness` — static query (no live frame) for tool/UI polling
+  - Tests: 20 unit tests in `tests/unit/services/test_plate_solve_readiness.py`
   - Acceptance: REQ-PS-001; TEST-004
 
 - [ ] M8-021 ASTAP logging → structured diagnostics `[P2 · Runtime]`

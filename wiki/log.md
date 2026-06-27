@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-020 (Plate-solve readiness pre-check; REQ-PS-001)
+
+**8-condition plate-solve readiness pre-check with per-condition failure reasons.**
+- `smart_telescope/domain/plate_solve_readiness.py` (new): `READINESS_CONDITIONS` tuple (8 names), `ReadinessCondition` dataclass, `PlateSolveReadinessResult` with `first_failure` property, `to_dict()`, `to_json_line()`
+- `smart_telescope/services/plate_solve_readiness.py` (new): `check_plate_solve_readiness()` — evaluates all 8 conditions in order (frame_exists, frame_saved_as_fits, optical_train_metadata_available, pixel_size_available, focal_length_or_hint_available, star_count_measured, astap_available, operation_gate_allows_plate_solve); logs JSON-line to `plate_solve` section logger
+- `smart_telescope/api/solver.py`: `GET /api/solver/readiness` — static query (no live frame) for UI/tool polling; resolves optical train from registry if available
+- Tests: 20 unit tests in `tests/unit/services/test_plate_solve_readiness.py`; full suite: 3571 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-019 (Per-camera diagnostic report; REQ-SETUP-001..002)
 
 **Extended setup check — 19-field per-camera diagnostic with 10-status progression.**

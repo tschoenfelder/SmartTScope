@@ -326,6 +326,26 @@ APP_STATE_DIR: str         = _expand(os.environ.get("APP_STATE_DIR", _get("sessi
 COMMAND_HISTORY_DIR: str   = _expand(os.environ.get("COMMAND_HISTORY_DIR", _get("session", "command_history_dir", str(_USER_DIR / "commands"))))
 LOG_DIR: str               = _expand(os.environ.get("LOG_DIR",               _get("session", "log_dir",               str(_USER_DIR / "logs"))))
 
+# ── Diagnostic frame storage (M8-017 / REQ-FRAME-001) ────────────────────────
+DIAGNOSTIC_FRAMES_ENABLED: bool = (
+    os.environ.get(
+        "DIAGNOSTIC_FRAMES_ENABLED",
+        _get("diagnostic_frames", "enabled", "true"),
+    ).lower() not in ("false", "0", "no", "")
+)
+DIAGNOSTIC_FRAMES_STORE_MODE: str = os.environ.get(
+    "DIAGNOSTIC_FRAMES_STORE_MODE",
+    _get("diagnostic_frames", "store_mode", "debug_or_failure"),
+)
+DIAGNOSTIC_FRAMES_RETENTION_DAYS: int = int(os.environ.get(
+    "DIAGNOSTIC_FRAMES_RETENTION_DAYS",
+    _get("diagnostic_frames", "retention_days", "2"),
+))
+DIAGNOSTIC_FRAMES_DIR: str = _expand(os.environ.get(
+    "DIAGNOSTIC_FRAMES_DIR",
+    _get("diagnostic_frames", "frame_dir", str(_USER_DIR / "diagnostic_frames")),
+))
+
 # ── Operation policy (M8-013 / REQ-GOTO-003) ─────────────────────────────────
 # When true, direct RA/DEC GoTo is allowed even when Raspberry Pi time is not trusted.
 ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST: bool = (

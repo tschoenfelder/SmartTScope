@@ -161,3 +161,7 @@ def get_service_call_logger() -> "ServiceCallLogger":
 
 def get_user_action_logger() -> "UserActionLogger":
     return get_runtime().user_action_logger
+
+
+def get_diagnostic_frame_store() -> "DiagnosticFrameStore":
+    return get_runtime().diagnostic_frame_store

@@ -28,6 +28,7 @@ from .services.command_history import CommandHistoryService
 from .services.section_logger import SectionLogger
 from .services.service_call_logger import ServiceCallLogger
 from .services.user_action_logger import UserActionLogger
+from .services.diagnostic_frame_store import DiagnosticFrameStore
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
@@ -247,6 +248,13 @@ class RuntimeContext:
             section_logger=self.section_logger,
             session_id=self._app_session_id,
         )
+        from .domain.diagnostic_frame import DiagnosticFrameConfig, DiagnosticStoreMode
+        self.diagnostic_frame_store = DiagnosticFrameStore(DiagnosticFrameConfig(
+            enabled=config.DIAGNOSTIC_FRAMES_ENABLED,
+            store_mode=DiagnosticStoreMode(config.DIAGNOSTIC_FRAMES_STORE_MODE),
+            retention_days=config.DIAGNOSTIC_FRAMES_RETENTION_DAYS,
+            frame_dir=config.DIAGNOSTIC_FRAMES_DIR,
+        ))
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
         # Session runner (R0-005)
@@ -454,6 +462,8 @@ class RuntimeContext:
             section_logger=self.section_logger,
             session_id=self._app_session_id,
         )
+        from .domain.diagnostic_frame import DiagnosticFrameConfig
+        self.diagnostic_frame_store = DiagnosticFrameStore(DiagnosticFrameConfig())
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None

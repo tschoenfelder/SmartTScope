@@ -4,6 +4,18 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-017 + M8-018 (FITS diagnostic frame storage; REQ-FRAME-001..003)
+
+**FITS diagnostic frame storage with standardized filename pattern and 17 required headers.**
+- `smart_telescope/domain/diagnostic_frame.py` (new): `DiagnosticStoreMode` enum (always/debug_only/failure_only/debug_or_failure/off), `DiagnosticFrameConfig`, `REQUIRED_FITS_HEADERS` (17 keys)
+- `smart_telescope/services/diagnostic_frame_store.py` (new): `DiagnosticFrameStore` — `should_save(is_debug, is_failure)`, `save_frame()` creates `{frame_dir}/{session_id[:8]}/` + FITS with all 17 headers, `cleanup_old_frames(active_session_ids)` respects retention_days and active sessions; `_make_filename()` generates filesystem-safe YYYYMMDDTHHMMSS pattern
+- `smart_telescope/config.py`: `DIAGNOSTIC_FRAMES_ENABLED/STORE_MODE/RETENTION_DAYS/DIR` from `[diagnostic_frames]` TOML + env vars
+- `templates/config.toml`: `[diagnostic_frames]` section with defaults
+- `smart_telescope/runtime.py` + `api/deps.py`: `diagnostic_frame_store` on runtime; `get_diagnostic_frame_store()` injector
+- Tests: 33 unit tests in `tests/unit/services/test_diagnostic_frame_store.py`; suite: 3534 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-016 (User-action log — 18 named actions; REQ-LOG-003)
 
 **Structured user-action log for all 18 named UI interactions.**

@@ -1067,16 +1067,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 17 unit tests in `tests/unit/services/test_user_action_logger.py`
   - Acceptance: REQ-LOG-003
 
-- [ ] M8-017 FITS diagnostic frame storage `[P2 · Runtime]`
-  - Default: `enabled=true`, `store_mode=debug_or_failure`, `retention_days=2`
-  - Modes: `always`, `debug_only`, `failure_only`, `debug_or_failure`, `off`
-  - Retention cleanup preserves active-session files
+- [x] M8-017 FITS diagnostic frame storage `[P2 · Runtime]` ✓ 2026-06-27
+  - `smart_telescope/domain/diagnostic_frame.py`: `DiagnosticStoreMode` enum (5 modes) + `DiagnosticFrameConfig` dataclass (enabled, store_mode, retention_days, frame_dir) + `REQUIRED_FITS_HEADERS` tuple (17 headers)
+  - `smart_telescope/services/diagnostic_frame_store.py`: `DiagnosticFrameStore` — `should_save(is_debug, is_failure)`, `save_frame(...)` writes FITS to `{frame_dir}/{session_id[:8]}/`, `cleanup_old_frames(active_session_ids)` deletes dirs older than retention_days
+  - Config: `DIAGNOSTIC_FRAMES_ENABLED/STORE_MODE/RETENTION_DAYS/DIR` in `config.py`; `[diagnostic_frames]` section in `templates/config.toml`
+  - Runtime: `diagnostic_frame_store` on `RuntimeContext`; `deps.get_diagnostic_frame_store()` injector
+  - Tests: 33 unit tests in `tests/unit/services/test_diagnostic_frame_store.py`
   - Acceptance: REQ-FRAME-001; INC-010; TEST-006
 
-- [ ] M8-018 FITS filename pattern + 16 required headers `[P2 · Runtime]`
-  - Pattern: `YYYYMMDDTHHMMSS_session-<id>_<section>_<run_id>_iter-<n>_<camera_id>_<optical_train_id>_exp-<s>s_gain-<g>_offset-<o>_bin-<x>x<y>_ra-<ra>_dec-<dec>.fits`
-  - Required headers: `SESSION`, `SECTION`, `RUNID`, `ITER`, `CAMERA`, `OPTTRAIN`, `EXPTIME`, `GAIN`, `OFFSET`, `BINX`, `BINY`, `PIXSIZE`, `FOCALLEN`, `RA`, `DEC`, `TRACKING`, `DATE-OBS`
-  - Filename Linux/Windows safe; full path logged
+- [x] M8-018 FITS filename pattern + 17 required headers `[P2 · Runtime]` ✓ 2026-06-27
+  - Pattern: `YYYYMMDDTHHMMSS_session-<id>_<section>_<run_id>_iter-<n>_<camera_id>_<optical_train_id>_exp-<s>s_gain-<g>_offset-<o>_bin-<x>x<y>_ra-<ra>_dec-<dec>.fits` — filesystem-safe (no colons/spaces/slashes)
+  - `_make_filename()` in `diagnostic_frame_store.py` generates the filename; `_safe()` sanitizes components
+  - All 17 FITS headers written with `save_frame()`: SESSION, SECTION, RUNID, ITER, CAMERA, OPTTRAIN, EXPTIME, GAIN, OFFSET, BINX, BINY, PIXSIZE, FOCALLEN, RA, DEC, TRACKING, DATE-OBS (note: todo said "16" but 17 headers listed — all implemented)
   - Acceptance: REQ-FRAME-002, REQ-FRAME-003
 
 ### Priority 5 — Plate solve and auto-gain

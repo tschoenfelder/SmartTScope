@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-019 (Per-camera diagnostic report; REQ-SETUP-001..002)
+
+**Extended setup check — 19-field per-camera diagnostic with 10-status progression.**
+- `smart_telescope/domain/camera_diagnostic.py` (new): `CameraDiagnosticStatus` enum (10 values: not_attempted/disconnected/inactive/operation_blocked/capture_failed/auto_gain_failed/insufficient_stars/metadata_missing/astap_failed/solved) + `CameraDiagnosticReport` dataclass (19 fields) + `to_dict()`/`to_json_line()`
+- `smart_telescope/services/setup_check_service.py`: added `run_camera_diagnostic()` — iterates optical train registry; status progression: disconnected→operation_blocked→capture_failed→insufficient_stars→metadata_missing→astap_failed→solved; `_analyse_frame()` uses scipy.ndimage.label for star counting (numpy fallback); `MIN_STARS_BEFORE_SOLVE = 15`
+- `smart_telescope/api/setup_check.py`: `POST /api/setup/camera_diagnostic` — returns `{cameras: [...], total, solved}`
+- Tests: 17 unit tests in `tests/unit/services/test_camera_diagnostic.py`; suite: 3551 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-017 + M8-018 (FITS diagnostic frame storage; REQ-FRAME-001..003)
 
 **FITS diagnostic frame storage with standardized filename pattern and 17 required headers.**

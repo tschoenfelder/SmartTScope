@@ -5,13 +5,20 @@ Designed to be called from the API layer one step at a time (or all at once).
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
+import numpy as np
+
+from ..domain.camera_diagnostic import CameraDiagnosticReport, CameraDiagnosticStatus
 from ..ports.mount import MountState
 from ..services.mount_operations import MountSlewingError, home_sequence
 from ..services.hardware_coordinator import CommandConflictError
+
+_log = logging.getLogger(__name__)
 
 
 # ── result models ────────────────────────────────────────────────────────────
@@ -271,3 +278,172 @@ def run_home_return(
 
     return HomeResult(ok=True, elapsed_s=elapsed, state_after=state_after,
                       message=f"Homed to OnStep home in {elapsed} s")
+
+
+# ── Per-camera diagnostic report (M8-019 / REQ-SETUP-001..002) ───────────────
+
+# Minimum stars required before attempting ASTAP (OPEN-003).
+MIN_STARS_BEFORE_SOLVE = 15
+
+
+def run_camera_diagnostic(
+    registry: Any,
+    runtime: Any,
+    solver: Any,
+    device_state: Any,
+    exposure_s: float = 3.0,
+    solver_timeout_s: float = 15.0,
+    gate_check_fn: "Any | None" = None,
+) -> list[CameraDiagnosticReport]:
+    """Run a per-camera extended diagnostic (REQ-SETUP-001).
+
+    For each camera known to the optical train registry:
+    1. Determine connectivity and assignment state.
+    2. Optionally check operation gate (if gate_check_fn provided).
+    3. Capture a frame (exposure_s).
+    4. Estimate star count, median FWHM, and background ADU.
+    5. Attempt a plate solve when star count >= MIN_STARS_BEFORE_SOLVE.
+    6. Produce a 19-field CameraDiagnosticReport per camera.
+
+    Args:
+        registry:       OpticalTrainRegistry (may be None → empty report).
+        runtime:        RuntimeContext — used to access cameras.
+        solver:         SolverPort instance.
+        device_state:   DeviceStateService — used to read connection state.
+        exposure_s:     Capture exposure time.
+        solver_timeout_s: ASTAP solve timeout.
+        gate_check_fn:  Optional callable(camera_role) → None; raises HTTPException on block.
+    """
+    trains = registry.all() if registry is not None else []
+    reports: list[CameraDiagnosticReport] = []
+
+    for train in trains:
+        rep = CameraDiagnosticReport(
+            camera_id=str(getattr(train, "camera_id", "") or f"cam-{train.camera_index}"),
+            camera_role=str(getattr(train, "camera_role", train.name)),
+            optical_train_id=str(train.name),
+            camera_index=int(train.camera_index),
+            is_enabled_in_config=True,   # in registry → enabled
+            is_assigned_to_train=True,   # in registry → assigned
+            is_sdk_detected=True,        # updated below
+            status=CameraDiagnosticStatus.NOT_ATTEMPTED,
+        )
+
+        # ── Check operation gate ─────────────────────────────────────────────
+        if gate_check_fn is not None:
+            try:
+                gate_check_fn(train.camera_role)
+            except Exception as exc:
+                rep.status = CameraDiagnosticStatus.OPERATION_BLOCKED
+                rep.status_detail = str(exc)
+                reports.append(rep)
+                continue
+
+        # ── Capture frame ────────────────────────────────────────────────────
+        try:
+            camera = runtime.get_camera_by_role(train.camera_role)
+        except Exception as exc:
+            rep.is_sdk_detected = False
+            rep.status = CameraDiagnosticStatus.DISCONNECTED
+            rep.status_detail = f"Camera not accessible: {exc}"
+            reports.append(rep)
+            continue
+
+        try:
+            frame = camera.capture(exposure_s)
+            rep.frame_captured_at = datetime.now(UTC).isoformat()
+            rep.exposure_ms_used  = exposure_s * 1000.0
+        except Exception as exc:
+            rep.status = CameraDiagnosticStatus.CAPTURE_FAILED
+            rep.status_detail = f"Capture error: {exc}"
+            reports.append(rep)
+            continue
+
+        # ── Image analysis ───────────────────────────────────────────────────
+        try:
+            star_count, median_fwhm, background = _analyse_frame(frame.pixels)
+            rep.star_count     = star_count
+            rep.median_fwhm_px = median_fwhm
+            rep.background_adu = background
+        except Exception as exc:
+            _log.debug("Frame analysis failed for %s: %s", train.name, exc)
+
+        if (rep.star_count is not None) and (rep.star_count < MIN_STARS_BEFORE_SOLVE):
+            rep.status = CameraDiagnosticStatus.INSUFFICIENT_STARS
+            rep.status_detail = (
+                f"Only {rep.star_count} star(s) detected "
+                f"(min {MIN_STARS_BEFORE_SOLVE} required for plate solve)"
+            )
+            reports.append(rep)
+            continue
+
+        # ── Plate solve ──────────────────────────────────────────────────────
+        pixel_scale = getattr(train, "pixel_scale_arcsec", None)
+        if pixel_scale is None:
+            rep.status = CameraDiagnosticStatus.METADATA_MISSING
+            rep.status_detail = "pixel_scale_arcsec not set for this optical train"
+            reports.append(rep)
+            continue
+
+        try:
+            result = solver.solve(frame, pixel_scale, timeout_s=solver_timeout_s)
+        except Exception as exc:
+            rep.status = CameraDiagnosticStatus.ASTAP_FAILED
+            rep.status_detail = f"Solver error: {exc}"
+            reports.append(rep)
+            continue
+
+        if not result.success:
+            rep.status = CameraDiagnosticStatus.ASTAP_FAILED
+            rep.status_detail = "ASTAP: no solution found — check pointing, focus, and star catalog"
+            reports.append(rep)
+            continue
+
+        rep.ra_hours = result.ra
+        rep.dec_deg  = result.dec
+        rep.status   = CameraDiagnosticStatus.SOLVED
+        rep.status_detail = f"Solved: RA={result.ra:.4f}h Dec={result.dec:+.2f}°"
+        reports.append(rep)
+
+    return reports
+
+
+def _analyse_frame(data: "np.ndarray") -> tuple[int, float | None, float]:
+    """Estimate star count, median FWHM, and background ADU from a 2-D array.
+
+    Uses a simple threshold approach (background + 5σ) and basic connected
+    components to count star-like blobs.  Returns (count, fwhm_or_None, bg).
+    FWHM is estimated as √area of detected blobs (rough approximation).
+    """
+    arr = np.asarray(data, dtype=np.float32)
+    if arr.ndim == 3:
+        arr = arr.mean(axis=2)
+
+    background = float(np.median(arr))
+    stddev = float(np.std(arr))
+    threshold = background + 5.0 * stddev
+
+    binary = (arr > threshold).astype(np.uint8)
+
+    try:
+        from scipy.ndimage import label
+        labeled, n_blobs = label(binary)
+    except ImportError:
+        # Rough fallback: sum of above-threshold pixels / expected star area
+        n_blobs = int(binary.sum() // 25)
+        return n_blobs, None, background
+
+    fwhm_values: list[float] = []
+    valid_count = 0
+    total_pixels = arr.size
+    for i in range(1, n_blobs + 1):
+        blob_pixels = int((labeled == i).sum())
+        if blob_pixels < 4:
+            continue  # hot pixel
+        if blob_pixels > total_pixels * 0.02:
+            continue  # too large — galaxy/nebula
+        valid_count += 1
+        fwhm_values.append(float(np.sqrt(blob_pixels)))  # rough FWHM
+
+    median_fwhm = float(np.median(fwhm_values)) if fwhm_values else None
+    return valid_count, median_fwhm, background

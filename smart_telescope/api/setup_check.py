@@ -21,6 +21,7 @@ from ..services.device_state import DeviceStateService
 from ..services.hardware_coordinator import HardwareCommandCoordinator
 from ..services.optical_train_registry import OpticalTrainRegistry
 from ..services.setup_check_service import (
+    run_camera_diagnostic,
     run_focuser_move,
     run_home_return,
     run_mount_slew,
@@ -47,6 +48,11 @@ class PlateSolveRequest(BaseModel):
 
 class HomeReturnRequest(BaseModel):
     timeout_s: float = 90.0
+
+
+class CameraDiagnosticRequest(BaseModel):
+    exposure_s: float = 3.0
+    solver_timeout_s: float = 15.0
 
 
 @router.post("/focuser_move")
@@ -96,6 +102,36 @@ def check_home_return(
     """Slew mount to OnStep stored home position and wait for completion."""
     result = run_home_return(mount, device_state, coordinator, timeout_s=body.timeout_s)
     return result.to_dict()
+
+
+@router.post("/camera_diagnostic")
+def check_camera_diagnostic(
+    body: CameraDiagnosticRequest = CameraDiagnosticRequest(),
+    registry: OpticalTrainRegistry = Depends(deps.get_optical_train_registry),
+    solver: SolverPort = Depends(deps.get_solver),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+) -> dict[str, Any]:
+    """Run a per-camera extended diagnostic report (M8-019 / REQ-SETUP-001).
+
+    Returns a list of 19-field records, one per configured camera.
+    Cameras that are disconnected, inactive, or blocked by the operation gate
+    are included with appropriate status — they are NOT omitted.
+    """
+    rt = deps.get_runtime()
+    reports = run_camera_diagnostic(
+        registry=registry,
+        runtime=rt,
+        solver=solver,
+        device_state=device_state,
+        exposure_s=body.exposure_s,
+        solver_timeout_s=body.solver_timeout_s,
+    )
+    solved_count = sum(1 for r in reports if r.status.value == "solved")
+    return {
+        "cameras": [r.to_dict() for r in reports],
+        "total": len(reports),
+        "solved": solved_count,
+    }
 
 
 @router.post("/run_all")

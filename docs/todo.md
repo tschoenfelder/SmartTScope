@@ -1083,9 +1083,11 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 5 — Plate solve and auto-gain
 
-- [ ] M8-019 Extended Setup Check per-camera diagnostic report (19 fields) `[P2 · Runtime]`
-  - Active camera criteria: `enabled in config` + `assigned to optical train or setup role` + `SDK-detected` + `not disabled in UI`; disconnected configured cameras → `disconnected`, not `failed`
-  - Statuses: `not_attempted`, `disconnected`, `inactive`, `capture_failed`, `auto_gain_failed`, `insufficient_stars`, `astap_failed`, `metadata_missing`, `operation_blocked`, `solved`
+- [x] M8-019 Extended Setup Check per-camera diagnostic report (19 fields) `[P2 · Runtime]` ✓ 2026-06-27
+  - `smart_telescope/domain/camera_diagnostic.py`: `CameraDiagnosticStatus` enum (10 statuses) + `CameraDiagnosticReport` dataclass (19 fields: 4 identity, 3 config/detection, 2 outcome, 3 capture params, 2 frame metadata, 3 image analysis, 2 plate-solve result)
+  - `smart_telescope/services/setup_check_service.py`: `run_camera_diagnostic()` — status progression: disconnected → operation_blocked → capture_failed → insufficient_stars → metadata_missing → astap_failed → solved; `_analyse_frame()` estimates star count/FWHM/background via scipy.ndimage or numpy fallback; `MIN_STARS_BEFORE_SOLVE = 15`
+  - `smart_telescope/api/setup_check.py`: `POST /api/setup/camera_diagnostic` endpoint — returns `{cameras: [...], total: N, solved: N}`
+  - Tests: 17 unit tests in `tests/unit/services/test_camera_diagnostic.py`
   - Acceptance: REQ-SETUP-001, REQ-SETUP-002; INC-004; DEC-016
 
 - [ ] M8-020 Plate-solve readiness pre-check (8 conditions) `[P2 · Runtime]`

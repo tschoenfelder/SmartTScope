@@ -415,12 +415,16 @@ class ReadinessService:
             dt = status.get("time_delta_s")
             issues.append(f"clock off by {dt:.0f} s" if dt is not None else "clock mismatch")
         if loc_avail and not status.get("location_ok"):
-            lat_d = status.get("lat_delta_deg")
-            lon_d = status.get("lon_delta_deg")
-            if lat_d is not None and lon_d is not None:
-                issues.append(f"site off by {max(lat_d, lon_d):.2f}°")
+            loc_m = status.get("location_delta_m")
+            if loc_m is not None:
+                issues.append(f"site off by {loc_m:.0f}m")
             else:
-                issues.append("site coordinates mismatch")
+                lat_d = status.get("lat_delta_deg")
+                lon_d = status.get("lon_delta_deg")
+                if lat_d is not None and lon_d is not None:
+                    issues.append(f"site off by {max(lat_d, lon_d):.4f}deg")
+                else:
+                    issues.append("site coordinates mismatch")
 
         if issues:
             return ReadinessItem(

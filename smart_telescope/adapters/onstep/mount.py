@@ -199,6 +199,16 @@ def _parse_onstep_local_datetime(date_reply: str, time_reply: str) -> datetime:
     )
 
 
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in metres between two WGS-84 lat/lon coordinates."""
+    R = 6_371_000.0
+    lat1r, lat2r, lon1r, lon2r = map(math.radians, (lat1, lat2, lon1, lon2))
+    dlat = lat2r - lat1r
+    dlon = lon2r - lon1r
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1r) * math.cos(lat2r) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 def _format_limit_degrees(value: float, signed: bool) -> str:
     rounded = int(round(value))
     if signed:
@@ -2382,41 +2392,48 @@ class OnStepMount(MountPort):
         cfg_lat: float = self._safety_config.observer_lat
         cfg_lon: float = self._safety_config.observer_lon
 
+        time_tolerance_s: float = self._safety_config.onstep_time_tolerance_s
         time_avail: bool       = bool(clock.get("available"))
         time_delta_s: float | None = clock.get("delta_s") if time_avail else None
-        threshold_s: float     = float(clock.get("threshold_s") or 60.0)
         time_ok: bool          = (
             time_avail
             and time_delta_s is not None
-            and time_delta_s <= threshold_s
+            and time_delta_s <= time_tolerance_s
         )
 
+        loc_tolerance_m: float   = self._safety_config.onstep_location_tolerance_m
         loc_avail: bool          = bool(site.get("available"))
         onstep_lat: float | None = site.get("lat") if loc_avail else None
         onstep_lon: float | None = site.get("lon") if loc_avail else None
         lat_delta: float | None  = (abs(onstep_lat - cfg_lat) if onstep_lat is not None else None)
         lon_delta: float | None  = (abs(onstep_lon - cfg_lon) if onstep_lon is not None else None)
+        location_delta_m: float | None = (
+            _haversine_m(cfg_lat, cfg_lon, onstep_lat, onstep_lon)
+            if onstep_lat is not None and onstep_lon is not None
+            else None
+        )
         loc_ok: bool = (
             loc_avail
-            and lat_delta is not None
-            and lon_delta is not None
-            and lat_delta < 0.1
-            and lon_delta < 0.1
+            and location_delta_m is not None
+            and location_delta_m <= loc_tolerance_m
         )
 
         return {
-            "time_available":   time_avail,
-            "time_delta_s":     time_delta_s,
-            "time_threshold_s": threshold_s,
-            "time_ok":          time_ok,
-            "location_available": loc_avail,
-            "onstep_lat":       onstep_lat,
-            "onstep_lon":       onstep_lon,
-            "cfg_lat":          cfg_lat,
-            "cfg_lon":          cfg_lon,
-            "lat_delta_deg":    lat_delta,
-            "lon_delta_deg":    lon_delta,
-            "location_ok":      loc_ok,
+            "time_available":       time_avail,
+            "time_delta_s":         time_delta_s,
+            "time_threshold_s":     time_tolerance_s,
+            "time_tolerance_s":     time_tolerance_s,
+            "time_ok":              time_ok,
+            "location_available":   loc_avail,
+            "onstep_lat":           onstep_lat,
+            "onstep_lon":           onstep_lon,
+            "cfg_lat":              cfg_lat,
+            "cfg_lon":              cfg_lon,
+            "lat_delta_deg":        lat_delta,
+            "lon_delta_deg":        lon_delta,
+            "location_delta_m":     location_delta_m,
+            "location_tolerance_m": loc_tolerance_m,
+            "location_ok":          loc_ok,
         }
 
     def _read_limit(self, cmd: str) -> float | None:

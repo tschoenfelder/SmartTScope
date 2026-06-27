@@ -983,11 +983,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - `api/health.py`, `api/mount.py`, `api/deps.py`, `runtime.py`: wired into all gated endpoints
   - 35 new tests in `tests/unit/services/test_raspberry_time_trust.py`; 3360 passed, 24 skipped
 
-- [ ] M8-008 Meter-based location tolerance (100 m default); UTF-8-safe logs `[P1 · Runtime]`
+- [x] M8-008 Meter-based location tolerance (100 m default); UTF-8-safe logs `[P1 · Runtime]` ✓ 2026-06-27
   - Primary check: `location_delta_m ≤ onstep_location_tolerance_m (default 100)`; degree fallback only for backward-compat
   - Active tolerances logged on every check; `lat_delta=0.0027°` fails at 100 m; `lon_delta=0.0337°` fails at 100 m
   - No mojibake (`窶・`, `竊・`, `ﾂｰ`) in logs; degree values as `°` or ASCII `deg`
   - Acceptance: REQ-TIME-003, REQ-TIME-006; INC-002; TEST-002
+  - `adapters/onstep/safety.py`: added `onstep_time_tolerance_s=10.0` and `onstep_location_tolerance_m=100.0` to `OnStepSafetyConfig`
+  - `adapters/onstep/mount.py`: added `_haversine_m()` helper; `get_sync_status()` uses meter-based tolerance, adds `location_delta_m`/`location_tolerance_m`/`time_tolerance_s` to returned dict
+  - `api/session.py`: log format uses `deg` not `°`; active tolerances logged on every check
+  - `services/readiness.py`: location issue string uses `{loc_m:.0f}m`; fallback uses `deg`
+  - `config.py`: `ONSTEP_TIME_TOLERANCE_S`/`ONSTEP_LOCATION_TOLERANCE_M` from `[mount]` section; wired into `build_onstep_safety_config()`
+  - `templates/config.toml`: added `[mount]` section with tolerance stubs
+  - 26 new tests in `tests/unit/adapters/onstep/test_get_sync_status.py`; 3386 passed, 24 skipped
 
 - [ ] M8-009 Trust session expiry; no cross-restart persistence `[P1 · Runtime]`
   - `persist_trust_across_restart = false`; `session_trust_expiry_minutes = 120`

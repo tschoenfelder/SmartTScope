@@ -120,15 +120,18 @@ focuser        = "onstep"      # OAG shares main focuser
 # FALLBACK does not unlock mount automation (raspberry_time_trust = NOT_TRUSTED).
 # GPS port is configured under [hardware].gps_port above.
 #
-# Uncomment and fill in when M8-007..M8-009 are implemented:
+# Uncomment and fill in when M8-009 is implemented:
 # [time_location]
 # session_trust_expiry_minutes = 120   # M8-009: how long USER_CONFIRMED trust lasts
 # persist_trust_across_restart = false # M8-009: trust never survives a restart
-# onstep_location_tolerance_m  = 100   # M8-008: max acceptable location delta in metres
 
 [astap]
 path        = ""   # empty = auto-detect via PATH
 catalog_dir = ""   # empty = auto-search standard locations
+
+[mount]
+onstep_time_tolerance_s     = 10     # M8-008: max clock delta for VERIFIED (seconds)
+onstep_location_tolerance_m = 100    # M8-008: max location delta for VERIFIED (metres)
 
 [mount_limits]
 min_alt_deg     = 10.0    # horizon clearance

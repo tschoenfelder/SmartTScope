@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-008 (Meter-based location tolerance; UTF-8-safe logs)
+
+**REQ-TIME-003, REQ-TIME-006 implemented. Addresses INC-002; TEST-002.**
+- `adapters/onstep/safety.py`: added `onstep_time_tolerance_s: float = 10.0` and `onstep_location_tolerance_m: float = 100.0` fields to `OnStepSafetyConfig`
+- `adapters/onstep/mount.py`: added `_haversine_m()` great-circle distance helper; `get_sync_status()` now uses `haversine_m` for `location_delta_m`, checks `location_delta_m <= onstep_location_tolerance_m` (replaces `lat_delta < 0.1 and lon_delta < 0.1`); uses `onstep_time_tolerance_s` for time check; adds `location_delta_m`, `location_tolerance_m`, `time_tolerance_s` to returned dict
+- `api/session.py`: VERIFIED log uses `deg` not `°`; active tolerances logged in both VERIFIED and mismatch paths
+- `services/readiness.py`: location issue string shows `{loc_m:.0f}m`; fallback uses `{max(lat_d,lon_d):.4f}deg`
+- `config.py`: `ONSTEP_TIME_TOLERANCE_S` and `ONSTEP_LOCATION_TOLERANCE_M` read from `[mount]` section (env override supported); wired into `build_onstep_safety_config()`
+- `templates/config.toml`: `[mount]` section with `onstep_time_tolerance_s = 10` and `onstep_location_tolerance_m = 100`
+- 26 new tests in `tests/unit/adapters/onstep/test_get_sync_status.py`; 3386 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-007 (Raspberry Pi time trust sources: 5-state enum + evaluation service)
 
 **REQ-TIME-002, REQ-TIME-004 implemented. Addresses INC-003, INC-009.**

@@ -100,6 +100,8 @@ class OnStepSafetyConfig:
     state_write_interval_s: float = 30.0
     clock_warning_threshold_s: float = 120.0
     time_trust_source: str = "raspberry_plausible"
+    onstep_time_tolerance_s: float = 10.0
+    onstep_location_tolerance_m: float = 100.0
     require_onstep_limits: bool = False
     allow_broad_onstep_limits: bool = False
     location_warning_threshold_m: float = 100.0

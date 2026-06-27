@@ -184,21 +184,29 @@ def session_connect(
             if sync is not None:
                 time_ok     = bool(sync.get("time_ok"))
                 location_ok = bool(sync.get("location_ok"))
+                time_tol_s = sync.get("time_tolerance_s") or sync.get("time_threshold_s") or "?"
+                loc_tol_m  = sync.get("location_tolerance_m") or "?"
                 if time_ok and location_ok:
                     tl_status = TimeLocationStatus.VERIFIED
                     _log.info(
                         "Time/location check: within tolerance — VERIFIED "
-                        "(time_delta=%.1fs lat_delta=%.4f° lon_delta=%.4f°)",
+                        "(time_delta=%.1fs tol=%ss "
+                        "lat_delta=%.4fdeg lon_delta=%.4fdeg loc_delta=%.1fm tol=%sm)",
                         sync.get("time_delta_s") or 0,
+                        time_tol_s,
                         sync.get("lat_delta_deg") or 0,
                         sync.get("lon_delta_deg") or 0,
+                        sync.get("location_delta_m") or 0,
+                        loc_tol_m,
                     )
                 else:
                     tl_check = sync
                     _log.info(
                         "Time/location check: mismatch — awaiting user decision "
-                        "(time_ok=%s location_ok=%s)",
-                        time_ok, location_ok,
+                        "(time_ok=%s time_tol=%ss location_ok=%s loc_delta=%sm loc_tol=%sm)",
+                        time_ok, time_tol_s, location_ok,
+                        sync.get("location_delta_m"),
+                        loc_tol_m,
                     )
         except Exception as exc:
             _log.warning("Time/location check failed: %s", exc)

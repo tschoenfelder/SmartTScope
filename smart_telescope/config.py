@@ -277,6 +277,11 @@ MOUNT_MAX_ALT_DEG: float     = float(os.environ.get("MOUNT_MAX_ALT_DEG",     _ge
 MOUNT_HA_EAST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_EAST_LIMIT_H", _get("mount_limits", "ha_east_limit_h", "-5.5")))
 MOUNT_HA_WEST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_WEST_LIMIT_H", _get("mount_limits", "ha_west_limit_h", "0.333")))
 
+# ── OnStep time/location verification tolerances (M8-008 / REQ-TIME-003) ─────
+
+ONSTEP_TIME_TOLERANCE_S: float     = float(os.environ.get("ONSTEP_TIME_TOLERANCE_S",     _get("mount", "onstep_time_tolerance_s",     "10.0")))
+ONSTEP_LOCATION_TOLERANCE_M: float = float(os.environ.get("ONSTEP_LOCATION_TOLERANCE_M", _get("mount", "onstep_location_tolerance_m", "100.0")))
+
 
 def build_onstep_safety_config():
     """Build OnStepSafetyConfig from this module's config values.
@@ -299,6 +304,8 @@ def build_onstep_safety_config():
         require_home_confirmation=True,
         time_trust_source="raspberry_plausible",
         allow_broad_onstep_limits=True,
+        onstep_time_tolerance_s=ONSTEP_TIME_TOLERANCE_S,
+        onstep_location_tolerance_m=ONSTEP_LOCATION_TOLERANCE_M,
     )
 
 # ── session ───────────────────────────────────────────────────────────────────

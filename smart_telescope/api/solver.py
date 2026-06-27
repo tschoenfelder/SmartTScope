@@ -113,6 +113,14 @@ async def solver_solve(
     result = await asyncio.to_thread(solver.solve, frame, scale)
     elapsed = round(time.perf_counter() - t0, 2)
 
+    if result.diagnostics is not None:
+        try:
+            _deps.get_section_logger().get("plate_solve").info(
+                "%s", result.diagnostics.to_json_line()
+            )
+        except Exception:
+            pass
+
     return SolveResponse(
         success=result.success,
         ra=result.ra,

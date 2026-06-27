@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-021 (ASTAP logging → structured diagnostics; REQ-PS-002..003)
+
+**Structured ASTAP diagnostic record attached to every solve attempt.**
+- `smart_telescope/domain/astap_diagnostic.py` (new): `AstapSolveRecord` (13 fields: fits_path, command, exit_code, stdout, stderr, duration_ms, star_count, min_stars_threshold, star_count_gate_passed, solve_success, ra_hours, dec_deg, error) with `to_dict()`/`to_json_line()`
+- `smart_telescope/ports/solver.py`: `SolveResult.diagnostics: AstapSolveRecord | None` added (default None, backward-compatible)
+- `smart_telescope/adapters/astap/solver.py`: `AstapSolver.solve()` builds and attaches `AstapSolveRecord` on success/timeout/launch-failure/no-ini; accepts `star_count`, `min_stars`, `allow_below_min_stars`; emits `ASTAP_DIAGNOSTIC` JSON-line to `_log`
+- `smart_telescope/api/solver.py`: logs `result.diagnostics` to `plate_solve` section logger after solve
+- `smart_telescope/config.py`: `MIN_DETECTED_STARS_BEFORE_SOLVE=15`, `ALLOW_ASTAP_BELOW_MIN_STAR_COUNT=True`
+- `templates/config.toml`: `[plate_solve]` section with both thresholds
+- Tests: 13 unit tests in `tests/unit/adapters/test_astap_diagnostic.py`; full suite: 3584 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-020 (Plate-solve readiness pre-check; REQ-PS-001)
 
 **8-condition plate-solve readiness pre-check with per-condition failure reasons.**

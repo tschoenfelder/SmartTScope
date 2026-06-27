@@ -1099,9 +1099,15 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 20 unit tests in `tests/unit/services/test_plate_solve_readiness.py`
   - Acceptance: REQ-PS-001; TEST-004
 
-- [ ] M8-021 ASTAP logging → structured diagnostics `[P2 · Runtime]`
+- [x] M8-021 ASTAP logging → structured diagnostics `[P2 · Runtime]`
   - Log: ASTAP input FITS path, command/wrapper call, output, exit status; convert failure to structured diagnostics
   - Local star threshold: `min_detected_stars_before_solve = 15`, `allow_astap_below_min_star_count = true` (OPEN-003: revisit after real frames)
+  - Domain: `domain/astap_diagnostic.py` — `AstapSolveRecord` (13 fields) with `to_dict()`/`to_json_line()`
+  - Adapter: `AstapSolver.solve()` builds `AstapSolveRecord` on every call (success/timeout/failure/no-ini); attaches to `SolveResult.diagnostics`; emits `ASTAP_DIAGNOSTIC` JSON-line via `_log`
+  - Port: `SolveResult.diagnostics: AstapSolveRecord | None` added (backward-compatible, default None)
+  - API: `POST /api/solver/solve` logs `result.diagnostics` to `plate_solve` section logger
+  - Config: `[plate_solve] min_detected_stars_before_solve=15`, `allow_astap_below_min_star_count=true`
+  - Tests: 13 unit tests in `tests/unit/adapters/test_astap_diagnostic.py`
   - Acceptance: REQ-PS-002, REQ-PS-003; INC-004, INC-008
 
 - [ ] M8-022 Auto-gain 6 purpose modes; PLATE_SOLVE tracking-quality via frame blur only `[P2 · Runtime]`

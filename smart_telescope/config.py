@@ -261,6 +261,11 @@ CAMERA_OFFSETS: dict[str, dict[str, int]] = _parse_camera_offsets()
 ASTAP_PATH: str        = _get("astap", "path",        "")
 ASTAP_CATALOG_DIR: str = _get("astap", "catalog_dir", "")
 
+# ── plate-solve thresholds (M8-021 / REQ-PS-002..003) ────────────────────────
+
+MIN_DETECTED_STARS_BEFORE_SOLVE: int   = int(_get("plate_solve", "min_detected_stars_before_solve", "15"))
+ALLOW_ASTAP_BELOW_MIN_STAR_COUNT: bool = _get("plate_solve", "allow_astap_below_min_star_count", "true").lower() == "true"
+
 # ── focuser backlash (M7-004 / CFG-004) ──────────────────────────────────────
 
 FOCUSER_BACKLASH_STEPS: int = int(os.environ.get(

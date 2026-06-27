@@ -4,8 +4,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
+from ...domain.astap_diagnostic import AstapSolveRecord
 from ...domain.frame import FitsFrame
 from ...ports.solver import SolveResult, SolverPort
 
@@ -119,12 +121,28 @@ class AstapSolver(SolverPort):
         frame: FitsFrame,
         pixel_scale_hint: float,
         search_radius_deg: float | None = None,
+        star_count: int | None = None,
+        min_stars: int = 15,
+        allow_below_min_stars: bool = True,
     ) -> SolveResult:
         radius = search_radius_deg if search_radius_deg is not None else self._search_radius
-
-        # Resolve catalog directory at solve time so it picks up any path
-        # found by find_catalog() even if not in ASTAP's own search path.
         catalog = find_catalog(self._astap, self._catalog_dir)
+
+        if star_count is not None:
+            gate_passed = star_count >= min_stars
+            if not gate_passed:
+                _log.warning(
+                    "ASTAP: star count %d < threshold %d; %s",
+                    star_count, min_stars,
+                    "proceeding (allow_below_min_stars=True)" if allow_below_min_stars else "solve blocked",
+                )
+                if not allow_below_min_stars:
+                    return SolveResult(
+                        success=False,
+                        error=f"Star count {star_count} below minimum {min_stars}",
+                    )
+        else:
+            gate_passed = None
 
         with tempfile.TemporaryDirectory() as tmpdir:
             fits_path = Path(tmpdir) / "frame.fits"
@@ -142,10 +160,14 @@ class AstapSolver(SolverPort):
                 cmd += ["-d", str(catalog)]
 
             _log.info(
-                "ASTAP solve: scale=%.4f\"/px radius=%.1f° cmd=%s",
-                pixel_scale_hint, radius, " ".join(cmd),
+                "ASTAP solve: scale=%.4f\"/px radius=%.1f° stars=%s cmd=%s",
+                pixel_scale_hint, radius, star_count, " ".join(cmd),
             )
 
+            t0 = time.perf_counter()
+            exit_code = -1
+            stdout = ""
+            stderr = ""
             try:
                 proc = subprocess.run(
                     cmd,
@@ -153,34 +175,61 @@ class AstapSolver(SolverPort):
                     text=True,
                     timeout=self._timeout,
                 )
+                exit_code = proc.returncode
+                stdout = proc.stdout.strip()[:500]
+                stderr = proc.stderr.strip()[:500]
             except subprocess.TimeoutExpired:
-                return SolveResult(success=False, error="ASTAP timed out")
+                duration_ms = (time.perf_counter() - t0) * 1000
+                err = "ASTAP timed out"
+                diag = AstapSolveRecord(
+                    fits_path=str(fits_path), command=cmd, exit_code=exit_code,
+                    stdout="", stderr="", duration_ms=duration_ms,
+                    star_count=star_count, min_stars_threshold=min_stars,
+                    star_count_gate_passed=gate_passed,
+                    solve_success=False, error=err,
+                )
+                _log.warning("ASTAP_DIAGNOSTIC %s", diag.to_json_line())
+                return SolveResult(success=False, error=err, diagnostics=diag)
             except Exception as exc:
-                return SolveResult(success=False, error=f"ASTAP launch failed: {exc}")
+                duration_ms = (time.perf_counter() - t0) * 1000
+                err = f"ASTAP launch failed: {exc}"
+                diag = AstapSolveRecord(
+                    fits_path=str(fits_path), command=cmd, exit_code=exit_code,
+                    stdout="", stderr=str(exc), duration_ms=duration_ms,
+                    star_count=star_count, min_stars_threshold=min_stars,
+                    star_count_gate_passed=gate_passed,
+                    solve_success=False, error=err,
+                )
+                _log.warning("ASTAP_DIAGNOSTIC %s", diag.to_json_line())
+                return SolveResult(success=False, error=err, diagnostics=diag)
 
+            duration_ms = (time.perf_counter() - t0) * 1000
             ini_path = fits_path.with_suffix(".ini")
             if not ini_path.exists():
-                _log.warning(
-                    "ASTAP produced no .ini (exit %d). stdout=%r stderr=%r",
-                    proc.returncode, proc.stdout.strip(), proc.stderr.strip(),
+                err = f"ASTAP produced no output (exit {exit_code}): {stderr}"
+                diag = AstapSolveRecord(
+                    fits_path=str(fits_path), command=cmd, exit_code=exit_code,
+                    stdout=stdout, stderr=stderr, duration_ms=duration_ms,
+                    star_count=star_count, min_stars_threshold=min_stars,
+                    star_count_gate_passed=gate_passed,
+                    solve_success=False, error=err,
                 )
-                return SolveResult(
-                    success=False,
-                    error=(
-                        f"ASTAP produced no output (exit {proc.returncode}): "
-                        f"{proc.stderr.strip()}"
-                    ),
-                )
+                _log.warning("ASTAP_DIAGNOSTIC %s", diag.to_json_line())
+                return SolveResult(success=False, error=err, diagnostics=diag)
 
             result = self._parse_ini(ini_path)
-            if not result.success:
-                _log.warning(
-                    "ASTAP PLATESOLVED=F: error=%r  stdout=%r  stderr=%r  ini=%r",
-                    result.error,
-                    proc.stdout.strip()[:500],
-                    proc.stderr.strip()[:500],
-                    ini_path.read_text(encoding="utf-8", errors="replace")[:500],
-                )
+            diag = AstapSolveRecord(
+                fits_path=str(fits_path), command=cmd, exit_code=exit_code,
+                stdout=stdout, stderr=stderr, duration_ms=duration_ms,
+                star_count=star_count, min_stars_threshold=min_stars,
+                star_count_gate_passed=gate_passed,
+                solve_success=result.success,
+                ra_hours=result.ra if result.success else None,
+                dec_deg=result.dec if result.success else None,
+                error=result.error,
+            )
+            _log.info("ASTAP_DIAGNOSTIC %s", diag.to_json_line())
+            result.diagnostics = diag
             return result
 
     @staticmethod

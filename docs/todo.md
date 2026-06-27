@@ -1024,14 +1024,20 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - 19 new tests in `tests/unit/services/test_command_history.py`; 3435 passed, 24 skipped
   - Acceptance: REQ-CMD-001
 
-- [ ] M8-012 `/api/commands` endpoint; command history frontend panel `[P1 · API · UI]`
-  - Rejected commands visible with reason; user can distinguish blocked commands from hardware failures
-  - Acceptance: REQ-API-003; INC-005
+- [x] M8-012 `/api/commands` endpoint; command history frontend panel `[P1 · API · UI]`
+  - `smart_telescope/api/commands.py` (new): `GET /api/commands` returns all session records from `CommandHistoryService`
+  - Stage 1 "Command History" card: scrollable, last 50 commands, color-coded by status (green/yellow/red/grey)
+  - `setup.js`: `refreshCommandHistory()` + `_renderCommandHistory()`; `app.js`: initial call + 10 s interval
+  - 6 new tests in `tests/unit/api/test_commands.py`
+  - Acceptance: REQ-API-003, INC-005
 
-- [ ] M8-013 GoTo gate-checked before marking issued; bright-star GoTo preconditions `[P1 · Runtime]`
-  - Bright-star GoTo requires: `mount_connected`, `mount_health_ok`, `raspberry_time_trusted`, `onstep_time_location_verified`, `mount_unparked`, `target_above_horizon`, `goto_gate_allowed`
-  - Direct RA/DEC GoTo: default blocked without Raspberry trust (`allow_direct_radec_goto_without_raspberry_time_trust = false`)
-  - Acceptance: REQ-GOTO-001..003; INC-005; TEST-003
+- [x] M8-013 GoTo gate-checked before marking issued; bright-star GoTo preconditions `[P1 · Runtime]`
+  - `mount_goto` wires `CommandHistoryService`: REQUESTED on entry → REJECTED (gate/solar/limit) / ISSUED → SUCCEEDED / FAILED
+  - `?bright_star=true` query param: uses `bright_star_goto` gate operation (REQ-GOTO-002); altitude already checked by `_check_mount_limits`
+  - `config.py`: `ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST = False` (REQ-GOTO-003); `templates/config.toml` updated with `[operation_policy]` section
+  - `operation_gate.py`: `_evaluate_one` for `goto` honors `allow_direct_radec_without_trust` flag; `gate_inputs_from_device_state()` includes the config value
+  - 5 new tests in `test_mount.py` + 4 in `test_operation_gate.py`; 3470 passed, 24 skipped
+  - Acceptance: REQ-GOTO-001..003, INC-005, TEST-003
 
 ### Priority 4 — Observability and diagnostic frames
 

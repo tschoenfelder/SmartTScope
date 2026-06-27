@@ -1718,6 +1718,51 @@ async function stage1ConfirmTime() {
     } catch (e) { setStatus('s1-tl-status', e.message, true); }
 }
 
+// ── Command History card (M8-012 / REQ-API-003) ──────────────────────────────
+
+const _CMD_STATUS_COLOR = {
+    REQUESTED: 'var(--muted)',
+    ISSUED:    'var(--accent)',
+    RUNNING:   'var(--accent)',
+    SUCCEEDED: 'var(--ok)',
+    REJECTED:  'var(--warn)',
+    FAILED:    'var(--err)',
+    CANCELLED: 'var(--muted)',
+};
+
+function _renderCommandHistory(records) {
+    const list    = document.getElementById('s1-cmd-list');
+    const counter = document.getElementById('s1-cmd-count');
+    if (!list) return;
+    if (!counter) return;
+    counter.textContent = records.length;
+    if (records.length === 0) {
+        list.innerHTML = '<span style="color:var(--muted)">No commands recorded yet.</span>';
+        return;
+    }
+    const rows = [...records].reverse().slice(0, 50).map(r => {
+        const color  = _CMD_STATUS_COLOR[r.status] || 'var(--fg)';
+        const ts     = r.timestamp ? r.timestamp.replace('T', ' ') : '—';
+        const action = escHtml(r.user_action || r.operation || '—');
+        const status = escHtml(r.status);
+        const msg    = r.human_message ? ` — ${escHtml(r.human_message)}` : '';
+        return `<div style="display:flex;gap:0.5rem;padding:0.18rem 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--muted);white-space:nowrap;min-width:6.5rem">${escHtml(ts)}</span>
+          <span style="min-width:5rem">${action}</span>
+          <span style="color:${color};min-width:5.5rem;font-weight:500">${status}</span>
+          <span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${msg}</span>
+        </div>`;
+    }).join('');
+    list.innerHTML = rows;
+}
+
+async function refreshCommandHistory() {
+    try {
+        const d = await (await fetch('/api/commands')).json();
+        _renderCommandHistory(d.commands || []);
+    } catch (_) {}
+}
+
 /* ══════════════════════════════════════════════════════════════════════
      Init
 ══════════════════════════════════════════════════════════════════════ */

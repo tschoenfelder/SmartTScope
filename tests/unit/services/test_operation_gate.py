@@ -302,3 +302,40 @@ class TestBlockingPriority:
         )
         results = evaluate_all_gates(**params)
         assert results["goto"].reason_code == "RASPBERRY_TIME_UNTRUSTED"
+
+
+# ── REQ-GOTO-003: allow_direct_radec_without_trust policy ────────────────────
+
+from smart_telescope.services.operation_gate import evaluate_gate
+
+
+class TestDirectRadecGotoPolicy:
+    def _untrusted_ready(self) -> dict:
+        return dict(
+            adapter_connection="OPEN",
+            adapter_health="OK",
+            mount_operational_state="TRACKING",
+            onstep_time_location="VERIFIED",
+            raspberry_time_trust="NOT_TRUSTED",
+        )
+
+    def test_goto_blocked_when_raspberry_untrusted_by_default(self) -> None:
+        result = evaluate_gate("goto", **self._untrusted_ready())
+        assert not result.allowed
+        assert result.reason_code == "RASPBERRY_TIME_UNTRUSTED"
+
+    def test_goto_allowed_when_policy_permits_direct_radec(self) -> None:
+        inputs = {**self._untrusted_ready(), "allow_direct_radec_without_trust": "true"}
+        result = evaluate_gate("goto", **inputs)
+        assert result.allowed
+
+    def test_bright_star_goto_still_blocked_when_policy_allows_direct(self) -> None:
+        inputs = {**self._untrusted_ready(), "allow_direct_radec_without_trust": "true"}
+        result = evaluate_gate("bright_star_goto", **inputs)
+        assert not result.allowed
+        assert result.reason_code == "RASPBERRY_TIME_UNTRUSTED"
+
+    def test_policy_false_keeps_default_blocking_behaviour(self) -> None:
+        inputs = {**self._untrusted_ready(), "allow_direct_radec_without_trust": "false"}
+        result = evaluate_gate("goto", **inputs)
+        assert not result.allowed

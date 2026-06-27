@@ -719,6 +719,76 @@ class TestMountConfirmTime:
         ds.set_user_time_confirmed.assert_called_once_with(True)
 
 
+# ── POST /api/mount/goto — command history (M8-013 / REQ-GOTO-001) ───────────
+
+
+_LIMITS_PATH = "smart_telescope.api.mount._check_mount_limits"
+
+
+def _inject_with_history(
+    mount: MagicMock,
+    *,
+    device_state: MagicMock | None = None,
+    svc: "CommandHistoryService | None" = None,
+) -> "CommandHistoryService":
+    from smart_telescope.services.command_history import CommandHistoryService as _CHS
+    history = svc or _CHS(session_id="test")
+    _inject(mount, device_state=device_state)
+    app.dependency_overrides[deps.get_command_history_service] = lambda: history
+    return history
+
+
+class TestGotoCommandHistory:
+    def test_successful_goto_recorded_issued_then_succeeded(self) -> None:
+        from unittest.mock import patch
+        history = _inject_with_history(_mock_mount())
+        with patch(_LIMITS_PATH):
+            client.post("/api/mount/goto", json={"ra": 5.5, "dec": -5.3})
+        records = history.get_all()
+        assert len(records) == 1
+        assert records[0].status.value == "SUCCEEDED"
+
+    def test_goto_initially_requested_then_updated(self) -> None:
+        from unittest.mock import patch
+        history = _inject_with_history(_mock_mount())
+        with patch(_LIMITS_PATH):
+            resp = client.post("/api/mount/goto", json={"ra": 5.5, "dec": -5.3})
+        assert resp.status_code == 200
+        rec = history.get_all()[0]
+        assert rec.user_action == "goto"
+        assert rec.requested_parameters["ra"] == 5.5
+
+    def test_gate_blocked_goto_recorded_as_rejected(self) -> None:
+        m = _mock_mount()
+        ds = _mock_ds_for_status(started=False)  # adapter CLOSED → gate blocks
+        history = _inject_with_history(m, device_state=ds)
+        resp = client.post("/api/mount/goto", json={"ra": 5.5, "dec": -5.3})
+        assert resp.status_code == 409
+        rec = history.get_all()[0]
+        assert rec.status.value == "REJECTED"
+        assert rec.reason_code == "ADAPTER_DISCONNECTED"
+
+    def test_mount_limit_rejection_recorded(self) -> None:
+        from unittest.mock import patch
+        from fastapi import HTTPException as _HTTPException
+        m = _mock_mount()
+        history = _inject_with_history(m)
+        with patch(_LIMITS_PATH, side_effect=_HTTPException(status_code=400, detail={"reason": "below_horizon"})):
+            resp = client.post("/api/mount/goto", json={"ra": 0.0, "dec": -89.0})
+        assert resp.status_code == 400
+        rec = history.get_all()[0]
+        assert rec.status.value == "REJECTED"
+        assert rec.reason_code == "MOUNT_LIMIT"
+
+    def test_bright_star_uses_bright_star_goto_operation(self) -> None:
+        from unittest.mock import patch
+        history = _inject_with_history(_mock_mount())
+        with patch(_LIMITS_PATH):
+            client.post("/api/mount/goto?bright_star=true", json={"ra": 5.5, "dec": -5.3})
+        rec = history.get_all()[0]
+        assert rec.operation == "bright_star_goto"
+
+
 # ── POST /api/mount/goto_and_center ──────────────────────────────────────────
 
 

@@ -94,6 +94,7 @@ def _evaluate_one(
     mount_operational_state: str,
     onstep_time_location: str,
     raspberry_time_trust: str,
+    allow_direct_radec_without_trust: str = "false",
     **_: str,  # accept and ignore extra inputs (e.g. master_time_source)
 ) -> GateResult:
     if op in _CAMERA_ONLY:
@@ -114,7 +115,11 @@ def _evaluate_one(
     if onstep_time_location != "VERIFIED":
         return _blocked("TIME_LOCATION_UNVERIFIED", f"onstep_time_location_state={onstep_time_location}")
     if raspberry_time_trust != "TRUSTED":
-        return _blocked("RASPBERRY_TIME_UNTRUSTED", f"raspberry_time_trust_state={raspberry_time_trust}")
+        # REQ-GOTO-003: direct RA/DEC goto can optionally bypass Raspberry trust check.
+        if op == "goto" and allow_direct_radec_without_trust == "true":
+            pass
+        else:
+            return _blocked("RASPBERRY_TIME_UNTRUSTED", f"raspberry_time_trust_state={raspberry_time_trust}")
 
     if op in _PARKED_BLOCKED and mount_operational_state == "PARKED":
         return _blocked("MOUNT_PARKED", "mount_operational_state=PARKED")
@@ -205,6 +210,7 @@ def gate_inputs_from_device_state(
         raspberry_trust = "TRUSTED"  # stub: replaced when services are wired in
         raspberry_trust_source = "STUB"
 
+    from .. import config as _cfg
     return {
         "adapter_connection": adapter_connection,
         "adapter_health": adapter_health,
@@ -213,6 +219,9 @@ def gate_inputs_from_device_state(
         "raspberry_time_trust": raspberry_trust,
         "raspberry_trust_source": raspberry_trust_source,
         "master_time_source": master_time_source,
+        "allow_direct_radec_without_trust": (
+            "true" if _cfg.ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST else "false"
+        ),
     }
 
 

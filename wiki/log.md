@@ -4,6 +4,24 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-012 + M8-013 (Command history API + GoTo wiring; REQ-API-003, REQ-GOTO-001..003, INC-005)
+
+**M8-012: `GET /api/commands` + UI panel**
+- `smart_telescope/api/commands.py` (new): returns `CommandHistoryService.get_all()` as `{"commands": [...]}`
+- `smart_telescope/app.py`: registered `commands_router`
+- `smart_telescope/static/index.html`: "Command History" card at bottom of Stage 1 (last 50 cmds, scrollable, color-coded)
+- `smart_telescope/static/js/setup.js`: `refreshCommandHistory()` + `_renderCommandHistory()` with status color map
+- `smart_telescope/static/js/app.js`: initial call + 10 s interval
+
+**M8-013: GoTo history recording + operation policy**
+- `smart_telescope/api/mount.py`: `mount_goto` wires `CommandHistoryService` — REQUESTED → REJECTED (gate/solar/limit)/ISSUED → SUCCEEDED/FAILED; adds `?bright_star=true` param → `bright_star_goto` gate operation
+- `smart_telescope/services/operation_gate.py`: `_evaluate_one` for `goto` op honors `allow_direct_radec_without_trust` flag; `gate_inputs_from_device_state()` reads config and includes the flag
+- `smart_telescope/config.py`: `ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST = False` (env + TOML `[operation_policy]`)
+- `templates/config.toml`: added `[operation_policy]` section with stub
+- Tests: 6 `test_commands.py` + 5 `test_mount.py::TestGotoCommandHistory` + 4 `test_operation_gate.py::TestDirectRadecGotoPolicy`; 3470 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-011 (CommandHistoryService; REQ-CMD-001)
 
 **Per-session JSONL command audit log.**

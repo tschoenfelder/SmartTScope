@@ -145,6 +145,11 @@ stars_cfg            = ""      # path to custom target list; empty = ~/.SmartTSc
 horizon_dat          = ""      # path to KStars horizon export; empty = ~/.SmartTScope/horizon.dat
 pixel_scale_arcsec   = 0.38   # arcsec per pixel at your focal length (C8 native = 0.38)
 
+# ── Operation policy (REQ-GOTO-003) ──────────────────────────────────────────
+
+[operation_policy]
+allow_direct_radec_goto_without_raspberry_time_trust = false   # default: block GoTo when Pi time untrusted
+
 # ── Collimation assistant ─────────────────────────────────────────────────────
 # All values below show the defaults.  Uncomment and edit only what you need.
 

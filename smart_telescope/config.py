@@ -324,6 +324,15 @@ STORAGE_DIR: str           = _expand(os.environ.get("STORAGE_DIR",  _get("sessio
 IMAGE_ROOT: str            = _expand(os.environ.get("IMAGE_ROOT",    _get("session", "image_root",    "")))
 APP_STATE_DIR: str         = _expand(os.environ.get("APP_STATE_DIR", _get("session", "app_state_dir", "")))
 COMMAND_HISTORY_DIR: str   = _expand(os.environ.get("COMMAND_HISTORY_DIR", _get("session", "command_history_dir", str(_USER_DIR / "commands"))))
+
+# ── Operation policy (M8-013 / REQ-GOTO-003) ─────────────────────────────────
+# When true, direct RA/DEC GoTo is allowed even when Raspberry Pi time is not trusted.
+ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST: bool = (
+    os.environ.get(
+        "ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST",
+        _get("operation_policy", "allow_direct_radec_goto_without_raspberry_time_trust", "false"),
+    ).lower() not in ("false", "0", "no", "")
+)
 _stars_cfg_raw: str        = _expand(os.environ.get("STARS_CFG",     _get("session", "stars_cfg",     "")))
 STARS_CFG: str             = _stars_cfg_raw or str(_USER_DIR / "stars.cfg")
 _horizon_raw: str          = _expand(os.environ.get("HORIZON_DAT",   _get("session", "horizon_dat",   "")))

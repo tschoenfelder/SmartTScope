@@ -15,9 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .. import config
+from ..domain.command_status import CommandStatus
 from ..domain.solar import is_solar_target
 from ..domain.time_location_status import TimeLocationStatus
 from ..ports.mount import MountPort, MountState
+from ..services.command_history import CommandHistoryService
 from ..services.operation_gate import evaluate_gate, gate_inputs_from_device_state
 from ..ports.solver import SolverPort
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
@@ -330,19 +332,66 @@ def mount_goto(
     device_state:        DeviceStateService = Depends(deps.get_device_state),
     master_source_svc:   object             = Depends(deps.get_master_source_service),
     raspberry_trust_svc: object             = Depends(deps.get_raspberry_trust_service),
+    command_history:     CommandHistoryService = Depends(deps.get_command_history_service),
     confirm_solar:       bool = Query(default=False),
+    bright_star:         bool = Query(default=False),
 ) -> dict[str, bool]:
-    _gate_check(device_state, "goto", master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
+    """GoTo target RA/Dec.
+
+    ?bright_star=true uses the bright_star_goto gate operation (REQ-GOTO-002).
+    ?confirm_solar=true bypasses the solar exclusion check.
+    All attempts are recorded in command history (REQ-GOTO-001 / INC-005).
+    """
+    gate_op = "bright_star_goto" if bright_star else "goto"
+    params  = {"ra": body.ra, "dec": body.dec, "bright_star": bright_star}
+    rec = command_history.record("goto", gate_op, params)
+
+    try:
+        _gate_check(device_state, gate_op, master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        command_history.update(
+            rec.command_id, CommandStatus.REJECTED,
+            reason_code=detail.get("reason_code"),
+            human_message=detail.get("human_message"),
+            backend_response=detail,
+        )
+        raise
+
     if not confirm_solar:
         blocked, sep = is_solar_target(body.ra, body.dec)
         if blocked:
+            command_history.update(
+                rec.command_id, CommandStatus.REJECTED,
+                reason_code="SOLAR_EXCLUSION",
+                human_message=f"Target is within {sep:.1f}° of the sun",
+                backend_response={"sun_separation_deg": round(sep, 2)},
+            )
             raise HTTPException(
                 status_code=403,
                 detail={"error": "solar_exclusion", "sun_separation_deg": round(sep, 2)},
             )
-    _check_mount_limits(body.ra, body.dec)
+
+    try:
+        _check_mount_limits(body.ra, body.dec)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {}
+        command_history.update(
+            rec.command_id, CommandStatus.REJECTED,
+            reason_code="MOUNT_LIMIT",
+            human_message=str(detail.get("reason", exc.detail)),
+            backend_response=detail,
+        )
+        raise
+
+    command_history.update(rec.command_id, CommandStatus.ISSUED)
     device_state.record_command(f"goto ra={body.ra:.4f}h dec={body.dec:.2f}°")
-    _safe_goto(mount, coordinator, body.ra, body.dec)
+    try:
+        _safe_goto(mount, coordinator, body.ra, body.dec)
+    except Exception as exc:
+        command_history.update(rec.command_id, CommandStatus.FAILED, human_message=str(exc))
+        raise
+    command_history.update(rec.command_id, CommandStatus.SUCCEEDED)
     return {"ok": True}
 
 

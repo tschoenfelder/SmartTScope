@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .services.guiding_service import GuidingService
 
+from . import config
 from .ports.camera import CameraPort
 from .ports.focuser import FocuserPort
 from .ports.mount import MountPort
@@ -408,7 +409,9 @@ class RuntimeContext:
         self.cooling_service     = CoolingService()
         self.device_state        = DeviceStateService()
         self.master_source_svc   = MasterSourceService()
-        self.raspberry_trust_svc = RaspberryTimeTrustService()
+        self.raspberry_trust_svc = RaspberryTimeTrustService(
+            session_trust_expiry_minutes=config.SESSION_TRUST_EXPIRY_MINUTES,
+        )
         self.dawn_watcher        = DawnWatcher()
         self.job_manager         = JobManager()
         self.camera_offset_service = CameraOffsetService.from_config()

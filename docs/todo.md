@@ -996,10 +996,12 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - `templates/config.toml`: added `[mount]` section with tolerance stubs
   - 26 new tests in `tests/unit/adapters/onstep/test_get_sync_status.py`; 3386 passed, 24 skipped
 
-- [ ] M8-009 Trust session expiry; no cross-restart persistence `[P1 · Runtime]`
-  - `persist_trust_across_restart = false`; `session_trust_expiry_minutes = 120`
-  - Within session: trust has timestamp and source; recalculated if source stale/unavailable/contradicted
-  - Acceptance: DEC-004, DEC-005
+- [x] M8-009 Trust session expiry; no cross-restart persistence `[P1 · Runtime]`
+  - `config.py`: `SESSION_TRUST_EXPIRY_MINUTES` from `[time_location]` section (env override supported)
+  - `runtime.py`: both `__init__` and `reset_for_tests()` pass `session_trust_expiry_minutes=config.SESSION_TRUST_EXPIRY_MINUTES`; added `from . import config`
+  - `templates/config.toml`: activated `[time_location]` section with `session_trust_expiry_minutes = 120` and `persist_trust_across_restart = false`
+  - 5 new M8-009 tests (no-persistence, restart-clears-trust, custom-expiry, 120-min-default, USER_CONFIRMED expiry); 3391 passed, 24 skipped
+  - Acceptance: DEC-004 (no cross-restart persistence), DEC-005 (configurable expiry)
 
 - [ ] M8-010 Stage 1 UI panel — 20 required fields `[P1 · UI]`
   - Shows: OnStep adapter state, OnStep health state, focuser state, Raspberry Pi time trust, trust source, GPS fix availability, master source, OnStep time, master time, time delta, OnStep location, master location, location delta in meters, active tolerances, verification result, last verification timestamp, last push timestamp, available actions

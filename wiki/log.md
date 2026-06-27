@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-009 (Trust session expiry; no cross-restart persistence)
+
+**DEC-004, DEC-005 implemented.**
+- `config.py`: `SESSION_TRUST_EXPIRY_MINUTES` read from `[time_location]` section (env override: `SESSION_TRUST_EXPIRY_MINUTES`); default 120
+- `runtime.py`: added `from . import config`; both `__init__` and `reset_for_tests()` pass `session_trust_expiry_minutes=config.SESSION_TRUST_EXPIRY_MINUTES` to `RaspberryTimeTrustService`
+- `templates/config.toml`: activated `[time_location]` section with `session_trust_expiry_minutes = 120` and `persist_trust_across_restart = false`
+- 5 new M8-009 tests in `tests/unit/services/test_raspberry_time_trust.py`: fresh-service-no-trust, restart-clears-trust, custom-expiry-respected, 120-min-default, USER_CONFIRMED-expiry; 3391 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-008 (Meter-based location tolerance; UTF-8-safe logs)
 
 **REQ-TIME-003, REQ-TIME-006 implemented. Addresses INC-002; TEST-002.**

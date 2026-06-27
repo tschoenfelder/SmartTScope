@@ -120,10 +120,9 @@ focuser        = "onstep"      # OAG shares main focuser
 # FALLBACK does not unlock mount automation (raspberry_time_trust = NOT_TRUSTED).
 # GPS port is configured under [hardware].gps_port above.
 #
-# Uncomment and fill in when M8-009 is implemented:
-# [time_location]
-# session_trust_expiry_minutes = 120   # M8-009: how long USER_CONFIRMED trust lasts
-# persist_trust_across_restart = false # M8-009: trust never survives a restart
+[time_location]
+session_trust_expiry_minutes = 120   # how long USER_CONFIRMED/ONSTEP_COMPARISON trust lasts
+persist_trust_across_restart = false # trust never survives a restart (enforced by design)
 
 [astap]
 path        = ""   # empty = auto-detect via PATH

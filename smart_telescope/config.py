@@ -282,6 +282,12 @@ MOUNT_HA_WEST_LIMIT_H: float = float(os.environ.get("MOUNT_HA_WEST_LIMIT_H", _ge
 ONSTEP_TIME_TOLERANCE_S: float     = float(os.environ.get("ONSTEP_TIME_TOLERANCE_S",     _get("mount", "onstep_time_tolerance_s",     "10.0")))
 ONSTEP_LOCATION_TOLERANCE_M: float = float(os.environ.get("ONSTEP_LOCATION_TOLERANCE_M", _get("mount", "onstep_location_tolerance_m", "100.0")))
 
+# ── Raspberry Pi time trust session expiry (M8-009 / DEC-004, DEC-005) ───────
+# Trust never survives an application restart (in-memory only; persist_trust_across_restart = false).
+# USER_CONFIRMED and ONSTEP_COMPARISON trust expire within the session after this many minutes.
+
+SESSION_TRUST_EXPIRY_MINUTES: int = int(os.environ.get("SESSION_TRUST_EXPIRY_MINUTES", _get("time_location", "session_trust_expiry_minutes", "120")))
+
 
 def build_onstep_safety_config():
     """Build OnStepSafetyConfig from this module's config values.

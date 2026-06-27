@@ -442,3 +442,112 @@ def test_gate_inputs_raspberry_trust_svc_overrides_master_source_svc():
     assert inputs["raspberry_time_trust"] == "NOT_TRUSTED"
     assert inputs["raspberry_trust_source"] == "NOT_TRUSTED"
     assert inputs["master_time_source"] == "FALLBACK"
+
+
+# ── M8-009: trust session expiry + no cross-restart persistence ───────────────
+
+def test_fresh_service_has_no_trust_state():
+    """DEC-004: A newly created service must evaluate to NOT_TRUSTED with no prior state."""
+    svc = RaspberryTimeTrustService()
+    with patch(_NTP_PATH, return_value=False):
+        result = svc.evaluate(
+            time_location_verified=False,
+            onstep_comparison_established_at=None,
+            user_confirmed=False,
+            user_confirmed_at=None,
+        )
+    assert result == RaspberryTimeTrustSource.NOT_TRUSTED
+
+
+def test_recreating_service_clears_trust():
+    """DEC-004: Re-creating the service (simulating restart) clears trust — no persistence."""
+    # First service establishes ONSTEP_COMPARISON trust via state passed in
+    svc1 = RaspberryTimeTrustService()
+    established_at = _time.monotonic()
+    with patch(_NTP_PATH, return_value=False):
+        r1 = svc1.evaluate(
+            time_location_verified=True,
+            onstep_comparison_established_at=established_at,
+            user_confirmed=False,
+            user_confirmed_at=None,
+        )
+    assert r1 == RaspberryTimeTrustSource.ONSTEP_COMPARISON
+
+    # New service instance (simulating restart) + no state passed in → NOT_TRUSTED
+    svc2 = RaspberryTimeTrustService()
+    with patch(_NTP_PATH, return_value=False):
+        r2 = svc2.evaluate(
+            time_location_verified=False,
+            onstep_comparison_established_at=None,
+            user_confirmed=False,
+            user_confirmed_at=None,
+        )
+    assert r2 == RaspberryTimeTrustSource.NOT_TRUSTED
+
+
+def test_custom_expiry_from_config_is_respected():
+    """DEC-005: session_trust_expiry_minutes from config controls expiry boundary."""
+    custom_minutes = 30
+    svc = RaspberryTimeTrustService(session_trust_expiry_minutes=custom_minutes)
+    # 29 minutes ago → within 30-minute window → ONSTEP_COMPARISON active
+    established_at = _time.monotonic() - (29 * 60)
+    with patch(_NTP_PATH, return_value=False):
+        result_within = svc.evaluate(
+            time_location_verified=True,
+            onstep_comparison_established_at=established_at,
+            user_confirmed=False,
+            user_confirmed_at=None,
+        )
+    assert result_within == RaspberryTimeTrustSource.ONSTEP_COMPARISON
+
+    # 31 minutes ago → past 30-minute window → NOT_TRUSTED
+    expired_at = _time.monotonic() - (31 * 60)
+    with patch(_NTP_PATH, return_value=False):
+        result_expired = svc.evaluate(
+            time_location_verified=True,
+            onstep_comparison_established_at=expired_at,
+            user_confirmed=False,
+            user_confirmed_at=None,
+        )
+    assert result_expired == RaspberryTimeTrustSource.NOT_TRUSTED
+
+
+def test_default_expiry_is_120_minutes():
+    """DEC-005: default expiry is 120 minutes; trust still active after 119 minutes."""
+    svc = RaspberryTimeTrustService()  # default expiry = 120 min
+    # 119 minutes ago → within window
+    established_at = _time.monotonic() - (119 * 60)
+    with patch(_NTP_PATH, return_value=False):
+        result = svc.evaluate(
+            time_location_verified=True,
+            onstep_comparison_established_at=established_at,
+            user_confirmed=False,
+            user_confirmed_at=None,
+        )
+    assert result == RaspberryTimeTrustSource.ONSTEP_COMPARISON
+
+
+def test_user_confirmed_custom_expiry_respected():
+    """DEC-005: USER_CONFIRMED also expires according to configured session_trust_expiry_minutes."""
+    svc = RaspberryTimeTrustService(session_trust_expiry_minutes=10)
+    # 9 minutes ago → active
+    confirmed_at = _time.monotonic() - (9 * 60)
+    with patch(_NTP_PATH, return_value=False):
+        result_active = svc.evaluate(
+            time_location_verified=False,
+            onstep_comparison_established_at=None,
+            user_confirmed=True,
+            user_confirmed_at=confirmed_at,
+        )
+    assert result_active == RaspberryTimeTrustSource.USER_CONFIRMED
+
+    # 11 minutes ago → expired
+    expired_at = _time.monotonic() - (11 * 60)
+    with patch(_NTP_PATH, return_value=False):
+        result_expired = svc.evaluate(
+            time_location_verified=False,
+            onstep_comparison_established_at=None,
+            user_confirmed=True,
+            user_confirmed_at=expired_at,
+        )
+    assert result_expired == RaspberryTimeTrustSource.NOT_TRUSTED

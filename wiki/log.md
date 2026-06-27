@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-023 (Exposure capability test; REQ-AG-003..004)
+
+**5-step exposure sweep with 13-field per-step diagnostics. Advisory only — no config writes.**
+- `smart_telescope/domain/exposure_capability.py` (new): `TEST_EXPOSURES_S=(0.5,1,2,4,8)`, `ExposureStepDiagnostics` (14 fields: 13 diagnostics + exposure_s), `ExposureCapabilityResult` (steps, recommended_exposure_s, stopped_early, stop_reason)
+- `smart_telescope/services/exposure_capability_service.py` (new): `run_exposure_test()` — sweeps exposures; `_analyse_step()` computes star count (scipy), background median/stddev, saturation, black-clipping, FWHM, HFR; stops early on saturation (>1%) or blur (elongation ratio >2.0 AND grew >50%); cancellation_flag support
+- `smart_telescope/api/autogain.py`: `POST /api/autogain/exposure_test` — async endpoint (up to ~40 s); returns `ExposureCapabilityResult.to_dict()`; logs `diagnostic_exposure_test_started` user action
+- Tests: 17 unit tests in `tests/unit/services/test_exposure_capability_service.py`; full suite: 3619 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-022 (Auto-gain 6 purpose modes; REQ-AG-001..002)
 
 **6 purpose modes for auto-gain with PLATE_SOLVE tracking-quality gate.**

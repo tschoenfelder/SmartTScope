@@ -1,7 +1,9 @@
-"""One-shot Auto Gain API — POST /api/autogain/run, GET /api/autogain/status."""
+"""One-shot Auto Gain API — POST /api/autogain/run, GET /api/autogain/status,
+POST /api/autogain/exposure_test."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from dataclasses import dataclass
@@ -340,3 +342,37 @@ def _reset() -> None:
             j.cancel.set()
         _set_job(None)
     rt.job_manager.cancel_by_name("autogain")
+
+
+# ── Exposure capability test (M8-023 / REQ-AG-003..004) ──────────────────────
+
+class ExposureTestRequest(BaseModel):
+    camera_index: int = Field(default=0, ge=0, le=7)
+    camera_role:  str | None = Field(default=None)
+    gain:         int = Field(default=100, ge=100, le=3200)
+    offset:       int = Field(default=0,   ge=0,   le=2000)
+
+
+@router.post("/exposure_test")
+async def run_exposure_test_endpoint(body: ExposureTestRequest) -> dict:
+    """Run the 5-step exposure capability test (0.5 s → 8 s).
+
+    Captures at each exposure and collects 13-field diagnostics per step.
+    Stops early on saturation or tracking blur.  Results are advisory —
+    suggested values are NOT written to config (OPEN-004 / REQ-AG-003).
+
+    Blocks for up to ~40 s (5 exposures × up to 8 s each).
+    """
+    from ..services.exposure_capability_service import run_exposure_test
+
+    camera_index = deps.resolve_camera_index(body.camera_index, body.camera_role)
+    camera = deps.get_preview_camera(camera_index)
+    deps.get_user_action_logger().log("diagnostic_exposure_test_started", result="ok")
+
+    result = await asyncio.to_thread(
+        run_exposure_test,
+        camera,
+        body.gain,
+        body.offset,
+    )
+    return result.to_dict()

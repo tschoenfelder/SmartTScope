@@ -1119,10 +1119,14 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Tests: 18 unit tests in `tests/unit/domain/test_autogain_modes.py`
   - Acceptance: REQ-AG-001, REQ-AG-002; INC-008
 
-- [ ] M8-023 Exposure capability test + 13-field auto-gain diagnostics `[P2 · Runtime]`
+- [x] M8-023 Exposure capability test + 13-field auto-gain diagnostics `[P2 · Runtime]`
   - Test sequence: `0.5 s, 1 s, 2 s, 4 s, 8 s`; stop on elongation/FWHM degradation/saturation
   - Diagnostics: `number_of_stars_detected`, `background_median_adu`, `background_stddev_adu`, `saturated_pixel_ratio`, `black_clipped_pixel_ratio`, `median_fwhm_px`, `median_hfr_px`, `exposure_limit_reached`, `gain_limit_reached`, `offset_limit_reached`, `tracking_blur_suspected`, `reason_for_next_step`, `reason_for_stop`
   - Suggested values not written to config without user confirmation (OPEN-004: revisit after real tracking data)
+  - Domain: `domain/exposure_capability.py` — `TEST_EXPOSURES_S` (0.5/1/2/4/8 s), `ExposureStepDiagnostics` (14 fields), `ExposureCapabilityResult`
+  - Service: `services/exposure_capability_service.py` — `run_exposure_test()` sweeps 5 exposures; `_analyse_step()` computes all diagnostics; stops on saturation/blur/cancel
+  - Endpoint: `POST /api/autogain/exposure_test` — async (up to ~40 s); advisory result only
+  - Tests: 17 unit tests in `tests/unit/services/test_exposure_capability_service.py`
   - Acceptance: REQ-AG-003, REQ-AG-004
 
 ### Priority 6 — Collimation and click-to-center

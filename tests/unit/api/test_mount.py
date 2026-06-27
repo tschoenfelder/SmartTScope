@@ -700,6 +700,25 @@ class TestMountSyncClock:
         assert client.post("/api/mount/sync_clock").status_code == 500
 
 
+# ── POST /api/mount/confirm_time ─────────────────────────────────────────────
+
+
+class TestMountConfirmTime:
+    def test_confirm_time_returns_ok(self) -> None:
+        _inject(_mock_mount())
+        resp = client.post("/api/mount/confirm_time")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["raspberry_trust_source"] == "USER_CONFIRMED"
+
+    def test_confirm_time_sets_user_confirmed(self) -> None:
+        ds = _verified_ds()
+        _inject(_mock_mount(), device_state=ds)
+        client.post("/api/mount/confirm_time")
+        ds.set_user_time_confirmed.assert_called_once_with(True)
+
+
 # ── POST /api/mount/goto_and_center ──────────────────────────────────────────
 
 

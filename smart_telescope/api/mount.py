@@ -385,6 +385,7 @@ def mount_sync_clock(
     try:
         mount.ensure_time_location_synced()
         device_state.set_time_location_status(TimeLocationStatus.VERIFIED)
+        device_state.set_last_push_at()
         # M8-007: if OnStep's reference was GPS/NTP, Pi clock is validated via DEC-006 trust chain
         from ..domain.master_time_source import MasterTimeSource
         user_confirmed: bool = device_state.is_user_time_confirmed()
@@ -407,6 +408,20 @@ def mount_time_location_skip(
     """
     device_state.set_time_location_status(TimeLocationStatus.UNVERIFIED)
     return {"ok": True, "time_location_status": "UNVERIFIED"}
+
+
+@router.post("/confirm_time")
+def mount_confirm_time(
+    device_state: DeviceStateService = Depends(deps.get_device_state),
+    raspberry_trust_svc: object      = Depends(deps.get_raspberry_trust_service),
+) -> dict:
+    """User asserts the Raspberry Pi clock is correct.
+
+    Sets USER_CONFIRMED trust source (M8-006/M8-007).  Trust expires after
+    session_trust_expiry_minutes (config [time_location] section, default 120 min).
+    """
+    device_state.set_user_time_confirmed(True)
+    return {"ok": True, "raspberry_trust_source": "USER_CONFIRMED"}
 
 
 @router.post("/home")

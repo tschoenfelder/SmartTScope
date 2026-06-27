@@ -195,8 +195,10 @@ _startMountStripPoll();
 refreshReadiness();
 refreshMilestones();
 refreshHealth();
+refreshStage1TL();
 setInterval(refreshReadiness, 30_000);
 setInterval(refreshHealth, 10_000);
+setInterval(refreshStage1TL, 15_000);
 loadFocuserCameras();
 loadPreviewCameras();
 _loadSelectFromTrains('s1-cooling-cam-select').then(async sel => {

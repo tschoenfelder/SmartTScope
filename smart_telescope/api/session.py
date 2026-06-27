@@ -181,6 +181,7 @@ def session_connect(
         # show a dialog; status stays UNKNOWN until the user approves or skips.
         try:
             sync = mount.get_sync_status()
+            device_state.set_last_sync_status(sync)
             if sync is not None:
                 time_ok     = bool(sync.get("time_ok"))
                 location_ok = bool(sync.get("location_ok"))

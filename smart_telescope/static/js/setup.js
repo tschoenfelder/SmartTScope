@@ -1603,6 +1603,122 @@ function _updateExtDot() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+     Stage 1 — Time / Location Verification card (M8-010 / REQ-TIME-005)
+══════════════════════════════════════════════════════════════════════ */
+
+function _tlParam(label, value, level) {
+    if (level !== undefined) return _healthRow(label, level, value ?? '—');
+    return `<div class="param">
+      <span class="param-label">${escHtml(label)}</span>
+      <span class="param-value mono">${escHtml(String(value ?? '—'))}</span>
+    </div>`;
+}
+
+function _renderStage1TL(d) {
+    const dot   = document.getElementById('s1-tl-dot');
+    const badge = document.getElementById('s1-tl-badge');
+    const params = document.getElementById('s1-tl-params');
+    const controls = document.getElementById('s1-tl-controls');
+    if (!dot || !badge || !params) return;
+
+    // Overall badge / dot
+    const tl = d.onstep_time_location;
+    const dotCls = tl === 'VERIFIED' ? 'dot-green' : tl === 'UNVERIFIED' ? 'dot-yellow' : 'dot-grey';
+    dot.className = `dot ${dotCls}`;
+    const badgeColor = tl === 'VERIFIED' ? 'var(--success)' : tl === 'UNVERIFIED' ? 'var(--warning)' : 'var(--muted)';
+    badge.textContent = tl;
+    badge.style.color = badgeColor;
+    badge.style.borderColor = badgeColor;
+
+    const fmtDelta = (v, tol, unit) => {
+        if (v == null) return '—';
+        const ok = v <= tol;
+        const color = ok ? 'var(--success)' : 'var(--danger)';
+        return `<span style="color:${color}">${Number(v).toFixed(1)}${unit} / ${tol}${unit} tol</span>`;
+    };
+
+    const fmtCoord = (v) => v != null ? Number(v).toFixed(6) + '°' : '—';
+    const fmtTime  = (s) => s ? s.replace('T', ' ') : '—';
+    const fmtTs    = (s) => s ? new Date(s).toLocaleString() : '— (not yet run)';
+
+    const rows = [
+        // Adapter
+        _tlParam('Adapter connection', d.adapter_connection_state,
+            d.adapter_connection_state === 'OPEN' ? 'ok' : 'error'),
+        _tlParam('Adapter health', d.adapter_health_state,
+            d.adapter_health_state === 'OK' ? 'ok' : d.adapter_health_state === 'UNKNOWN' ? 'warn' : 'error'),
+        // Trust
+        _tlParam('Raspberry Pi trust', d.raspberry_time_trust,
+            d.raspberry_time_trust === 'TRUSTED' ? 'ok' : 'error'),
+        _tlParam('Trust source', d.raspberry_trust_source,
+            ['GPSD_FIX','NTP','ONSTEP_COMPARISON','USER_CONFIRMED'].includes(d.raspberry_trust_source) ? 'ok' : 'error'),
+        _tlParam('Master source', d.master_source,
+            d.master_source === 'FALLBACK' || d.master_source === 'STUB' ? 'warn' : 'ok'),
+        // Verification
+        _tlParam('Verification result', tl,
+            tl === 'VERIFIED' ? 'ok' : tl === 'UNVERIFIED' ? 'warn' : 'error'),
+        // Time
+        _tlParam('OnStep time', fmtTime(d.onstep_time_local)),
+        _tlParam('Master time (Pi)', fmtTime(d.master_time_local)),
+        `<div class="param">
+          <span class="param-label">Time delta</span>
+          <span class="param-value">${fmtDelta(d.time_delta_s, d.time_tolerance_s, 's')}</span>
+        </div>`,
+        // Location
+        _tlParam('OnStep lat', fmtCoord(d.onstep_lat)),
+        _tlParam('OnStep lon', fmtCoord(d.onstep_lon)),
+        _tlParam('Master lat', fmtCoord(d.master_lat)),
+        _tlParam('Master lon', fmtCoord(d.master_lon)),
+        `<div class="param">
+          <span class="param-label">Location delta</span>
+          <span class="param-value">${fmtDelta(d.location_delta_m, d.location_tolerance_m, 'm')}</span>
+        </div>`,
+        // Tolerances summary
+        _tlParam('Active tolerances',
+            `${d.time_tolerance_s}s / ${d.location_tolerance_m}m`),
+        // Timestamps
+        _tlParam('Last verified', fmtTs(d.last_verification_at_utc)),
+        _tlParam('Last pushed',   fmtTs(d.last_push_at_utc)),
+    ];
+    params.innerHTML = rows.join('');
+
+    // Action buttons
+    if (controls) {
+        controls.style.display = 'flex';
+        const pushBtn    = document.getElementById('s1-tl-push-btn');
+        const confirmBtn = document.getElementById('s1-tl-confirm-btn');
+        if (pushBtn)    pushBtn.style.display    = d.available_actions.includes('push_to_onstep')           ? '' : 'none';
+        if (confirmBtn) confirmBtn.style.display = d.available_actions.includes('confirm_raspberry_time')   ? '' : 'none';
+    }
+}
+
+async function refreshStage1TL() {
+    try {
+        const d = await (await fetch('/api/stage1/time-location')).json();
+        _renderStage1TL(d);
+    } catch (_) {}
+}
+
+async function stage1PushClock() {
+    setStatus('s1-tl-status', 'Pushing time/location to OnStep…');
+    try {
+        await apiPost('/api/mount/sync_clock');
+        setStatus('s1-tl-status', 'Push succeeded — refreshing…');
+        await refreshStage1TL();
+        setStatus('s1-tl-status', '');
+    } catch (e) { setStatus('s1-tl-status', e.message, true); }
+}
+
+async function stage1ConfirmTime() {
+    setStatus('s1-tl-status', 'Confirming Pi clock…');
+    try {
+        await apiPost('/api/mount/confirm_time');
+        setStatus('s1-tl-status', 'Pi clock confirmed — trust source: USER_CONFIRMED');
+        await refreshStage1TL();
+    } catch (e) { setStatus('s1-tl-status', e.message, true); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
      Init
 ══════════════════════════════════════════════════════════════════════ */
 

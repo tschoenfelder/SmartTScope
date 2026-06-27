@@ -1003,10 +1003,15 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - 5 new M8-009 tests (no-persistence, restart-clears-trust, custom-expiry, 120-min-default, USER_CONFIRMED expiry); 3391 passed, 24 skipped
   - Acceptance: DEC-004 (no cross-restart persistence), DEC-005 (configurable expiry)
 
-- [ ] M8-010 Stage 1 UI panel — 20 required fields `[P1 · UI]`
-  - Shows: OnStep adapter state, OnStep health state, focuser state, Raspberry Pi time trust, trust source, GPS fix availability, master source, OnStep time, master time, time delta, OnStep location, master location, location delta in meters, active tolerances, verification result, last verification timestamp, last push timestamp, available actions
-  - User can rerun check, manually confirm Raspberry time, push time/location to OnStep
-  - Acceptance: REQ-TIME-005, REQ-API-004; INC-009
+- [x] M8-010 Stage 1 UI panel — 20 required fields `[P1 · UI]`
+  - `GET /api/stage1/time-location` (REQ-API-004): consolidated time/location trust state from DeviceStateService cache; no live serial I/O
+  - `POST /api/mount/confirm_time`: user asserts Pi clock is correct → sets USER_CONFIRMED trust
+  - `DeviceStateService`: 3 new cache fields (`_last_sync_status`, `_last_verification_at`, `_last_push_at`) + 5 accessors
+  - `mount.get_sync_status()` extended with `onstep_time_local` / `master_time_local` ISO strings
+  - Stage 1 card "Time / Location Verification" in UI: adapter state, trust source, time/location deltas vs tolerances, action buttons (Rerun / Push / Confirm Pi Time)
+  - JS: `refreshStage1TL()`, `stage1PushClock()`, `stage1ConfirmTime()` in `setup.js`; 15 s poll interval in `app.js`
+  - 25 new tests (19 `test_stage1.py` + 2 `test_mount.py` + 4 `test_raspberry_time_trust.py`); 3416 passed, 24 skipped
+  - Acceptance: REQ-TIME-005, REQ-API-004, INC-009
 
 ### Priority 3 — Command history
 

@@ -4,6 +4,22 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-27 — DEVELOP — M8-010 (Stage 1 time/location UI panel; REQ-TIME-005, REQ-API-004, INC-009)
+
+**New `GET /api/stage1/time-location` endpoint and Stage 1 UI card.**
+- `smart_telescope/api/stage1.py` (new): returns 20-field consolidated time/location trust state; reads exclusively from DeviceStateService cache (no serial I/O)
+- `smart_telescope/services/device_state.py`: 3 new fields (`_last_sync_status`, `_last_verification_at`, `_last_push_at`) + 5 accessors; `set_time_location_status(VERIFIED)` now records wall-clock `_last_verification_at`
+- `smart_telescope/adapters/onstep/mount.py`: `get_sync_status()` extended with `onstep_time_local` and `master_time_local` ISO strings
+- `smart_telescope/api/session.py`: caches `mount.get_sync_status()` result into `device_state.set_last_sync_status()` on connect
+- `smart_telescope/api/mount.py`: `sync_clock` calls `device_state.set_last_push_at()` on success; new `POST /api/mount/confirm_time` sets USER_CONFIRMED trust
+- `smart_telescope/app.py`: registered `stage1_router`
+- `smart_telescope/static/index.html`: Stage 1 "Time / Location Verification" card (dot, badge, 20 param rows, 3 action buttons)
+- `smart_telescope/static/js/setup.js`: `refreshStage1TL()`, `_renderStage1TL()`, `stage1PushClock()`, `stage1ConfirmTime()`
+- `smart_telescope/static/js/app.js`: initial call + 15 s interval for `refreshStage1TL()`
+- 25 new tests: `tests/unit/api/test_stage1.py` (19), `test_mount.py::TestMountConfirmTime` (2), `test_raspberry_time_trust.py` M8-010 block (4); 3416 passed, 24 skipped
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-009 (Trust session expiry; no cross-restart persistence)
 
 **DEC-004, DEC-005 implemented.**

@@ -2424,6 +2424,8 @@ class OnStepMount(MountPort):
             "time_threshold_s":     time_tolerance_s,
             "time_tolerance_s":     time_tolerance_s,
             "time_ok":              time_ok,
+            "onstep_time_local":    clock.get("onstep_local"),   # ISO string; None when unavailable
+            "master_time_local":    clock.get("system_local"),   # ISO string
             "location_available":   loc_avail,
             "onstep_lat":           onstep_lat,
             "onstep_lon":           onstep_lon,

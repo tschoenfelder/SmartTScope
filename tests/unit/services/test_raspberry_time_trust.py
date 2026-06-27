@@ -551,3 +551,50 @@ def test_user_confirmed_custom_expiry_respected():
             user_confirmed_at=expired_at,
         )
     assert result_expired == RaspberryTimeTrustSource.NOT_TRUSTED
+
+
+# ── M8-010: DeviceStateService sync/push/verification cache fields ────────────
+
+def test_last_sync_status_default_none():
+    """New DeviceStateService has no cached sync status."""
+    from smart_telescope.services.device_state import DeviceStateService
+    ds = DeviceStateService()
+    assert ds.get_last_sync_status() is None
+
+
+def test_set_last_sync_status():
+    """set_last_sync_status stores value accessible via get_last_sync_status."""
+    from smart_telescope.services.device_state import DeviceStateService
+    ds = DeviceStateService()
+    payload = {"time_delta_s": 1.5, "time_ok": True}
+    ds.set_last_sync_status(payload)
+    assert ds.get_last_sync_status() == payload
+
+
+def test_last_verification_at_set_when_verified():
+    """get_last_verification_at returns a wall-clock float after VERIFIED is set."""
+    import time as _wall
+    from smart_telescope.services.device_state import DeviceStateService
+    from smart_telescope.domain.time_location_status import TimeLocationStatus
+    ds = DeviceStateService()
+    assert ds.get_last_verification_at() is None
+    before = _wall.time()
+    ds.set_time_location_status(TimeLocationStatus.VERIFIED)
+    after = _wall.time()
+    ts = ds.get_last_verification_at()
+    assert ts is not None
+    assert before <= ts <= after
+
+
+def test_last_push_at_set_by_set_last_push_at():
+    """set_last_push_at records a wall-clock timestamp; get_last_push_at returns it."""
+    import time as _wall
+    from smart_telescope.services.device_state import DeviceStateService
+    ds = DeviceStateService()
+    assert ds.get_last_push_at() is None
+    before = _wall.time()
+    ds.set_last_push_at()
+    after = _wall.time()
+    ts = ds.get_last_push_at()
+    assert ts is not None
+    assert before <= ts <= after

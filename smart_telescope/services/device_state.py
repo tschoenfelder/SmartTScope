@@ -81,6 +81,10 @@ class DeviceStateService:
         # _user_time_confirmed_at: set when user confirms Pi clock (for session expiry)
         self._onstep_comparison_established_at: float | None = None
         self._user_time_confirmed_at: float | None = None
+        # M8-010: Stage 1 panel data
+        self._last_sync_status: dict | None = None          # cached from mount.get_sync_status()
+        self._last_verification_at: float | None = None     # time.time() when VERIFIED was last set
+        self._last_push_at: float | None = None             # time.time() when sync_clock succeeded
         # Sticky AT_HOME: OnStep only sets 'H' in :GU# briefly after hC# completes.
         # We preserve AT_HOME until the mount actually moves or starts tracking.
         self._sticky_at_home: bool = False
@@ -208,6 +212,8 @@ class DeviceStateService:
         """Set the time/location verification status and log the transition."""
         with self._lock:
             self._time_location_status = status
+            if status == TimeLocationStatus.VERIFIED:
+                self._last_verification_at = time.time()
         _log.info("TimeLocationStatus → %s", status.name)
 
     # ── M8-006: USER_CONFIRMED master time source ─────────────────────────────
@@ -249,6 +255,33 @@ class DeviceStateService:
         """Return the monotonic timestamp when ONSTEP_COMPARISON trust was established, or None."""
         with self._lock:
             return self._onstep_comparison_established_at
+
+    # ── M8-010: Stage 1 sync cache and push/verification timestamps ──────────
+
+    def set_last_sync_status(self, sync: dict | None) -> None:
+        """Cache the most recent result from mount.get_sync_status()."""
+        with self._lock:
+            self._last_sync_status = sync
+
+    def get_last_sync_status(self) -> dict | None:
+        """Return the cached mount.get_sync_status() result, or None if not yet run."""
+        with self._lock:
+            return self._last_sync_status
+
+    def get_last_verification_at(self) -> float | None:
+        """Return wall-clock time.time() of the last VERIFIED transition, or None."""
+        with self._lock:
+            return self._last_verification_at
+
+    def set_last_push_at(self) -> None:
+        """Record that sync_clock push succeeded now (wall-clock timestamp)."""
+        with self._lock:
+            self._last_push_at = time.time()
+
+    def get_last_push_at(self) -> float | None:
+        """Return wall-clock time.time() of the last successful sync_clock push, or None."""
+        with self._lock:
+            return self._last_push_at
 
     # ── R2-005: state convergence helpers ────────────────────────────────────
 

@@ -18,6 +18,10 @@ from ..ports.mount import MountState
 from ..services.mount_operations import MountSlewingError, home_sequence
 from ..services.hardware_coordinator import CommandConflictError
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..services.frame_analyzer import FrameAnalyzerProtocol
+
 _log = logging.getLogger(__name__)
 
 
@@ -294,6 +298,7 @@ def run_camera_diagnostic(
     exposure_s: float = 3.0,
     solver_timeout_s: float = 15.0,
     gate_check_fn: "Any | None" = None,
+    frame_analyzer: "FrameAnalyzerProtocol | None" = None,
 ) -> list[CameraDiagnosticReport]:
     """Run a per-camera extended diagnostic (REQ-SETUP-001).
 
@@ -361,10 +366,21 @@ def run_camera_diagnostic(
 
         # ── Image analysis ───────────────────────────────────────────────────
         try:
-            star_count, median_fwhm, background = _analyse_frame(frame.pixels)
-            rep.star_count     = star_count
-            rep.median_fwhm_px = median_fwhm
-            rep.background_adu = background
+            if frame_analyzer is not None:
+                ext = frame_analyzer.analyze_frame(
+                    frame.pixels,
+                    exposure_s=exposure_s,
+                    gain=None,
+                    offset=None,
+                )
+                rep.star_count     = ext.stars_found
+                rep.median_fwhm_px = None  # external analyzer does not expose FWHM
+                rep.background_adu = None
+            else:
+                star_count, median_fwhm, background = _analyse_frame(frame.pixels)
+                rep.star_count     = star_count
+                rep.median_fwhm_px = median_fwhm
+                rep.background_adu = background
         except Exception as exc:
             _log.debug("Frame analysis failed for %s: %s", train.name, exc)
 

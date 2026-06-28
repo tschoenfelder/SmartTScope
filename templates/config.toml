@@ -166,6 +166,15 @@ store_mode     = "debug_or_failure"   # always | debug_only | failure_only | deb
 retention_days = 2
 frame_dir      = ""                   # empty = ~/.SmartTScope/diagnostic_frames/
 
+# ── Optional external frame analyzer ─────────────────────────────────────────
+# Set to the Python module name that provides analyze_frame().
+# Leave empty (default) to use built-in analysis only.
+# The module must be importable (pip-installed or on PYTHONPATH).
+# Env var override: EXTERNAL_FRAME_ANALYZER_MODULE
+
+[analysis]
+external_frame_analyzer_module = ""
+
 # ── Operation policy (REQ-GOTO-003) ──────────────────────────────────────────
 
 [operation_policy]

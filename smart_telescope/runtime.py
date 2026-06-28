@@ -29,6 +29,7 @@ from .services.section_logger import SectionLogger
 from .services.service_call_logger import ServiceCallLogger
 from .services.user_action_logger import UserActionLogger
 from .services.diagnostic_frame_store import DiagnosticFrameStore
+from .services.frame_analyzer import FrameAnalyzerProtocol, load_external_analyzer
 from .services.hardware_coordinator import HardwareCommandCoordinator
 from .services.cooling import CoolingService
 from .services.dawn_watcher import DawnWatcher
@@ -257,6 +258,11 @@ class RuntimeContext:
         ))
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
+        # Optional external frame analyzer (loaded when configured in [analysis])
+        self.frame_analyzer: FrameAnalyzerProtocol | None = (
+            load_external_analyzer(config.EXTERNAL_FRAME_ANALYZER_MODULE)
+            if config.EXTERNAL_FRAME_ANALYZER_MODULE else None
+        )
         # Session runner (R0-005)
         self.session_lock:    threading.Lock = threading.Lock()
         self._active_runner:  object | None  = None  # VerticalSliceRunner | None
@@ -464,6 +470,7 @@ class RuntimeContext:
         )
         from .domain.diagnostic_frame import DiagnosticFrameConfig
         self.diagnostic_frame_store = DiagnosticFrameStore(DiagnosticFrameConfig())
+        self.frame_analyzer: FrameAnalyzerProtocol | None = None
         with self.session_lock:
             self._active_runner = None
             self._runner_thread = None

@@ -49,6 +49,7 @@ from ..services.master_source import MasterSourceService
 from ..services.raspberry_time_trust import RaspberryTimeTrustService
 from ..services.optical_train_registry import OpticalTrainRegistry
 from ..services.ctc_calibration_store import CTCCalibrationStore
+from ..services.frame_analyzer import FrameAnalyzerProtocol
 
 
 def get_runtime() -> RuntimeContext:
@@ -130,6 +131,11 @@ def get_ctc_calibration_store() -> CTCCalibrationStore:
     if _ctc_calibration_store is None:
         _ctc_calibration_store = CTCCalibrationStore()
     return _ctc_calibration_store
+
+
+def get_frame_analyzer() -> FrameAnalyzerProtocol | None:
+    """Return the optional external frame analyzer, or None when unconfigured."""
+    return get_runtime().frame_analyzer
 
 
 def reset() -> None:

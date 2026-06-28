@@ -125,6 +125,7 @@ def check_camera_diagnostic(
         device_state=device_state,
         exposure_s=body.exposure_s,
         solver_timeout_s=body.solver_timeout_s,
+        frame_analyzer=rt.frame_analyzer,
     )
     solved_count = sum(1 for r in reports if r.status.value == "solved")
     return {

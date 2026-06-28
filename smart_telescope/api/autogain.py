@@ -147,6 +147,7 @@ def _worker(
                 offset_service=rt.camera_offset_service,
                 force=force,
                 tracking_on=tracking_on,
+                frame_analyzer=rt.frame_analyzer,
             )
             _scl.set_response({
                 "status":      result.status.value if hasattr(result.status, "value") else str(result.status),

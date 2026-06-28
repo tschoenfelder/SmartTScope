@@ -4,6 +4,23 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-28 — DEVELOP — M8-031 (Optional external frame analyzer integration)
+
+**Pluggable external frame analyzer adapter — drop-in star counting with temporal context.**
+- `smart_telescope/domain/star_count.py`: `StarCountResult` (frozen dataclass), `FrameQuality` literal (`"usable"/"too_dark"/"too_bright"/"stars_saturated"`)
+- `smart_telescope/services/frame_analyzer.py`: `FrameAnalyzerProtocol` (Protocol + `@runtime_checkable`), `ExternalFrameAnalyzer` (stateless adapter), `load_external_analyzer()` (importlib + graceful fallback)
+- `config.py` / `templates/config.toml`: new `[analysis] external_frame_analyzer_module = ""` key; env override `EXTERNAL_FRAME_ANALYZER_MODULE`
+- `runtime.py`: `frame_analyzer: FrameAnalyzerProtocol | None` attribute; cleared in `reset_for_tests()`
+- `api/deps.py`: `get_frame_analyzer()` dep
+- `domain/autogain_service.py`: `frame_analyzer=` param in `run_one_shot()`; quality gates, clamped suggestions, focus_warning early return; bug fix: signal override stored in `_ext_signal_override` and applied after mode-based computation
+- `api/autogain.py`: passes `rt.frame_analyzer` to `run_one_shot()`
+- `services/setup_check_service.py`: `frame_analyzer=` param in `run_camera_diagnostic()`
+- `api/setup_check.py`: passes `rt.frame_analyzer` to service call
+- 30 new unit tests: `test_star_count.py`, `test_frame_analyzer.py`, `test_autogain_service.py::TestExternalFrameAnalyzerIntegration`
+- Full suite: 3739 passed, 24 skipped
+
+---
+
 ## 2026-06-28 — DEVELOP — M8-029 + M8-030 (Delivery audit script; REQ-GIT-001..003)
 
 **Git delivery audit script with JSONL log and pre-push checklist.**

@@ -817,3 +817,130 @@ class TestTrackingOffExposureCap:
             "expected at least one capture > 1000 ms when tracking is on, "
             f"got: {captured_exp}"
         )
+
+
+# ── External frame analyzer integration ──────────────────────────────────────
+
+from smart_telescope.domain.star_count import StarCountResult
+from smart_telescope.services.frame_analyzer import ExternalFrameAnalyzer
+
+
+def _ext_result(**kwargs) -> StarCountResult:
+    defaults = dict(
+        stars_found=10,
+        image_quality="usable",
+        suggested_exposure_s=None,
+        suggested_gain=None,
+        suggested_offset=None,
+        focus_warning=False,
+        notes=(),
+        sources=(),
+    )
+    defaults.update(kwargs)
+    return StarCountResult(**defaults)
+
+
+def _make_analyzer(result_factory) -> ExternalFrameAnalyzer:
+    """Wrap a callable that takes (call_count) -> StarCountResult into an analyzer."""
+    state = {"n": 0}
+
+    def fn(img, *, exposure_s, gain, offset):
+        r = result_factory(state["n"])
+        state["n"] += 1
+        return r
+
+    return ExternalFrameAnalyzer(fn, "mock")
+
+
+class TestExternalFrameAnalyzerIntegration:
+    def test_none_frame_analyzer_unchanged_behavior(self) -> None:
+        cam = _SeqCamera([_frame(0.28)])
+        result = AutoGainService.run_one_shot(cam, _PROFILE, frame_analyzer=None)
+        assert result.status == AutoGainStatus.OK
+
+    def test_too_dark_quality_drives_brightening(self) -> None:
+        # External analyzer says "too_dark" on a genuinely dark frame (mean≈0.001).
+        # The sparse-star-field early exit won't trigger (p99_9 is very low), so
+        # the service must iterate all max_iterations before exhausting.
+        call_count = [0]
+
+        def fn(img, *, exposure_s, gain, offset):
+            call_count[0] += 1
+            return _ext_result(image_quality="too_dark")
+
+        analyzer = ExternalFrameAnalyzer(fn, "mock")
+        cam = _SeqCamera([_frame(0.001)] * 20)
+        AutoGainService.run_one_shot(
+            cam, _PROFILE, max_iterations=3, frame_analyzer=analyzer
+        )
+        assert call_count[0] >= 3
+
+    def test_stars_saturated_quality_drives_dimming(self) -> None:
+        # External analyzer always says "stars_saturated" → service forces signal
+        # above band_hi on every iteration.  With max_iterations=3, must exhaust.
+        call_count = [0]
+
+        def fn(img, *, exposure_s, gain, offset):
+            call_count[0] += 1
+            return _ext_result(image_quality="stars_saturated")
+
+        analyzer = ExternalFrameAnalyzer(fn, "mock")
+        cam = _SeqCamera([_frame(0.28)] * 20)
+        AutoGainService.run_one_shot(
+            cam, _PROFILE, max_iterations=3, frame_analyzer=analyzer
+        )
+        assert call_count[0] >= 3
+
+    def test_usable_quality_with_in_band_frame_returns_ok(self) -> None:
+        # External analyzer says "usable" and no suggestions — in-band frame → OK
+        analyzer = _make_analyzer(lambda n: _ext_result(image_quality="usable"))
+        cam = _SeqCamera([_frame(0.28)])
+        result = AutoGainService.run_one_shot(cam, _PROFILE, frame_analyzer=analyzer)
+        assert result.status == AutoGainStatus.OK
+
+    def test_focus_warning_true_returns_focus_error(self) -> None:
+        # focus_warning=True should cause POSSIBLE_FOCUS_OR_POINTING_ERROR
+        analyzer = _make_analyzer(
+            lambda n: _ext_result(focus_warning=True, notes=("Focus issue",))
+        )
+        cam = _SeqCamera([_frame(0.28)])
+        result = AutoGainService.run_one_shot(
+            cam, _PROFILE, frame_analyzer=analyzer, has_focuser=True
+        )
+        assert result.status == AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR
+        assert result.warning_msg is not None
+        assert len(result.warning_msg) > 0
+
+    def test_focus_warning_with_force_does_not_abort(self) -> None:
+        # force=True should skip the focus-warning early return
+        analyzer = _make_analyzer(
+            lambda n: _ext_result(focus_warning=True, image_quality="usable")
+        )
+        cam = _SeqCamera([_frame(0.28)] * 5)
+        result = AutoGainService.run_one_shot(
+            cam, _PROFILE, frame_analyzer=analyzer, has_focuser=True, force=True
+        )
+        assert result.status != AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR
+
+    def test_suggested_exposure_clamped_to_profile(self) -> None:
+        # External analyzer suggests an exposure way beyond profile max
+        extreme_exp_s = 9999.0
+        analyzer = _make_analyzer(
+            lambda n: _ext_result(suggested_exposure_s=extreme_exp_s, image_quality="usable")
+        )
+        cam = _SeqCamera([_frame(0.28)] * 5)
+        result = AutoGainService.run_one_shot(cam, _PROFILE, frame_analyzer=analyzer)
+        # Result exposure must stay within profile limits
+        assert result.exposure_ms <= _PROFILE.max_preview_exp_ms
+
+    def test_focus_warning_note_appears_in_warning_msg(self) -> None:
+        note_text = "Check focus ring"
+        analyzer = _make_analyzer(
+            lambda n: _ext_result(focus_warning=True, notes=(note_text,))
+        )
+        cam = _SeqCamera([_frame(0.28)])
+        result = AutoGainService.run_one_shot(
+            cam, _PROFILE, frame_analyzer=analyzer, has_focuser=True
+        )
+        assert result.warning_msg is not None
+        assert note_text in result.warning_msg

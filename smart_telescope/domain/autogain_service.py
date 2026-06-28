@@ -40,6 +40,7 @@ from .planet_detection import DetectedObject, detect_planet
 
 if TYPE_CHECKING:
     from ..services.camera_offset_service import CameraOffsetService
+    from ..services.frame_analyzer import FrameAnalyzerProtocol
 
 _log = logging.getLogger(__name__)
 
@@ -140,6 +141,7 @@ class AutoGainService:
         offset_service: "CameraOffsetService | None" = None,
         force: bool = False,
         tracking_on: bool = True,
+        frame_analyzer: "FrameAnalyzerProtocol | None" = None,
     ) -> AutoGainResult:
         """Capture and adjust until histogram is in target band or limits are reached.
 
@@ -322,6 +324,92 @@ class AutoGainService:
             last_stats = stats
             eff_mean = _effective_mean(stats, cur_offset, adc_max)
 
+            # External frame analyzer (optional): call once per iteration to obtain
+            # star count, frame quality, and candidate next-frame settings.
+            # Suggestions are applied as guidance — camera profile limits still enforced.
+            _ext_result = None
+            if frame_analyzer is not None:
+                try:
+                    _ext_result = frame_analyzer.analyze_frame(
+                        frame.pixels,
+                        exposure_s=cur_exp_ms / 1000.0,
+                        gain=cur_gain,
+                        offset=cur_offset,
+                    )
+                    _log.debug(
+                        "ExternalFrameAnalyzer: stars=%d quality=%s "
+                        "focus_warning=%s sug_exp=%.3fs sug_gain=%s sug_offset=%s",
+                        _ext_result.stars_found, _ext_result.image_quality,
+                        _ext_result.focus_warning,
+                        _ext_result.suggested_exposure_s or 0.0,
+                        _ext_result.suggested_gain, _ext_result.suggested_offset,
+                    )
+                except Exception as _exc:
+                    _log.warning("ExternalFrameAnalyzer: analyze_frame failed: %s", _exc)
+
+            # Apply external analyzer quality gates when available.
+            # "too_bright" and "stars_saturated" override the histogram signal
+            # with the brightness ceiling; "too_dark" acts like being below band_lo
+            # so the existing brightening logic runs.  Focus warnings are collected
+            # for the final result.
+            #
+            # The override is stored in _ext_signal_override and applied AFTER the
+            # mode-based signal computation further down, so it is not overwritten.
+            _ext_signal_override: float | None = None
+            if _ext_result is not None:
+                _iq = _ext_result.image_quality
+                if _iq in ("too_bright", "stars_saturated"):
+                    # Force signal above band_hi so the dimming branch runs
+                    _ext_signal_override = band_hi + 0.01
+                elif _iq == "too_dark":
+                    # Force signal below band_lo so the brightening branch runs
+                    _ext_signal_override = band_lo - 0.01
+
+                # Apply suggested next-frame settings, clamped to profile limits
+                if _ext_result.suggested_exposure_s is not None:
+                    _sug_ms = _ext_result.suggested_exposure_s * 1000.0
+                    cur_exp_ms = float(np.clip(_sug_ms, exp_min_ms, exp_max_ms))
+                if _ext_result.suggested_gain is not None:
+                    cur_gain = int(np.clip(_ext_result.suggested_gain, gain_min, gain_max))
+                if _ext_result.suggested_offset is not None and not is_plate_solve:
+                    cur_offset = int(np.clip(_ext_result.suggested_offset, 0, _OFFSET_MAX_ADU))
+
+                # Focus warning: return early so the user is told immediately
+                if _ext_result.focus_warning and not force:
+                    _warn = "; ".join(_ext_result.notes) if _ext_result.notes else "Focus issue detected by frame analyzer"
+                    if has_focuser:
+                        return AutoGainResult(
+                            status=AutoGainStatus.POSSIBLE_FOCUS_OR_POINTING_ERROR,
+                            exposure_ms=cur_exp_ms,
+                            gain=cur_gain,
+                            offset=cur_offset,
+                            conversion_gain=cg,
+                            histogram_stats=stats,
+                            warning_msg=_warn,
+                        )
+
+                # "usable" quality with enough stars → accept immediately
+                # eff_mean is the correct proxy here: signal is not yet computed for this
+                # iteration (it depends on mode-specific logic further down the loop).
+                if _iq == "usable" and band_lo <= eff_mean <= band_hi and stats.saturation_pct < _SAT_LIMIT_PCT:
+                    _log.info(
+                        "AutoGain OK (external analyzer): iter %d exp=%.1fms gain=%d offset=%d stars=%d",
+                        iteration + 1, cur_exp_ms, cur_gain, cur_offset, _ext_result.stars_found,
+                    )
+                    return AutoGainResult(
+                        status=AutoGainStatus.OK,
+                        exposure_ms=cur_exp_ms,
+                        gain=cur_gain,
+                        offset=cur_offset,
+                        conversion_gain=cg,
+                        histogram_stats=stats,
+                    )
+
+                # Applied suggestions — skip the rest of the adjustment logic for this
+                # iteration since the external analyzer already proposed the next settings
+                if _ext_result.suggested_exposure_s is not None or _ext_result.suggested_gain is not None:
+                    continue
+
             # PLATE_SOLVE tracking-quality gate (REQ-AG-001): measure star elongation
             # via gradient-anisotropy ratio.  Cap exposure if ratio exceeds 2.0 AND has
             # grown since the previous frame — indicating mount trailing has started.
@@ -363,6 +451,10 @@ class AutoGainService:
                 signal = last_detected.peak_frac if last_detected is not None else eff_mean
             else:
                 signal = eff_mean
+
+            # External quality override takes precedence over histogram-derived signal.
+            if _ext_signal_override is not None:
+                signal = _ext_signal_override
 
             _log.info(
                 "AutoGain iter %d/%d: exp=%.1fms gain=%d offset=%d "

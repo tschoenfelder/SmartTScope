@@ -360,6 +360,12 @@ DIAGNOSTIC_FRAMES_DIR: str = _expand(os.environ.get(
     _get("diagnostic_frames", "frame_dir", str(_USER_DIR / "diagnostic_frames")),
 ))
 
+# ── Analysis (optional external frame analyzer) ───────────────────────────────
+EXTERNAL_FRAME_ANALYZER_MODULE: str = os.environ.get(
+    "EXTERNAL_FRAME_ANALYZER_MODULE",
+    _get("analysis", "external_frame_analyzer_module", ""),
+)
+
 # ── Operation policy (M8-013 / REQ-GOTO-003) ─────────────────────────────────
 # When true, direct RA/DEC GoTo is allowed even when Raspberry Pi time is not trusted.
 ALLOW_DIRECT_RADEC_GOTO_WITHOUT_RASPBERRY_TIME_TRUST: bool = (

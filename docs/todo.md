@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-28 (M8-030 done: delivery audit script, JSONL log, pre-push checklist)
+**Last updated:** 2026-06-28 (M8-031 done: optional external frame analyzer integration)
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1195,6 +1195,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - OPEN-005: split this requirements doc into runtime/UI/diagnostics/delivery after M8 closure
   - Acceptance: REQ-GIT-001, REQ-GIT-003
   - *Done:* `_write_log()` appends JSONL record to `~/.SmartTScope/delivery_log.jsonl` on every non-dry-run; pre-push checklist shown in report; `--log PATH` overrides log location; `docs_only_commit` + `audit_passed` fields included
+
+### Priority 8 — Optional external frame analyzer
+
+- [x] M8-031 Pluggable external frame analyzer adapter `[P2 · Analysis]`
+  - New domain type: `smart_telescope/domain/star_count.py` — `StarCountResult` (frozen dataclass), `FrameQuality` literal
+  - New adapter: `smart_telescope/services/frame_analyzer.py` — `FrameAnalyzerProtocol` (Protocol + `@runtime_checkable`), `ExternalFrameAnalyzer` (stateless adapter), `load_external_analyzer(module_name)` (import via importlib, graceful fallback)
+  - Config: `[analysis] external_frame_analyzer_module = ""` in `config.toml` / `templates/config.toml`; env override `EXTERNAL_FRAME_ANALYZER_MODULE`
+  - Runtime: `RuntimeContext.frame_analyzer: FrameAnalyzerProtocol | None` wired at startup; cleared in `reset_for_tests()`
+  - FastAPI dep: `deps.get_frame_analyzer()` returns `rt.frame_analyzer`
+  - Autogain: `AutoGainService.run_one_shot()` accepts `frame_analyzer=` param; quality gates map `"too_dark"` / `"too_bright"` / `"stars_saturated"` / `"usable"` to signal-band overrides; applies clamped suggestions; returns early on `focus_warning=True`
+  - Setup check: `run_camera_diagnostic()` + `POST /api/setup/camera_diagnostic` accept `frame_analyzer=`; uses external star count when available
+  - Tests: 9 + 13 + 8 = 30 new unit tests in `test_star_count.py`, `test_frame_analyzer.py`, `test_autogain_service.py::TestExternalFrameAnalyzerIntegration`
 
 ---
 

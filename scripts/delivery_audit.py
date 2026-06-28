@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # File categorisation helpers
 # ---------------------------------------------------------------------------
 
-_SOURCE_DIRS = ("smart_telescope/",)
+_SOURCE_DIRS = ("smart_telescope/", "scripts/")
 _TEST_DIRS = ("tests/",)
 _DOC_EXTENSIONS = {".md", ".rst", ".txt"}
 _DOC_DIRS = ("docs/", "wiki/", "resources/")

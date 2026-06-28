@@ -4,6 +4,14 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-28 — FIX — GoTo gate, LX200 location precision, proceed button reload (commit 9aeb3bb)
+
+- `api/session.py` `session_connect()`: preserve `VERIFIED` time/location status across every Connect All call. LX200 `±DD*MM` format truncates to arcminute precision (~1852 m resolution), creating a systematic ~297 m residual that always exceeded the 100 m tolerance — causing every Connect All to reset `VERIFIED → UNKNOWN` and block all GoTo operations.
+- `adapters/onstep/mount.py`: added `_lx200_round_degrees()`; `get_sync_status()` now compares the OnStep read-back against LX200-rounded reference coordinates (what was actually pushed) rather than exact config values — `location_ok` is now `True` after a successful push and `location_delta_m` displays the true protocol residual.
+- `static/js/setup.js` `refreshHealth()`: re-enables `s1-proceed-btn` (Proceed to Alignment) and unlocks stages 2/4 whenever `/api/status` reports `mount.ok=true`, so the button survives page reload.
+
+---
+
 ## 2026-06-28 — FIX — UI state issues after sync and page reload
 
 **Four bugs fixed (commit b295209):**

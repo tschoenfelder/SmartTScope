@@ -4,6 +4,15 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-28 — DEVELOP — M8-029 + M8-030 (Delivery audit script; REQ-GIT-001..003)
+
+**Git delivery audit script with JSONL log and pre-push checklist.**
+- `scripts/delivery_audit.py`: standalone script (no external deps); runs `git status --short`, `git diff-tree`, `git log`, `git branch --show-current`, `git remote -v`; categorises last-commit files into source/test/doc/other; fails on docs-only commits, uncommitted changes, or unpushed commits; `--push` flag pushes after audit; `--check` dry-run; pre-push checklist printed on every run
+- JSONL delivery log: one record per run appended to `~/.SmartTScope/delivery_log.jsonl`; fields: `timestamp`, `branch`, `commit_hash`, `commit_message`, `files_changed`, `source_files_changed`, `test_files_changed`, `docs_changed`, `push_result`, `remote_url`, `audit_passed`, `docs_only_commit`
+- Exit codes: 0 = passed, 1 = check failed, 2 = git error
+
+---
+
 ## 2026-06-27 — DEVELOP — M8-028 (Iterative click-to-center loop; REQ-CLICK-004)
 
 **Iterative centering loop: capture → refine → compute move → issue move → repeat until centred or max_iterations.**

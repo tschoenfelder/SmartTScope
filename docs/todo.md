@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-27 (M8-028 done: iterative click-to-center centering loop)
+**Last updated:** 2026-06-28 (M8-030 done: delivery audit script, JSONL log, pre-push checklist)
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1183,16 +1183,18 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ### Priority 7 — Dev workflow: GitHub delivery audit
 
-- [ ] M8-029 `scripts/delivery_audit.py` — git delivery checks `[P3 · DevWorkflow]`
-  - Runs: `git status --short`, `git diff --stat`, `git log -1 --stat`, `git branch --show-current`, `git remote -v`
-  - Confirms branch, commit, source/test/doc file categories, push result
+- [x] M8-029 `scripts/delivery_audit.py` — git delivery checks `[P3 · DevWorkflow]`
+  - Runs: `git status --short`, `git diff-tree --name-only`, `git log -1`, `git branch --show-current`, `git remote -v`
+  - Confirms branch, commit, source/test/doc file categories, push result; exit 0=pass, 1=fail, 2=git error
   - Acceptance: REQ-GIT-002; INC-012; TEST-007
+  - *Done:* `scripts/delivery_audit.py`; categorises files into source/test/doc/other; fails on docs-only commits, uncommitted changes, or unpushed commits; `--push` / `--check` flags; pre-push checklist printed always
 
-- [ ] M8-030 Delivery log JSONL + pre-push checklist `[P3 · DevWorkflow]`
+- [x] M8-030 Delivery log JSONL + pre-push checklist `[P3 · DevWorkflow]`
   - Fields: `timestamp`, `branch`, `commit_hash`, `commit_message`, `files_changed`, `source_files_changed`, `test_files_changed`, `docs_changed`, `push_result`, `remote_url`
   - Documentation-only commits not marked implementation-complete
   - OPEN-005: split this requirements doc into runtime/UI/diagnostics/delivery after M8 closure
   - Acceptance: REQ-GIT-001, REQ-GIT-003
+  - *Done:* `_write_log()` appends JSONL record to `~/.SmartTScope/delivery_log.jsonl` on every non-dry-run; pre-push checklist shown in report; `--log PATH` overrides log location; `docs_only_commit` + `audit_passed` fields included
 
 ---
 

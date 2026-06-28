@@ -514,7 +514,15 @@ async function s2SaveAlign() {
     }
 }
 
-function s2Done() {
+async function s2Done() {
+    // Unpark if still parked — GoTo gate blocks on MOUNT_PARKED.
+    try {
+        const ms = await (await fetch('/api/mount/status')).json();
+        if (ms.state === 'parked') {
+            await apiPost('/api/mount/unpark');
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    } catch (_) {}
     completeStage(2);
     unlockStage(3);
     unlockStage(5);

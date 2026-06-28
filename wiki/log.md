@@ -4,6 +4,13 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-28 — TOOLING — Log collection script (commit 78b44d7)
+
+- `scripts/collect_logs.sh`: bundles the last N lines (default 500) of all section logs (`mount`, `goto`, `stage1_time_location`, `camera`, etc.), `server.log`, and `config.toml` into `~/smarttscope_logs_<timestamp>.zip`. Run with `bash scripts/collect_logs.sh` after observing an error; send the zip for analysis.
+- `scripts/astro_start.sh`: server stderr+stdout now tee'd to `$LOG_DIR/server.log` (default `~/.SmartTScope/logs/server.log`) so it is included in the bundle.
+
+---
+
 ## 2026-06-28 — FIX — GoTo gate, LX200 location precision, proceed button reload (commit 9aeb3bb)
 
 - `api/session.py` `session_connect()`: preserve `VERIFIED` time/location status across every Connect All call. LX200 `±DD*MM` format truncates to arcminute precision (~1852 m resolution), creating a systematic ~297 m residual that always exceeded the 100 m tolerance — causing every Connect All to reset `VERIFIED → UNKNOWN` and block all GoTo operations.

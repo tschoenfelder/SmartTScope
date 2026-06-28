@@ -451,6 +451,14 @@ def mount_sync_clock(
         mount.ensure_time_location_synced()
         device_state.set_time_location_status(TimeLocationStatus.VERIFIED)
         device_state.set_last_push_at()
+        # Clear cached clock warning immediately so UI sees the change on next status poll
+        # without waiting up to 2 s for the background poller to pick it up.
+        device_state.clear_mount_safety_violation("onstep_clock_invalid")
+        # Refresh cached sync status so the TL card shows the post-push location delta.
+        with contextlib.suppress(Exception):
+            fresh_sync = mount.get_sync_status()
+            if fresh_sync:
+                device_state.set_last_sync_status(fresh_sync)
         # M8-007: if OnStep's reference was GPS/NTP, Pi clock is validated via DEC-006 trust chain
         from ..domain.master_time_source import MasterTimeSource
         user_confirmed: bool = device_state.is_user_time_confirmed()

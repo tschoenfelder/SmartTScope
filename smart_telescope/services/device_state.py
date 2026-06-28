@@ -268,6 +268,24 @@ class DeviceStateService:
         with self._lock:
             return self._last_sync_status
 
+    def clear_mount_safety_violation(self, reason: str) -> None:
+        """Immediately clear a specific safety violation from the cached mount state.
+
+        Called after a successful sync so the UI updates without waiting for the
+        next background poll cycle (which runs every 2 s).
+        """
+        with self._lock:
+            obs = self._mount_state
+            if obs is not None and obs.safety_violation == reason:
+                self._mount_state = MountObservedState(
+                    state=obs.state,
+                    ra=obs.ra,
+                    dec=obs.dec,
+                    polled_at=obs.polled_at,
+                    error=obs.error,
+                    safety_violation=None,
+                )
+
     def get_last_verification_at(self) -> float | None:
         """Return wall-clock time.time() of the last VERIFIED transition, or None."""
         with self._lock:

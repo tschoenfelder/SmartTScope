@@ -49,8 +49,11 @@ function _updateMountStrip(data) {
     // Stage 4 (Collimation) is unlocked whenever the mount is responding (any known state),
     // because calibration frames and the Bahtinov preview don't require an unparked mount.
     // The collimation wizard auto-unparks internally if needed.
+    // Stages 2, 3 (GoTo & Solve), and 5 (Observation) all need an unparked mount.
     if (state !== 'parked' && state !== 'unknown') {
         unlockStage(2);
+        unlockStage(3);
+        unlockStage(5);
     }
     if (state !== 'unknown') {
         unlockStage(4);
@@ -815,7 +818,7 @@ async function mountSyncClock(btn) {
   try {
     await apiPost('/api/mount/sync_clock');
     if (result) result.textContent = '✓ Synced';
-    setTimeout(() => refreshMount && refreshMount(), 1000);
+    setTimeout(() => refreshMount && refreshMount(), 2500);
   } catch (err) {
     if (result) result.textContent = '✗ ' + (err.message || 'Failed');
   } finally {

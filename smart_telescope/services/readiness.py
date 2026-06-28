@@ -383,8 +383,8 @@ class ReadinessService:
         key    = "time_location_sync"
         label  = "Mount time/location"
         repair = (
-            "Click 'Sync Clock & Location' in the mount card, or run a GoTo "
-            "(first GoTo auto-syncs before slewing)."
+            "Use 'Push Time/Location' in the Time/Location Verification card, "
+            "or run a GoTo (first GoTo auto-syncs before slewing)."
         )
 
         try:

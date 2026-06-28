@@ -4,6 +4,16 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-28 — FIX — UI state issues after sync and page reload
+
+**Four bugs fixed (commit b295209):**
+- `services/device_state.py`: new `clear_mount_safety_violation(reason)` immediately drops a cached safety_violation without waiting for the 2 s background poller.
+- `api/mount.py` `mount_sync_clock()`: calls `clear_mount_safety_violation("onstep_clock_invalid")` after a successful sync so the mount card warning disappears on the very next `/api/mount/status` poll; also calls `mount.get_sync_status()` and updates `last_sync_status` so the TL card shows green (post-push) location delta instead of the stale pre-sync red value.
+- `services/readiness.py`: repair hint for "Mount time/location" mismatch now says "Use 'Push Time/Location' in the Time/Location Verification card" (that button is always visible when connected) instead of the removed-after-sync "Sync Clock & Location" mount-card button.
+- `static/js/mount.js` `_updateMountStrip()`: stages 3 (GoTo & Solve) and 5 (Observation Session) are now unlocked together with stage 2 whenever the mount is unparked, so all tabs remain accessible after a page reload with a live mount. `mountSyncClock()` refresh delay raised from 1 s to 2.5 s as belt-and-suspenders behind the cache clear.
+
+---
+
 ## 2026-06-28 — DEVELOP — M8-031 (Optional external frame analyzer integration)
 
 **Pluggable external frame analyzer adapter — drop-in star counting with temporal context.**

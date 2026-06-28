@@ -4,6 +4,13 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-06-28 — FIX — GoTo blocked MOUNT_PARKED after skip polar alignment (commit 1c5620d)
+
+- `static/js/mount.js` `s2Done()`: now async; auto-unparks the mount if still parked before navigating to GoTo & Solve. Root cause: "Done / Skip →" on polar alignment only unlocked UI tabs but never issued an unpark command, so GoTo gate always rejected with `MOUNT_PARKED`. Source: session c7fa9811 goto.log — two `goto_rejected MOUNT_PARKED` entries after two Connect All clicks.
+- Camera/donut preview darkness (0 stars, AUTO_GAIN_GAIN_LIMIT_REACHED at gain=3200): confirmed hardware/environment — no code bug.
+
+---
+
 ## 2026-06-28 — TOOLING — Log collection script (commit 78b44d7)
 
 - `scripts/collect_logs.sh`: bundles the last N lines (default 500) of all section logs (`mount`, `goto`, `stage1_time_location`, `camera`, etc.), `server.log`, and `config.toml` into `~/smarttscope_logs_<timestamp>.zip`. Run with `bash scripts/collect_logs.sh` after observing an error; send the zip for analysis.

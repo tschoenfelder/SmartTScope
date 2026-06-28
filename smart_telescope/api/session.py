@@ -212,6 +212,11 @@ def session_connect(
                     )
         except Exception as exc:
             _log.warning("Time/location check failed: %s", exc)
+        # Preserve VERIFIED if user already pushed time/location.
+        # LX200 arcminute precision causes a systematic ~297 m residual that would
+        # otherwise reset VERIFIED → UNKNOWN on every Connect All.
+        if device_state.get_time_location_status() == TimeLocationStatus.VERIFIED:
+            tl_status = TimeLocationStatus.VERIFIED
         device_state.set_time_location_status(tl_status)
 
     return ConnectResult(

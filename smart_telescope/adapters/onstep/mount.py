@@ -228,6 +228,18 @@ def _format_site_degrees(value: float, width: int) -> str:
     return f"{sign}{deg:0{width}d}*{minutes:02d}"
 
 
+def _lx200_round_degrees(value: float) -> float:
+    """Round to arcminute precision — matches what LX200 ±DD*MM site format can store."""
+    sign = 1.0 if value >= 0 else -1.0
+    v = abs(value)
+    deg = int(v)
+    minutes = int(round((v - deg) * 60.0))
+    if minutes >= 60:
+        deg += 1
+        minutes -= 60
+    return sign * (deg + minutes / 60.0)
+
+
 def _format_onstep_utc_offset(local_dt: datetime) -> str:
     """Format hours added to local time to obtain UTC, as required by :SG#."""
     offset = local_dt.utcoffset()
@@ -2391,6 +2403,10 @@ class OnStepMount(MountPort):
 
         cfg_lat: float = self._safety_config.observer_lat
         cfg_lon: float = self._safety_config.observer_lon
+        # LX200 ±DD*MM format stores only arcminute precision (~1852 m resolution).
+        # Compare against what was actually pushed so location_ok=True after a sync.
+        ref_lat: float = _lx200_round_degrees(cfg_lat)
+        ref_lon: float = _lx200_round_degrees(cfg_lon)
 
         time_tolerance_s: float = self._safety_config.onstep_time_tolerance_s
         time_avail: bool       = bool(clock.get("available"))
@@ -2405,10 +2421,10 @@ class OnStepMount(MountPort):
         loc_avail: bool          = bool(site.get("available"))
         onstep_lat: float | None = site.get("lat") if loc_avail else None
         onstep_lon: float | None = site.get("lon") if loc_avail else None
-        lat_delta: float | None  = (abs(onstep_lat - cfg_lat) if onstep_lat is not None else None)
-        lon_delta: float | None  = (abs(onstep_lon - cfg_lon) if onstep_lon is not None else None)
+        lat_delta: float | None  = (abs(onstep_lat - ref_lat) if onstep_lat is not None else None)
+        lon_delta: float | None  = (abs(onstep_lon - ref_lon) if onstep_lon is not None else None)
         location_delta_m: float | None = (
-            _haversine_m(cfg_lat, cfg_lon, onstep_lat, onstep_lon)
+            _haversine_m(ref_lat, ref_lon, onstep_lat, onstep_lon)
             if onstep_lat is not None and onstep_lon is not None
             else None
         )
@@ -2431,6 +2447,8 @@ class OnStepMount(MountPort):
             "onstep_lon":           onstep_lon,
             "cfg_lat":              cfg_lat,
             "cfg_lon":              cfg_lon,
+            "ref_lat":              ref_lat,
+            "ref_lon":              ref_lon,
             "lat_delta_deg":        lat_delta,
             "lon_delta_deg":        lon_delta,
             "location_delta_m":     location_delta_m,

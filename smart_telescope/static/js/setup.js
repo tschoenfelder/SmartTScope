@@ -224,6 +224,13 @@ async function refreshHealth() {
       _renderHealthCard(d);
       _focuserOk = d.focuser?.ok ?? false;
       _gateStates = d.mount_states?.operation_gate_states || {};
+      // Re-enable proceed button if mount is already connected (survives page reload)
+      if (d.mount?.ok) {
+        _mountConnected = true;
+        const proceedBtn = document.getElementById('s1-proceed-btn');
+        if (proceedBtn) proceedBtn.disabled = false;
+        unlockStage(2); unlockStage(4);
+      }
       const afBtn = document.getElementById('preview-af-btn');
       if (afBtn) {
         afBtn.disabled = !_focuserOk;

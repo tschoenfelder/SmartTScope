@@ -121,5 +121,11 @@ echo ""
 
 # ── launch ─────────────────────────────────────────────────────────────────────
 cd "$REPO_DIR"
+
+# Tee server stderr+stdout to a log file so collect_logs.sh can bundle it.
+SERVER_LOG="${LOG_DIR:-$HOME/.SmartTScope/logs}/server.log"
+mkdir -p "$(dirname "$SERVER_LOG")"
+
 echo -e "${CYAN}── Starting server on http://0.0.0.0:8000 ─────────${NC}"
-exec "$VENV_DIR/bin/python" -m smart_telescope
+echo -e "${CYAN}── Server log: $SERVER_LOG${NC}"
+"$VENV_DIR/bin/python" -m smart_telescope 2>&1 | tee "$SERVER_LOG"

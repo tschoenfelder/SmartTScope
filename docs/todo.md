@@ -3,7 +3,8 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-06-28 (M8-031 done: optional external frame analyzer integration)
+**Last updated:** 2026-07-07 (M9-001..005 done: guided ObservingStateMachine Phase 1)
+**New sources (2026-07-06):** `smarttscope_requirements_full.md` (state-based observation system: BOOTSTRAP..PARKED_SAFE top-level flow, G1-G10 guards, MVP staging in §11) — drove the M9 rewrite of the main UI from a 5-tab wizard to a guided single-flow screen
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
 **New sources (2026-05-23):** `resources/hlrequirements/onstep_guiding_requirements.md`, `resources/hlrequirements/smarttscope_onstep_adapter_replacement_requirements.md`, `resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md`, `resources/hlrequirements/external_heartbeat_stop_supervisor.md`, `resources/hlrequirements/INDI_Steer_pattern.md`, `resources/hlrequirements/SmartTScope_ToupTek_Device_Handling_Recommendation.md`
@@ -1207,6 +1208,58 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Autogain: `AutoGainService.run_one_shot()` accepts `frame_analyzer=` param; quality gates map `"too_dark"` / `"too_bright"` / `"stars_saturated"` / `"usable"` to signal-band overrides; applies clamped suggestions; returns early on `focus_warning=True`
   - Setup check: `run_camera_diagnostic()` + `POST /api/setup/camera_diagnostic` accept `frame_analyzer=`; uses external star count when available
   - Tests: 9 + 13 + 8 = 30 new unit tests in `test_star_count.py`, `test_frame_analyzer.py`, `test_autogain_service.py::TestExternalFrameAnalyzerIntegration`
+
+---
+
+## M9 — Guided Observing State Machine
+
+*Source: `smarttscope_requirements_full.md` §6-7 (top-level process/state model) and §11 (MVP staging). Replaces the 5-tab "Startup/Alignment/GoTo&Solve/Collimation/Session" wizard as the app's primary/default screen with one guided flow driven by a single backend state machine: `BOOTSTRAP → WAIT_CONTEXT_CONFIRMATION → WAIT_HOME_CONFIRMATION → POLAR_ALIGN → FOCUS_READYING → TARGET_ACQUIRE → GUIDE_READYING → CAPTURE_ACTIVE → SAFE_STOPPING → PARKED_SAFE`, with `PAUSED_SAFE`/`FAULT` side paths, guarded by G1-G10. Reuses every existing engine (`polar_workflow`, `stage_autofocus`, `stage_align/goto/recenter`, `guiding_service`, `stage_stack`, `mount_operations.park_sequence`) rather than reimplementing them — see the old 5-tab UI, now demoted to a "Maintenance" screen, for the manual/diagnostic tools those engines are also directly reachable from.*
+
+### Phase 1 — State-machine skeleton + guided UI shell (done — this pass)
+
+- [x] M9-001 `ObservingStateMachine` — pure transition table for the 12-phase model `[P1 · Runtime]`
+  - *Done:* `smart_telescope/domain/observing_state.py` — `ObservingPhase`, `Guards` (G1-G10), `Intent` (16 values), `ObservingInput`, `ObservingStateMachine.next()`; stateless (phase is part of the input, not held internally), same style as `domain/polar_workflow.py`. 32 unit tests in `tests/unit/domain/test_observing_state.py` covering every valid/blocked transition.
+- [x] M9-002 `ObservingService` orchestrator — dispatches Intents to existing engines `[P1 · Runtime]`
+  - *Done:* `smart_telescope/services/observing_service.py` — `ObservingDeps` (fresh adapters per call, since `RuntimeContext` can rebuild them), `ObservingService` (holds current phase; background-thread-per-engine-call with a single-worker `_busy` guard; FAULT on unhandled engine exceptions). POLAR_ALIGN drives `PolarAlignmentWorkflow` directly; FOCUS_READYING/TARGET_ACQUIRE/CAPTURE_ACTIVE call `workflow/stages.py` functions via a shared `StageContext`; GUIDE_READYING calls `GuidingService`; SAFE_STOPPING calls `mount_operations.park_sequence`. Registered as a lazily-created singleton on `RuntimeContext.observing_service` (same pattern as `guiding_service`). 17 unit tests in `tests/unit/services/test_observing_service.py`.
+  - Known Phase-1 simplifications (see backlog below): G2 is a pure user acknowledgement (no real HOME mechanical-position sequence yet); G7 (dawn/meridian) is never actively evaluated; SAFE_STOPPING has no graceful "finish current sub-op" distinction from a hard stop; fault classification always assumes recoverable (G9=True).
+- [x] M9-003 `/api/observing/state` (GET) + `/api/observing/intent` (POST) `[P1 · Runtime]`
+  - *Done:* `smart_telescope/api/observing.py`, registered in `app.py`. This is the only endpoint pair the Observe screen calls to move the phase forward (REQ-UX-004) — existing granular endpoints stay registered for `ObservingService`'s internal use and for the Maintenance screen. 4 API-level tests in `tests/unit/api/test_observing.py`.
+- [x] M9-004 Guided "Observe" screen + "Maintenance" screen split `[P1 · UI]`
+  - *Done:* `smart_telescope/static/js/observing.js` (new) polls `/api/observing/state` every 2.5s and renders phase/readiness/guard chips/primary action/secondary actions/detail — no branching logic of its own (REQ-UX-003/004). `static/index.html` restructured: new `#top-view-bar` (Observe / Maintenance) is now the app's primary navigation; `#observing-view` is the new default screen; the entire former 5-tab UI (stage-bar + 5 stage panels, unchanged internally) was wrapped in `#maintenance-view` and is reachable via the Maintenance nav entry (REQ-UX-006 structural separation). `app.js` gained `showTopView()`; **`_stage`/`goToStage()`/`unlockStage()`/`completeStage()`/`_renderStageBar()`/advanced-mode toggle were intentionally kept, not deleted** — they still drive the Maintenance screen's own internal 5-tab sub-navigation, which was not rewritten in this pass (rewriting `setup.js`/`mount.js`/`preview.js`/`collimation.js`/`session.js`/`focuser.js`/`bias_estimation.js`/`guiding.js`/`click_to_center.js` internals was out of scope for Phase 1 — see backlog).
+  - Verified via Playwright against a live mock-adapter server: Observe screen renders correctly, primary-action button click advances the phase end-to-end with zero console errors; Maintenance nav shows the original Stage 1 UI unchanged.
+- [x] M9-005 Full-flow integration test `[P1 · Tests]`
+  - *Done:* `tests/integration/test_observing_flow.py` — drives `ObservingService` through the complete `CONFIRM_CONTEXT → CONFIRM_HOME → START_POLAR_ALIGN → ACCEPT_POLAR_ALIGN → START_FOCUS → ACCEPT_FOCUS → START_TARGET_ACQUIRE → ACCEPT_TARGET → SKIP_GUIDING → START_CAPTURE → STOP_SAFELY` sequence against the project's real mock adapters (`adapters/mock/*`, not `unittest.mock`), asserting the phase reaches `PARKED_SAFE` and the mock mount is actually `PARKED`.
+
+### Phase 2 — Unified readiness aggregation (backlog)
+
+- [ ] M9-006 Fold `operation_gate.evaluate_all_gates`, `mount_readiness`, dawn status, and calibration/offset validity into the single `readiness` field already stubbed in `/api/observing/state` `[P2 · UI]`
+  - Acceptance: REQ-UX-001, REQ-UX-002 — no new engines, pure aggregation inside `observing_service.py`
+
+### Phase 3 — Real HOME confirmation + graceful safe-stop (backlog)
+
+- [ ] M9-007 `mount_operations.confirm_home()` — actual PARK→HOME sequence with mechanical/cable-freedom confirmation, replacing today's pure acknowledgement `[P1 · Hardware]`
+  - Acceptance: REQ-SAF-004, REQ-SAF-005
+- [ ] M9-008 Graceful `SAFE_STOPPING` distinct from the unconditional `/api/emergency_stop` — finish current sub-operation, flush session artifacts, then park `[P1 · Runtime]`
+  - Acceptance: REQ-REC-002, REQ-REC-005, REQ-CAP-003
+
+### Phase 4 — Active session-end enforcement (backlog — flagged safety-relevant)
+
+- [ ] M9-009 Wire `services/dawn_watcher.py` (currently zero references anywhere in `workflow/`) into `CAPTURE_ACTIVE` as an active G7 check `[P0 · Safety]`
+- [ ] M9-010 Add meridian-margin monitoring during `CAPTURE_ACTIVE` (today `ha_east_limit_h`/`ha_west_limit_h`/`meridian_margin_deg` only guard slews in `adapters/onstep/safety.py`, not an active capture-loop stop) — auto-fire `STOP_SAFELY` shortly after meridian, no auto-flip in MVP `[P0 · Safety]`
+  - Acceptance: REQ-CAP-002, REQ-CAP-003, REQ-SAF-007, REQ-SAF-008
+
+### Phase 5 — Config gaps: filter/object profiles + unified safety section (backlog)
+
+- [ ] M9-011 Add `[filter_profiles]` and `[object_profiles]` sections to `templates/config.toml` + `config.py` parsing (pattern: `_parse_optical_trains()`) `[P2 · Config]`
+  - Acceptance: REQ-CFG-005, REQ-CFG-006, §8.3 (per-object-class gain/offset/exposure/solve-strategy/guiding-expectation/focus-strategy/calibration-requirement defaults)
+- [ ] M9-012 Consolidate dawn/meridian/fault-behavior config (today scattered across `operation_gate.py`, `mount_operations.py`, OnStep adapter safety config) into one `[safety]` section `[P2 · Config]`
+
+### Phase 6 — Re-surface calibration/offset checks as pre-session gates (backlog)
+
+- [ ] M9-013 Read-only summary call from `observing_service` into `WAIT_CONTEXT_CONFIRMATION`/`FOCUS_READYING` guard computation, using the calibration/offset logic that already exists (`bias_estimation_service`, `camera_offset_service`, `calibration_store.find_best_match`) — the wizards themselves stay in Maintenance for hands-on execution `[P2 · UI]`
+  - Acceptance: REQ-CAL-007, REQ-OFF-004, REQ-OFF-005
+
+**Quality gate:** Observe screen shows exactly one phase + one primary action at a time and never decides the next step client-side (REQ-UX-003/004). Maintenance tools remain fully functional and structurally separate (REQ-UX-006). Full BOOTSTRAP→PARKED_SAFE walk passes against mock adapters.
 
 ---
 

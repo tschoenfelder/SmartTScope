@@ -4,6 +4,19 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-07 — DEVELOP — M9-001..005: Guided Observing State Machine (Phase 1)
+
+New source `smarttscope_requirements_full.md` (§6-7 state model, §11 MVP staging) drove a rewrite of the app's primary screen from a 5-tab wizard ("Startup/Alignment/GoTo&Solve/Collimation/Session", client-side `_stage` navigation) into a single guided flow backed by one authoritative backend state machine.
+
+- `domain/observing_state.py` (new): `ObservingStateMachine` — pure, stateless transition table for `BOOTSTRAP → WAIT_CONTEXT_CONFIRMATION → WAIT_HOME_CONFIRMATION → POLAR_ALIGN → FOCUS_READYING → TARGET_ACQUIRE → GUIDE_READYING → CAPTURE_ACTIVE → SAFE_STOPPING → PARKED_SAFE` (+ `PAUSED_SAFE`/`FAULT`), gated by G1-G10. 32 tests.
+- `services/observing_service.py` (new): `ObservingService` orchestrator — dispatches each Intent to the *existing* engines (`PolarAlignmentWorkflow`, `workflow/stages.py` functions via a shared `StageContext`, `GuidingService`, `mount_operations.park_sequence`) rather than reimplementing them; registered as a lazily-created singleton on `RuntimeContext.observing_service`. 17 tests.
+- `api/observing.py` (new): `GET /api/observing/state` + `POST /api/observing/intent` — the only endpoint pair the new Observe screen calls to advance the phase (REQ-UX-004). 4 tests.
+- `static/js/observing.js` (new) + `static/index.html` restructure: new `#top-view-bar` (Observe / Maintenance) is now the app's primary navigation. The entire former 5-tab UI was wrapped unchanged into `#maintenance-view`, reachable via the Maintenance nav entry (REQ-UX-006). Verified end-to-end via Playwright against a live mock-adapter server — zero console errors, primary-action click advances the phase correctly, Maintenance screen unchanged.
+- `tests/integration/test_observing_flow.py` (new): full `BOOTSTRAP → PARKED_SAFE` walk against real mock adapters (`adapters/mock/*`).
+- **Scope note:** Phase 1 only — `_stage`/`goToStage()` etc. in `app.js` were kept (not deleted) to drive the Maintenance screen's own internal sub-navigation, since rewriting the internals of `setup.js`/`mount.js`/`preview.js`/`collimation.js`/`session.js`/`focuser.js`/`bias_estimation.js`/`guiding.js`/`click_to_center.js` was out of scope for this pass. Phases 2-6 (unified readiness aggregation, real HOME confirmation + graceful safe-stop, dawn/meridian auto-stop enforcement, filter/object-profile + unified safety config, calibration/offset pre-session gating) are recorded as ordered backlog in `docs/todo.md` under milestone M9.
+
+---
+
 ## 2026-06-28 — FIX — GoTo blocked MOUNT_PARKED after skip polar alignment (commit 1c5620d)
 
 - `static/js/mount.js` `s2Done()`: now async; auto-unparks the mount if still parked before navigating to GoTo & Solve. Root cause: "Done / Skip →" on polar alignment only unlocked UI tabs but never issued an unpark command, so GoTo gate always rejected with `MOUNT_PARKED`. Source: session c7fa9811 goto.log — two `goto_rejected MOUNT_PARKED` entries after two Connect All clicks.

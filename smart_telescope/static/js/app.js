@@ -123,6 +123,20 @@ function _renderStageBar() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+     Top-level view switcher — Observe (default guided flow) vs.
+     Maintenance (manual/diagnostic tools; the former single-screen UI,
+     REQ-UX-006 structural separation from the main process)
+══════════════════════════════════════════════════════════════════════ */
+function showTopView(view) {
+    const isObserve = view === 'observe';
+    document.getElementById('observing-view').classList.toggle('active', isObserve);
+    document.getElementById('maintenance-view').classList.toggle('active', !isObserve);
+    document.getElementById('top-view-btn-observe').classList.toggle('active', isObserve);
+    document.getElementById('top-view-btn-maintenance').classList.toggle('active', !isObserve);
+    if (isObserve && typeof refreshObservingState === 'function') refreshObservingState();
+}
+
+/* ══════════════════════════════════════════════════════════════════════
      Clock & observer location (Stage 1)
 ══════════════════════════════════════════════════════════════════════ */
 function _computeLST(lon_deg) {

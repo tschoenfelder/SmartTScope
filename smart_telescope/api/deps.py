@@ -32,6 +32,7 @@ from fastapi import HTTPException
 
 if TYPE_CHECKING:
     from ..services.guiding_service import GuidingService
+    from ..services.observing_service import ObservingService
 
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
@@ -165,6 +166,11 @@ def resolve_camera_index(camera_index: int, camera_role: str | None) -> int:
 def get_guiding_service() -> GuidingService:
     """Return the lazily-created GuidingService from the runtime context."""
     return get_runtime().guiding_service
+
+
+def get_observing_service() -> "ObservingService":
+    """Return the lazily-created ObservingService from the runtime context."""
+    return get_runtime().observing_service
 
 
 def get_command_history_service() -> "CommandHistoryService":

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .services.guiding_service import GuidingService
+    from .services.observing_service import ObservingService
 
 from . import config
 from .ports.camera import CameraPort
@@ -274,6 +275,8 @@ class RuntimeContext:
         self._hardware_mode: str = "mock"
         # Guiding service (GUD): lazily created on first access
         self._guiding_service: GuidingService | None = None
+        # Top-level observing state machine orchestrator: lazily created on first access
+        self._observing_service: ObservingService | None = None
 
     @property
     def hardware_mode(self) -> str:
@@ -301,6 +304,14 @@ class RuntimeContext:
                 measure_only=config.GUIDING.measure_only,
             )
         return self._guiding_service
+
+    @property
+    def observing_service(self) -> ObservingService:
+        """Return the lazily-created ObservingService (creates on first access)."""
+        if self._observing_service is None:
+            from .services.observing_service import ObservingService
+            self._observing_service = ObservingService()
+        return self._observing_service
 
     # ── camera helpers ────────────────────────────────────────────────────────
 
@@ -434,6 +445,7 @@ class RuntimeContext:
             with contextlib.suppress(Exception):
                 self._guiding_service.stop()
             self._guiding_service = None
+        self._observing_service = None
         self._camera = None
         self._mount = None
         self._focuser = None

@@ -108,6 +108,65 @@
     .stage-panel { display: none; }
     .stage-panel.active { display: block; }
 
+    /* ── top-level view switcher (Observe vs. Maintenance, REQ-UX-006) ── */
+    #top-view-bar {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 1rem;
+    }
+    .top-view-btn {
+      padding: 0.65rem 1.25rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .top-view-btn:hover { color: var(--text); }
+    .top-view-btn.active { color: var(--accent-hi); border-bottom-color: var(--accent-hi); }
+    .top-view { display: none; }
+    .top-view.active { display: block; }
+
+    /* ── Observe screen (guided single-flow) ── */
+    #observing-root { padding: 1.5rem 2%; max-width: 720px; margin: 0 auto; }
+    .phase-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem; }
+    .phase-readiness {
+      display: inline-block;
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em;
+      padding: 0.15rem 0.6rem; border-radius: 999px; margin-bottom: 1.25rem;
+    }
+    .phase-readiness.READY        { background: rgba(63,185,80,0.15);  color: var(--success); }
+    .phase-readiness.LIMITED_READY{ background: rgba(210,153,34,0.15); color: var(--warning); }
+    .phase-readiness.NOT_READY    { background: rgba(248,81,73,0.15);  color: var(--danger);  }
+    .primary-action-btn {
+      display: block; width: 100%;
+      padding: 0.85rem 1rem; font-size: 1rem; font-weight: 600;
+      margin-bottom: 1rem;
+    }
+    .secondary-actions { display: flex; gap: 0.6rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+    .guard-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 0.5rem; margin-bottom: 1.5rem;
+    }
+    .guard-chip {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.78rem; padding: 0.4rem 0.6rem;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    }
+    .guard-chip .dot { flex-shrink: 0; }
+    .fault-banner {
+      background: rgba(248,81,73,0.1); border: 1px solid var(--danger);
+      border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.85rem;
+    }
+    .detail-json {
+      font-family: ui-monospace, monospace; font-size: 0.78rem; color: var(--muted);
+      white-space: pre-wrap; word-break: break-word;
+    }
+
     /* ── main layout ── */
     main {
       padding: 1.5rem 2%;
@@ -566,6 +625,67 @@
   </button>
 </header>
 
+<!-- ── Top-level view switcher: Observe (guided flow) vs. Maintenance (manual
+     tools, diagnostics, collimation — REQ-UX-006 structural separation) ──── -->
+<nav id="top-view-bar">
+  <button class="top-view-btn active" id="top-view-btn-observe" onclick="showTopView('observe')">
+    Observe
+  </button>
+  <button class="top-view-btn" id="top-view-btn-maintenance" onclick="showTopView('maintenance')">
+    Maintenance
+  </button>
+</nav>
+
+<!-- ── Compact mount strip (always visible — global STOP, mount state) ──── -->
+<div id="mount-strip" class="visible">
+  <span class="dot dot-grey" id="ms-dot"></span>
+  <span id="ms-state" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">—</span>
+  <span id="ms-radec">—</span>
+  <span id="ms-haalt" style="font-family:ui-monospace,monospace;color:var(--muted);font-size:0.78rem"></span>
+  <span style="flex:1"></span>
+  <button class="danger" style="padding:0.3rem 0.75rem;font-size:0.78rem"
+          onclick="mountEmergencyStop()">■ Stop</button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- OBSERVE — guided single-flow screen, driven entirely by observing.js  -->
+<!-- (smarttscope_requirements_full.md §6-7: BOOTSTRAP..PARKED_SAFE)       -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div id="observing-view" class="top-view active">
+  <div id="observing-root">
+    <div class="phase-title" id="obs-phase-title">Loading…</div>
+    <div class="phase-readiness" id="obs-readiness-badge">—</div>
+
+    <div class="fault-banner" id="obs-fault-banner" style="display:none">
+      <strong>Fault:</strong> <span id="obs-fault-message"></span>
+    </div>
+
+    <button class="primary-action-btn" id="obs-primary-btn" disabled>—</button>
+    <div class="secondary-actions" id="obs-secondary-actions"></div>
+
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Guards
+      </div>
+      <div class="guard-grid" id="obs-guard-grid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Detail
+      </div>
+      <div class="detail-json" id="obs-detail-json">—</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- MAINTENANCE — existing manual/diagnostic tools (unchanged internally) -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div id="maintenance-view" class="top-view">
+
 <!-- ── Stage navigation bar ──────────────────────────────────────────────── -->
 <nav id="stage-bar">
   <button class="stage-btn active" id="stage-btn-1" onclick="goToStage(1)">
@@ -589,17 +709,6 @@
     Session
   </button>
 </nav>
-
-<!-- ── Compact mount strip (always visible — global STOP, mount state on 2–5) -->
-<div id="mount-strip" class="visible">
-  <span class="dot dot-grey" id="ms-dot"></span>
-  <span id="ms-state" style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted)">—</span>
-  <span id="ms-radec">—</span>
-  <span id="ms-haalt" style="font-family:ui-monospace,monospace;color:var(--muted);font-size:0.78rem"></span>
-  <span style="flex:1"></span>
-  <button class="danger" style="padding:0.3rem 0.75rem;font-size:0.78rem"
-          onclick="mountEmergencyStop()">■ Stop</button>
-</div>
 
 <main>
 
@@ -2274,6 +2383,8 @@
 
 </main>
 
+</div> <!-- /#maintenance-view -->
+
 <script src="/static/js/api.js"></script>
 <script src="/static/js/setup.js"></script>
 <script src="/static/js/mount.js"></script>
@@ -2284,6 +2395,7 @@
 <script src="/static/js/bias_estimation.js"></script>
 <script src="/static/js/guiding.js"></script>
 <script src="/static/js/click_to_center.js"></script>
+<script src="/static/js/observing.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

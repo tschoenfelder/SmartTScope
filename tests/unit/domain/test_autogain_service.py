@@ -299,6 +299,44 @@ class TestGainLimit:
             AutoGainStatus.NO_SIGNAL,
         )
 
+    def _gain_limit_profile(self) -> CameraProfile:
+        return CameraProfile(
+            model="TestCam",
+            sensor="IMX000",
+            width_px=640, height_px=480, pixel_um=3.0,
+            max_gain=110,          # tiny max gain — reached quickly
+            unity_gain_hcg=None,
+            unity_gain_lcg=100,
+            unity_gain_hdr=None,
+            min_preview_exp_ms=4000.0,
+            max_preview_exp_ms=4000.0,
+            supports_cooling=False,
+        )
+
+    def test_gain_limit_reached_has_informative_warning_msg(self) -> None:
+        # signal=0.05 is above the no-signal threshold (0.02) and above the sparse-
+        # field threshold's floor but below band_lo (0.12) — deterministically
+        # GAIN_LIMIT_REACHED, never NO_SIGNAL, once gain/exposure are pinned at max.
+        cam = _SeqCamera([_frame(0.05)] * 20)
+        result = AutoGainService.run_one_shot(
+            cam, self._gain_limit_profile(), max_iterations=10, tracking_on=True,
+        )
+        assert result.status == AutoGainStatus.GAIN_LIMIT_REACHED
+        assert result.warning_msg
+        assert "signal" in result.warning_msg.lower()
+        assert "target floor" in result.warning_msg.lower()
+        assert "AG-003" not in result.warning_msg
+
+    def test_gain_limit_reached_mentions_tracking_off_cap(self) -> None:
+        cam = _SeqCamera([_frame(0.05)] * 20)
+        result = AutoGainService.run_one_shot(
+            cam, self._gain_limit_profile(), max_iterations=10, tracking_on=False,
+        )
+        assert result.status == AutoGainStatus.GAIN_LIMIT_REACHED
+        assert result.warning_msg
+        assert "AG-003" in result.warning_msg
+        assert "tracking" in result.warning_msg.lower()
+
 
 # ── Cancellation ──────────────────────────────────────────────────────────────
 

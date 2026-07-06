@@ -123,6 +123,17 @@ def _effective_mean(stats: HistogramStats, offset: int, adc_max: float) -> float
     return max(0.0, stats.mean_frac - offset_frac)
 
 
+def _gain_limit_msg(signal: float, band_lo: float, tracking_on: bool) -> str:
+    deficit = band_lo - signal
+    msg = (
+        f"Gain limit reached; signal {signal:.2f} vs target floor {band_lo:.2f} "
+        f"(short by {deficit:.2f})"
+    )
+    if not tracking_on:
+        msg += " — mount not tracking caps exposure at 1s (AG-003); enable tracking for more headroom"
+    return msg
+
+
 # ── Service ───────────────────────────────────────────────────────────────────
 
 class AutoGainService:
@@ -582,7 +593,7 @@ class AutoGainService:
                         offset=cur_offset,
                         conversion_gain=cg,
                         histogram_stats=stats,
-                        warning_msg="Gain limit reached; target not reachable within profile limits",
+                        warning_msg=_gain_limit_msg(signal, band_lo, tracking_on),
                     )
 
                 # Step 8: increase exposure
@@ -651,6 +662,7 @@ class AutoGainService:
                 offset=cur_offset,
                 conversion_gain=cg,
                 histogram_stats=last_stats,
+                warning_msg=_gain_limit_msg(signal_final, band_lo, tracking_on),
             )
         return AutoGainResult(
             status=AutoGainStatus.EXPOSURE_LIMIT_REACHED,

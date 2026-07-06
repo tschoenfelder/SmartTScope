@@ -953,7 +953,12 @@ async function connectAll() {
     try {
       const data = await apiPost('/api/session/connect');
       const grid = document.getElementById('connect-status-grid');
-      grid.innerHTML = Object.entries(data).map(([device, info]) => {
+      // time_location_status/time_location_check aren't DeviceResult-shaped —
+      // Stage 1's Time/Location Verification card is the live source of truth for those.
+      const deviceEntries = Object.entries(data).filter(
+        ([k]) => k !== 'time_location_status' && k !== 'time_location_check'
+      );
+      grid.innerHTML = deviceEntries.map(([device, info]) => {
         const ok  = info.status === 'ok';
         const msg = ok ? 'Connected' : (info.error || 'Failed');
         return `
@@ -1712,6 +1717,7 @@ async function stage1PushClock() {
         await apiPost('/api/mount/sync_clock');
         setStatus('s1-tl-status', 'Push succeeded — refreshing…');
         await refreshStage1TL();
+        if (typeof refreshMount === 'function') await refreshMount();
         setStatus('s1-tl-status', '');
     } catch (e) { setStatus('s1-tl-status', e.message, true); }
 }

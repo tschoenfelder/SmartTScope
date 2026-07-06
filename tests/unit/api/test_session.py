@@ -139,6 +139,67 @@ class TestAllConnected:
         assert body["mount"]["status"] == "ok"
 
 
+# ── obviously-invalid clock auto-push ─────────────────────────────────────────
+
+
+def _mismatch_sync(onstep_time_local: str) -> dict:
+    return {
+        "time_ok": False,
+        "location_ok": True,
+        "time_tolerance_s": 10.0,
+        "location_tolerance_m": 100.0,
+        "onstep_time_local": onstep_time_local,
+        "location_delta_m": 0.0,
+    }
+
+
+def _inject_trust(trust_source_value: str) -> None:
+    """Override the raspberry/master trust services with a fixed trust source."""
+    from smart_telescope.domain.raspberry_time_trust import RaspberryTimeTrustSource
+    from smart_telescope.domain.master_time_source import MasterTimeSource
+
+    raspberry_mock = MagicMock()
+    raspberry_mock.evaluate.return_value = RaspberryTimeTrustSource(trust_source_value)
+    raspberry_mock.is_trusted.return_value = trust_source_value != "NOT_TRUSTED"
+    master_mock = MagicMock()
+    master_mock.evaluate.return_value = MasterTimeSource.NTP
+    master_mock.is_trusted.return_value = True
+    app.dependency_overrides[deps.get_raspberry_trust_service] = lambda: raspberry_mock
+    app.dependency_overrides[deps.get_master_source_service] = lambda: master_mock
+
+
+class TestObviouslyInvalidClockAutoPush:
+    def test_auto_pushes_when_clock_is_obviously_invalid_and_pi_trusted(self) -> None:
+        mnt = _mock_mount()
+        mnt.get_sync_status.return_value = _mismatch_sync("1988-01-01T10:26:38")
+        _inject(_mock_camera(), mnt, _mock_focuser())
+        _inject_trust("NTP")
+        body = client.post("/api/session/connect").json()
+        mnt.ensure_time_location_synced.assert_called_once()
+        assert body["time_location_status"] == "VERIFIED"
+        assert body["time_location_check"] is None
+
+    def test_no_auto_push_when_clock_invalid_but_pi_not_trusted(self) -> None:
+        mnt = _mock_mount()
+        mnt.get_sync_status.return_value = _mismatch_sync("1988-01-01T10:26:38")
+        _inject(_mock_camera(), mnt, _mock_focuser())
+        _inject_trust("NOT_TRUSTED")
+        body = client.post("/api/session/connect").json()
+        mnt.ensure_time_location_synced.assert_not_called()
+        assert body["time_location_status"] == "UNKNOWN"
+        assert body["time_location_check"] is not None
+
+    def test_no_auto_push_for_small_delta_even_when_trusted(self) -> None:
+        mnt = _mock_mount()
+        mnt.get_sync_status.return_value = _mismatch_sync("2026-06-30T23:24:22")
+        _inject(_mock_camera(), mnt, _mock_focuser())
+        _inject_trust("NTP")
+        body = client.post("/api/session/connect").json()
+        mnt.ensure_time_location_synced.assert_not_called()
+        assert body["time_location_status"] == "UNKNOWN"
+        assert body["time_location_check"] is not None
+
+
 # ── camera failure ────────────────────────────────────────────────────────────
 
 

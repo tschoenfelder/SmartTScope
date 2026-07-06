@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import threading
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -23,11 +25,15 @@ from ..adapters.astap.solver import find_catalog as _find_catalog
 from ..domain.catalog import get_by_name as _catalog_get
 from ..domain.solar import is_solar_target
 from ..domain.states import SessionState
-from ..domain.time_location_status import TimeLocationStatus
+from ..domain.time_location_status import (
+    OBVIOUSLY_INVALID_CLOCK_YEAR_CUTOFF,
+    TimeLocationStatus,
+)
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 from ..ports.mount import MountPort
 from ..services.device_state import DeviceStateService
+from ..services.operation_gate import gate_inputs_from_device_state
 from ..services.optical_train_registry import OpticalTrainRegistry
 from ..workflow.runner import C8_BARLOW2X, C8_NATIVE, C8_REDUCER, OpticalProfile, VerticalSliceRunner
 from . import deps
@@ -162,6 +168,8 @@ def session_connect(
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
     device_state: DeviceStateService = Depends(deps.get_device_state),
+    master_source_svc: object = Depends(deps.get_master_source_service),
+    raspberry_trust_svc: object = Depends(deps.get_raspberry_trust_service),
 ) -> ConnectResult:
     deps.get_user_action_logger().log("connect_all_clicked")
     from .cameras import invalidate_camera_scan
@@ -203,13 +211,55 @@ def session_connect(
                     )
                 else:
                     tl_check = sync
-                    _log.info(
-                        "Time/location check: mismatch — awaiting user decision "
-                        "(time_ok=%s time_tol=%ss location_ok=%s loc_delta=%sm loc_tol=%sm)",
-                        time_ok, time_tol_s, location_ok,
-                        sync.get("location_delta_m"),
-                        loc_tol_m,
-                    )
+                    # Obviously-invalid clock (e.g. OnStep's 1988-01-01 factory-reset
+                    # default) is auto-corrected when the Pi's own clock is trusted via
+                    # GPS/NTP specifically — ambiguous/small mismatches still require
+                    # the manual "Push Time/Location" button (M7-001 intent preserved).
+                    onstep_local = sync.get("onstep_time_local")
+                    obviously_invalid = False
+                    if onstep_local:
+                        with contextlib.suppress(ValueError, TypeError):
+                            obviously_invalid = (
+                                datetime.fromisoformat(onstep_local).year
+                                < OBVIOUSLY_INVALID_CLOCK_YEAR_CUTOFF
+                            )
+                    auto_pushed = False
+                    if obviously_invalid:
+                        gate_inputs = gate_inputs_from_device_state(
+                            device_state,
+                            master_source_svc=master_source_svc,
+                            raspberry_trust_svc=raspberry_trust_svc,
+                        )
+                        trust_source = gate_inputs.get("raspberry_trust_source")
+                        if trust_source in ("GPSD_FIX", "NTP"):
+                            try:
+                                mount.ensure_time_location_synced()
+                                device_state.set_time_location_status(TimeLocationStatus.VERIFIED)
+                                device_state.set_last_push_at()
+                                device_state.clear_mount_safety_violation("onstep_clock_invalid")
+                                fresh_sync = mount.get_sync_status()
+                                if fresh_sync:
+                                    device_state.set_last_sync_status(fresh_sync)
+                                tl_status = TimeLocationStatus.VERIFIED
+                                tl_check = None
+                                auto_pushed = True
+                                _log.warning(
+                                    "Time/location: OnStep clock obviously invalid "
+                                    "(year<%d) — auto-corrected at connect (Pi trust=%s)",
+                                    OBVIOUSLY_INVALID_CLOCK_YEAR_CUTOFF, trust_source,
+                                )
+                            except Exception as exc:
+                                _log.warning(
+                                    "Auto-correction of obviously-invalid OnStep clock failed: %s", exc
+                                )
+                    if not auto_pushed:
+                        _log.info(
+                            "Time/location check: mismatch — awaiting user decision "
+                            "(time_ok=%s time_tol=%ss location_ok=%s loc_delta=%sm loc_tol=%sm)",
+                            time_ok, time_tol_s, location_ok,
+                            sync.get("location_delta_m"),
+                            loc_tol_m,
+                        )
         except Exception as exc:
             _log.warning("Time/location check failed: %s", exc)
         # Preserve VERIFIED if user already pushed time/location.

@@ -111,7 +111,8 @@ function mountCard(data) {
       ? `<div style="font-size:0.78rem;color:var(--warning);background:rgba(210,153,34,0.1);
               border:1px solid rgba(210,153,34,0.35);border-radius:4px;padding:0.35rem 0.6rem;
               margin-top:0.5rem">
-           ⚠ <b>OnStep clock not synced</b> — first GoTo will auto-sync, or sync now:<br>
+           ⚠ <b>OnStep clock not synced</b> — an obviously invalid clock is auto-corrected
+           on the next Connect All when the Pi's time is GPS/NTP-trusted; otherwise sync now:<br>
            <button onclick="mountSyncClock(this)" style="margin-top:0.4rem;font-size:0.78rem;
                    padding:0.2rem 0.7rem;cursor:pointer">Sync Clock &amp; Location</button>
            <span id="sync-clock-result" style="margin-left:0.5rem;color:var(--muted)"></span>

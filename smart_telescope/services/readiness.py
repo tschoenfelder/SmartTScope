@@ -383,8 +383,9 @@ class ReadinessService:
         key    = "time_location_sync"
         label  = "Mount time/location"
         repair = (
-            "Use 'Push Time/Location' in the Time/Location Verification card, "
-            "or run a GoTo (first GoTo auto-syncs before slewing)."
+            "Use 'Push Time/Location' in the Time/Location Verification card. "
+            "An obviously invalid clock is auto-corrected on the next Connect All "
+            "when the Pi's time is GPS/NTP-trusted."
         )
 
         try:

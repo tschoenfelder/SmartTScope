@@ -9,7 +9,9 @@
 const _CTC_FRAMES = {
     's3':       { banner: 's3-ctc-banner',       cameraIndex: 0, mode: 'star_centroid' },
     's4':       { banner: 's4-ctc-banner',       cameraIndex: 0, mode: 'star_centroid' },
-    's4-donut': { banner: 's4-donut-ctc-banner', cameraIndex: 0, mode: 'ring_center'   },
+    // Starts as star_centroid — there's no ring yet until Auto Defocus has run.
+    // s4DonutAutoDefocus() flips this to 'ring_center' on success (collimation.js).
+    's4-donut': { banner: 's4-donut-ctc-banner', cameraIndex: 0, mode: 'star_centroid' },
 };
 
 // Last refined click per frame (used by M8-028 centering loop)

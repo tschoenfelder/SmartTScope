@@ -856,11 +856,11 @@ function selectCollimationMode(name) {
         el.style.borderColor = isSelected ? 'var(--accent, #3b82f6)' : 'var(--border)';
     }
     // Show/hide relevant preview sections
-    const bahtinovSection = document.querySelector('#s4 .stage-columns') || document.getElementById('s4-preview-frame')?.closest('.card')?.parentElement?.parentElement;
     const donutSection = document.getElementById('s4-donut-section');
-    // The Bahtinov preview is inside the 2-column layout (stage-columns div)
-    const cols = document.querySelector('#s4 .stage-columns');
-    if (cols) cols.style.display = name === 'bahtinov_preview' ? '' : 'none';
+    // Only toggle the Bahtinov-specific card — the rest of the .two-col layout
+    // (Bright Stars, Centre Star, Focuser) is shared by both modes.
+    const bahtinovCard = document.getElementById('s4-bahtinov-card');
+    if (bahtinovCard) bahtinovCard.style.display = name === 'bahtinov_preview' ? '' : 'none';
     if (donutSection) donutSection.style.display = name === 'defocus_donut' ? '' : 'none';
 }
 
@@ -871,5 +871,52 @@ function s4DonutPreviewStart() {
     document.getElementById('preview-gain').value     = gain;
     // Defocus Donut uses the main imaging camera
     previewStart('main');
+}
+
+async function s4DonutAutoDefocus() {
+    const statusEl = document.getElementById('s4-donut-autodefocus-status');
+    const btn = document.getElementById('s4-donut-autodefocus-btn');
+    const setStatus = (msg, isError) => {
+        if (!statusEl) return;
+        statusEl.textContent = msg;
+        statusEl.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    };
+
+    setStatus('Checking readiness…');
+    try {
+        const readiness = await (await fetch('/api/click_to_center/readiness')).json();
+        if (!readiness.allowed) {
+            setStatus('Not ready: ' + (readiness.reason || 'click-to-center unavailable'), true);
+            return;
+        }
+    } catch (e) {
+        setStatus('Could not reach server — try again.', true);
+        return;
+    }
+
+    const exp = parseFloat(document.getElementById('s4-donut-exposure').value) || 1.0;
+    if (btn) btn.disabled = true;
+    setStatus('Defocusing to donut regime…');
+    try {
+        const result = await apiPost('/api/collimation/donut/auto_defocus', { exposure_s: exp });
+        if (result.success) {
+            // A ring now exists — subsequent clicks on the donut re-centre on it.
+            _CTC_FRAMES['s4-donut'].mode = 'ring_center';
+            setStatus(
+                `Defocused to radius ${result.estimated_radius_px?.toFixed(1) ?? '?'}px `
+                + `(target ${result.target_min_px?.toFixed(0)}-${result.target_max_px?.toFixed(0)}px), `
+                + `${result.net_steps} focuser steps.`
+            );
+        } else if (result.reason === 'star_lost') {
+            _CTC_FRAMES['s4-donut'].mode = 'star_centroid';
+            setStatus('Star lost during defocus — recentre the star and retry.', true);
+        } else {
+            setStatus('Auto Defocus stopped: ' + (result.reason || 'unknown reason'), true);
+        }
+    } catch (e) {
+        setStatus(e.message, true);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 

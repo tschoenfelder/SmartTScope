@@ -469,3 +469,60 @@ def selftest_focuser(
             break
     after = focuser.get_position()
     return {"ok": True, "steps": steps, "position_before": before, "position_after": after}
+
+
+class AutoDefocusRequest(BaseModel):
+    exposure_s: float = 1.0
+
+
+@router.post("/donut/auto_defocus")
+def donut_auto_defocus(
+    body: AutoDefocusRequest = AutoDefocusRequest(),
+    camera: CameraPort = Depends(get_camera),
+    focuser: FocuserPort = Depends(get_focuser),
+) -> dict[str, Any]:
+    """Defocus onto the donut regime for the standalone Defocus Donut panel.
+
+    Reuses the same DefocusController automation as the guided Collimation
+    Wizard's Rough Defocus step (services/collimation/assistant.py,
+    _handle_rough_defocus) — call this once a star has been selected and
+    centred (Bright Stars + Centre Star, or a click-to-center on the point
+    star) so the focuser knows a fixed target to defocus around.
+    """
+    from .. import config as _cfg_mod
+    from ..services.collimation.defocus_controller import DefocusController
+    from ..services.collimation.focuser_control import CollimationFocuserControl
+
+    col_cfg = _cfg_mod.get_collimation_config()
+    focuser_ctrl = CollimationFocuserControl(focuser, col_cfg.focuser)
+
+    try:
+        sample = camera.capture(body.exposure_s)
+    except CaptureAbortedError:
+        raise HTTPException(status_code=503, detail="Camera capture aborted")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Camera capture failed: {exc}")
+
+    defocuser = DefocusController(
+        focuser=focuser_ctrl,
+        focuser_cfg=col_cfg.focuser,
+        rough_cfg=col_cfg.rough_collimation,
+        bit_depth=camera.get_bit_depth(),
+    )
+    try:
+        result = defocuser.defocus(
+            capture_frame=lambda: camera.capture(body.exposure_s),
+            frame_width=sample.width,
+            frame_height=sample.height,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Auto-defocus failed: {exc}")
+
+    return {
+        "success": result.success,
+        "reason": result.reason,
+        "estimated_radius_px": result.estimated_radius_px,
+        "target_min_px": result.target_min_px,
+        "target_max_px": result.target_max_px,
+        "net_steps": result.net_steps,
+    }

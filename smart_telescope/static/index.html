@@ -1853,7 +1853,7 @@
       </div>
 
       <!-- ── Right: Large preview ── -->
-      <div>
+      <div id="s4-bahtinov-card">
         <div class="card">
           <div class="card-title">
             <span class="dot dot-grey"></span>
@@ -1948,10 +1948,18 @@
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center">
             <button id="s4-donut-start-btn" onclick="s4DonutPreviewStart()">Start</button>
             <button id="s4-donut-stop-btn" class="danger" onclick="previewStop()" disabled>Stop</button>
+            <button id="s4-donut-autodefocus-btn" onclick="s4DonutAutoDefocus()"
+                    class="secondary" style="margin-left:auto"
+                    title="Select and centre a star first, then auto-defocus to the donut regime">
+              Auto Defocus
+            </button>
           </div>
+          <div id="s4-donut-autodefocus-status" style="font-size:0.82rem;margin-top:0.5rem"></div>
           <div style="font-size:0.82rem;color:var(--muted);margin-top:0.5rem">
-            Defocus the scope until stars appear as rings (donuts). The obstruction
-            shadow in the centre reveals collimation errors — it should be concentric.
+            Select a star (Bright Stars) and centre it (Centre Star, or click the star above),
+            then press Auto Defocus — or defocus the scope manually until stars appear as rings
+            (donuts). The obstruction shadow in the centre reveals collimation errors — it should
+            be concentric.
           </div>
         </div>
       </div>

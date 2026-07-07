@@ -58,6 +58,7 @@ Table of contents for the SmartTelescope knowledge base.
 
 - [Pi watchdog setup](../resources/hlrequirements/raspberry_pi5_trixie_watchdog_setup.md) — dtparam=watchdog=on, systemd RuntimeWatchdogSec, Type=notify service pattern
 - [External heartbeat supervisor](../resources/hlrequirements/external_heartbeat_stop_supervisor.md) — Microcontroller-based STOP on Pi crash; heartbeat protocol; MicroPython examples
+- **Deploy fix — stale wheel reinstall bug:** `scripts/astro_start.sh`/`scripts/install_pi.sh` rebuild a wheel and `pip install` it on every deploy, but `pyproject.toml`'s pinned `version = "0.1.0"` never changes, so the rebuilt wheel always has the same filename — pip saw "Requirement already satisfied" and silently skipped reinstalling, leaving the *first-ever-installed* package files (incl. `static/index.html`/`static/js/*.js`) on disk untouched even after a correct `git reset --hard` + restart (the version pill still showed the right git hash because `api/version.py` reads it from the live repo checkout, not the installed package). Fixed with `pip install --force-reinstall` (`--no-deps` in `astro_start.sh` to keep the frequent per-deploy path fast; full deps reconciled in `install_pi.sh`'s one-time/full setup path).
 
 ## Camera configuration
 

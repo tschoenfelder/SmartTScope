@@ -3465,3 +3465,40 @@ failures as before). Manually verified live: panel confirmed absent from
 Observer & Time, present in `#s1-tl-card` with both Confirm buttons; `gps.usable`
 present and `false` with no GPSD running; confirm(saved)/delete round-trip
 re-verified.
+
+---
+
+## 2026-07-08 — Deploy fix: pip silently skipping reinstall of unchanged-version wheel
+
+**What changed:** the "Confirm Time & Location" UI changes shipped in
+commits `eeec8e3`/`23aea26` did not appear on the Pi after two deploys, even
+though the version pill correctly showed the right git hash and the user
+hard-refreshed the browser. Investigated via a from-scratch Explore agent
+(markup/JS/script-order/static-serving all checked and found correct) plus
+`git rev-parse` reasoning in `api/version.py`.
+
+**Root cause:** `scripts/astro_start.sh` (and `scripts/install_pi.sh`) build
+a fresh wheel from the repo on every deploy and install it with plain
+`pip install "$WHEEL"`. Since `pyproject.toml`'s `version = "0.1.0"` is
+never bumped, the rebuilt wheel is always named
+`smart_telescope-0.1.0-py3-none-any.whl` — pip treats this as "Requirement
+already satisfied" and silently skips overwriting the installed package
+files (including the `static/` package-data), so the server kept running
+the very first build indefinitely. The git-hash version pill was misleading
+because it reads the live repo checkout (`cwd=_ROOT` in `api/version.py`),
+not the installed package, so it always looked "correct" regardless of
+whether the reinstall actually happened.
+
+- `scripts/astro_start.sh:102`: `pip install --quiet "$WHEEL"` →
+  `pip install --quiet --force-reinstall --no-deps "$WHEEL"` (`--no-deps`
+  keeps the frequent per-deploy path fast; a future dependency change in
+  `pyproject.toml` needs a full `install_pi.sh` run to be picked up — noted
+  inline).
+- `scripts/install_pi.sh:214`: `pip install --quiet "$wheel"` →
+  `pip install --quiet --force-reinstall "$wheel"` (no `--no-deps` — this is
+  the full/initial setup path).
+
+**Test result:** `bash -n` syntax check on both scripts, passed. No Python
+tests affected (shell-script-only fix). Not yet verified against a live Pi
+deploy from this machine — ask the user to confirm on next
+`astro_start.sh` run.

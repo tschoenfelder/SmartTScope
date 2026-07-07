@@ -99,7 +99,13 @@ PYEOF
 
     WHEEL="$(ls "$WHEEL_DIR"/smart_telescope-*.whl 2>/dev/null | head -1)"
     [[ -n "$WHEEL" ]] || err "No wheel found in $WHEEL_DIR"
-    "$VENV_DIR/bin/pip" install --quiet "$WHEEL"
+    # --force-reinstall: pyproject.toml's version never changes between deploys, so the
+    # rebuilt wheel always has the same name — without this, pip sees "Requirement already
+    # satisfied" and silently skips overwriting the installed package (including
+    # static/index.html and static/js/*.js), leaving old code running after every restart.
+    # --no-deps keeps this the fast per-deploy path; a dependency change in pyproject.toml
+    # needs a full install_pi.sh run to be picked up.
+    "$VENV_DIR/bin/pip" install --quiet --force-reinstall --no-deps "$WHEEL"
     ok "Installed: $(basename "$WHEEL")"
 else
     warn "Install  : skipped (--no-install)"

@@ -211,7 +211,10 @@ PYEOF
     [[ -n "$wheel" ]] || err "No wheel found in $wheel_dir after build"
 
     log "Installing wheel and dependencies..."
-    "$VENV_DIR/bin/pip" install --quiet "$wheel"
+    # --force-reinstall: the wheel's version never changes between rebuilds, so pip would
+    # otherwise see "Requirement already satisfied" and skip reinstalling on a re-run
+    # (see scripts/astro_start.sh for the same fix on the per-deploy path).
+    "$VENV_DIR/bin/pip" install --quiet --force-reinstall "$wheel"
 
     # Dev extras are standard PyPI packages — no build backend needed for them.
     "$VENV_DIR/bin/pip" install --quiet \

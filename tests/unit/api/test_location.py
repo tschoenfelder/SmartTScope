@@ -138,6 +138,34 @@ class TestLocationStatus:
         assert body["gps"]["lat"] == pytest.approx(50.1)
         assert body["gps"]["alt_m"] == pytest.approx(200.0)
 
+    def test_gps_usable_true_when_fresh_and_mode_at_least_2(self) -> None:
+        fix = GpsdFix(lat=50.1, lon=8.1, alt=200.0, gps_time=None, mode=3, hdop=1.0, fix_age_s=10.0)
+        _inject()
+        with patch.object(location_module._gpsd, "get_fix", return_value=fix):
+            body = client.get("/api/location/status").json()
+        assert body["gps"]["usable"] is True
+
+    def test_gps_usable_false_when_mode_below_2(self) -> None:
+        fix = GpsdFix(lat=50.1, lon=8.1, alt=None, gps_time=None, mode=1, hdop=None, fix_age_s=10.0)
+        _inject()
+        with patch.object(location_module._gpsd, "get_fix", return_value=fix):
+            body = client.get("/api/location/status").json()
+        assert body["gps"]["available"] is True
+        assert body["gps"]["usable"] is False
+
+    def test_gps_usable_false_when_stale(self) -> None:
+        fix = GpsdFix(lat=50.1, lon=8.1, alt=200.0, gps_time=None, mode=3, hdop=1.0, fix_age_s=999999.0)
+        _inject()
+        with patch.object(location_module._gpsd, "get_fix", return_value=fix):
+            body = client.get("/api/location/status").json()
+        assert body["gps"]["usable"] is False
+
+    def test_gps_usable_false_when_no_fix(self) -> None:
+        _inject()
+        with patch.object(location_module._gpsd, "get_fix", return_value=None):
+            body = client.get("/api/location/status").json()
+        assert body["gps"]["usable"] is False
+
     def test_time_from_gps_true_when_raspberry_trust_is_gpsd_fix(self) -> None:
         _inject(trust_source=RaspberryTimeTrustSource.GPSD_FIX)
         with patch.object(location_module._gpsd, "get_fix", return_value=None):

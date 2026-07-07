@@ -291,7 +291,7 @@ function _renderLocationPanel(d) {
     const gpsBadge = document.getElementById('loc-gps-badge');
     if (gpsBadge) gpsBadge.style.display = d.time_from_gps ? '' : 'none';
     const gpsBtn = document.getElementById('loc-gps-btn');
-    if (gpsBtn) gpsBtn.disabled = !(d.gps && d.gps.available);
+    if (gpsBtn) gpsBtn.disabled = !(d.gps && d.gps.usable);
 
     if (_locPanelDirty) return;
 
@@ -308,10 +308,22 @@ function _renderLocationPanel(d) {
     const latEl = document.getElementById('loc-lat-input');
     const lonEl = document.getElementById('loc-lon-input');
     const heightEl = document.getElementById('loc-height-input');
-    if (latEl) latEl.value = d.active.lat;
-    if (lonEl) lonEl.value = d.active.lon;
-    if (heightEl) heightEl.value = d.active.height_m;
-    _setLocSource(d.active.source);
+
+    // A fresh, valid GPS fix is suggested automatically — ready for one Confirm
+    // click — instead of requiring a manual "Use GPS fix" click every time.
+    // Falls back to the active location when no usable fix exists.
+    if (d.gps && d.gps.usable) {
+        if (latEl) latEl.value = d.gps.lat;
+        if (lonEl) lonEl.value = d.gps.lon;
+        if (heightEl && d.gps.alt_m !== null && d.gps.alt_m !== undefined) heightEl.value = d.gps.alt_m;
+        else if (heightEl) heightEl.value = d.active.height_m;
+        _setLocSource('GPS_FIX');
+    } else {
+        if (latEl) latEl.value = d.active.lat;
+        if (lonEl) lonEl.value = d.active.lon;
+        if (heightEl) heightEl.value = d.active.height_m;
+        _setLocSource(d.active.source);
+    }
 
     const nameRow = document.getElementById('loc-name-row');
     if (nameRow) nameRow.style.display = 'none';
@@ -363,8 +375,8 @@ function onLocationSelectChange() {
 
 function useGpsFix() {
     const gps = _lastLocationStatus && _lastLocationStatus.gps;
-    if (!gps || !gps.available) {
-        setStatus('loc-status', 'No GPS fix available', true);
+    if (!gps || !gps.usable) {
+        setStatus('loc-status', 'No usable GPS fix available', true);
         return;
     }
     const latEl = document.getElementById('loc-lat-input');

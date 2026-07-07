@@ -770,6 +770,47 @@
           <span class="param-value mono" id="clock-lst">—</span>
         </div>
       </div>
+    </div>
+
+    <!-- Hardware Connection -->
+    <div class="card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="connect-dot"></span>
+        Hardware Connection
+      </div>
+      <div id="connect-status-grid" class="params" style="min-height:1.5rem;margin-bottom:0.75rem"></div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+        <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
+        <button id="setup-check-btn" onclick="runSetupCheck()" disabled class="secondary"
+                title="Verify hardware is responding — focuser nudge, mount RA+DEC slew, camera capture + plate solve">Setup Check</button>
+      </div>
+    </div>
+
+    <!-- Time / Location Verification (M8-010 / REQ-TIME-005) -->
+    <div class="card" style="margin-top:0.75rem" id="s1-tl-card">
+      <div class="card-title">
+        <span class="dot dot-grey" id="s1-tl-dot"></span>
+        Time / Location Verification
+        <span style="flex:1"></span>
+        <span id="s1-tl-badge"
+              style="font-size:0.72rem;font-weight:600;padding:0.15rem 0.6rem;
+                     border-radius:999px;background:var(--surface);border:1px solid var(--border)">
+          —
+        </span>
+        <button onclick="refreshStage1TL()"
+                style="padding:0.1rem 0.45rem;font-size:0.72rem;margin-left:0.4rem"
+                title="Refresh time/location status">↺</button>
+      </div>
+      <div class="params" id="s1-tl-params" style="margin-top:0.25rem"></div>
+      <div class="controls" id="s1-tl-controls" style="display:none">
+        <button id="s1-tl-rerun-btn" onclick="connectAll()" class="secondary"
+                style="font-size:0.82rem;padding:0.3rem 0.8rem">Rerun Check</button>
+        <button id="s1-tl-push-btn" onclick="stage1PushClock()"
+                style="font-size:0.82rem;padding:0.3rem 0.8rem">Push Time/Location</button>
+        <button id="s1-tl-confirm-btn" onclick="stage1ConfirmTime()" class="secondary"
+                style="font-size:0.82rem;padding:0.3rem 0.8rem;display:none">Confirm Pi Time</button>
+      </div>
+      <div id="s1-tl-status" class="status-line" style="margin-top:0.5rem"></div>
 
       <div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--border)">
         <div class="param" style="margin-bottom:0.4rem">
@@ -819,47 +860,6 @@
         </div>
         <div id="loc-status" class="status-line" style="margin-top:0.4rem"></div>
       </div>
-    </div>
-
-    <!-- Hardware Connection -->
-    <div class="card">
-      <div class="card-title">
-        <span class="dot dot-grey" id="connect-dot"></span>
-        Hardware Connection
-      </div>
-      <div id="connect-status-grid" class="params" style="min-height:1.5rem;margin-bottom:0.75rem"></div>
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
-        <button id="connect-all-btn" onclick="connectAll()">Connect All</button>
-        <button id="setup-check-btn" onclick="runSetupCheck()" disabled class="secondary"
-                title="Verify hardware is responding — focuser nudge, mount RA+DEC slew, camera capture + plate solve">Setup Check</button>
-      </div>
-    </div>
-
-    <!-- Time / Location Verification (M8-010 / REQ-TIME-005) -->
-    <div class="card" style="margin-top:0.75rem" id="s1-tl-card">
-      <div class="card-title">
-        <span class="dot dot-grey" id="s1-tl-dot"></span>
-        Time / Location Verification
-        <span style="flex:1"></span>
-        <span id="s1-tl-badge"
-              style="font-size:0.72rem;font-weight:600;padding:0.15rem 0.6rem;
-                     border-radius:999px;background:var(--surface);border:1px solid var(--border)">
-          —
-        </span>
-        <button onclick="refreshStage1TL()"
-                style="padding:0.1rem 0.45rem;font-size:0.72rem;margin-left:0.4rem"
-                title="Refresh time/location status">↺</button>
-      </div>
-      <div class="params" id="s1-tl-params" style="margin-top:0.25rem"></div>
-      <div class="controls" id="s1-tl-controls" style="display:none">
-        <button id="s1-tl-rerun-btn" onclick="connectAll()" class="secondary"
-                style="font-size:0.82rem;padding:0.3rem 0.8rem">Rerun Check</button>
-        <button id="s1-tl-push-btn" onclick="stage1PushClock()"
-                style="font-size:0.82rem;padding:0.3rem 0.8rem">Push Time/Location</button>
-        <button id="s1-tl-confirm-btn" onclick="stage1ConfirmTime()" class="secondary"
-                style="font-size:0.82rem;padding:0.3rem 0.8rem;display:none">Confirm Pi Time</button>
-      </div>
-      <div id="s1-tl-status" class="status-line" style="margin-top:0.5rem"></div>
     </div>
 
     <!-- Setup Check Wizard -->

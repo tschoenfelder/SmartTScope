@@ -34,6 +34,7 @@ _CONFIG_PATH = Path.home() / ".SmartTScope" / "config.toml"
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _RESERVED_NAMES = {"home"}
+_MIN_GPS_MODE = 2  # 2 = 2-D fix, 3 = 3-D fix; mirrors services/master_source.py's _MIN_GPS_MODE
 
 
 # ── response / request models ────────────────────────────────────────────────
@@ -62,6 +63,7 @@ class HomeLocation(BaseModel):
 class GpsInfo(BaseModel):
     available: bool
     fresh: bool = False
+    usable: bool = False
     lat: float = 0.0
     lon: float = 0.0
     alt_m: float | None = None
@@ -106,9 +108,10 @@ def _build_status(
     fix = _gpsd.get_fix()
     if fix is not None:
         dist = haversine_m(fix.lat, fix.lon, config.OBSERVER_LAT, config.OBSERVER_LON)
+        fresh = fix.is_fresh()
         gps = GpsInfo(
-            available=True, fresh=fix.is_fresh(), lat=fix.lat, lon=fix.lon,
-            alt_m=fix.alt, distance_from_active_m=round(dist, 1),
+            available=True, fresh=fresh, usable=fresh and fix.mode >= _MIN_GPS_MODE,
+            lat=fix.lat, lon=fix.lon, alt_m=fix.alt, distance_from_active_m=round(dist, 1),
         )
     else:
         gps = GpsInfo(available=False)

@@ -3418,3 +3418,50 @@ pre-existing, unrelated failures in `test_get_sync_status.py` confirmed via
 running dev server: `GET /status`, `GET /ip-lookup` (real IP-geo lookup
 succeeded), `POST /confirm` for both `home` and `saved` targets, and
 `DELETE /saved/{name}` all behaved as designed; HTML/JS assets parse cleanly.
+
+---
+
+## 2026-07-07 — Confirm Time & Location panel: automatic-first revision
+
+**What changed:** revision of the same-day earlier entry, after a requirements
+re-check surfaced a gap.
+
+- `raw/SmartTelescope.md` ("Automatic location/time acquisition — from phone,
+  network, or GPS if available [MVP]") and `wiki/requirements.md` §9
+  ("Automation-first UX — user does not manage mount sync… separately")
+  meant the original manual-click "Use GPS fix" design was a regression from
+  the old auto-polling GPS-drift banner it replaced. `docs/todo.md`
+  M8-010/REQ-TIME-005 also already specifies a single Stage 1 "Time /
+  Location Verification" panel — a second, separate confirm card fragmented
+  that.
+- `smart_telescope/api/location.py`: `GpsInfo.usable` (new field) = fresh
+  fix with `mode >= 2` (mirrors `services/master_source.py`'s
+  `_MIN_GPS_MODE = 2`) — single source of truth for "is this fix good enough
+  to suggest", replacing `available` (true for any TPV report, including
+  `mode < 2`) as the gate. 4 new tests in `tests/unit/api/test_location.py`.
+- `smart_telescope/static/index.html`: moved the entire location panel
+  (local time + GPS badge, select/name/lat/lon/height inputs, source badge,
+  quick-fill buttons, Confirm button) out of the "Observer & Time" card
+  (reverted to just UTC/LST) and into `#s1-tl-card` ("Time / Location
+  Verification"), appended after the existing `s1-tl-status` line. The
+  existing `s1-tl-params`/`s1-tl-controls` block (REQ-TIME-005's tested
+  20-field contract) is untouched; "Confirm Pi Time" and "Confirm Time &
+  Location" now coexist in the same card.
+- `smart_telescope/static/js/setup.js`: `_renderLocationPanel()` now prefers
+  `d.gps` over `d.active` on every non-dirty render when `d.gps.usable` is
+  true — a fresh fix is suggested automatically (source badge → `GPS_FIX`,
+  ready for one Confirm click) instead of requiring a manual "Use GPS fix"
+  click first; falls back to `d.active` exactly as before when no usable fix
+  exists. `useGpsFix()` and the `loc-gps-btn` disabled-gate switched from
+  `gps.available` to `gps.usable` for consistency.
+- OnStep's native 4-site memory (`:Wn#`/`:SM#`/`:SP#`, undocumented in any
+  adapter code) was flagged as a possible integration point for the
+  saved-location library but intentionally deferred — config.toml stays the
+  source of truth for now.
+
+**Test result:** 4 new tests (65 total for this feature area), full suite
+3907 passed, 39 skipped (same 4 pre-existing unrelated `test_get_sync_status.py`
+failures as before). Manually verified live: panel confirmed absent from
+Observer & Time, present in `#s1-tl-card` with both Confirm buttons; `gps.usable`
+present and `false` with no GPSD running; confirm(saved)/delete round-trip
+re-verified.

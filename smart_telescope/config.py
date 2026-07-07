@@ -66,6 +66,50 @@ def _get(section: str, key: str, default: str) -> str:
 
 OBSERVER_LAT: float = float(os.environ.get("OBSERVER_LAT", _get("observer", "lat", "50.336")))
 OBSERVER_LON: float = float(os.environ.get("OBSERVER_LON", _get("observer", "lon", "8.533")))
+OBSERVER_HEIGHT_M: float = float(
+    os.environ.get("OBSERVER_HEIGHT_M", _get("observer", "height_m", "0.0"))
+)
+
+# Home baseline — the persisted [observer] values. Stays untouched by a "saved" location
+# confirm; only a "home" confirm (api/location.py) rewrites these, in lockstep with the
+# disk write. Distinct from OBSERVER_LAT/LON/HEIGHT_M once a saved location becomes active
+# — those three keep driving real telescope operation (mount sync, visibility calcs) and
+# track whichever location is currently active.
+OBSERVER_HOME_LAT: float = OBSERVER_LAT
+OBSERVER_HOME_LON: float = OBSERVER_LON
+OBSERVER_HOME_HEIGHT_M: float = OBSERVER_HEIGHT_M
+
+# Active-location bookkeeping for the Confirm Time & Location panel. Mutated in-memory by
+# api/location.py the same way OBSERVER_LAT/LON is mutated directly today (config.py is a
+# plain module, not a service — no RuntimeContext involvement).
+OBSERVER_LOCATION_SOURCE: str = "CONFIG_FILE"
+OBSERVER_LOCATION_NAME: str = "Home"
+
+
+@dataclass(frozen=True)
+class LocationSpec:
+    """One named entry in the saved-locations library (Confirm Time & Location panel)."""
+    name: str
+    lat: float
+    lon: float
+    height_m: float = 0.0
+
+
+def _parse_locations() -> dict[str, LocationSpec]:
+    section = _cfg.get("locations", {})
+    result: dict[str, LocationSpec] = {}
+    for name, vals in section.items():
+        if isinstance(vals, dict):
+            result[name] = LocationSpec(
+                name=name,
+                lat=float(vals.get("lat", 0.0)),
+                lon=float(vals.get("lon", 0.0)),
+                height_m=float(vals.get("height_m", 0.0)),
+            )
+    return result
+
+
+LOCATIONS: dict[str, LocationSpec] = _parse_locations()
 
 # ── hardware (TOML only — deps.py applies env-var override at runtime) ────────
 

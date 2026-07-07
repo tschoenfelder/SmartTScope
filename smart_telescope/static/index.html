@@ -741,19 +741,6 @@
       <div id="s1-readiness-caps" style="padding-top:0.4rem;display:flex;flex-wrap:wrap;align-items:center"></div>
     </div>
 
-    <!-- GPS location notification banner (shown when GPS fix differs > 100 m from configured) -->
-    <div id="gps-banner" style="display:none;background:#f5a623;color:#000;
-         border-radius:5px;padding:0.4rem 0.75rem;margin-bottom:0.75rem;
-         font-size:0.85rem;flex-direction:row;align-items:center;gap:0.75rem">
-      <span id="gps-banner-msg"></span>
-      <button onclick="applyGpsLocation()"
-              style="margin-left:auto;padding:0.2rem 0.6rem;font-size:0.8rem">
-        Apply GPS Location
-      </button>
-      <button onclick="document.getElementById('gps-banner').style.display='none'"
-              class="secondary" style="padding:0.2rem 0.5rem;font-size:0.8rem">✕</button>
-    </div>
-
     <!-- Milestone Dashboard (R7-005 / M0-008) -->
     <div class="card" id="s1-milestones-card">
       <div class="card-title">
@@ -782,23 +769,55 @@
           <span class="param-label">Local Sidereal Time</span>
           <span class="param-value mono" id="clock-lst">—</span>
         </div>
-        <div class="param">
-          <span class="param-label">Observer Lat</span>
-          <span class="param-value mono" id="site-lat">—</span>
-        </div>
-        <div class="param">
-          <span class="param-label">Observer Lon</span>
-          <span class="param-value mono" id="site-lon">—</span>
-        </div>
-        <div class="param" id="gps-dist-row" style="display:none">
-          <span class="param-label">GPS</span>
-          <span class="param-value mono" id="gps-dist-value">—</span>
-        </div>
       </div>
-      <div id="gps-apply-row" style="display:none;margin-top:0.4rem">
-        <button onclick="applyGpsLocation()" class="secondary"
-                style="font-size:0.8rem;padding:0.2rem 0.6rem">Apply GPS Location</button>
-        <span id="gps-apply-coords" style="font-size:0.78rem;color:var(--muted);margin-left:0.5rem"></span>
+
+      <div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--border)">
+        <div class="param" style="margin-bottom:0.4rem">
+          <span class="param-label">Local time</span>
+          <span class="param-value mono" id="loc-local-time">—</span>
+          <span id="loc-gps-badge" class="badge badge-ok" style="display:none;margin-left:0.4rem">GPS</span>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
+          <select id="loc-select" onchange="onLocationSelectChange()" style="font-size:0.82rem"></select>
+          <button id="loc-delete-btn" onclick="deleteSavedLocation()" class="secondary"
+                  style="display:none;font-size:0.78rem;padding:0.15rem 0.5rem"
+                  title="Delete this saved location">✕</button>
+          <span id="loc-source-badge" class="badge">—</span>
+        </div>
+
+        <div id="loc-name-row" style="display:none;margin-bottom:0.4rem">
+          <input id="loc-name-input" type="text" placeholder="Location name" oninput="_markLocationDirty()"
+                 style="font-size:0.82rem;padding:0.2rem 0.4rem;width:100%">
+        </div>
+
+        <div class="params" style="margin-bottom:0.4rem">
+          <div class="param">
+            <span class="param-label">Lat</span>
+            <input id="loc-lat-input" type="number" step="0.000001" oninput="_onLocationFieldInput()"
+                   class="mono" style="width:100%">
+          </div>
+          <div class="param">
+            <span class="param-label">Lon</span>
+            <input id="loc-lon-input" type="number" step="0.000001" oninput="_onLocationFieldInput()"
+                   class="mono" style="width:100%">
+          </div>
+          <div class="param">
+            <span class="param-label">Height (m)</span>
+            <input id="loc-height-input" type="number" step="0.1" oninput="_onLocationFieldInput()"
+                   class="mono" style="width:100%">
+          </div>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+          <button onclick="useGpsFix()" id="loc-gps-btn" class="secondary" disabled
+                  style="font-size:0.8rem;padding:0.2rem 0.6rem">Use GPS fix</button>
+          <button onclick="lookupByIp()" class="secondary"
+                  style="font-size:0.8rem;padding:0.2rem 0.6rem">Look up by IP</button>
+          <button onclick="confirmTimeAndLocation()"
+                  style="font-size:0.82rem;padding:0.25rem 0.7rem">Confirm Time &amp; Location</button>
+        </div>
+        <div id="loc-status" class="status-line" style="margin-top:0.4rem"></div>
       </div>
     </div>
 

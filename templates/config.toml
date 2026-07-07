@@ -5,6 +5,16 @@
 [observer]
 lat = 0.0    # decimal degrees, north-positive  (e.g. 50.336 for Usingen, Hesse)
 lon = 0.0    # decimal degrees, east-positive   (e.g. 8.533)
+height_m = 0.0   # elevation above sea level, metres (optional; 0.0 if unknown)
+
+# ── Saved locations library (optional) ─────────────────────────────────────
+# Each named site gets its own [locations.<name>] table — same table-of-tables
+# convention as [cameras.<role>] / [telescopes.<name>] below. Recalled/edited
+# from the "Confirm Time & Location" panel; never rewrites [observer] (Home).
+# [locations.dark_sky_site]
+# lat      = 49.912
+# lon      = 8.111
+# height_m = 410.0
 
 [hardware]
 # Use stable udev symlink names (won't shift like ttyUSB0/1/2 across reconnects).

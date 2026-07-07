@@ -171,10 +171,6 @@ async function initSiteConfig() {
       const d = await (await fetch('/api/mount/config')).json();
       _observerLat = d.observer_lat;
       _observerLon = d.observer_lon;
-      const latEl = document.getElementById('site-lat');
-      const lonEl = document.getElementById('site-lon');
-      if (latEl) latEl.textContent = `${_observerLat.toFixed(4)}° N`;
-      if (lonEl) lonEl.textContent = `${_observerLon.toFixed(4)}° E`;
       const altMinEl = document.getElementById("limit-alt-min");
       const altMaxEl = document.getElementById("limit-alt-max");
       const haEastEl = document.getElementById("limit-ha-east");
@@ -201,8 +197,8 @@ async function loadVersion() {
 
 _applyAdvancedMode();
 initSiteConfig();
-checkGpsStatus();
-setInterval(checkGpsStatus, 30_000);
+refreshLocationPanel();
+setInterval(refreshLocationPanel, 15_000);
 loadVersion();
 refreshMount();
 _startMountStripPoll();

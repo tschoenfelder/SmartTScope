@@ -259,60 +259,191 @@ function s4PreviewStart() {
     previewStart('main');
 }
 
-async function checkGpsStatus() {
+/* ══════════════════════════════════════════════════════════════════════
+     Confirm Time & Location panel (Observer & Time card, Stage 1)
+══════════════════════════════════════════════════════════════════════ */
+
+let _locPanelDirty = false;
+let _lastLocationStatus = null;
+let _locSource = 'CONFIG_FILE';
+
+function _markLocationDirty() { _locPanelDirty = true; }
+
+function _onLocationFieldInput() {
+    _markLocationDirty();
+    _setLocSource('USER_ENTERED');
+}
+
+function _setLocSource(src) {
+    _locSource = src;
+    const b = document.getElementById('loc-source-badge');
+    if (b) {
+        b.textContent = src;
+        b.classList.toggle('badge-ok', src === 'GPS_FIX');
+    }
+}
+
+function _renderLocationPanel(d) {
+    _lastLocationStatus = d;
+
+    const timeEl = document.getElementById('loc-local-time');
+    if (timeEl) timeEl.textContent = d.local_time_iso ? d.local_time_iso.replace('T', ' ') : '—';
+    const gpsBadge = document.getElementById('loc-gps-badge');
+    if (gpsBadge) gpsBadge.style.display = d.time_from_gps ? '' : 'none';
+    const gpsBtn = document.getElementById('loc-gps-btn');
+    if (gpsBtn) gpsBtn.disabled = !(d.gps && d.gps.available);
+
+    if (_locPanelDirty) return;
+
+    const select = document.getElementById('loc-select');
+    if (select) {
+        const options = ['Home', ...d.saved_locations.map(l => l.name), '+ New location…'];
+        select.innerHTML = options.map(name => {
+            const value = name === '+ New location…' ? '__new__' : name;
+            return `<option value="${escHtml(value)}">${escHtml(name)}</option>`;
+        }).join('');
+        select.value = d.active.name;
+    }
+
+    const latEl = document.getElementById('loc-lat-input');
+    const lonEl = document.getElementById('loc-lon-input');
+    const heightEl = document.getElementById('loc-height-input');
+    if (latEl) latEl.value = d.active.lat;
+    if (lonEl) lonEl.value = d.active.lon;
+    if (heightEl) heightEl.value = d.active.height_m;
+    _setLocSource(d.active.source);
+
+    const nameRow = document.getElementById('loc-name-row');
+    if (nameRow) nameRow.style.display = 'none';
+    const delBtn = document.getElementById('loc-delete-btn');
+    if (delBtn) delBtn.style.display = d.active.name !== 'Home' ? '' : 'none';
+}
+
+async function refreshLocationPanel() {
     try {
-        const g = await (await fetch('/api/gpsd/status')).json();
-        const distRow = document.getElementById('gps-dist-row');
-        const distEl  = document.getElementById('gps-dist-value');
-        if (!g.available) return;
-        if (g.fix_mode < 2) {
-            if (distEl) distEl.textContent = 'Acquiring fix…';
-            if (distRow) distRow.style.display = '';
-            return;
-        }
-        const dist = Math.round(g.distance_m);
-        if (distEl) { distEl.textContent = dist + ' m'; }
-        if (distRow) distRow.style.display = '';
-        if (dist > 100) {
-            const applyRow = document.getElementById('gps-apply-row');
-            const coords   = document.getElementById('gps-apply-coords');
-            const banner   = document.getElementById('gps-banner');
-            const bannerMsg = document.getElementById('gps-banner-msg');
-            if (coords) coords.textContent = `${g.lat.toFixed(4)}°, ${g.lon.toFixed(4)}°`;
-            if (applyRow) applyRow.style.display = '';
-            if (bannerMsg) bannerMsg.textContent =
-                `GPS fix: location is ${dist} m from configured observer position.`;
-            if (banner) banner.style.display = 'flex';
-        }
+        const d = await (await fetch('/api/location/status')).json();
+        _renderLocationPanel(d);
     } catch (_) {}
 }
 
-async function applyGpsLocation() {
+function onLocationSelectChange() {
+    const select = document.getElementById('loc-select');
+    const value = select ? select.value : 'Home';
+    const nameRow = document.getElementById('loc-name-row');
+    const nameInput = document.getElementById('loc-name-input');
+    const delBtn = document.getElementById('loc-delete-btn');
+    const latEl = document.getElementById('loc-lat-input');
+    const lonEl = document.getElementById('loc-lon-input');
+    const heightEl = document.getElementById('loc-height-input');
+
+    if (value === '__new__') {
+        if (nameRow) nameRow.style.display = '';
+        if (nameInput) nameInput.value = '';
+        if (latEl) latEl.value = '';
+        if (lonEl) lonEl.value = '';
+        if (heightEl) heightEl.value = '';
+        _setLocSource('USER_ENTERED');
+        if (delBtn) delBtn.style.display = 'none';
+        _locPanelDirty = false;
+        return;
+    }
+
+    if (nameRow) nameRow.style.display = 'none';
+    const d = _lastLocationStatus;
+    if (!d) return;
+    const entry = value === 'Home' ? d.home : d.saved_locations.find(l => l.name === value);
+    if (!entry) return;
+    if (latEl) latEl.value = entry.lat;
+    if (lonEl) lonEl.value = entry.lon;
+    if (heightEl) heightEl.value = entry.height_m;
+    _setLocSource(value === 'Home' ? 'CONFIG_FILE' : 'SAVED_LOCATION');
+    if (delBtn) delBtn.style.display = value !== 'Home' ? '' : 'none';
+    _locPanelDirty = false;
+}
+
+function useGpsFix() {
+    const gps = _lastLocationStatus && _lastLocationStatus.gps;
+    if (!gps || !gps.available) {
+        setStatus('loc-status', 'No GPS fix available', true);
+        return;
+    }
+    const latEl = document.getElementById('loc-lat-input');
+    const lonEl = document.getElementById('loc-lon-input');
+    const heightEl = document.getElementById('loc-height-input');
+    if (latEl) latEl.value = gps.lat;
+    if (lonEl) lonEl.value = gps.lon;
+    if (heightEl && gps.alt_m !== null && gps.alt_m !== undefined) heightEl.value = gps.alt_m;
+    _setLocSource('GPS_FIX');
+    _markLocationDirty();
+}
+
+async function lookupByIp() {
+    setStatus('loc-status', 'Looking up location by IP…');
     try {
-        const g = await (await fetch('/api/gpsd/status')).json();
-        if (!g.available || g.fix_mode < 2) {
-            setStatus('s1-readiness-status', 'No GPS fix available', true);
+        const g = await (await fetch('/api/location/ip-lookup')).json();
+        if (!g.available) {
+            setStatus('loc-status', 'IP lookup failed — no result', true);
             return;
         }
-        await fetch('/api/observer/location', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({lat: g.lat, lon: g.lon}),
-        });
-        // Push the updated location (and current Pi time) to OnStep if mounted.
-        // Best-effort: failure is logged but does not block the location update.
-        try {
-            await apiPost('/api/mount/sync_clock');
-        } catch (_) {}
+        const latEl = document.getElementById('loc-lat-input');
+        const lonEl = document.getElementById('loc-lon-input');
+        if (latEl) latEl.value = g.lat;
+        if (lonEl) lonEl.value = g.lon;
+        _setLocSource('IP_LOOKUP');
+        _markLocationDirty();
+        setStatus('loc-status', '');
+    } catch (e) {
+        setStatus('loc-status', e.message, true);
+    }
+}
+
+async function confirmTimeAndLocation() {
+    const select = document.getElementById('loc-select');
+    const value = select ? select.value : 'Home';
+    const lat = parseFloat(document.getElementById('loc-lat-input').value);
+    const lon = parseFloat(document.getElementById('loc-lon-input').value);
+    const height_m = parseFloat(document.getElementById('loc-height-input').value) || 0.0;
+
+    let target, name;
+    if (value === 'Home') {
+        target = 'home';
+        name = undefined;
+    } else if (value === '__new__') {
+        target = 'saved';
+        name = document.getElementById('loc-name-input').value.trim();
+    } else {
+        target = 'saved';
+        name = value;
+    }
+
+    setStatus('loc-status', 'Confirming…');
+    try {
+        const resp = await apiPost('/api/location/confirm', {target, name, lat, lon, height_m, source: _locSource});
+        _locPanelDirty = false;
+        _renderLocationPanel(resp);
+        setStatus('loc-status', 'Confirmed — Pi time trust: USER_CONFIRMED');
         await initSiteConfig();
-        const banner = document.getElementById('gps-banner');
-        if (banner) banner.style.display = 'none';
-        const applyRow = document.getElementById('gps-apply-row');
-        if (applyRow) applyRow.style.display = 'none';
-        const distEl = document.getElementById('gps-dist-value');
-        if (distEl) distEl.textContent = '< 1 m (applied)';
-    } catch (err) {
-        setStatus('s1-readiness-status', 'GPS location apply failed: ' + err.message, true);
+        if (typeof refreshMount === 'function') await refreshMount();
+        if (typeof refreshStage1TL === 'function') await refreshStage1TL();
+    } catch (e) {
+        setStatus('loc-status', e.message, true);
+    }
+}
+
+async function deleteSavedLocation() {
+    const select = document.getElementById('loc-select');
+    const name = select ? select.value : null;
+    if (!name || name === 'Home' || name === '__new__') return;
+    try {
+        const resp = await fetch('/api/location/saved/' + encodeURIComponent(name), {method: 'DELETE'});
+        if (!resp.ok) {
+            const body = await resp.json().catch(() => ({}));
+            throw new Error(body.detail || 'Delete failed');
+        }
+        _locPanelDirty = false;
+        await refreshLocationPanel();
+    } catch (e) {
+        setStatus('loc-status', e.message, true);
     }
 }
 

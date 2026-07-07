@@ -60,6 +60,7 @@ from .api.bias_estimation import router as bias_estimation_router
 from .api.guiding import router as guiding_router
 from .api.setup_check import router as setup_check_router
 from .api.gpsd import router as gpsd_router
+from .api.location import router as location_router
 from .api.stage1 import router as stage1_router
 from .api.commands import router as commands_router
 from .api.logs import router as logs_router
@@ -113,6 +114,7 @@ app.include_router(bias_estimation_router)
 app.include_router(guiding_router)
 app.include_router(setup_check_router)
 app.include_router(gpsd_router)
+app.include_router(location_router)
 app.include_router(stage1_router)
 app.include_router(commands_router)
 app.include_router(logs_router)

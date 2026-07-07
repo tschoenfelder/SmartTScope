@@ -1,11 +1,11 @@
-"""GPSD status and observer location update endpoints."""
+"""GPSD status endpoint.
+
+Observer-location writes moved to api/location.py (Confirm Time & Location panel).
+"""
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from .. import config
 from ..services.gpsd_service import GpsdService, haversine_m
@@ -13,8 +13,6 @@ from ..services.gpsd_service import GpsdService, haversine_m
 router = APIRouter()
 
 _gpsd = GpsdService()
-
-_CONFIG_PATH = Path.home() / ".SmartTScope" / "config.toml"
 
 
 class GpsdStatusResponse(BaseModel):
@@ -29,11 +27,6 @@ class GpsdStatusResponse(BaseModel):
     distance_m: float = 0.0
     configured_lat: float = 0.0
     configured_lon: float = 0.0
-
-
-class ObserverLocationRequest(BaseModel):
-    lat: float = Field(ge=-90.0, le=90.0)
-    lon: float = Field(ge=-180.0, le=180.0)
 
 
 @router.get("/api/gpsd/status", response_model=GpsdStatusResponse)
@@ -56,26 +49,3 @@ def gpsd_status() -> GpsdStatusResponse:
         configured_lat=config.OBSERVER_LAT,
         configured_lon=config.OBSERVER_LON,
     )
-
-
-@router.post("/api/observer/location")
-def update_observer_location(body: ObserverLocationRequest) -> dict[str, bool]:
-    """Update observer lat/lon in memory and persist to ~/.SmartTScope/config.toml."""
-    config.OBSERVER_LAT = body.lat
-    config.OBSERVER_LON = body.lon
-
-    if _CONFIG_PATH.exists():
-        text = _CONFIG_PATH.read_text(encoding="utf-8")
-        text = re.sub(
-            r"(?m)^(lat\s*=\s*).*$",
-            lambda m: f"{m.group(1)}{body.lat}",
-            text,
-        )
-        text = re.sub(
-            r"(?m)^(lon\s*=\s*).*$",
-            lambda m: f"{m.group(1)}{body.lon}",
-            text,
-        )
-        _CONFIG_PATH.write_text(text, encoding="utf-8")
-
-    return {"ok": True}

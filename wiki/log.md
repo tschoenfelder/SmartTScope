@@ -3349,3 +3349,72 @@ python scripts/spikes/sp2_astap_pi.py --fits /tmp/sp1_frame.fits
   never defined, causing a persistent `NameError` since the test was committed.
 
 **Test result:** 2429 passed (all tests green, no exclusions needed).
+
+---
+
+## 2026-07-07 — Confirm Time & Location panel
+
+**What changed:**
+
+- `smart_telescope/domain/location_source.py` (new): `LocationSource` enum
+  (`CONFIG_FILE | GPS_FIX | IP_LOOKUP | USER_ENTERED | SAVED_LOCATION`) +
+  `is_valid()` helper, modeled on `domain/raspberry_time_trust.py`.
+- `smart_telescope/services/ip_geolocation_service.py` (new):
+  `IpGeolocationService` — one-shot, user-triggered-only IP-based geolocation
+  lookup via stdlib `urllib.request` (no new pip dependency); catches every
+  failure mode internally and never raises.
+- `smart_telescope/config.py`: new `OBSERVER_HEIGHT_M` (`[observer].height_m`);
+  `OBSERVER_HOME_LAT/LON/HEIGHT_M` (permanent Home baseline, independent of
+  whatever location is currently active); `OBSERVER_LOCATION_SOURCE`/
+  `OBSERVER_LOCATION_NAME` in-memory bookkeeping; `LocationSpec` dataclass +
+  `_parse_locations()`/`LOCATIONS` parsed from a table-of-tables
+  `[locations.<name>]` section (same convention as `[cameras.<role>]` /
+  `[telescopes.<name>]` — no TOML array-of-tables precedent in this codebase).
+- `smart_telescope/api/location.py` (new): `GET /api/location/status`
+  (consolidated active/home/saved_locations/gps/local_time/`time_from_gps`),
+  `GET /api/location/ip-lookup`, `POST /api/location/confirm`
+  (`target=home` rewrites `[observer]`; `target=saved` upserts
+  `[locations.<name>]`; either way updates in-memory active state, best-effort
+  pushes to OnStep via `mount_sync_clock`, and always calls
+  `mount_confirm_time` so one Confirm click also marks Pi time
+  `USER_CONFIRMED`), `DELETE /api/location/saved/{name}`. Config-file writes
+  use line-scanned section boundaries (`_find_section_lines`: a line only
+  counts as a new section when `[` is the first non-whitespace character) so
+  patching `[observer]` can never corrupt a `[locations.*]` block's own
+  `lat =`/`lon =` lines (the old `api/gpsd.py` regex was an unscoped
+  whole-document substitution — safe only while `lat =`/`lon =` appeared
+  nowhere else in the file). Reuses `mount_sync_clock`/`mount_confirm_time`
+  from `api/mount.py` directly as plain function calls — no shared helper, no
+  circular import, `POST /api/mount/sync_clock`/`confirm_time` keep working
+  standalone.
+- `smart_telescope/api/gpsd.py`: removed `POST /api/observer/location`,
+  `ObserverLocationRequest`, `update_observer_location` — superseded by
+  `api/location.py`. `GET /api/gpsd/status` untouched.
+- `smart_telescope/app.py`: registered `location_router`.
+- `templates/config.toml`: `[observer].height_m` + documented example
+  `[locations.<name>]` block.
+- `smart_telescope/static/index.html`: removed the GPS-drift banner and the
+  old read-only `Observer Lat`/`Observer Lon`/`Apply GPS Location` row;
+  Observer & Time card gained a "Confirm Time & Location" subsection — local
+  time + `GPS` badge (shown only when Pi time trust source is `GPSD_FIX`),
+  a location `<select>` (Home / saved locations / "+ New location…"),
+  always-editable lat/lon/height_m inputs, a source badge, "Use GPS fix" /
+  "Look up by IP" quick-fill buttons (fill only, no auto-write), a delete
+  button for saved locations, and the Confirm button.
+- `smart_telescope/static/js/setup.js`: removed `checkGpsStatus()` /
+  `applyGpsLocation()`; added `refreshLocationPanel()`, `_renderLocationPanel()`,
+  `onLocationSelectChange()`, `useGpsFix()`, `lookupByIp()`,
+  `confirmTimeAndLocation()`, `deleteSavedLocation()`. A `_locPanelDirty` flag
+  stops the 15 s background poll from clobbering an in-progress edit.
+- `smart_telescope/static/js/app.js`: init block now calls
+  `refreshLocationPanel()` (15 s interval) instead of `checkGpsStatus()`;
+  removed the now-dead `site-lat`/`site-lon` element writes in
+  `initSiteConfig()`.
+
+**Test result:** 61 new tests (15 domain + 8 service + 27 API + 6 config +
+5 config-parse), all passing. Full suite: 3903 passed, 39 skipped (4
+pre-existing, unrelated failures in `test_get_sync_status.py` confirmed via
+`git stash` to predate this change). Manually verified live against the
+running dev server: `GET /status`, `GET /ip-lookup` (real IP-geo lookup
+succeeded), `POST /confirm` for both `home` and `saved` targets, and
+`DELETE /saved/{name}` all behaved as designed; HTML/JS assets parse cleanly.

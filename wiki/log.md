@@ -4,6 +4,41 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — CORRECTION — M9-022's "fix" removed too; scope check with user
+
+Immediate follow-up to the previous entry. That correction reverted the
+auto-set-park regression but then added a *new* "Set Park Position" button
++ `POST /api/mount/set_park_position` endpoint, reasoning that some explicit
+way to set park position should exist since the 2026-06-14 removal left
+none.
+
+User clarified: the only documented requirement here (that same 2026-06-14
+entry) says the app must never change the park position *automatically* —
+it does not ask for a UI way to change it at all. Building that UI was
+scope beyond the actual ask, decided unilaterally rather than requested.
+
+Removed entirely: the endpoint (`api/mount.py`), the button and its JS
+(`static/js/mount.js`), and the scaffolding added only to support them
+(`MockMount.set_park_position()` override, the `mount_mock` fixture default,
+and their tests in `test_mount.py`). Net result: `ObservingService._run_home()`
+stays reverted (M9-021 shape, no park-position involvement at all — that
+part of the correction was correct and stays). The underlying gap — nothing
+in this app can save an OnStep park position, so `:hP#` will keep rejecting
+on any hardware without one already configured — is confirmed real and left
+open on purpose, not solved here. Setting it requires going outside this
+app (e.g. OnStep's hand controller) until a real requirement asks for a
+UI path.
+
+3929+ tests pass, same 4 pre-existing/unrelated failures, 0 new regressions.
+
+**Second lesson layered on the first:** finding a real gap (no way to set
+park position) doesn't mean I should decide the fix and build UI for it in
+the same breath — confirm the requirement actually calls for that capability
+before adding it, especially for anything that writes to persisted hardware
+state.
+
+---
+
 ## 2026-07-08 — FIX — M9-022 corrected: undo an auto-set-park-position regression
 
 User report: "the UI again shows confirm home position [while] parked...

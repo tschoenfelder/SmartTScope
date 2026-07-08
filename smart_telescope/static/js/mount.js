@@ -181,8 +181,6 @@ function mountCard(data) {
                       title="Unpark mount">Unpark</button>
               <button class="secondary" onclick="mountPark()"
                       title="Park mount">Park</button>
-              <button class="secondary" onclick="mountSetParkPosition()"
-                      title="Save the mount's CURRENT position as the new OnStep park position — overwrites the previous one">Set Park Position</button>
             </span>
           </span>
           <button class="danger" onclick="mountEmergencyStop()"
@@ -275,25 +273,6 @@ async function mountPark() {
       setStatus('s1-mount-status', `park failed: ${err.message}`, true);
     } finally {
       _mountPendingCmd = null;
-      await refreshMount();
-    }
-}
-
-async function mountSetParkPosition() {
-    if (!confirm(
-      'Save the mount\'s CURRENT position as the new park position?\n\n' +
-      'This overwrites any previously saved park position. Only do this if ' +
-      'the mount is right now where you want it to park in the future.'
-    )) {
-      return;
-    }
-    setStatus('s1-mount-status', '');
-    try {
-      await apiPost('/api/mount/set_park_position', { confirmed: true });
-      setStatus('s1-mount-status', 'Park position saved.');
-    } catch (err) {
-      setStatus('s1-mount-status', `set park position failed: ${err.message}`, true);
-    } finally {
       await refreshMount();
     }
 }

@@ -87,8 +87,5 @@ class MockMount(MountPort):
     def go_home(self) -> None:
         self._state = MountState.AT_HOME
 
-    def set_park_position(self) -> bool:
-        return True
-
     def disconnect(self) -> None:
         self._state = MountState.PARKED

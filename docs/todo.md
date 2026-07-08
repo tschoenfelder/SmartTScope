@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-07-08 (M9-024 done: relabeled "Confirm HOME position" → "Home the mount" — the label itself was the actual root cause of the repeated M9-021/022/023 confusion, not a functional bug)
+**Last updated:** 2026-07-08 (M9-025 done: home_sequence() disables tracking immediately after unpark, not only after a racy state re-check)
 **New sources (2026-07-06):** `smarttscope_requirements_full.md` (state-based observation system: BOOTSTRAP..PARKED_SAFE top-level flow, G1-G10 guards, MVP staging in §11) — drove the M9 rewrite of the main UI from a 5-tab wizard to a guided single-flow screen
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
@@ -1266,6 +1266,10 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 - [x] M9-024 "Confirm HOME position" button label was the actual root cause of the repeated "why does it say confirm home while parked" confusion across M9-021/022/023 `[P1 · UI · Source: user report 2026-07-08]`
   - **Root cause:** semantic mismatch, not a functional bug. `Intent.START_HOME`'s label was "Confirm HOME position" — but clicking it doesn't *confirm* an already-true state, it *performs* the unpark+slew-to-home action from wherever the mount currently is (including PARKED). "Confirm X" implies X is already true and just needs acknowledging (like the already-correctly-named "Accept — home confirmed" step that appears *after* homing succeeds, or "Confirm Pi Time" elsewhere in the app, which only asserts trust in an already-current clock). User pointed out the underlying logical contradiction directly: a "confirm" action should never be the thing that makes its own subject true.
   - *Done:* relabeled to "Home the mount" in `_START_ACTIONS` (`observing_service.py`) — matches the existing "Home" terminology already used for this exact action elsewhere (Maintenance's "Home" button, the mount-strip's "HOME"/`AT_HOME` state label). The two-step start/accept structure underneath was already correct (this is the same button/intent introduced in M9-007/M9-016); only the display string was wrong. No test asserted the old label string. Verified live: `primary_action.label` now reads "Home the mount" while the mount-strip shows PARKED, before any home action has run — no more semantic contradiction.
+- [x] M9-025 Safety: disable tracking immediately after unpark in `home_sequence()`, not only after a subsequent state check `[P1 · Safety · Source: user report 2026-07-08]`
+  - **Why:** some OnStep firmware auto-starts sidereal tracking immediately on `:hR#` (unpark) — the existing code only disabled tracking if a *subsequent* `get_state()` query reported `TRACKING`, which races against the firmware and could leave the mount tracking (moving) unexpectedly for a window before the home command was even issued.
+  - *Done:* `mount_operations.home_sequence()` now calls `mount.disable_tracking()` unconditionally immediately after a successful `unpark()`, before the propagation sleep — not gated behind a state re-check. The existing conditional check afterward is kept as-is, covering the separate case where the mount was already `TRACKING` on entry (not freshly unparked in this call).
+  - Tests: new `test_home_sequence_disables_tracking_immediately_after_unpark` in `test_mount_operations.py`, deliberately mocking the tracking-check query to return something other than `TRACKING` to prove the call happens unconditionally, not via that check. 27 + 189 broader tests pass, 0 regressions.
 
 ### Phase 2 — Unified readiness aggregation (backlog)
 

@@ -228,6 +228,24 @@ def test_home_sequence_auto_unparks_when_parked():
     m.unpark.assert_called_once()
 
 
+def test_home_sequence_disables_tracking_immediately_after_unpark():
+    """Some OnStep firmware auto-starts sidereal tracking on :hR# (unpark),
+    but the very next GU# query might not yet reflect it. disable_tracking()
+    must be called unconditionally right after a successful unpark, not
+    gated behind a get_state() check that could race with the firmware and
+    leave the mount tracking (moving) unexpectedly."""
+    m = _mock_mount(state=MountState.PARKED, unpark_ok=True)
+    # Deliberately UNPARKED (not TRACKING) on the tracking-check query, to
+    # prove disable_tracking() already ran from the unconditional call above
+    # it, not from this check.
+    m.get_state.side_effect = [MountState.PARKED, MountState.UNPARKED, MountState.AT_HOME]
+    c = _coordinator()
+    with patch("smart_telescope.services.mount_operations.time") as mock_time:
+        mock_time.monotonic.side_effect = [0.0, 0.5]
+        home_sequence(m, c)
+    m.disable_tracking.assert_called_once()
+
+
 def test_home_sequence_raises_on_unpark_failure():
     m = _mock_mount(state=MountState.PARKED, unpark_ok=False)
     c = _coordinator()

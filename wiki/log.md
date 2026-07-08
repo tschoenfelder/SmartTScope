@@ -4,6 +4,31 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — SAFETY — M9-025: disable tracking immediately after unpark
+
+User: "Tracking should be disabled directly after unpark to prevent
+unwanted movements."
+
+`home_sequence()` only disabled tracking if a *subsequent* `get_state()`
+query reported `TRACKING` — but some OnStep firmware auto-starts sidereal
+tracking immediately on `:hR#` (unpark), and that check races against the
+firmware: there was a window where the mount could be tracking (moving)
+before the home command was issued and before anything explicitly turned
+tracking off.
+
+Fix: call `mount.disable_tracking()` unconditionally right after a
+successful `unpark()`, before the propagation sleep — not gated behind a
+state re-check. Kept the existing conditional check afterward as-is (covers
+the mount already being `TRACKING` on entry, not freshly unparked in this
+call).
+
+New test deliberately mocks the tracking-check query to return something
+other than `TRACKING`, to prove the disable call happens unconditionally
+rather than via that check. 27 targeted + 189 broader tests pass, 0
+regressions.
+
+---
+
 ## 2026-07-08 — FIX — M9-024: the actual root cause was the button label
 
 After M9-021/022/023, user kept seeing the same shape of confusion and

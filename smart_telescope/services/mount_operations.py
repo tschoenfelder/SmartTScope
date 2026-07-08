@@ -185,11 +185,19 @@ def home_sequence(
     if mount.get_state() == MountState.PARKED:
         if not mount.unpark():
             raise RuntimeError("Auto-unpark before home failed")
-        _log.info("Mount home: unparked — waiting for state to propagate")
+        _log.info("Mount home: unparked")
+        # Some OnStep firmware versions auto-start sidereal tracking
+        # immediately on :hR# (unpark) — disable it right away, before
+        # waiting for state to propagate, rather than only checking after
+        # the sleep below. Leaving tracking engaged even briefly here risks
+        # unwanted mount movement before the home slew is commanded.
+        mount.disable_tracking()
+        _log.info("Mount home: tracking disabled immediately after unpark")
         time.sleep(1.0)
 
     # OnStep silently ignores :hC# while sidereal tracking is active on some
-    # firmware versions.  Disable tracking first so the home slew always starts.
+    # firmware versions. Covers the case where the mount was already
+    # TRACKING on entry (not freshly unparked above).
     if mount.get_state() == MountState.TRACKING:
         mount.disable_tracking()
         _log.info("Mount home: tracking disabled before home command")

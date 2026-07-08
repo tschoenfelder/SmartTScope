@@ -4,6 +4,34 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — OPEN — M9-026: real :hP# rejection, root cause not yet found
+
+User hit "FAULT: :hP# rejected by OnStep — home the mount first to
+establish the park position, then park" trying to park after homing. My
+first read (M9-022-era) assumed no park position had ever been saved.
+User corrected this directly: a park position *is* already saved in the
+OnStep controller (set up outside this app — matches `park_sequence()`'s
+own docstring: "The park position must be configured in OnStep directly —
+this function never modifies it"). "Just return to the saved position...
+It says move to park, not make current the new park" — i.e. the fix isn't
+a way to set a new park position; `:hP#` (move to the *existing* saved
+position) should simply be made to work.
+
+Checked `_raise_if_locked()` — if a SmartTScope-side safety lock had
+blocked this, a different, more specific error would have been raised
+instead of the generic `park_sequence()` message. So this is a genuine
+OnStep firmware rejection of `:hP#`, for a reason not yet identified.
+
+Rather than guess again, corrected the misleading part: `park_sequence()`'s
+`RuntimeError` no longer asserts a specific unverified cause — it points at
+the server log instead, where `OnStepMount.park()` already logs the raw
+OnStep reply (`reply=%r`) that would show the real reason. **Root cause
+still open** — needs that logged reply value (or `collect_logs.sh` output)
+from the user's actual hardware; not solvable from code-reading alone this
+time.
+
+---
+
 ## 2026-07-08 — SAFETY — M9-025: disable tracking immediately after unpark
 
 User: "Tracking should be disabled directly after unpark to prevent

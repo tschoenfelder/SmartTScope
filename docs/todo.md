@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-07-08 (M9-025 done: home_sequence() disables tracking immediately after unpark, not only after a racy state re-check)
+**Last updated:** 2026-07-08 (M9-025 done: home_sequence() disables tracking immediately after unpark; M9-026 opened: real :hP# rejection with an existing saved park position, root cause not yet found — error message corrected to stop asserting a wrong cause, awaiting log data)
 **New sources (2026-07-06):** `smarttscope_requirements_full.md` (state-based observation system: BOOTSTRAP..PARKED_SAFE top-level flow, G1-G10 guards, MVP staging in §11) — drove the M9 rewrite of the main UI from a 5-tab wizard to a guided single-flow screen
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
@@ -1270,6 +1270,9 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - **Why:** some OnStep firmware auto-starts sidereal tracking immediately on `:hR#` (unpark) — the existing code only disabled tracking if a *subsequent* `get_state()` query reported `TRACKING`, which races against the firmware and could leave the mount tracking (moving) unexpectedly for a window before the home command was even issued.
   - *Done:* `mount_operations.home_sequence()` now calls `mount.disable_tracking()` unconditionally immediately after a successful `unpark()`, before the propagation sleep — not gated behind a state re-check. The existing conditional check afterward is kept as-is, covering the separate case where the mount was already `TRACKING` on entry (not freshly unparked in this call).
   - Tests: new `test_home_sequence_disables_tracking_immediately_after_unpark` in `test_mount_operations.py`, deliberately mocking the tracking-check query to return something other than `TRACKING` to prove the call happens unconditionally, not via that check. 27 + 189 broader tests pass, 0 regressions.
+- [ ] M9-026 Real hardware: `:hP#` (park) rejected by OnStep even with a park position already saved — root cause not yet found `[P0 · Hardware · Source: user report 2026-07-08]`
+  - User confirmed a park position *is* already saved in the OnStep controller (set up outside this app, matching `park_sequence()`'s own docstring: "The park position must be configured in OnStep directly — this function never modifies it"). So the pre-existing error message's assumed cause ("home the mount first to establish the park position") was wrong for this case — `park()` calling `_raise_if_locked()` confirmed this isn't a SmartTScope-side safety lock either; the rejection is a genuine OnStep firmware response to `:hP#`, for a reason not yet identified (possibly an alignment/position-trust precondition distinct from the mechanical HOME route's own state — unconfirmed).
+  - *Partial fix:* `park_sequence()`'s `RuntimeError` no longer asserts an unverified specific cause — it now points at the server log, where `OnStepMount.park()` already logs the raw OnStep reply (`reply=%r`) that would show the actual reason. **Root cause still open** — needs the actual logged reply value (or `collect_logs.sh` output) from the user's hardware to diagnose further; noted here rather than guessed at.
 
 ### Phase 2 — Unified readiness aggregation (backlog)
 

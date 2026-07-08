@@ -139,9 +139,15 @@ def park_sequence(
                 time.sleep(0.3)  # let :Q# register before :hP#
             ok = mount.park()
             if not ok:
+                # Don't assert a specific cause here — :hP# rejection can mean
+                # several different things on the OnStep side (no park position
+                # saved, mount not aligned, an internal fault, etc.) and this
+                # function has no way to tell which one actually happened.
+                # OnStepMount.park() logs the raw reply; check the server log
+                # for the real reason rather than trusting a guess here.
                 raise RuntimeError(
-                    ":hP# rejected by OnStep — home the mount first to establish "
-                    "the park position, then park"
+                    ":hP# rejected by OnStep — check the server log for "
+                    "OnStepMount.park()'s logged reply to see the actual reason"
                 )
             _log.info("Mount park issued")
     except CommandConflictError:

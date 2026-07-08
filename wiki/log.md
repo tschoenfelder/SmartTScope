@@ -4,6 +4,43 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-09 — FIX — M9-027: stop blindly resending :hP# on retry
+
+User: "Via the Onstep UI I have always been able to request a move to
+park! Don't you use the adapter to request move to park? You shouldn't
+send :hP#" — pushing back on M9-026's fix, pointing out that OnStep's own
+UI never has this problem.
+
+Checked `wiki/onstep-protocol.md`'s hardware-confirmed behaviour notes:
+`:hP#` is documented as fire-and-forget, ~10 ms reply, slew taking
+30–120 s, with **no documented case of it ever returning a rejection**
+(`'0'`) — unlike `:hR#` (unpark), whose own doc entry explicitly says it
+can return `'0'` "if unpark is rejected (e.g. no alignment stored)". A
+real `'0'` reply for `:hP#`, as seen in the M9-026 log, is therefore a
+previously unobserved case.
+
+Root cause: `_maybe_auto_advance()` re-spawns `_run_safe_stop()` (and
+therefore `park_sequence()` → `mount.park()` → a fresh `:hP#`) on *every
+single poll* (observing.js polls every 2.5 s) while `g8` stays False.
+OnStep's own UI is driven by a human clicking "Park" once and watching —
+it never hammers `:hP#` repeatedly while a previous attempt might still be
+resolving. The M9-026 log's second, rejected `:hP#` is very likely exactly
+this: a resend while the first (accepted) command was still in flight.
+
+Fix: `ObservingService` now tracks `_park_command_issued_at` — set once
+`park_sequence()` successfully issues `:hP#` without raising, cleared once
+PARKED is actually observed. While set and within `_PARK_COMMAND_MAX_WAIT_S`
+(120 s, matching the documented max slew time), `_run_safe_stop()` skips
+calling `park_sequence()` again on subsequent auto-advance retries — it
+just re-checks `device_state` instead of re-sending the command. Falls
+back to resending only if genuinely stuck past 120 s.
+
+New test `test_stop_safely_does_not_resend_park_command_on_retry` asserts
+`mount.park()` is called at most once across repeated auto-advance retries
+while the mount never reaches PARKED. 199 tests pass, 0 regressions.
+
+---
+
 ## 2026-07-08 — FIX — M9-026 resolved: found the real bug from server logs
 
 Follow-up to the M9-026 entry below. User supplied the actual server log

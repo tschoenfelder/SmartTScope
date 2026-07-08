@@ -164,6 +164,12 @@ _STOP_ONLY_PHASES = frozenset({
     ObservingPhase.WAIT_CONTEXT_CONFIRMATION, ObservingPhase.WAIT_HOME_CONFIRMATION,
 })
 
+# :hP# is fire-and-forget and its slew can take 30-120 s (see
+# wiki/onstep-protocol.md). Once park_sequence() has successfully issued it,
+# _run_safe_stop() won't re-issue it again until this much time has passed —
+# see _park_command_issued_at.
+_PARK_COMMAND_MAX_WAIT_S = 120.0
+
 
 def _primary_action(phase: ObservingPhase, guards: Guards, busy: bool) -> dict[str, Any] | None:
     if busy:
@@ -224,6 +230,11 @@ class ObservingService:
         self._busy = False
         self._detail: dict[str, Any] = {}
         self._stop_event = threading.Event()
+        # Set once park_sequence() successfully issues :hP# (doesn't raise);
+        # cleared once PARKED is actually observed. While set and recent,
+        # _run_safe_stop() skips re-issuing :hP# on the next auto-advance
+        # retry instead of blindly resending it — see _run_safe_stop().
+        self._park_command_issued_at: float | None = None
         self._log: SessionLog | None = None
         # BOOTSTRAP has no user gate — advance immediately.
         self._phase = self._fsm.next(ObservingInput(phase=self._phase))
@@ -506,9 +517,28 @@ class ObservingService:
         if deps.guide_role_cameras:
             with contextlib.suppress(Exception):
                 deps.guiding_service.stop()
-        mount_operations.park_sequence(deps.mount, deps.coordinator, deps.device_state)
+
+        # _maybe_auto_advance() re-spawns this on every poll while SAFE_STOPPING
+        # hasn't reached PARKED yet. Don't blindly resend :hP# on each of those
+        # retries — it's fire-and-forget and its slew can take up to 120 s, and
+        # real hardware has been observed to reject a second :hP# sent while a
+        # previous one might still be resolving. Once a command has been
+        # successfully issued, just re-check device_state instead, until it
+        # either completes or _PARK_COMMAND_MAX_WAIT_S elapses.
+        with self._lock:
+            issued_at = self._park_command_issued_at
+        now = time.monotonic()
+        still_waiting = issued_at is not None and (now - issued_at) < _PARK_COMMAND_MAX_WAIT_S
+        if not still_waiting:
+            mount_operations.park_sequence(deps.mount, deps.coordinator, deps.device_state)
+            with self._lock:
+                self._park_command_issued_at = time.monotonic()
+
         deps.device_state.poll_now()
         obs = deps.device_state.get_mount_state()
         parked = obs is not None and obs.state == MountState.PARKED
+        if parked:
+            with self._lock:
+                self._park_command_issued_at = None
         with self._lock:
             self._guards = replace(self._guards, g8_safe_stop_possible=parked)

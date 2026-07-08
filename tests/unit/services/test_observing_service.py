@@ -299,6 +299,34 @@ class TestSafeStopping:
         assert snap["phase"] == P.SAFE_STOPPING.value
         assert snap["guards"]["g8_safe_stop_possible"] is False
 
+    def test_stop_safely_does_not_resend_park_command_on_retry(
+        self, deps: ObservingDeps,
+    ) -> None:
+        """Regression test (real-hardware report 2026-07-08): _maybe_auto_advance()
+        re-spawns _run_safe_stop() on every poll while SAFE_STOPPING hasn't reached
+        PARKED yet. :hP# is fire-and-forget and its slew can take up to 120 s;
+        blindly resending it on each retry was observed on real hardware to get a
+        second :hP# rejected by OnStep while the first (accepted) one was still
+        resolving. mount.park() must be called at most once across repeated
+        auto-advance retries while device_state hasn't reached PARKED."""
+        svc = ObservingService()
+        svc._phase = P.CAPTURE_ACTIVE
+        deps.mount.get_state.return_value = MountState.TRACKING
+        deps.mount.park.return_value = True
+        deps.device_state = _device_state(MountState.SLEWING)  # never reaches PARKED
+
+        snap = svc.handle_intent(IT.STOP_SAFELY, deps)
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        assert deps.mount.park.call_count == 1
+
+        # Simulate further polls (observing.js polls every 2.5 s) — each one
+        # runs _maybe_auto_advance() again since g8 is still False.
+        for _ in range(3):
+            snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        assert deps.mount.park.call_count == 1
+
 
 class TestSafeParkFromWaitPhases:
     """Safe-park must be reachable even before anything is "active" (REQ:

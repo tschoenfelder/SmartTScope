@@ -674,8 +674,15 @@
       </div>
       <div class="param" style="margin-bottom:0.4rem">
         <span class="param-label">Local time</span>
-        <span class="param-value mono" id="obs-loc-local-time">—</span>
-        <span id="obs-loc-gps-badge" class="badge badge-ok" style="display:none;margin-left:0.4rem">GPS</span>
+        <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
+          <span class="param-value mono" id="obs-loc-local-time">—</span>
+          <span id="obs-loc-gps-badge" class="badge badge-ok" style="display:none">GPS</span>
+          <span id="obs-loc-time-trust-badge" class="badge"
+                title="Raspberry Pi clock trust source">—</span>
+          <button onclick="_obsConfirmPiTime()" class="secondary"
+                  style="font-size:0.72rem;padding:0.1rem 0.5rem"
+                  title="Assert the Pi clock is correct (sets USER_CONFIRMED trust)">Confirm Pi Time</button>
+        </div>
       </div>
 
       <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
@@ -872,8 +879,15 @@
       <div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid var(--border)">
         <div class="param" style="margin-bottom:0.4rem">
           <span class="param-label">Local time</span>
-          <span class="param-value mono" id="loc-local-time">—</span>
-          <span id="loc-gps-badge" class="badge badge-ok" style="display:none;margin-left:0.4rem">GPS</span>
+          <div style="display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
+            <span class="param-value mono" id="loc-local-time">—</span>
+            <span id="loc-gps-badge" class="badge badge-ok" style="display:none">GPS</span>
+            <span id="loc-time-trust-badge" class="badge"
+                  title="Raspberry Pi clock trust source">—</span>
+            <button onclick="stage1ConfirmTime()" class="secondary"
+                    style="font-size:0.72rem;padding:0.1rem 0.5rem"
+                    title="Assert the Pi clock is correct (sets USER_CONFIRMED trust)">Confirm Pi Time</button>
+          </div>
         </div>
 
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">

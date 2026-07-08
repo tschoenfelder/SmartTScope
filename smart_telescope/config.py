@@ -66,9 +66,20 @@ def _get(section: str, key: str, default: str) -> str:
 
 OBSERVER_LAT: float = float(os.environ.get("OBSERVER_LAT", _get("observer", "lat", "50.336")))
 OBSERVER_LON: float = float(os.environ.get("OBSERVER_LON", _get("observer", "lon", "8.533")))
-OBSERVER_HEIGHT_M: float = float(
-    os.environ.get("OBSERVER_HEIGHT_M", _get("observer", "height_m", "0.0"))
-)
+
+
+def _parse_observer_height_m() -> str:
+    """[observer] height_m, falling back to the alt_m key some configs use instead
+    (matches OnStepSafetyConfig's own observer_alt_m field name)."""
+    return _get("observer", "height_m", _get("observer", "alt_m", "0.0"))
+
+
+OBSERVER_HEIGHT_M: float = float(os.environ.get("OBSERVER_HEIGHT_M", _parse_observer_height_m()))
+
+# Friendly label for the Home location (Confirm Time & Location panel), e.g. "Usingen, HE".
+# Purely cosmetic — the internal "Home" identity used by api/location.py's confirm/select
+# round-trip is unaffected; this only supplies HomeLocation.name for display.
+OBSERVER_HOME_NAME: str = os.environ.get("OBSERVER_HOME_NAME", _get("observer", "name", "Home"))
 
 # Home baseline — the persisted [observer] values. Stays untouched by a "saved" location
 # confirm; only a "home" confirm (api/location.py) rewrites these, in lockstep with the
@@ -82,6 +93,9 @@ OBSERVER_HOME_HEIGHT_M: float = OBSERVER_HEIGHT_M
 # Active-location bookkeeping for the Confirm Time & Location panel. Mutated in-memory by
 # api/location.py the same way OBSERVER_LAT/LON is mutated directly today (config.py is a
 # plain module, not a service — no RuntimeContext involvement).
+# "Home" here is a stable identity, not a display label — OBSERVER_HOME_NAME (above) supplies
+# the friendly label shown for it; keep this literal so the confirm/select round-trip in
+# api/location.py and the frontend's `value === 'Home'` checks keep working unchanged.
 OBSERVER_LOCATION_SOURCE: str = "CONFIG_FILE"
 OBSERVER_LOCATION_NAME: str = "Home"
 
@@ -358,6 +372,7 @@ def build_onstep_safety_config():
     return OnStepSafetyConfig(
         observer_lat=OBSERVER_LAT,
         observer_lon=OBSERVER_LON,
+        observer_alt_m=OBSERVER_HEIGHT_M,
         min_alt_deg=MOUNT_MIN_ALT_DEG,
         max_alt_deg=MOUNT_MAX_ALT_DEG,
         ha_east_limit_h=MOUNT_HA_EAST_LIMIT_H,

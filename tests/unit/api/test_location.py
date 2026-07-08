@@ -19,7 +19,7 @@ client = TestClient(app)
 
 _OBSERVER_KEYS = [
     "OBSERVER_LAT", "OBSERVER_LON", "OBSERVER_HEIGHT_M",
-    "OBSERVER_HOME_LAT", "OBSERVER_HOME_LON", "OBSERVER_HOME_HEIGHT_M",
+    "OBSERVER_HOME_LAT", "OBSERVER_HOME_LON", "OBSERVER_HOME_HEIGHT_M", "OBSERVER_HOME_NAME",
     "OBSERVER_LOCATION_SOURCE", "OBSERVER_LOCATION_NAME",
 ]
 
@@ -92,7 +92,7 @@ class TestLocationStatus:
         assert resp.status_code == 200
         body = resp.json()
         for field in ("active", "home", "saved_locations", "gps", "local_time_iso",
-                      "local_tz_name", "time_from_gps"):
+                      "local_tz_name", "time_from_gps", "time_trust_source"):
             assert field in body
 
     def test_active_reflects_config_globals(self) -> None:
@@ -113,8 +113,15 @@ class TestLocationStatus:
         _inject()
         with patch.object(location_module._gpsd, "get_fix", return_value=None):
             body = client.get("/api/location/status").json()
-        assert body["home"] == {"lat": 50.0, "lon": 8.0, "height_m": 100.0}
+        assert body["home"] == {"lat": 50.0, "lon": 8.0, "height_m": 100.0, "name": "Home"}
         assert body["active"]["name"] == "Star Party"
+
+    def test_home_name_reflects_config(self) -> None:
+        config.OBSERVER_HOME_NAME = "Usingen, HE"
+        _inject()
+        with patch.object(location_module._gpsd, "get_fix", return_value=None):
+            body = client.get("/api/location/status").json()
+        assert body["home"]["name"] == "Usingen, HE"
 
     def test_saved_locations_reflect_config_locations(self) -> None:
         config.LOCATIONS["foo"] = config.LocationSpec(name="foo", lat=1.0, lon=2.0, height_m=3.0)

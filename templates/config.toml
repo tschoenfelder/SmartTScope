@@ -5,7 +5,8 @@
 [observer]
 lat = 0.0    # decimal degrees, north-positive  (e.g. 50.336 for Usingen, Hesse)
 lon = 0.0    # decimal degrees, east-positive   (e.g. 8.533)
-height_m = 0.0   # elevation above sea level, metres (optional; 0.0 if unknown)
+height_m = 0.0   # elevation above sea level, metres (optional; 0.0 if unknown; "alt_m" also accepted)
+name = "Home"    # optional friendly label shown in the Confirm Time & Location panel (e.g. "Usingen, HE")
 
 # ── Saved locations library (optional) ─────────────────────────────────────
 # Each named site gets its own [locations.<name>] table — same table-of-tables

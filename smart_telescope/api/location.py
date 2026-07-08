@@ -58,6 +58,7 @@ class HomeLocation(BaseModel):
     lat: float
     lon: float
     height_m: float
+    name: str = "Home"
 
 
 class GpsInfo(BaseModel):
@@ -78,6 +79,7 @@ class LocationStatusResponse(BaseModel):
     local_time_iso: str
     local_tz_name: str
     time_from_gps: bool
+    time_trust_source: str
 
 
 class IpLookupResponse(BaseModel):
@@ -119,7 +121,8 @@ def _build_status(
     inputs = gate_inputs_from_device_state(
         device_state, master_source_svc=master_source_svc, raspberry_trust_svc=raspberry_trust_svc,
     )
-    time_from_gps = inputs.get("raspberry_trust_source") == "GPSD_FIX"
+    time_trust_source = str(inputs.get("raspberry_trust_source") or "NOT_TRUSTED")
+    time_from_gps = time_trust_source in ("GPSD_FIX", "GPS_FIX")
     now_local = datetime.now().astimezone()
 
     return LocationStatusResponse(
@@ -130,16 +133,18 @@ def _build_status(
         ),
         home=HomeLocation(
             lat=config.OBSERVER_HOME_LAT, lon=config.OBSERVER_HOME_LON,
-            height_m=config.OBSERVER_HOME_HEIGHT_M,
+            height_m=config.OBSERVER_HOME_HEIGHT_M, name=config.OBSERVER_HOME_NAME,
         ),
         saved_locations=[
             LocationEntry(name=n, lat=s.lat, lon=s.lon, height_m=s.height_m)
             for n, s in sorted(config.LOCATIONS.items())
         ],
         gps=gps,
-        local_time_iso=now_local.isoformat(),
+        # timespec="seconds": the panel displays this directly, sub-second precision is noise.
+        local_time_iso=now_local.isoformat(timespec="seconds"),
         local_tz_name=now_local.tzname() or "",
         time_from_gps=time_from_gps,
+        time_trust_source=time_trust_source,
     )
 
 

@@ -4,6 +4,27 @@ function escHtml(s) {
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// "2026-07-08T17:02:38+02:00" -> "2026-07-08 17:02:38 +02:00"
+function formatLocalTime(iso) {
+    if (!iso) return '—';
+    return iso.replace('T', ' ').replace(/([+-]\d{2}:\d{2}|Z)$/, ' $1');
+}
+
+const _TIME_TRUST_LABELS = {
+    GPSD_FIX: 'GPS FIX', GPS_FIX: 'GPS FIX', NTP: 'NTP',
+    ONSTEP_COMPARISON: 'ONSTEP COMPARISON', USER_CONFIRMED: 'USER CONFIRMED',
+    NOT_TRUSTED: 'NOT TRUSTED', FALLBACK: 'NOT TRUSTED', STUB: '—',
+};
+const _TIME_TRUST_OK = new Set(['GPSD_FIX', 'GPS_FIX', 'NTP', 'ONSTEP_COMPARISON', 'USER_CONFIRMED']);
+
+function timeTrustLabel(source) {
+    return _TIME_TRUST_LABELS[source] || String(source || '—');
+}
+
+function timeTrustIsOk(source) {
+    return _TIME_TRUST_OK.has(source);
+}
+
 
 const _ERROR_PATTERNS = [
     // Mount / OnStep

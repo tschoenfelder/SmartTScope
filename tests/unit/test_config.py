@@ -1,7 +1,10 @@
 """Unit tests for smart_telescope.config — observer location defaults and overrides."""
 import importlib
+from unittest.mock import patch
 
 import pytest
+
+import smart_telescope.config as config_mod
 
 
 def _reload_config(
@@ -67,6 +70,23 @@ class TestObserverHeight:
         assert isinstance(cfg.OBSERVER_HEIGHT_M, float)
 
 
+class TestObserverHeightAltMAlias:
+    """[observer] alt_m is accepted as an alias for height_m (some configs use it,
+    matching OnStepSafetyConfig's own observer_alt_m field name)."""
+
+    def test_height_m_key_takes_precedence(self) -> None:
+        with patch.object(config_mod, "_cfg", {"observer": {"height_m": "410.0", "alt_m": "999.0"}}):
+            assert config_mod._parse_observer_height_m() == "410.0"
+
+    def test_falls_back_to_alt_m_when_height_m_absent(self) -> None:
+        with patch.object(config_mod, "_cfg", {"observer": {"alt_m": "304.0"}}):
+            assert config_mod._parse_observer_height_m() == "304.0"
+
+    def test_defaults_to_zero_when_neither_key_present(self) -> None:
+        with patch.object(config_mod, "_cfg", {"observer": {}}):
+            assert config_mod._parse_observer_height_m() == "0.0"
+
+
 class TestObserverHomeAndActiveGlobals:
     def test_home_matches_observer_on_load(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cfg = _reload_config(monkeypatch, "48.0", "11.0", "300.0")
@@ -80,6 +100,16 @@ class TestObserverHomeAndActiveGlobals:
         cfg = _reload_config(monkeypatch, None, None)
         assert cfg.OBSERVER_LOCATION_SOURCE == "CONFIG_FILE"
         assert cfg.OBSERVER_LOCATION_NAME == "Home"
+
+    def test_home_name_defaults_to_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("OBSERVER_HOME_NAME", raising=False)
+        cfg = _reload_config(monkeypatch, None, None)
+        assert cfg.OBSERVER_HOME_NAME == "Home"
+
+    def test_home_name_overridden_by_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OBSERVER_HOME_NAME", "Usingen, HE")
+        cfg = _reload_config(monkeypatch, None, None)
+        assert cfg.OBSERVER_HOME_NAME == "Usingen, HE"
 
     def test_locations_library_defaults_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         cfg = _reload_config(monkeypatch, None, None)

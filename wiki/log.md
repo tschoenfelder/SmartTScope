@@ -4,6 +4,20 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-015: Time & Location panel follow-up
+
+User report against the M9-014 panel: local time showed raw microseconds+no-space offset (`17:02:38.580558+02:00`), there was no way to see or change time-trust status, and a real config with `alt_m = 304.0` under `[observer]` still showed height 0m in the UI.
+
+- **Timestamp:** `local_time_iso` now `isoformat(timespec="seconds")`; frontend `formatLocalTime()` (new, `api.js`) adds a space before the offset. Reads `2026-07-08 17:02:38 +02:00`.
+- **Time trust badge + Confirm Pi Time:** `LocationStatusResponse.time_trust_source` exposes the existing gate value (`GPSD_FIX`/`NTP`/`ONSTEP_COMPARISON`/`USER_CONFIRMED`/`NOT_TRUSTED`); shown as a badge (green when trusted) next to local time in both the Observe and Maintenance panels. A "Confirm Pi Time" button (`POST /api/mount/confirm_time`) sits beside it — same endpoint the Maintenance screen's older `stage1ConfirmTime()` already used, now reachable from the location panel itself in both screens.
+- **Root cause of the height bug:** `config.py` only read `[observer].height_m`; the user's config used `alt_m` (matching `OnStepSafetyConfig.observer_alt_m`'s own field name in `adapters/onstep/safety.py`), so it silently defaulted to `0.0`. `_parse_observer_height_m()` now tries `height_m` first, falls back to `alt_m`.
+- **Second bug found while in there:** `build_onstep_safety_config()` never passed `observer_alt_m=OBSERVER_HEIGHT_M` to `OnStepSafetyConfig` at all — the configured elevation never reached the mount adapter (used by `ensure_time_location_synced()`'s OnStep site-altitude push and the altitude-consistency check in `get_sync_status()`), so OnStep was always told `0.0` regardless of config. Now wired through.
+- **Home display name:** new `OBSERVER_HOME_NAME` (`[observer].name` in config.toml, e.g. "Usingen, HE") feeds `HomeLocation.name`, shown as the label of the location-select's Home option. The internal `"Home"` identity (`OBSERVER_LOCATION_NAME`, the confirm/select round-trip's `value === 'Home'` checks) is untouched — purely a display change.
+- `templates/config.toml`: documented the `alt_m` alias and the new `name` key.
+- 12 new/updated tests (`test_config.py`, `test_location.py`); full suite 3863+ passed, same 4 pre-existing/unrelated `test_get_sync_status.py` location-tolerance failures, 0 new regressions. Verified live via Playwright against a config using `alt_m = 304.0`: height correctly reads 304, dropdown shows "Usingen, HE", Confirm Pi Time flips the badge to green "USER CONFIRMED".
+
+---
+
 ## 2026-07-08 — FIX — M9-014: Time & Location review panel in the guided Observe screen
 
 User report: the Observe screen's `WAIT_CONTEXT_CONFIRMATION` step showed a plain "Confirm time & location" button with no way to see or change what would be confirmed — a regression against the Maintenance screen's existing "Confirm Time & Location" panel (`s1-tl-card`, commits `eeec8e3`/`23aea26`), which already offers a GPS-fix suggestion, saved-location/Home dropdown, and manual lat/lon/height entry against `/api/location/*`.

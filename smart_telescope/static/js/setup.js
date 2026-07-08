@@ -287,9 +287,14 @@ function _renderLocationPanel(d) {
     _lastLocationStatus = d;
 
     const timeEl = document.getElementById('loc-local-time');
-    if (timeEl) timeEl.textContent = d.local_time_iso ? d.local_time_iso.replace('T', ' ') : '—';
+    if (timeEl) timeEl.textContent = formatLocalTime(d.local_time_iso);
     const gpsBadge = document.getElementById('loc-gps-badge');
     if (gpsBadge) gpsBadge.style.display = d.time_from_gps ? '' : 'none';
+    const trustBadge = document.getElementById('loc-time-trust-badge');
+    if (trustBadge) {
+        trustBadge.textContent = timeTrustLabel(d.time_trust_source);
+        trustBadge.classList.toggle('badge-ok', timeTrustIsOk(d.time_trust_source));
+    }
     const gpsBtn = document.getElementById('loc-gps-btn');
     if (gpsBtn) gpsBtn.disabled = !(d.gps && d.gps.usable);
 
@@ -297,11 +302,14 @@ function _renderLocationPanel(d) {
 
     const select = document.getElementById('loc-select');
     if (select) {
-        const options = ['Home', ...d.saved_locations.map(l => l.name), '+ New location…'];
-        select.innerHTML = options.map(name => {
-            const value = name === '+ New location…' ? '__new__' : name;
-            return `<option value="${escHtml(value)}">${escHtml(name)}</option>`;
-        }).join('');
+        const homeLabel = (d.home && d.home.name) || 'Home';
+        const optionDefs = [
+            { value: 'Home', label: homeLabel },
+            ...d.saved_locations.map(l => ({ value: l.name, label: l.name })),
+            { value: '__new__', label: '+ New location…' },
+        ];
+        select.innerHTML = optionDefs.map(o =>
+            `<option value="${escHtml(o.value)}">${escHtml(o.label)}</option>`).join('');
         select.value = d.active.name;
     }
 

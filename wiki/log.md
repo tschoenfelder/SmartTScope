@@ -4,6 +4,37 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-024: the actual root cause was the button label
+
+After M9-021/022/023, user kept seeing the same shape of confusion and
+pushed back sharply: "Confirm to home logically can only be pressed, if at
+home! Should one confirm the location and time if they are not correct?"
+
+That's the answer. `Intent.START_HOME`'s label was "Confirm HOME position"
+— but clicking it doesn't confirm an already-true state, it *performs* the
+unpark+slew-to-home action starting from wherever the mount currently is,
+including PARKED. "Confirm X" implies X is already true and just needs
+acknowledging — like the already-correctly-named "Accept — home confirmed"
+step that appears *after* homing succeeds, or "Confirm Pi Time" elsewhere
+in this app, which only asserts trust in an already-current clock rather
+than changing it. A "confirm" action should never be the thing that makes
+its own subject true. That single mislabeled string, sitting on a button
+next to a mount-strip reading PARKED, is almost certainly what drove every
+round of "why does it say confirm home while parked" this session — not a
+defect in the underlying M9-021/022/023 fixes, which were all real and
+correct on their own terms.
+
+Fix: relabeled to "Home the mount" — matches the "Home" terminology already
+used for this exact action elsewhere (Maintenance's "Home" button, the
+mount-strip's own "HOME"/`AT_HOME` state label). The two-step start/accept
+structure underneath (introduced in M9-007/M9-016) was already correct;
+only the display string was wrong. No test asserted the old label. Verified
+live: `primary_action.label` now reads "Home the mount" while the
+mount-strip still shows PARKED and before any home action has run — no
+semantic contradiction left on screen.
+
+---
+
 ## 2026-07-08 — FIX — M9-023: mount-strip lagged behind HOME confirmation
 
 User pushback: "the screen moves ... to asking for confirming home but

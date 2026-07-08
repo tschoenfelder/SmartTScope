@@ -127,7 +127,7 @@ def _wait_not_slewing(mount: MountPort, stop: threading.Event, timeout_s: float 
 
 _START_ACTIONS: dict[ObservingPhase, tuple[Intent, str]] = {
     ObservingPhase.WAIT_CONTEXT_CONFIRMATION: (Intent.CONFIRM_CONTEXT, "Confirm time & location"),
-    ObservingPhase.WAIT_HOME_CONFIRMATION: (Intent.START_HOME, "Confirm HOME position"),
+    ObservingPhase.WAIT_HOME_CONFIRMATION: (Intent.START_HOME, "Home the mount"),
     ObservingPhase.POLAR_ALIGN: (Intent.START_POLAR_ALIGN, "Start polar alignment"),
     ObservingPhase.FOCUS_READYING: (Intent.START_FOCUS, "Start focus run"),
     ObservingPhase.TARGET_ACQUIRE: (

@@ -4,6 +4,41 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-023: mount-strip lagged behind HOME confirmation
+
+User pushback: "the screen moves ... to asking for confirming home but
+regardless staying at parked" — asked to check the state machine for a
+logical weakness rather than just re-assert the fix was fine.
+
+Found by comparing `_run_home()` against `_run_safe_stop()` (the park path):
+`_run_safe_stop()` calls `deps.device_state.poll_now()` right after
+`park_sequence()` — its own docstring: "Used after park/unpark commands to
+refresh the cached state without waiting for the next background poll
+interval (nominally 2 s)." `_run_home()` never had the equivalent call
+after `home_sequence()`.
+
+Net effect: the Observe screen's phase panel (`/api/observing/state`, polled
+every 2.5s, reflects `ObservingService`'s in-memory guards immediately) and
+the mount-strip (`/api/mount/status`, polled independently every 5s, backed
+by `DeviceStateService`'s separately-cached state) could visibly disagree
+for several seconds right after confirming HOME — phase panel already
+showing "Accept — home confirmed" while the mount-strip still read PARKED.
+Not a state-machine defect exactly (the FSM/guards were correct throughout)
+but a real, user-visible inconsistency between two independently-polled
+UI elements, caused by an asymmetry between two structurally-similar
+service methods.
+
+Fix: added `deps.device_state.poll_now()` to `_run_home()`, mirroring
+`_run_safe_stop()` exactly. Also fixed a stale comment in the same method
+still referencing the `api/mount.py` `set_park_position` endpoint removed
+in the prior correction.
+
+Verified live: `GET /api/mount/status` immediately after `START_HOME` (zero
+sleep) now reads `"state": "at_home"` instead of stale data. 3924 tests
+pass, same 4 pre-existing/unrelated failures, 0 new regressions.
+
+---
+
 ## 2026-07-08 — CORRECTION — M9-022's "fix" removed too; scope check with user
 
 Immediate follow-up to the previous entry. That correction reverted the

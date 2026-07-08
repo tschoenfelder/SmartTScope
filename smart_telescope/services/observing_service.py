@@ -384,8 +384,15 @@ class ObservingService:
         # home) and reverted it — see wiki/log.md 2026-06-14 "CRITICAL: remove
         # auto_set_park": it silently overwrites the user's deliberately
         # configured EEPROM park position. Park position must only be set by
-        # explicit user action (api/mount.py's set_park_position endpoint).
+        # explicit user action — there is currently no such action anywhere
+        # in this app at all (removed again in a later session; see wiki/log.md).
         at_home = mount_operations.home_sequence(deps.mount, deps.coordinator)
+        # Force the device_state cache to refresh immediately, same as
+        # _run_safe_stop() does after park_sequence() — otherwise the
+        # mount-strip (polled independently of this phase panel) can keep
+        # showing the pre-home status for several seconds after the
+        # guards/phase have already updated.
+        deps.device_state.poll_now()
         state = deps.mount.get_state()
         with self._lock:
             self._detail["home"] = {"mount_state": state.name}

@@ -374,11 +374,15 @@ class ObservingService:
             self._detail["session_state"] = state.name
 
     def _run_home(self, deps: ObservingDeps) -> None:
-        mount_operations.home_sequence(deps.mount, deps.coordinator)
+        # Use home_sequence()'s own return value, not a fresh get_state() call
+        # here — AT_HOME is a brief flag on real OnStep hardware and can
+        # already have cleared to something else by the time a second,
+        # independent query runs (see home_sequence()'s docstring).
+        at_home = mount_operations.home_sequence(deps.mount, deps.coordinator)
         state = deps.mount.get_state()
         with self._lock:
             self._detail["home"] = {"mount_state": state.name}
-            self._guards = replace(self._guards, g2_home_confirmed=state is MountState.AT_HOME)
+            self._guards = replace(self._guards, g2_home_confirmed=at_home)
 
     def _run_polar_align(self, deps: ObservingDeps) -> None:
         wf = PolarAlignmentWorkflow(

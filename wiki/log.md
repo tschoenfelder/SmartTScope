@@ -4,6 +4,46 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-021: real-hardware AT_HOME transient-flag race
+
+User report from real Pi/OnStep hardware testing (not reproducible against
+`MockMount`): after confirming HOME successfully (mount physically parked/
+homed correctly), the guided flow looped back to asking "Confirm HOME
+position" again instead of continuing.
+
+Root cause: `mount_operations.home_sequence()` (M9-016) returned `None`, and
+`ObservingService._run_home()` determined success by calling
+`deps.mount.get_state()` a *second*, independent time after `home_sequence()`
+returned. But `AT_HOME` is documented in `home_sequence()`'s own tight-poll
+comment as a brief OnStep status flag — "the slew completes and 'H' clears
+before the next background poll fires." On real hardware it can clear before
+that second query runs, so `_run_home()` could see some other state and set
+`g2_home_confirmed=False` even though homing genuinely succeeded — sending
+the flow back to "Confirm HOME position" while the mount itself was fine.
+`MockMount`'s `AT_HOME` is a persistent mock state (doesn't clear), which is
+why this passed all prior test and Playwright verification.
+
+Fix: `home_sequence()` now returns `bool` — `True` only if its own tight poll
+actually observed `AT_HOME` (the one well-timed, authoritative check).
+`_run_home()` uses that return value directly for the guard instead of
+re-querying; `get_state()` is still read once afterward, but now purely for
+the informational `detail["home"]["mount_state"]` field, decoupled from the
+success decision. Existing callers (`api/mount.py`'s "HOME" button,
+`setup_check_service.py`'s setup-check wizard) already ignored the return
+value entirely, so the signature change is source-compatible with both.
+
+Two new `test_mount_operations.py` cases cover both outcomes explicitly.
+Full sweep: 3557+ tests pass, same 4 pre-existing/unrelated
+`test_get_sync_status.py` failures, 0 new regressions. Also confirmed the
+Pi deploy scripts (`astro_pull_start.sh` → `astro_start.sh`) always pair a
+`git reset --hard`/pull with a forced wheel reinstall and fresh process
+start — so this wasn't a stale-deploy issue, and `/api/version`'s git hash
+badge (computed live via `git rev-parse` on every request, per
+`api/version.py`) only ever reflects what's checked out on disk, not
+whether the running process has actually loaded it.
+
+---
+
 ## 2026-07-08 — FIX — M9-017: safe-park available before POLAR_ALIGN; target-selection gap logged
 
 Testing progressed past HOME confirmation to `POLAR_ALIGN`. Raised: how to

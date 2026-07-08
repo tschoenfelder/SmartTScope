@@ -163,12 +163,19 @@ def park_sequence(
 def home_sequence(
     mount: MountPort,
     coordinator: HardwareCommandCoordinator,
-) -> None:
+) -> bool:
     """Slew to the OnStep stored home position (:hC#).
 
     Uses OnStep's own home position (set via :hF# during initial setup)
     rather than computing a SmartTScope-side target.  Auto-unparks if the
     mount is currently parked.
+
+    Returns True if AT_HOME was confirmed during the tight poll below, False
+    otherwise. Callers that need to know whether homing actually succeeded
+    must use this return value rather than re-querying mount.get_state()
+    afterward — AT_HOME is a brief flag on real OnStep hardware (see the tight
+    poll comment) and can already have cleared to something else by the time
+    a second, independent query runs.
 
     Raises:
         RuntimeError: auto-unpark failed
@@ -215,3 +222,4 @@ def home_sequence(
     else:
         _log.warning("Mount home: AT_HOME not confirmed within %.0f s (last state: %s)",
                      _HOME_TIMEOUT_S, last_state.name)
+    return last_state == MountState.AT_HOME

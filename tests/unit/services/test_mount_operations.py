@@ -258,3 +258,21 @@ def test_home_sequence_skips_disable_tracking_when_unparked():
     home_sequence(m, c)
     m.disable_tracking.assert_not_called()
     m.go_home.assert_called_once()
+
+
+def test_home_sequence_returns_true_when_at_home_confirmed():
+    m = _mock_mount(state=MountState.UNPARKED)
+    m.get_state.return_value = MountState.AT_HOME
+    c = _coordinator()
+    assert home_sequence(m, c) is True
+
+
+def test_home_sequence_returns_false_when_at_home_flag_already_cleared():
+    """Real OnStep hardware: AT_HOME is a brief flag that can clear before a
+    caller re-checks get_state() a second time — home_sequence() itself must
+    report False in that case rather than let a caller be fooled by a later,
+    separate get_state() call (see observing_service.py's _run_home)."""
+    m = _mock_mount(state=MountState.UNPARKED)
+    m.get_state.return_value = MountState.TRACKING  # AT_HOME already cleared
+    c = _coordinator()
+    assert home_sequence(m, c) is False

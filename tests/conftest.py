@@ -73,6 +73,7 @@ def mount_mock() -> Mock:
     mnt.get_state.return_value = MountState.TRACKING
     mnt.unpark.return_value = True
     mnt.enable_tracking.return_value = True
+    mnt.set_park_position.return_value = True
     mnt.sync.return_value = True
     mnt.goto.return_value = True
     mnt.is_slewing.return_value = False

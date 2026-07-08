@@ -379,9 +379,24 @@ class ObservingService:
         # already have cleared to something else by the time a second,
         # independent query runs (see home_sequence()'s docstring).
         at_home = mount_operations.home_sequence(deps.mount, deps.coordinator)
+        park_position_set = False
+        if at_home:
+            # OnStep rejects :hP# (park) if no park position has ever been saved
+            # via :hS#. Establish park = home here, matching the adapter shim's
+            # own documented workflow (adapters/onstep/mount.py's
+            # set_park_position()) — otherwise a later "Stop safely" faults with
+            # "home the mount first" even though the mount is already home.
+            # Best-effort: a rejection here doesn't invalidate the home confirmation
+            # itself (G2 is about physically reaching home, not park bookkeeping).
+            try:
+                park_position_set = deps.mount.set_park_position()
+            except Exception as exc:
+                _log.warning("Could not establish park position after homing: %s", exc)
         state = deps.mount.get_state()
         with self._lock:
-            self._detail["home"] = {"mount_state": state.name}
+            self._detail["home"] = {
+                "mount_state": state.name, "park_position_set": park_position_set,
+            }
             self._guards = replace(self._guards, g2_home_confirmed=at_home)
 
     def _run_polar_align(self, deps: ObservingDeps) -> None:

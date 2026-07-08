@@ -114,8 +114,9 @@ class TestConfirmHome:
         snap = _wait_idle(svc, deps)
         assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value  # accept not sent yet
         assert snap["guards"]["g2_home_confirmed"] is True
-        assert snap["detail"]["home"] == {"mount_state": "AT_HOME"}
+        assert snap["detail"]["home"] == {"mount_state": "AT_HOME", "park_position_set": True}
         deps.mount.go_home.assert_called_once()
+        deps.mount.set_park_position.assert_called_once()
 
         snap = svc.handle_intent(IT.CONFIRM_HOME, deps)
         assert snap["phase"] == P.POLAR_ALIGN.value
@@ -130,6 +131,7 @@ class TestConfirmHome:
         assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
         assert snap["guards"]["g2_home_confirmed"] is False
         assert snap["primary_action"]["intent"] == IT.START_HOME.value  # offered again, not Accept
+        deps.mount.set_park_position.assert_not_called()  # never home, nothing to establish park at
 
         snap = svc.handle_intent(IT.CONFIRM_HOME, deps)  # accept refused — guard still false
         assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
@@ -144,6 +146,24 @@ class TestConfirmHome:
         snap = _wait_idle(svc, deps)
         assert snap["phase"] == P.FAULT.value
         assert "Auto-unpark before home failed" in snap["fault_message"]
+
+    def test_set_park_position_failure_does_not_invalidate_home(
+        self, deps: ObservingDeps,
+    ) -> None:
+        """OnStep rejecting :hS# (e.g. a stale safety lock) shouldn't undo a
+        genuinely successful home — G2 is about reaching home, not park
+        bookkeeping. A later "Stop safely" will surface its own park failure
+        if set_park_position truly never succeeds."""
+        svc = ObservingService()
+        svc.handle_intent(IT.CONFIRM_CONTEXT, deps)
+        deps.mount.get_state.return_value = MountState.AT_HOME
+        deps.mount.set_park_position.side_effect = RuntimeError("set_park_requires_tracking_off")
+
+        svc.handle_intent(IT.START_HOME, deps)
+        snap = _wait_idle(svc, deps)
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
+        assert snap["guards"]["g2_home_confirmed"] is True
+        assert snap["detail"]["home"]["park_position_set"] is False
 
 
 def _advance_to(svc: ObservingService, deps: ObservingDeps, phase: ObservingPhase) -> None:

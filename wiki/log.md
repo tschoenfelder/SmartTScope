@@ -4,6 +4,43 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-022: "Stop safely" faulted right after a successful HOME confirmation
+
+Immediately after fixing M9-021, real hardware testing hit a second, related
+fault: "Stop safely" (park) raised `:hP# rejected by OnStep — home the mount
+first to establish the park position, then park" — even though the mount had
+just been correctly homed and the page showed HOME.
+
+Root cause: OnStep firmware rejects `:hP#` (park) unless a park position was
+previously saved via `:hS#`. `mount.set_park_position()` /
+`set_park_position_from_current()` already existed on `MountPort` and the
+OnStep adapter — the adapter shim's own comment even says "SmartTScope's
+park workflow sets park = home position after a HOME slew" — but **nothing
+in the application ever called it**: not `ObservingService._run_home()`, not
+`api/mount.py`'s existing "HOME" button, not the Maintenance setup-check
+wizard. The error's own suggested fix ("home the mount first") didn't
+actually address the real missing step, since homing alone never saves a
+park position. This had presumably always been broken; it only surfaced now
+because M9-016/M9-017 (this session) are the first code to actually exercise
+HOME → park end-to-end on real hardware via the guided flow.
+
+Fix: `ObservingService._run_home()` now calls `deps.mount.set_park_position()`
+right after confirming `AT_HOME` (never attempted if home wasn't actually
+reached). Best-effort: a rejection is logged and recorded in
+`detail["home"]["park_position_set"]` but doesn't invalidate
+`g2_home_confirmed` — reaching home and saving a park position are different
+things, and a genuine park failure will still surface on its own via the
+later "Stop safely" attempt. `MockMount` gained a `set_park_position()`
+returning `True` (previously silently inherited `MountPort`'s `False`
+default); the shared `mount_mock` test fixture now pre-configures it too.
+
+3925 tests pass, same 4 pre-existing/unrelated `test_get_sync_status.py`
+failures, 0 new regressions. Verified end-to-end via direct API calls:
+`START_HOME` → `detail.home.park_position_set: true` → `STOP_SAFELY` →
+`PARKED_SAFE` with `g8_safe_stop_possible: true`.
+
+---
+
 ## 2026-07-08 — FIX — M9-021: real-hardware AT_HOME transient-flag race
 
 User report from real Pi/OnStep hardware testing (not reproducible against

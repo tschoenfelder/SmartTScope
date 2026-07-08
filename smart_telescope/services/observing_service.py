@@ -134,7 +134,7 @@ _START_ACTIONS: dict[ObservingPhase, tuple[Intent, str]] = {
         Intent.START_TARGET_ACQUIRE, "Slew, solve & center target",
     ),
     ObservingPhase.GUIDE_READYING: (Intent.START_GUIDING, "Start guiding"),
-    ObservingPhase.CAPTURE_ACTIVE: (Intent.STOP_SAFELY, "Stop safely"),
+    ObservingPhase.CAPTURE_ACTIVE: (Intent.STOP_SAFELY, "Stop safely (park)"),
     ObservingPhase.PAUSED_SAFE: (Intent.RESUME, "Resume"),
     ObservingPhase.FAULT: (Intent.ACKNOWLEDGE_FAULT, "Acknowledge & retry"),
 }
@@ -155,6 +155,13 @@ _ACCEPT_ACTIONS: dict[ObservingPhase, tuple[Intent, str, str]] = {
 _STOPPABLE_PHASES = frozenset({
     ObservingPhase.POLAR_ALIGN, ObservingPhase.FOCUS_READYING,
     ObservingPhase.TARGET_ACQUIRE, ObservingPhase.GUIDE_READYING,
+})
+
+# Safe-park is available here too, but "Pause" isn't — nothing is actively
+# running yet to pause. See domain/observing_state.py's direct STOP_SAFELY
+# checks in _on_wait_context/_on_wait_home.
+_STOP_ONLY_PHASES = frozenset({
+    ObservingPhase.WAIT_CONTEXT_CONFIRMATION, ObservingPhase.WAIT_HOME_CONFIRMATION,
 })
 
 
@@ -179,11 +186,13 @@ def _secondary_actions(phase: ObservingPhase) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     if phase in _STOPPABLE_PHASES:
         actions.append({"intent": Intent.PAUSE.value, "label": "Pause"})
-        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely"})
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
+    elif phase in _STOP_ONLY_PHASES:
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
     if phase is ObservingPhase.GUIDE_READYING:
         actions.append({"intent": Intent.SKIP_GUIDING.value, "label": "Skip guiding"})
     if phase is ObservingPhase.PAUSED_SAFE:
-        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely"})
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
     if phase is ObservingPhase.FAULT:
         actions.append({"intent": Intent.ABORT_TO_PARK.value, "label": "Abort to safe park"})
     return actions

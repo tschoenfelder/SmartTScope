@@ -176,11 +176,18 @@ class ObservingStateMachine:
     def _on_wait_context(self, inp: ObservingInput) -> ObservingPhase:
         if inp.intent == Intent.CONFIRM_CONTEXT and _guard_true(inp.guards.g1_context_confirmed):
             return ObservingPhase.WAIT_HOME_CONFIRMATION
+        # Safe-park is available even before anything is "active" (nothing to
+        # pause yet, so PAUSE is deliberately not offered here — see _STOP_ONLY_PHASES
+        # in observing_service.py).
+        if inp.intent == Intent.STOP_SAFELY:
+            return ObservingPhase.SAFE_STOPPING
         return ObservingPhase.WAIT_CONTEXT_CONFIRMATION
 
     def _on_wait_home(self, inp: ObservingInput) -> ObservingPhase:
         if inp.intent == Intent.CONFIRM_HOME and _guard_true(inp.guards.g2_home_confirmed):
             return ObservingPhase.POLAR_ALIGN
+        if inp.intent == Intent.STOP_SAFELY:
+            return ObservingPhase.SAFE_STOPPING
         return self._maybe_pause_or_stop(inp, ObservingPhase.WAIT_HOME_CONFIRMATION)
 
     def _on_polar_align(self, inp: ObservingInput) -> ObservingPhase:

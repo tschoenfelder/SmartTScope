@@ -296,6 +296,46 @@ class TestSafeStopping:
         assert snap["guards"]["g8_safe_stop_possible"] is False
 
 
+class TestSafeParkFromWaitPhases:
+    """Safe-park must be reachable even before anything is "active" (REQ:
+    user report 2026-07-08 — the always-visible Stop button only halts, it
+    doesn't park; before this fix the graceful park path was unavailable
+    during WAIT_CONTEXT_CONFIRMATION/WAIT_HOME_CONFIRMATION)."""
+
+    def test_wait_context_offers_stop_only_not_pause(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        snap = svc.snapshot(deps)
+        assert snap["phase"] == P.WAIT_CONTEXT_CONFIRMATION.value
+        intents = {a["intent"] for a in snap["secondary_actions"]}
+        assert intents == {IT.STOP_SAFELY.value}
+
+    def test_wait_context_stop_safely_reaches_parked_safe(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        deps.device_state = _device_state(MountState.PARKED)
+        snap = svc.handle_intent(IT.STOP_SAFELY, deps)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.PARKED_SAFE.value
+        assert snap["guards"]["g8_safe_stop_possible"] is True
+
+    def test_wait_home_offers_stop_only_not_pause(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        snap = svc.snapshot(deps)
+        intents = {a["intent"] for a in snap["secondary_actions"]}
+        assert intents == {IT.STOP_SAFELY.value}
+
+    def test_wait_home_stop_safely_reaches_parked_safe(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps.device_state = _device_state(MountState.PARKED)
+        snap = svc.handle_intent(IT.STOP_SAFELY, deps)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.PARKED_SAFE.value
+        assert snap["guards"]["g8_safe_stop_possible"] is True
+
+
 class TestFaultHandling:
     def test_engine_exception_transitions_to_fault(self, deps: ObservingDeps) -> None:
         svc = ObservingService()

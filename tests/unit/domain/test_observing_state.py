@@ -46,6 +46,14 @@ class TestWaitContextConfirmation:
         inp = _inp(P.WAIT_CONTEXT_CONFIRMATION, IT.CONFIRM_HOME, g1_context_confirmed=True)
         assert fsm.next(inp) == P.WAIT_CONTEXT_CONFIRMATION
 
+    def test_stop_safely_available_even_before_context_confirmed(self) -> None:
+        fsm = ObservingStateMachine()
+        assert fsm.next(_inp(P.WAIT_CONTEXT_CONFIRMATION, IT.STOP_SAFELY)) == P.SAFE_STOPPING
+
+    def test_pause_not_available_here(self) -> None:
+        fsm = ObservingStateMachine()
+        assert fsm.next(_inp(P.WAIT_CONTEXT_CONFIRMATION, IT.PAUSE)) == P.WAIT_CONTEXT_CONFIRMATION
+
 
 class TestWaitHomeConfirmation:
     def test_start_home_kicks_off_without_transition(self) -> None:
@@ -59,10 +67,10 @@ class TestWaitHomeConfirmation:
         allowed = _inp(P.WAIT_HOME_CONFIRMATION, IT.CONFIRM_HOME, g2_home_confirmed=True)
         assert fsm.next(allowed) == P.POLAR_ALIGN
 
-    def test_pause_and_stop_not_available_before_polar_align(self) -> None:
+    def test_stop_safely_available_but_not_pause(self) -> None:
         fsm = ObservingStateMachine()
         assert fsm.next(_inp(P.WAIT_HOME_CONFIRMATION, IT.PAUSE)) == P.WAIT_HOME_CONFIRMATION
-        assert fsm.next(_inp(P.WAIT_HOME_CONFIRMATION, IT.STOP_SAFELY)) == P.WAIT_HOME_CONFIRMATION
+        assert fsm.next(_inp(P.WAIT_HOME_CONFIRMATION, IT.STOP_SAFELY)) == P.SAFE_STOPPING
 
 
 class TestPolarAlign:

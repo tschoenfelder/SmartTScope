@@ -4,6 +4,43 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-017: safe-park available before POLAR_ALIGN; target-selection gap logged
+
+Testing progressed past HOME confirmation to `POLAR_ALIGN`. Raised: how to
+safely park if weather turns, given the always-visible "■ Stop" button only
+halts (`/api/emergency_stop` → `mount.stop()`), and the real park path
+("Stop safely") wasn't available during `WAIT_CONTEXT_CONFIRMATION`/
+`WAIT_HOME_CONFIRMATION` — only from `POLAR_ALIGN` onward.
+
+- Added a direct `STOP_SAFELY` check to `_on_wait_context()`/`_on_wait_home()`
+  in `domain/observing_state.py`, ahead of their existing fallbacks —
+  deliberately *not* added to `_ACTIVE_PHASES` wholesale, since `PAUSE` has
+  no meaning when nothing is actively running yet (a new `_STOP_ONLY_PHASES`
+  set in `observing_service.py` offers `STOP_SAFELY` alone for these two
+  phases). Relabeled `STOP_SAFELY` to "Stop safely (park)" everywhere so the
+  outcome is unambiguous.
+- Confirmed via code reading that this is safe: `park_sequence()` already
+  no-ops if the mount is already parked; `handle_intent()` already lets
+  `STOP_SAFELY` bypass the busy-lock, so sending it while `_run_home` is
+  mid-flight just queues the park until the current attempt finishes,
+  rather than racing.
+- 1113 tests pass (full domain/services/api/integration/vertical-slice
+  sweep), 0 regressions. Verified live via Playwright from both wait phases,
+  including hitting "Stop safely (park)" immediately after starting the home
+  sequence — reaches `PARKED_SAFE` cleanly both times.
+
+Investigating the underlying "can't observe Venus" question surfaced a much
+bigger, previously undocumented gap: `api/observing.py:_build_deps()`
+hardcodes `optical_profile=C8_NATIVE, target_ra=M42_RA, target_dec=M42_DEC` —
+there is no way to select a different target from the guided Observe screen
+at all. Logged as new backlog `M9-018` (target selection — decided to reuse
+the existing "Visible Tonight" catalog rather than manual RA/Dec entry or a
+new name-search/ephemeris picker), `M9-019` (skip-polar-alignment for
+bright/planetary targets), and `M9-020` (camera/optical-train identity +
+live preview in Observe) — none built this session, prioritized for later.
+
+---
+
 ## 2026-07-08 — FIX — M9-016/M9-007: location-select revert bug + real HOME confirmation
 
 Two bugs found using the guided Observe screen's Time & Location / HOME steps.

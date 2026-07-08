@@ -4,6 +4,36 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-09 — GUARDRAIL — OnStepAdapter is the sole mount/focuser adapter
+
+User restated an explicit, durable guardrail: only
+https://github.com/tschoenfelder/OnStepAdapter/tree/main is to be used to
+connect to focuser and mount. That repo was extracted from SmartTScope's
+own code for reusability. SmartTScope must not contain duplicated
+implementations of this code. When functionality is identical, that's
+correct and expected (it was extracted from here); when gaps are observed,
+they must be pointed out clearly as migration items rather than left as
+silent local-only code.
+
+This corrects an earlier overstatement in this same conversation, where I
+described the OnStepAdapter repo as having "no independent implementation" —
+checked directly (not from stale memory): the repo's vendored
+`smart_telescope/` folder contains genuine, functioning code. `client.py`
+was byte-identical to the local copy; `mount.py` was 197 lines behind,
+missing `_haversine_m()`, `_lx200_round_degrees()`, `ensure_time_location_synced()`,
+the `_explicit_tracking_started` flag, and the `time_trust_source`/
+`confirmed_by_user` changes — all already tracked as REQ-ST-001..007 in
+`docs/todo.md`'s ONS-MIGRATE section, except `_haversine_m`/
+`_lx200_round_degrees` (added in M8-008, never filed upstream) — added now
+as REQ-ST-008, plus a new ONS-MIGRATE-014 tracking the sync/publish gap
+itself.
+
+Saved as a project memory (`project_onstep_adapter_v030.md`) so this
+guardrail and the "diff before claiming parity" lesson persist across
+sessions.
+
+---
+
 ## 2026-07-09 — FIX — M9-027: stop blindly resending :hP# on retry
 
 User: "Via the Onstep UI I have always been able to request a move to

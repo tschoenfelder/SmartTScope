@@ -99,11 +99,13 @@ File the following as issues/PRs on `tschoenfelder/OnStepAdapter`:
 | REQ-ST-005 | `disable_tracking_verified()` clears `_explicit_tracking_started` | Correctness: without the clear, `get_state()` returns TRACKING forever after verified disable. |
 | REQ-ST-006 | `stop()` / `park()` / `unpark()` each clear `_explicit_tracking_started` | Same flag lifecycle issue — all state-changing commands must reset the flag. |
 | REQ-ST-007 | `motion_safety_preflight()` pier-side guards: (a) `terminal_state` check; (b) suppress stale `:Gm#` when `axis2 < 15°` at HOME | GEM safety refinement; stale pier-side blocks valid GoTo at CWD home position. |
+| REQ-ST-008 | `_haversine_m()` (great-circle distance helper) + `_lx200_round_degrees()` (arcminute-precision rounding matching LX200 site format), used by `get_sync_status()`'s meter-based location tolerance (M8-008) | Generic geo/LX200-format utilities any OnStep client doing location-sync checks would need; found via diff against the vendored copy 2026-07-09 — not filed upstream when added in M8-008. |
 
 - [ ] ONS-MIGRATE-001 File upstream issue: REQ-1 `move(direction, move_ms) → bool` `[P1 · External]`
 - [x] ONS-MIGRATE-002 ~~File upstream: REQ-2~~ — v0.3.0 already has `set_park_position_from_current()` + `get_stored_park_position()`; shim methods stay in SmartTScope (MountPort ABC compliance only) `[P1 · External]`
-- [ ] ONS-MIGRATE-003 File upstream issues: REQ-ST-001..007 (flag lifecycle, pier-side guards, at-home bypass, confirmed_by_user sync) `[P1 · External]`
+- [ ] ONS-MIGRATE-003 File upstream issues: REQ-ST-001..008 (flag lifecycle, pier-side guards, at-home bypass, confirmed_by_user sync, geo/LX200-format helpers) `[P1 · External]`
 - [ ] ONS-MIGRATE-004 Confirm upstream release incorporating the above; update `pyproject.toml` wheel URL `[P1 · Build]`
+- [ ] ONS-MIGRATE-014 Sync/publish gap: GitHub repo last pushed 2026-06-14; local `mount.py` is 197 lines ahead (all of REQ-ST-001..008 above). Diff `smart_telescope/adapters/onstep/*.py` against the vendored copies at `github.com/tschoenfelder/OnStepAdapter/tree/main/smart_telescope/adapters/onstep/` before claiming parity — confirmed 2026-07-09 that `client.py` was identical but `mount.py` was not `[P1 · External · Guardrail: no code duplication — see memory project_onstep_adapter_v030]`
 
 #### Phase 1 — Audit (after upstream release)
 

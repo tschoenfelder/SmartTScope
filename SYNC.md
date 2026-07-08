@@ -7,11 +7,25 @@ The directory `smart_telescope/adapters/onstep/` is **SmartTScope-owned** — do
 files from the OnStepAdapter GitHub repo into it. It is an override layer that subclasses
 the installed package.
 
-## Current migration state (2026-06-17)
+## Current migration state (2026-06-17, corrected 2026-07-09)
 
-**Architecture reality**: `onstep_adapter` v0.3.0 is a re-export shim — its `__init__.py`
-imports entirely from `smart_telescope.adapters.onstep.*`. There is no independent upstream
-implementation. `smart_telescope/adapters/onstep/` IS the onstep_adapter implementation.
+**Guardrail (restated by user 2026-07-09):** only `onstep_adapter`
+(github.com/tschoenfelder/OnStepAdapter) is to be used to connect to
+focuser and mount — SmartTScope must not duplicate this code. That repo
+was extracted from SmartTScope's own code for reusability; matching code
+is expected and correct, not a problem. Gaps must be tracked here as
+REQ-ST-* items, not left as silent local-only code.
+
+**Architecture reality**: `onstep_adapter` v0.3.0's `__init__.py` re-exports
+from `smart_telescope.adapters.onstep.*`. The GitHub repo *also* vendors a
+full copy of these files under its own `smart_telescope/` folder so the
+package installs standalone — this vendored copy is genuine, functioning
+code, not a stub. It is a **manual snapshot, not a live sync**: confirmed
+2026-07-09 that the repo (last pushed 2026-06-14) has `client.py` identical
+to the local copy, but `mount.py` 197 lines behind — missing everything
+in REQ-ST-001..008 below, added locally since the last sync. Diff before
+claiming parity: `gh api repos/tschoenfelder/OnStepAdapter/contents/<path>`
+or `raw.githubusercontent.com/tschoenfelder/OnStepAdapter/main/<path>`.
 
 **No direct serial communication outside the adapter layer**: All LX200/serial commands are
 confined to `smart_telescope/adapters/onstep/focuser.py` and `mount.py`. No `api/` or
@@ -64,6 +78,7 @@ into `onstep_adapter`; raise with the package maintainer.
 | REQ-ST-005 | `disable_tracking_verified()` flag clear | Consistent flag lifecycle |
 | REQ-ST-006 | `stop()` / `park()` / `unpark()` flag clear | Consistent flag lifecycle |
 | REQ-ST-007 | `motion_safety_preflight()` pier-side guards | (a) terminal_state; (b) axis2 < 15° stale `:Gm#` suppression |
+| REQ-ST-008 | `_haversine_m()` + `_lx200_round_degrees()` helpers, used by `get_sync_status()`'s meter-based location tolerance (M8-008) | Generic geo/LX200-format utilities any OnStep client doing location-sync checks would need; found via diff against the vendored copy 2026-07-09, never filed upstream when added |
 
 ## Upgrading onstep_adapter
 

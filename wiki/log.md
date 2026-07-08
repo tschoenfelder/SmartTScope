@@ -4,6 +4,56 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-022 corrected: undo an auto-set-park-position regression
+
+User report: "the UI again shows confirm home position [while] parked...
+should have been fixed two sessions ago!" Investigating turned up that my
+own M9-022 fix (this session) was itself a regression of a previously-fixed
+bug.
+
+M9-022 added `mount.set_park_position()` as an automatic call inside
+`ObservingService._run_home()`, right after every HOME confirmation, to fix
+`:hP#` (park) rejections. But an entry already in this log from 2026-06-14,
+"CRITICAL: remove auto_set_park; home UI live status", says:
+
+> Removed `auto_set_park` from `park_sequence()` and park API endpoint.
+> Pressing Park from AT_HOME was automatically calling `set_park_position()`
+> (`:hS#`), overwriting the user's configured EEPROM park position. Park
+> position must only be set by explicit user action.
+
+M9-022 reintroduced exactly this anti-pattern via a different trigger (HOME
+confirmation instead of the Park button) — I found `set_park_position()`
+dangling with zero callers and an adapter-shim comment suggesting it should
+be auto-called after HOME, and wired it in without searching this log for
+prior art on the area first, which would have surfaced the 2026-06-14 entry
+immediately.
+
+Corrected:
+- `ObservingService._run_home()` no longer touches `set_park_position()` at
+  all — back to the M9-021 shape (`g2_home_confirmed` from `at_home` alone).
+- Added the missing piece properly this time: a new, explicit, two-step-
+  confirm `POST /api/mount/set_park_position` endpoint (`api/mount.py`,
+  mirroring `mount_park`'s existing `{confirmed: bool}` pattern) and a "Set
+  Park Position" button in the Maintenance mount-strip button group
+  (`static/js/mount.js`), gated behind a native `confirm()` dialog since it
+  overwrites a persisted EEPROM value. This is the deliberate, user-initiated
+  action that should have existed since the 2026-06-14 removal but never
+  did — which is the actual reason `:hP#` had nothing to park to in the
+  first place (the M9-021/M9-022 investigation's real root cause).
+
+3929 tests pass, same 4 pre-existing/unrelated `test_get_sync_status.py`
+failures, 0 new regressions. Verified via direct API calls: HOME confirmation
+no longer reports a `park_position_set` field at all; the new endpoint
+requires explicit confirmation before calling `mount.set_park_position()`.
+
+**Lesson for future sessions:** before wiring up a dangling/unused method
+found via grep, search `wiki/log.md` for its name and its immediate
+neighborhood — a prior fix or explicit removal in this exact area is a real
+possibility in a codebase this actively debugged, and re-doing a reverted
+change is worse than not touching it at all.
+
+---
+
 ## 2026-07-08 — FIX — M9-022: "Stop safely" faulted right after a successful HOME confirmation
 
 Immediately after fixing M9-021, real hardware testing hit a second, related

@@ -27,6 +27,7 @@ def _mock_mount(
     park_ok: bool = True,
     disable_tracking_ok: bool = True,
     slewing: bool = False,
+    set_park_position_ok: bool = True,
 ) -> MagicMock:
     m = MagicMock(spec=MountPort)
     m.get_state.return_value = state
@@ -40,6 +41,7 @@ def _mock_mount(
     m.park.return_value = park_ok
     m.disable_tracking.return_value = disable_tracking_ok
     m.is_slewing.return_value = slewing
+    m.set_park_position.return_value = set_park_position_ok
     return m
 
 
@@ -487,6 +489,51 @@ class TestMountPark:
         _inject(m)
         client.post("/api/mount/park", json={"confirmed": True})
         m.park.assert_called_once()
+
+
+# ── POST /api/mount/set_park_position ─────────────────────────────────────────
+
+
+class TestMountSetParkPosition:
+    def test_requires_confirmation_first(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        resp = client.post("/api/mount/set_park_position")
+        assert resp.status_code == 200
+        assert resp.json()["confirm_required"] is True
+        m.set_park_position.assert_not_called()
+
+    def test_returns_200_on_success(self) -> None:
+        _inject(_mock_mount(set_park_position_ok=True))
+        resp = client.post("/api/mount/set_park_position", json={"confirmed": True})
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+
+    def test_returns_409_when_mount_rejects(self) -> None:
+        _inject(_mock_mount(set_park_position_ok=False))
+        resp = client.post("/api/mount/set_park_position", json={"confirmed": True})
+        assert resp.status_code == 409
+
+    def test_calls_set_park_position_on_mount_only_when_confirmed(self) -> None:
+        m = _mock_mount()
+        _inject(m)
+        client.post("/api/mount/set_park_position")
+        m.set_park_position.assert_not_called()
+        client.post("/api/mount/set_park_position", json={"confirmed": True})
+        m.set_park_position.assert_called_once()
+
+    def test_returns_409_on_onstep_safety_error(self) -> None:
+        from smart_telescope.adapters.onstep import OnStepSafetyError, SafetyViolation, SafetySeverity
+        m = _mock_mount()
+        m.set_park_position.side_effect = OnStepSafetyError(SafetyViolation(
+            reason="set_park_requires_tracking_off",
+            command="set_park_position_from_current",
+            severity=SafetySeverity.BLOCKED,
+        ))
+        _inject(m)
+        resp = client.post("/api/mount/set_park_position", json={"confirmed": True})
+        assert resp.status_code == 409
+        assert "set_park_requires_tracking_off" in resp.json()["detail"]
 
 
 # ── POST /api/mount/disable_tracking ──────────────────────────────────────────

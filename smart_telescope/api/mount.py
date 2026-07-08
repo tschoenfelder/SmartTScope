@@ -561,6 +561,46 @@ def mount_park(
     return {"ok": True}
 
 
+class SetParkPositionRequest(BaseModel):
+    confirmed: bool = False
+
+
+@router.post("/set_park_position")
+def mount_set_park_position(
+    body:         SetParkPositionRequest = SetParkPositionRequest(),
+    mount:        MountPort              = Depends(deps.get_mount),
+    device_state: DeviceStateService     = Depends(deps.get_device_state),
+) -> dict:
+    """Save the mount's current position as the OnStep park position (:hS#).
+
+    Must only be triggered by explicit user action — never call this
+    automatically from a HOME/park flow. A prior fix
+    (wiki/log.md 2026-06-14 "CRITICAL: remove auto_set_park") removed an
+    automatic call here because it silently overwrote a user's deliberately
+    configured EEPROM park position.
+    """
+    if not body.confirmed:
+        return {
+            "confirm_required": True,
+            "message": (
+                "Confirm to save the mount's CURRENT position as the new park "
+                "position. This overwrites any previously saved park position."
+            ),
+        }
+    device_state.record_command("set_park_position")
+    try:
+        ok = mount.set_park_position()
+    except Exception as exc:
+        device_state.record_command_error(str(exc))
+        if OnStepSafetyError is not None and isinstance(exc, OnStepSafetyError):
+            raise HTTPException(status_code=409, detail=exc.violation.reason) from exc
+        raise HTTPException(status_code=500, detail=f"Set park position failed: {exc}") from exc
+    if not ok:
+        device_state.record_command_error("set_park_position rejected")
+        raise HTTPException(status_code=409, detail="Mount rejected saving the park position")
+    return {"ok": True}
+
+
 class GuideRequest(BaseModel):
     direction: str = Field(pattern=r"^[nsewNSEW]$")
     duration_ms: int = Field(default=500, ge=1, le=9999)

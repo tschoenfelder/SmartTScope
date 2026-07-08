@@ -7,6 +7,8 @@ covered by tests/unit/services/test_observing_service.py against mocked ports.
 
 from __future__ import annotations
 
+import time
+
 from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps
@@ -17,6 +19,17 @@ client = TestClient(app)
 
 def _reset() -> None:
     deps.reset()
+
+
+def _wait_idle(timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    body = client.get("/api/observing/state").json()
+    while body["busy"]:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"Observing service did not finish; last detail={body['detail']}")
+        time.sleep(0.02)
+        body = client.get("/api/observing/state").json()
+    return body
 
 
 class TestObservingState:
@@ -51,7 +64,10 @@ class TestObservingIntent:
     def test_confirm_home_then_polar_align(self) -> None:
         _reset()
         client.post("/api/observing/intent", json={"intent": "CONFIRM_CONTEXT"})
+        client.post("/api/observing/intent", json={"intent": "START_HOME"})
+        body = _wait_idle()
+        assert body["guards"]["g2_home_confirmed"] is True
+
         r = client.post("/api/observing/intent", json={"intent": "CONFIRM_HOME"})
         body = r.json()
         assert body["phase"] == "POLAR_ALIGN"
-        assert body["guards"]["g2_home_confirmed"] is True

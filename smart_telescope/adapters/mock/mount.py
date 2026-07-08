@@ -50,6 +50,9 @@ class MockMount(MountPort):
         if self._fail_goto:
             return False
         self._position = MountPosition(ra=ra, dec=dec)
+        # Real OnStep :MS# engages sidereal tracking as part of completing a
+        # slew (LX200-protocol behavior) — mirror that here.
+        self._state = MountState.TRACKING
         return True
 
     def is_slewing(self) -> bool:
@@ -82,7 +85,7 @@ class MockMount(MountPort):
         return True
 
     def go_home(self) -> None:
-        self._state = MountState.TRACKING
+        self._state = MountState.AT_HOME
 
     def disconnect(self) -> None:
         self._state = MountState.PARKED

@@ -48,6 +48,10 @@ class TestWaitContextConfirmation:
 
 
 class TestWaitHomeConfirmation:
+    def test_start_home_kicks_off_without_transition(self) -> None:
+        fsm = ObservingStateMachine()
+        assert fsm.next(_inp(P.WAIT_HOME_CONFIRMATION, IT.START_HOME)) == P.WAIT_HOME_CONFIRMATION
+
     def test_confirm_home_requires_g2(self) -> None:
         fsm = ObservingStateMachine()
         blocked = _inp(P.WAIT_HOME_CONFIRMATION, IT.CONFIRM_HOME, g2_home_confirmed=False)

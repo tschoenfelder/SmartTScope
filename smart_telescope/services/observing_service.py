@@ -5,6 +5,7 @@ screen. It owns the current ObservingPhase (the FSM in domain/observing_state.py
 is itself stateless) and, on each Intent, dispatches to the *existing* engines
 rather than reimplementing them:
 
+  WAIT_HOME_CONFIRMATION -> services.mount_operations.home_sequence (driven here)
   POLAR_ALIGN      -> domain.polar_workflow.PolarAlignmentWorkflow (driven here)
   FOCUS_READYING   -> workflow.stages.stage_autofocus
   TARGET_ACQUIRE   -> workflow.stages.stage_align / stage_goto / stage_recenter
@@ -14,9 +15,8 @@ rather than reimplementing them:
 
 Guards are computed best-effort from the outcome of each engine call — this is
 intentionally a Phase 1 skeleton. Deferred to docs/todo.md backlog: dawn/meridian
-auto-stop (G7), a real confirm_home() mount sequence (G2), a graceful stop that
-distinguishes recoverable sub-operations (G8), and stricter fault classification
-(G9/G10).
+auto-stop (G7), a graceful stop that distinguishes recoverable sub-operations
+(G8), and stricter fault classification (G9/G10).
 
 Callers never touch adapters directly through this service — they pass a fresh
 ObservingDeps snapshot (obtained via FastAPI Depends, same as every other API
@@ -127,7 +127,7 @@ def _wait_not_slewing(mount: MountPort, stop: threading.Event, timeout_s: float 
 
 _START_ACTIONS: dict[ObservingPhase, tuple[Intent, str]] = {
     ObservingPhase.WAIT_CONTEXT_CONFIRMATION: (Intent.CONFIRM_CONTEXT, "Confirm time & location"),
-    ObservingPhase.WAIT_HOME_CONFIRMATION: (Intent.CONFIRM_HOME, "Confirm HOME position"),
+    ObservingPhase.WAIT_HOME_CONFIRMATION: (Intent.START_HOME, "Confirm HOME position"),
     ObservingPhase.POLAR_ALIGN: (Intent.START_POLAR_ALIGN, "Start polar alignment"),
     ObservingPhase.FOCUS_READYING: (Intent.START_FOCUS, "Start focus run"),
     ObservingPhase.TARGET_ACQUIRE: (
@@ -141,6 +141,9 @@ _START_ACTIONS: dict[ObservingPhase, tuple[Intent, str]] = {
 
 # phase -> (accept-intent, label, guard attribute) shown once the engine result is in
 _ACCEPT_ACTIONS: dict[ObservingPhase, tuple[Intent, str, str]] = {
+    ObservingPhase.WAIT_HOME_CONFIRMATION: (
+        Intent.CONFIRM_HOME, "Accept — home confirmed", "g2_home_confirmed",
+    ),
     ObservingPhase.POLAR_ALIGN: (
         Intent.ACCEPT_POLAR_ALIGN, "Accept alignment", "g3_polar_within_tolerance",
     ),
@@ -245,8 +248,6 @@ class ObservingService:
         # Side effects resolved synchronously before the FSM sees the intent.
         if intent is Intent.CONFIRM_CONTEXT and phase is ObservingPhase.WAIT_CONTEXT_CONFIRMATION:
             self._confirm_context(deps)
-        elif intent is Intent.CONFIRM_HOME and phase is ObservingPhase.WAIT_HOME_CONFIRMATION:
-            self._confirm_home()
         elif intent is Intent.SKIP_GUIDING and phase is ObservingPhase.GUIDE_READYING:
             with self._lock:
                 self._guards = replace(self._guards, g6_guiding_ok=True)
@@ -269,7 +270,9 @@ class ObservingService:
         if intent is Intent.STOP_SAFELY or intent is Intent.ABORT_TO_PARK:
             self._stop_event.set()
 
-        if intent is Intent.START_POLAR_ALIGN and phase is ObservingPhase.POLAR_ALIGN:
+        if intent is Intent.START_HOME and phase is ObservingPhase.WAIT_HOME_CONFIRMATION:
+            self._spawn(self._run_home, deps)
+        elif intent is Intent.START_POLAR_ALIGN and phase is ObservingPhase.POLAR_ALIGN:
             self._spawn(self._run_polar_align, deps)
         elif intent is Intent.START_FOCUS and phase is ObservingPhase.FOCUS_READYING:
             self._spawn(self._run_focus, deps)
@@ -309,12 +312,6 @@ class ObservingService:
             ok = False
         with self._lock:
             self._guards = replace(self._guards, g1_context_confirmed=ok)
-
-    def _confirm_home(self) -> None:
-        # Phase 1 scope: pure user acknowledgement. A real mechanical-position
-        # sequence (mount_operations.confirm_home()) is backlog (docs/todo.md).
-        with self._lock:
-            self._guards = replace(self._guards, g2_home_confirmed=True)
 
     # ── background engine work ────────────────────────────────────────────────
 
@@ -366,6 +363,13 @@ class ObservingService:
     def _on_transition(self, log: SessionLog, state: SessionState) -> None:
         with self._lock:
             self._detail["session_state"] = state.name
+
+    def _run_home(self, deps: ObservingDeps) -> None:
+        mount_operations.home_sequence(deps.mount, deps.coordinator)
+        state = deps.mount.get_state()
+        with self._lock:
+            self._detail["home"] = {"mount_state": state.name}
+            self._guards = replace(self._guards, g2_home_confirmed=state is MountState.AT_HOME)
 
     def _run_polar_align(self, deps: ObservingDeps) -> None:
         wf = PolarAlignmentWorkflow(

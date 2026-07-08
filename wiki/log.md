@@ -4,6 +4,49 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-016/M9-007: location-select revert bug + real HOME confirmation
+
+Two bugs found using the guided Observe screen's Time & Location / HOME steps.
+
+- **Location dropdown reverted mid-edit.** Picking "+ New location…" (or any
+  saved location) cleared the panel's dirty flag instead of setting it, so the
+  next background poll (every 2.5s in the Observe screen) silently reverted
+  the in-progress name/lat/lon back to the active location before the user
+  could click Confirm. Same bug in both `observing.js` and `setup.js` (copied
+  code); far more visible in Observe due to continuous polling, but real in
+  Maintenance too. Fixed: both `_obsOnLocationSelectChange()`/
+  `onLocationSelectChange()` branches now mark the panel dirty on selection.
+- **"Confirm HOME position" was a disconnected no-op (M9-007).** It set
+  `g2_home_confirmed=True` unconditionally with no mount action — hence the
+  mount-strip correctly kept reading PARKED, which is exactly what looked
+  wrong. Wired to the existing `mount_operations.home_sequence()` (same code
+  the Maintenance "HOME" button already uses: auto-unpark, disable tracking,
+  slew to OnStep's stored home, poll for `AT_HOME` up to 60s) as a background
+  action, matching the start/accept pattern already used for Polar
+  Align/Focus/Target Acquire — new `Intent.START_HOME` spawns it
+  (`ObservingService._run_home`), `CONFIRM_HOME` becomes the accept step
+  gated on `g2_home_confirmed`. A hard failure (e.g. unpark rejected) faults
+  the session same as any other engine; a 60s timeout without reaching
+  `AT_HOME` just re-offers "Confirm HOME position" since the accept guard
+  stays false — no extra retry logic needed. Confirmed with the user that the
+  mechanical HOME route intentionally skips the general HA/altitude/meridian
+  preflight `goto()` uses (it targets OnStep's own fixed home position, not a
+  computed target) — unchanged, already-relied-on behavior, not a new risk.
+- Along the way: `adapters/mock/mount.py`'s `go_home()` was setting `TRACKING`
+  instead of `AT_HOME` (never let the poll succeed); fixing that then exposed
+  that `goto()` never simulated OnStep firmware's `:MS#` auto-engaging
+  tracking either — added, since a later stage's "tracking lost" check
+  depends on it.
+- Verified via Playwright against a live mock-adapter server: dropdown
+  survives a >3.5s wait with edits intact; mount-strip changes from PARKED to
+  HOME after confirming, detail JSON shows `{"home": {"mount_state":
+  "AT_HOME"}}`, both guard chips turn green, Accept advances to POLAR_ALIGN.
+  57 targeted + 307 broader workflow/vertical-slice/runtime + 296
+  onstep-adapter/mount-API tests pass (same 4 pre-existing/unrelated
+  `test_get_sync_status.py` failures).
+
+---
+
 ## 2026-07-08 — FIX — M9-015: Time & Location panel follow-up
 
 User report against the M9-014 panel: local time showed raw microseconds+no-space offset (`17:02:38.580558+02:00`), there was no way to see or change time-trust status, and a real config with `alt_m = 304.0` under `[observer]` still showed height 0m in the UI.

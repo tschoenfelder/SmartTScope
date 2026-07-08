@@ -105,24 +105,60 @@ class TestConfirmContext:
 
 
 class TestConfirmHome:
-    def test_advances_to_polar_align(self, deps: ObservingDeps) -> None:
+    def test_start_home_runs_sequence_and_accept_advances(self, deps: ObservingDeps) -> None:
         svc = ObservingService()
         svc.handle_intent(IT.CONFIRM_CONTEXT, deps)
+        deps.mount.get_state.return_value = MountState.AT_HOME
+
+        svc.handle_intent(IT.START_HOME, deps)
+        snap = _wait_idle(svc, deps)
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value  # accept not sent yet
+        assert snap["guards"]["g2_home_confirmed"] is True
+        assert snap["detail"]["home"] == {"mount_state": "AT_HOME"}
+        deps.mount.go_home.assert_called_once()
+
         snap = svc.handle_intent(IT.CONFIRM_HOME, deps)
         assert snap["phase"] == P.POLAR_ALIGN.value
-        assert snap["guards"]["g2_home_confirmed"] is True
+
+    def test_home_not_reached_keeps_guard_false_and_allows_retry(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc.handle_intent(IT.CONFIRM_CONTEXT, deps)
+        deps.mount.get_state.return_value = MountState.TRACKING  # never reaches AT_HOME
+
+        svc.handle_intent(IT.START_HOME, deps)
+        snap = _wait_idle(svc, deps)
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
+        assert snap["guards"]["g2_home_confirmed"] is False
+        assert snap["primary_action"]["intent"] == IT.START_HOME.value  # offered again, not Accept
+
+        snap = svc.handle_intent(IT.CONFIRM_HOME, deps)  # accept refused — guard still false
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
+
+    def test_hardware_failure_faults(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc.handle_intent(IT.CONFIRM_CONTEXT, deps)
+        deps.mount.get_state.return_value = MountState.PARKED
+        deps.mount.unpark.return_value = False
+
+        svc.handle_intent(IT.START_HOME, deps)
+        snap = _wait_idle(svc, deps)
+        assert snap["phase"] == P.FAULT.value
+        assert "Auto-unpark before home failed" in snap["fault_message"]
 
 
 def _advance_to(svc: ObservingService, deps: ObservingDeps, phase: ObservingPhase) -> None:
     """Drive the FSM up to (but not past) `phase` using the happy path."""
+    deps.mount.get_state.return_value = MountState.AT_HOME  # so _run_home's guard check succeeds
     order = [
         (P.WAIT_HOME_CONFIRMATION, IT.CONFIRM_CONTEXT),
+        (P.WAIT_HOME_CONFIRMATION, IT.START_HOME),
         (P.POLAR_ALIGN, IT.CONFIRM_HOME),
     ]
     for _target, intent in order:
         if svc.snapshot(deps)["phase"] == phase.value:
             return
         svc.handle_intent(intent, deps)
+        _wait_idle(svc, deps)
         if svc.snapshot(deps)["phase"] == phase.value:
             return
 

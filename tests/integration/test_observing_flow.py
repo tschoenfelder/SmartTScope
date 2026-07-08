@@ -67,6 +67,11 @@ class TestFullObservingFlow:
             snap = svc.handle_intent(Intent.CONFIRM_CONTEXT, deps)
             assert snap["phase"] == ObservingPhase.WAIT_HOME_CONFIRMATION.value
 
+            svc.handle_intent(Intent.START_HOME, deps)
+            snap = _wait_idle(svc, deps)
+            assert snap["guards"]["g2_home_confirmed"] is True
+            assert mount.get_state() == MountState.AT_HOME
+
             snap = svc.handle_intent(Intent.CONFIRM_HOME, deps)
             assert snap["phase"] == ObservingPhase.POLAR_ALIGN.value
 

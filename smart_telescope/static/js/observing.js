@@ -230,7 +230,7 @@ function _obsOnLocationSelectChange() {
         if (heightEl) heightEl.value = '';
         _obsSetLocSource('USER_ENTERED');
         if (delBtn) delBtn.style.display = 'none';
-        _obsLocPanelDirty = false;
+        _obsMarkLocationDirty();
         return;
     }
 
@@ -244,7 +244,7 @@ function _obsOnLocationSelectChange() {
     if (heightEl) heightEl.value = entry.height_m;
     _obsSetLocSource(value === 'Home' ? 'CONFIG_FILE' : 'SAVED_LOCATION');
     if (delBtn) delBtn.style.display = value !== 'Home' ? '' : 'none';
-    _obsLocPanelDirty = false;
+    _obsMarkLocationDirty();
 }
 
 function _obsUseGpsFix() {

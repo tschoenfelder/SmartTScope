@@ -4,6 +4,35 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-09 — GUARDRAIL — never edit OnStepMount/OnStepClient directly
+
+Follow-up to the prior entry's guardrail. User: "migrate to using the
+library... don't 'If a fix belongs in OnStepMount/OnStepClient/etc., I
+should just make the change there directly', but raise a request against
+me." Asked two clarifying questions (which local folder counts as "the
+library"; what "raise a request" should concretely mean).
+
+Answers: **"Use the library from git only"** — neither local checkout
+found on this machine (`Documents/Codex/CameraTest/OnStepAdapter`,
+`Documents/Codex/SmartTScope/onstep_adapter`) is to be treated as an
+editable working copy; the only canonical source is the published git
+release. **"Just flag it to you directly in chat and wait"** — when a fix
+belongs inside `OnStepMount`/`OnStepClient`/etc. (not SmartTScope's own
+`services/`/`api/` code calling their existing public methods), stop,
+describe it, and wait — no auto-editing, no auto-filing to SYNC.md, no
+opening a GitHub issue unprompted.
+
+This session's M9-023/025/026/027 fixes were all correctly scoped under
+this rule already (all in `services/mount_operations.py` and
+`services/observing_service.py`, consuming the adapter's existing public
+methods, never touching `adapters/onstep/*.py`) — the rule formalizes and
+protects that boundary going forward rather than correcting a violation.
+
+Saved to `SYNC.md` (git-tracked, durable) and the
+`project_onstep_adapter_v030.md` project memory.
+
+---
+
 ## 2026-07-09 — GUARDRAIL — OnStepAdapter is the sole mount/focuser adapter
 
 User restated an explicit, durable guardrail: only

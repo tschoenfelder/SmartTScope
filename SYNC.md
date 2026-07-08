@@ -16,6 +16,19 @@ was extracted from SmartTScope's own code for reusability; matching code
 is expected and correct, not a problem. Gaps must be tracked here as
 REQ-ST-* items, not left as silent local-only code.
 
+**Process rule: never edit adapter-layer code directly.** When a fix
+belongs in `OnStepMount`/`OnStepClient`/etc. themselves (LX200 command
+sends, status parsing, serial protocol logic) — as opposed to
+SmartTScope's own `services/`/`api/` code that merely *calls* the
+adapter's existing public methods — stop and flag it to the user directly,
+don't implement it. This applies to `smart_telescope/adapters/onstep/*.py`
+*and* any local checkout of the OnStepAdapter repo — the only canonical
+source is the published git release (the pinned wheel URL above), not a
+local working copy. Confirmed 2026-07-09: local checkouts exist at
+`Documents/Codex/CameraTest/OnStepAdapter` and
+`Documents/Codex/SmartTScope/onstep_adapter`, but neither is to be treated
+as an editable target.
+
 **Architecture reality**: `onstep_adapter` v0.3.0's `__init__.py` re-exports
 from `smart_telescope.adapters.onstep.*`. The GitHub repo *also* vendors a
 full copy of these files under its own `smart_telescope/` folder so the

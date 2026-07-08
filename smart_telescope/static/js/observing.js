@@ -20,6 +20,10 @@ const _GUARD_LABELS = {
 
 let _obsPollTimer = null;
 let _obsBusy = false;
+let _obsLastState = null;
+let _obsLocPanelDirty = false;
+let _obsLastLocationStatus = null;
+let _obsLocSource = 'CONFIG_FILE';
 
 function _obsGuardDotClass(value) {
     if (value === true) return 'dot-green';
@@ -28,6 +32,7 @@ function _obsGuardDotClass(value) {
 }
 
 function _renderObservingState(state) {
+    _obsLastState = state;
     document.getElementById('obs-phase-title').textContent = _obsPhaseLabel(state.phase);
 
     const badge = document.getElementById('obs-readiness-badge');
@@ -42,13 +47,25 @@ function _renderObservingState(state) {
       faultBanner.style.display = 'none';
     }
 
+    // WAIT_CONTEXT_CONFIRMATION gets the full Time & Location review panel
+    // instead of a blind "Confirm time & location" button — the panel's own
+    // Confirm button posts /api/location/confirm, then sends this same intent.
+    const showContextCard = state.phase === 'WAIT_CONTEXT_CONFIRMATION';
+    document.getElementById('obs-context-card').style.display = showContextCard ? '' : 'none';
+    if (showContextCard) _obsRefreshLocationPanel();
+
     const primaryBtn = document.getElementById('obs-primary-btn');
     const primary = state.primary_action;
-    if (primary && primary.intent) {
+    if (showContextCard) {
+      primaryBtn.style.display = 'none';
+      primaryBtn.onclick = null;
+    } else if (primary && primary.intent) {
+      primaryBtn.style.display = '';
       primaryBtn.textContent = primary.label;
       primaryBtn.disabled = !primary.enabled || _obsBusy;
       primaryBtn.onclick = () => _sendObservingIntent(primary.intent);
     } else {
+      primaryBtn.style.display = '';
       primaryBtn.textContent = (primary && primary.label) || '—';
       primaryBtn.disabled = true;
       primaryBtn.onclick = null;
@@ -109,6 +126,201 @@ function _startObservingPoll() {
     if (_obsPollTimer) return;
     refreshObservingState();
     _obsPollTimer = setInterval(refreshObservingState, 2500);
+}
+
+/* ── Time & Location review panel (WAIT_CONTEXT_CONFIRMATION only) ────────
+   Mirrors static/js/setup.js's Confirm Time & Location panel against the
+   same /api/location/* endpoints — kept as a separate copy (obs-loc-* ids)
+   rather than sharing DOM nodes with the Maintenance screen's s1-tl-card,
+   since both screens can be visible/rendered independently. */
+
+function _obsMarkLocationDirty() { _obsLocPanelDirty = true; }
+
+function _obsSetLocSource(src) {
+    _obsLocSource = src;
+    const b = document.getElementById('obs-loc-source-badge');
+    if (b) {
+        b.textContent = src;
+        b.classList.toggle('badge-ok', src === 'GPS_FIX');
+    }
+}
+
+function _obsOnLocationFieldInput() {
+    _obsMarkLocationDirty();
+    _obsSetLocSource('USER_ENTERED');
+}
+
+function _obsRenderLocationPanel(d) {
+    _obsLastLocationStatus = d;
+
+    const timeEl = document.getElementById('obs-loc-local-time');
+    if (timeEl) timeEl.textContent = d.local_time_iso ? d.local_time_iso.replace('T', ' ') : '—';
+    const gpsBadge = document.getElementById('obs-loc-gps-badge');
+    if (gpsBadge) gpsBadge.style.display = d.time_from_gps ? '' : 'none';
+    const gpsBtn = document.getElementById('obs-loc-gps-btn');
+    if (gpsBtn) gpsBtn.disabled = !(d.gps && d.gps.usable);
+    const confirmBtn = document.getElementById('obs-loc-confirm-btn');
+    if (confirmBtn) confirmBtn.disabled = false;
+
+    if (_obsLocPanelDirty) return;
+
+    const select = document.getElementById('obs-loc-select');
+    if (select) {
+        const options = ['Home', ...d.saved_locations.map(l => l.name), '+ New location…'];
+        select.innerHTML = options.map(name => {
+            const value = name === '+ New location…' ? '__new__' : name;
+            return `<option value="${escHtml(value)}">${escHtml(name)}</option>`;
+        }).join('');
+        select.value = d.active.name;
+    }
+
+    const latEl = document.getElementById('obs-loc-lat-input');
+    const lonEl = document.getElementById('obs-loc-lon-input');
+    const heightEl = document.getElementById('obs-loc-height-input');
+
+    if (d.gps && d.gps.usable) {
+        if (latEl) latEl.value = d.gps.lat;
+        if (lonEl) lonEl.value = d.gps.lon;
+        if (heightEl && d.gps.alt_m !== null && d.gps.alt_m !== undefined) heightEl.value = d.gps.alt_m;
+        else if (heightEl) heightEl.value = d.active.height_m;
+        _obsSetLocSource('GPS_FIX');
+    } else {
+        if (latEl) latEl.value = d.active.lat;
+        if (lonEl) lonEl.value = d.active.lon;
+        if (heightEl) heightEl.value = d.active.height_m;
+        _obsSetLocSource(d.active.source);
+    }
+
+    const nameRow = document.getElementById('obs-loc-name-row');
+    if (nameRow) nameRow.style.display = 'none';
+    const delBtn = document.getElementById('obs-loc-delete-btn');
+    if (delBtn) delBtn.style.display = d.active.name !== 'Home' ? '' : 'none';
+}
+
+async function _obsRefreshLocationPanel() {
+    try {
+        const d = await (await fetch('/api/location/status')).json();
+        _obsRenderLocationPanel(d);
+    } catch (_) {}
+}
+
+function _obsOnLocationSelectChange() {
+    const select = document.getElementById('obs-loc-select');
+    const value = select ? select.value : 'Home';
+    const nameRow = document.getElementById('obs-loc-name-row');
+    const nameInput = document.getElementById('obs-loc-name-input');
+    const delBtn = document.getElementById('obs-loc-delete-btn');
+    const latEl = document.getElementById('obs-loc-lat-input');
+    const lonEl = document.getElementById('obs-loc-lon-input');
+    const heightEl = document.getElementById('obs-loc-height-input');
+
+    if (value === '__new__') {
+        if (nameRow) nameRow.style.display = '';
+        if (nameInput) nameInput.value = '';
+        if (latEl) latEl.value = '';
+        if (lonEl) lonEl.value = '';
+        if (heightEl) heightEl.value = '';
+        _obsSetLocSource('USER_ENTERED');
+        if (delBtn) delBtn.style.display = 'none';
+        _obsLocPanelDirty = false;
+        return;
+    }
+
+    if (nameRow) nameRow.style.display = 'none';
+    const d = _obsLastLocationStatus;
+    if (!d) return;
+    const entry = value === 'Home' ? d.home : d.saved_locations.find(l => l.name === value);
+    if (!entry) return;
+    if (latEl) latEl.value = entry.lat;
+    if (lonEl) lonEl.value = entry.lon;
+    if (heightEl) heightEl.value = entry.height_m;
+    _obsSetLocSource(value === 'Home' ? 'CONFIG_FILE' : 'SAVED_LOCATION');
+    if (delBtn) delBtn.style.display = value !== 'Home' ? '' : 'none';
+    _obsLocPanelDirty = false;
+}
+
+function _obsUseGpsFix() {
+    const gps = _obsLastLocationStatus && _obsLastLocationStatus.gps;
+    if (!gps || !gps.usable) {
+        setStatus('obs-loc-status', 'No usable GPS fix available', true);
+        return;
+    }
+    const latEl = document.getElementById('obs-loc-lat-input');
+    const lonEl = document.getElementById('obs-loc-lon-input');
+    const heightEl = document.getElementById('obs-loc-height-input');
+    if (latEl) latEl.value = gps.lat;
+    if (lonEl) lonEl.value = gps.lon;
+    if (heightEl && gps.alt_m !== null && gps.alt_m !== undefined) heightEl.value = gps.alt_m;
+    _obsSetLocSource('GPS_FIX');
+    _obsMarkLocationDirty();
+}
+
+async function _obsLookupByIp() {
+    setStatus('obs-loc-status', 'Looking up location by IP…');
+    try {
+        const g = await (await fetch('/api/location/ip-lookup')).json();
+        if (!g.available) {
+            setStatus('obs-loc-status', 'IP lookup failed — no result', true);
+            return;
+        }
+        const latEl = document.getElementById('obs-loc-lat-input');
+        const lonEl = document.getElementById('obs-loc-lon-input');
+        if (latEl) latEl.value = g.lat;
+        if (lonEl) lonEl.value = g.lon;
+        _obsSetLocSource('IP_LOOKUP');
+        _obsMarkLocationDirty();
+        setStatus('obs-loc-status', '');
+    } catch (e) {
+        setStatus('obs-loc-status', e.message, true);
+    }
+}
+
+async function _obsConfirmTimeAndLocation() {
+    const select = document.getElementById('obs-loc-select');
+    const value = select ? select.value : 'Home';
+    const lat = parseFloat(document.getElementById('obs-loc-lat-input').value);
+    const lon = parseFloat(document.getElementById('obs-loc-lon-input').value);
+    const height_m = parseFloat(document.getElementById('obs-loc-height-input').value) || 0.0;
+
+    let target, name;
+    if (value === 'Home') {
+        target = 'home';
+        name = undefined;
+    } else if (value === '__new__') {
+        target = 'saved';
+        name = document.getElementById('obs-loc-name-input').value.trim();
+    } else {
+        target = 'saved';
+        name = value;
+    }
+
+    setStatus('obs-loc-status', 'Confirming…');
+    try {
+        await apiPost('/api/location/confirm', {target, name, lat, lon, height_m, source: _obsLocSource});
+        _obsLocPanelDirty = false;
+        const intent = (_obsLastState && _obsLastState.primary_action &&
+                        _obsLastState.primary_action.intent) || 'CONFIRM_CONTEXT';
+        await _sendObservingIntent(intent);
+    } catch (e) {
+        setStatus('obs-loc-status', e.message, true);
+    }
+}
+
+async function _obsDeleteSavedLocation() {
+    const select = document.getElementById('obs-loc-select');
+    const name = select ? select.value : null;
+    if (!name || name === 'Home' || name === '__new__') return;
+    try {
+        const resp = await fetch('/api/location/saved/' + encodeURIComponent(name), {method: 'DELETE'});
+        if (!resp.ok) {
+            const body = await resp.json().catch(() => ({}));
+            throw new Error(body.detail || 'Delete failed');
+        }
+        _obsLocPanelDirty = false;
+        await _obsRefreshLocationPanel();
+    } catch (e) {
+        setStatus('obs-loc-status', e.message, true);
+    }
 }
 
 _startObservingPoll();

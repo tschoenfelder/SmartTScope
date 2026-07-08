@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-07-07 (M9-001..005 done: guided ObservingStateMachine Phase 1)
+**Last updated:** 2026-07-08 (M9-014 done: Time & Location review panel in the guided Observe screen)
 **New sources (2026-07-06):** `smarttscope_requirements_full.md` (state-based observation system: BOOTSTRAP..PARKED_SAFE top-level flow, G1-G10 guards, MVP staging in §11) — drove the M9 rewrite of the main UI from a 5-tab wizard to a guided single-flow screen
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
@@ -1229,6 +1229,8 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - Verified via Playwright against a live mock-adapter server: Observe screen renders correctly, primary-action button click advances the phase end-to-end with zero console errors; Maintenance nav shows the original Stage 1 UI unchanged.
 - [x] M9-005 Full-flow integration test `[P1 · Tests]`
   - *Done:* `tests/integration/test_observing_flow.py` — drives `ObservingService` through the complete `CONFIRM_CONTEXT → CONFIRM_HOME → START_POLAR_ALIGN → ACCEPT_POLAR_ALIGN → START_FOCUS → ACCEPT_FOCUS → START_TARGET_ACQUIRE → ACCEPT_TARGET → SKIP_GUIDING → START_CAPTURE → STOP_SAFELY` sequence against the project's real mock adapters (`adapters/mock/*`, not `unittest.mock`), asserting the phase reaches `PARKED_SAFE` and the mock mount is actually `PARKED`.
+- [x] M9-014 WAIT_CONTEXT_CONFIRMATION showed a blind "Confirm time & location" button with no way to review or change location/time — replaced with the same options as the Maintenance panel `[P1 · UI · Source: user report 2026-07-08]`
+  - *Done:* `#obs-context-card` in `static/index.html` + `_obs*` functions in `static/js/observing.js` reuse `/api/location/status` and `/api/location/confirm` (the same endpoints backing `s1-tl-card`/`setup.js`) to show local time, GPS-fix suggestion, saved-location/Home dropdown, and manual lat/lon/height entry, shown only during `WAIT_CONTEXT_CONFIRMATION` in place of the generic primary button. Confirm button starts `disabled` until the first `/api/location/status` fetch resolves (GPSD's ~2s socket timeout on a Windows dev box with no gpsd running left the fields briefly empty; clicking mid-fetch previously 422'd). Confirm posts the reviewed location, then sends the phase's own `primary_action.intent` to advance the FSM. Verified via Playwright against a live mock-adapter server: panel populates, Confirm advances `WAIT_CONTEXT_CONFIRMATION → WAIT_HOME_CONFIRMATION` with G1 turning green, zero console errors. Backend unchanged (52 existing observing/location tests still pass).
 
 ### Phase 2 — Unified readiness aggregation (backlog)
 

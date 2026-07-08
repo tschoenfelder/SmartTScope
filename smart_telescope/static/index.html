@@ -663,6 +663,63 @@
     <button class="primary-action-btn" id="obs-primary-btn" disabled>—</button>
     <div class="secondary-actions" id="obs-secondary-actions"></div>
 
+    <!-- Time & Location review — shown only in WAIT_CONTEXT_CONFIRMATION; reuses
+         the same /api/location/* endpoints as the Maintenance "Confirm Time &
+         Location" panel (static/js/setup.js) so the guided flow gives the same
+         GPS-fix/saved-location/manual-entry choice instead of a blind confirm. -->
+    <div class="card" id="obs-context-card" style="display:none">
+      <div class="card-title">
+        <span class="dot dot-grey"></span>
+        Time &amp; Location
+      </div>
+      <div class="param" style="margin-bottom:0.4rem">
+        <span class="param-label">Local time</span>
+        <span class="param-value mono" id="obs-loc-local-time">—</span>
+        <span id="obs-loc-gps-badge" class="badge badge-ok" style="display:none;margin-left:0.4rem">GPS</span>
+      </div>
+
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
+        <select id="obs-loc-select" onchange="_obsOnLocationSelectChange()" style="font-size:0.82rem"></select>
+        <button id="obs-loc-delete-btn" onclick="_obsDeleteSavedLocation()" class="secondary"
+                style="display:none;font-size:0.78rem;padding:0.15rem 0.5rem"
+                title="Delete this saved location">✕</button>
+        <span id="obs-loc-source-badge" class="badge">—</span>
+      </div>
+
+      <div id="obs-loc-name-row" style="display:none;margin-bottom:0.4rem">
+        <input id="obs-loc-name-input" type="text" placeholder="Location name" oninput="_obsMarkLocationDirty()"
+               style="font-size:0.82rem;padding:0.2rem 0.4rem;width:100%">
+      </div>
+
+      <div class="params" style="margin-bottom:0.4rem">
+        <div class="param">
+          <span class="param-label">Lat</span>
+          <input id="obs-loc-lat-input" type="number" step="0.000001" oninput="_obsOnLocationFieldInput()"
+                 class="mono" style="width:100%">
+        </div>
+        <div class="param">
+          <span class="param-label">Lon</span>
+          <input id="obs-loc-lon-input" type="number" step="0.000001" oninput="_obsOnLocationFieldInput()"
+                 class="mono" style="width:100%">
+        </div>
+        <div class="param">
+          <span class="param-label">Height (m)</span>
+          <input id="obs-loc-height-input" type="number" step="0.1" oninput="_obsOnLocationFieldInput()"
+                 class="mono" style="width:100%">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+        <button onclick="_obsUseGpsFix()" id="obs-loc-gps-btn" class="secondary" disabled
+                style="font-size:0.8rem;padding:0.2rem 0.6rem">Use GPS fix</button>
+        <button onclick="_obsLookupByIp()" class="secondary"
+                style="font-size:0.8rem;padding:0.2rem 0.6rem">Look up by IP</button>
+        <button onclick="_obsConfirmTimeAndLocation()" id="obs-loc-confirm-btn" disabled
+                style="font-size:0.82rem;padding:0.25rem 0.7rem">Confirm Time &amp; Location</button>
+      </div>
+      <div id="obs-loc-status" class="status-line" style="margin-top:0.4rem"></div>
+    </div>
+
     <div class="card">
       <div class="card-title">
         <span class="dot dot-grey"></span>

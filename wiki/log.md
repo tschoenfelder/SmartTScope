@@ -4,6 +4,17 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-014: Time & Location review panel in the guided Observe screen
+
+User report: the Observe screen's `WAIT_CONTEXT_CONFIRMATION` step showed a plain "Confirm time & location" button with no way to see or change what would be confirmed — a regression against the Maintenance screen's existing "Confirm Time & Location" panel (`s1-tl-card`, commits `eeec8e3`/`23aea26`), which already offers a GPS-fix suggestion, saved-location/Home dropdown, and manual lat/lon/height entry against `/api/location/*`.
+
+- `static/index.html`: new `#obs-context-card` in the Observe screen — same fields as `s1-tl-card`'s location section (local time, GPS badge, location select, lat/lon/height inputs, source badge, GPS-fix/IP-lookup/Confirm buttons), under new `obs-loc-*` ids (kept as a separate copy rather than sharing DOM nodes with `s1-tl-card`, since both screens can render independently — reusing ids across the two would collide). Shown only when `phase === WAIT_CONTEXT_CONFIRMATION`, replacing the generic primary button for that phase.
+- `static/js/observing.js`: `_obs*` functions mirror `setup.js`'s existing `_renderLocationPanel`/`useGpsFix`/`lookupByIp`/`confirmTimeAndLocation` against the same `/api/location/status` and `/api/location/confirm` endpoints (no backend changes). Confirm posts the reviewed location, then sends `state.primary_action.intent` (`CONFIRM_CONTEXT`) to advance the FSM — same backend call the plain button used to make blindly.
+- Fixed along the way: the Confirm button now starts `disabled` until the first `/api/location/status` fetch resolves. On this Windows dev box (no gpsd running), `GpsdService.get_fix()`'s TCP connect to `127.0.0.1:2947` takes ~2s to time out on every `/api/location/status` call, so clicking Confirm before that first fetch landed sent empty lat/lon and got HTTP 422. Should be near-instant on the Pi with real gpsd running, but the guard costs nothing either way.
+- Verified via Playwright against a live mock-adapter server: panel populates with Home's lat/lon/height and `CONFIG_FILE` source badge; clicking Confirm advances `WAIT_CONTEXT_CONFIRMATION → WAIT_HOME_CONFIRMATION` with guard G1 turning green, zero console errors. Full existing suite (52 observing/location tests) still passes — backend untouched.
+
+---
+
 ## 2026-07-07 — DEVELOP — M9-001..005: Guided Observing State Machine (Phase 1)
 
 New source `smarttscope_requirements_full.md` (§6-7 state model, §11 MVP staging) drove a rewrite of the app's primary screen from a 5-tab wizard ("Startup/Alignment/GoTo&Solve/Collimation/Session", client-side `_stage` navigation) into a single guided flow backed by one authoritative backend state machine.

@@ -153,16 +153,23 @@ def park_sequence(
     except CommandConflictError:
         raise
 
-    changed = device_state.poll_until_changed(MountState.UNPARKED, timeout_s=5.0)
+    # Compare against the mount's actual pre-park state, not a hardcoded
+    # MountState.UNPARKED — parking can be commanded from AT_HOME (the
+    # guided-flow "Home the mount" -> "Stop safely" path) or TRACKING just as
+    # easily as from UNPARKED. Comparing against the wrong baseline made this
+    # trivially true whenever pre_state already differed from UNPARKED (e.g.
+    # AT_HOME), falsely reporting "slew started" without the mount actually
+    # having moved at all.
+    changed = device_state.poll_until_changed(pre_state, timeout_s=5.0)
     obs = device_state.get_mount_state()
     state_name = obs.state.name if obs else "?"
     if changed:
         _log.info("Mount park slew started: state = %s", state_name)
     else:
         _log.warning(
-            "Mount park: state still UNPARKED after 5 s — "
+            "Mount park: state still %s after 5 s — "
             "check OnStep park position / firmware; state: %s",
-            state_name,
+            pre_state.name, state_name,
         )
 
 

@@ -159,6 +159,22 @@ def test_park_sequence_skips_park_when_already_parked():
     m.park.assert_not_called()
 
 
+def test_park_sequence_polls_against_actual_pre_state_not_hardcoded_unparked():
+    """Regression test for a real-hardware bug: park_sequence() used to
+    always compare against a hardcoded MountState.UNPARKED regardless of the
+    mount's actual pre-park state, so parking from AT_HOME (the guided-flow
+    "Home the mount" -> "Stop safely" path) always looked like it "started"
+    immediately even though the mount never moved at all -- confirmed via a
+    real-hardware server log where :hP# was accepted (reply='1') but state
+    stayed AT_HOME throughout. See wiki/log.md 2026-07-08 M9-026."""
+    m = _mock_mount(state=MountState.AT_HOME, park_ok=True)
+    c = _coordinator()
+    ds = _device_state()
+    with patch.object(ds, "poll_until_changed", return_value=True) as mock_poll:
+        park_sequence(m, c, ds)
+    mock_poll.assert_called_once_with(MountState.AT_HOME, timeout_s=5.0)
+
+
 def test_park_sequence_does_not_raise_when_stuck_unparked():
     # If OnStep never starts the slew (e.g. no park position), park_sequence
     # warns but does not raise — the JS polls for PARKED for 60 s.

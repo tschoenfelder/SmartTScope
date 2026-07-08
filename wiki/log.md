@@ -4,6 +4,48 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-08 — FIX — M9-026 resolved: found the real bug from server logs
+
+Follow-up to the M9-026 entry below. User supplied the actual server log
+around the fault, which turned out to be conclusive:
+
+```
+park_sequence: pre-park state = AT_HOME
+Mount park issued
+Mount park slew started: state = AT_HOME
+park_sequence: pre-park state = AT_HOME
+OnStepMount.park(): OnStep did not accept :hP#; reply='0'
+```
+
+First `:hP#` was accepted (`reply='1'`) — but the state stayed `AT_HOME`
+the entire time; it never actually moved. `park_sequence()`'s post-command
+check called `device_state.poll_until_changed(MountState.UNPARKED,
+timeout_s=5.0)` — a **hardcoded** baseline, not the mount's actual
+`pre_state`. Since `AT_HOME != UNPARKED` is trivially true from the very
+first poll iteration, this falsely reported "slew started" without any
+real movement. Because the mount consequently never reached `PARKED`, a
+*second* `park_sequence()` call followed shortly after (same
+`pre-park state = AT_HOME`) — and that second `:hP#` is the one OnStep
+genuinely rejected.
+
+Fix: `poll_until_changed()` is now called with the mount's actual
+`pre_state` as the baseline, not a hardcoded `MountState.UNPARKED` — so
+this check works correctly whether parking is commanded from `AT_HOME`,
+`TRACKING`, or any other state, not just the `UNPARKED` case the original
+code implicitly assumed (i.e. parking from a normal tracking/observing
+session, never previously exercised via the guided home→park path this
+session introduced). Also fixed the accompanying warning log's hardcoded
+"still UNPARKED" wording.
+
+**Still open:** *why* the mount didn't actually progress after the first
+accepted `:hP#` — a real mechanical/firmware question, possibly specific
+to parking directly from the mechanical-HOME route, unconfirmed — and
+whether `park_sequence()` should avoid blindly re-issuing `:hP#` on retry
+if a previous attempt was already accepted but not yet confirmed complete.
+New regression test added; 28 + 166 tests pass, 0 regressions.
+
+---
+
 ## 2026-07-08 — OPEN — M9-026: real :hP# rejection, root cause not yet found
 
 User hit "FAULT: :hP# rejected by OnStep — home the mount first to

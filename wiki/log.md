@@ -4,6 +4,45 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-11 — RECLASSIFICATION — REQ-1/REQ-ST-001/003/006 reworked per user direction
+
+Follow-up to the same day's v0.3.1 research entry (below). User gave concrete
+direction on 4 of the 6 remaining gaps, changing them from "ask upstream" to
+either "adapt SmartTScope locally" or "fix the actual behavior, not just the
+status report":
+
+- **REQ-1** — not an upstream ask. SmartTScope should call `onstep_adapter`'s
+  real `move_ra_timed()`/`move_dec_timed()` directly and translate
+  direction/duration locally, instead of asking upstream to add a method
+  matching SmartTScope's own signature. Captured as `LOCAL-001`.
+- **REQ-ST-001** — not an upstream ask. It's pure config-forwarding glue
+  (SmartTScope's own `config.py` values pushed into upstream's existing
+  `sync_onstep_time_location()`); no adapter feature is missing. Captured as
+  `LOCAL-002`.
+- **REQ-ST-003** — reframed. The original ask only relabeled `get_state()`'s
+  report (AT_HOME instead of TRACKING) when firmware auto-starts tracking
+  after `:hR#`. User: if the app didn't ask for tracking and it's tracking
+  anyway, the real fix is to stop it, not just reinterpret the status while
+  the mount keeps tracking underneath. Captured as `SAFETY-001`, P0.
+- **REQ-ST-006** — reframed similarly: `unpark()` should drive the mount to
+  a genuine non-tracking mechanical state in general, not just clear
+  SmartTScope's own bookkeeping flag. Captured as `SAFETY-002`, P0.
+- **REQ-ST-005** — confirmed scoped correctly as-is (stays an upstream ask;
+  becomes the mechanism SAFETY-001 would call).
+- **REQ-ST-008** — confirmed necessary regardless of upstream outcome ("so
+  you need it") — already implemented locally, stays local either way;
+  upstream adoption is a nice-to-have, not a blocker.
+
+`SAFETY-001`/`SAFETY-002`/`LOCAL-001` all touch `OnStepMount` protocol-layer
+code in `smart_telescope/adapters/onstep/mount.py`. Per the 2026-07-09
+guardrail (below), none were implemented — captured as open `docs/todo.md`
+items awaiting explicit go-ahead. `SYNC.md`'s Active SYNC-OVERRIDEs and
+Pending upstream requests tables updated to match; `docs/todo.md`'s Phase 0
+table and RFC-prep item (`ONS31-008`) rescoped to drop REQ-1/REQ-ST-001 and
+reframe REQ-ST-003/006.
+
+---
+
 ## 2026-07-11 — RESEARCH — OnStepAdapter v0.3.1 checked; upgrade task list added
 
 User asked to check `tschoenfelder/OnStepAdapter` release v0.3.1 for its

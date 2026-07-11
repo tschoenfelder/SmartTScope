@@ -74,8 +74,9 @@ because the upstream `OnStepMount` does not expose these signatures.
 
 | ID | Method | Why kept in SmartTScope |
 |----|--------|------------------------|
-| REQ-1 | `move(direction, move_ms)` | `MountPort` contract; upstream signature differs |
+| REQ-1 | `move(direction, move_ms)` | **Reclassified 2026-07-11 — NOT an upstream ask.** User direction: SmartTScope should call `onstep_adapter`'s actual public API directly (`move_ra_timed()`/`move_dec_timed()`, `mode="center"`) and translate `direction`/`move_ms` into that signature locally, rather than asking upstream to add a method matching SmartTScope's `MountPort` shape. Stays in shim permanently as a translation wrapper, same treatment as REQ-2. |
 | REQ-2 | `set_park_position() → bool` and `get_park_position() → MountPosition\|None` | `MountPort` ABC compliance; upstream already has `set_park_position_from_current()` and `get_stored_park_position()` — these two methods stay in shim permanently as interface adapters |
+| REQ-ST-001 | `ensure_time_location_synced()` | **Reclassified 2026-07-11 — NOT an upstream ask.** It's pure config-forwarding glue (pulls `lat`/`lon`/`alt_m` from SmartTScope's own `config.py`, then calls upstream's existing `sync_onstep_time_location()`). SmartTScope's config has no reason to live in a generic adapter; stays a permanent local wrapper. |
 
 ## Pending upstream requests
 
@@ -84,14 +85,13 @@ into `onstep_adapter`; raise with the package maintainer.
 
 | ID | Method | Reasoning for upstream adoption |
 |----|--------|----------------------------------|
-| REQ-ST-001 | `ensure_time_location_synced()` | Protocol convenience wrapper — useful for all OnStep hosts |
-| REQ-ST-002 | `sync_onstep_time_location()` (confirmed_by_user extension) | Sets `time_trust_source="user_confirmed"`; base class leaves it unset |
-| REQ-ST-003 | `get_state()` `_explicit_tracking_started` flag | Some firmware auto-starts tracking after `:hR#`; flag disambiguates |
-| REQ-ST-004 | `enable_tracking()` at-home bypass | Positional limits unsound at CWD home (stale RA); safety lock still applies |
-| REQ-ST-005 | `disable_tracking_verified()` flag clear | Consistent flag lifecycle |
-| REQ-ST-006 | `stop()` / `park()` / `unpark()` flag clear | Consistent flag lifecycle |
-| REQ-ST-007 | `motion_safety_preflight()` pier-side guards | (a) terminal_state; (b) axis2 < 15° stale `:Gm#` suppression |
-| REQ-ST-008 | `_haversine_m()` + `_lx200_round_degrees()` helpers, used by `get_sync_status()`'s meter-based location tolerance (M8-008) | Generic geo/LX200-format utilities any OnStep client doing location-sync checks would need; found via diff against the vendored copy 2026-07-09, never filed upstream when added |
+| REQ-ST-002 | `sync_onstep_time_location()` (confirmed_by_user extension) | Sets `time_trust_source="user_confirmed"`; base class leaves it unset. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
+| REQ-ST-003 | `get_state()` `_explicit_tracking_started` flag | **Reframed 2026-07-11.** Original ask only disambiguated *reporting* (relabel as AT_HOME instead of TRACKING). User direction: the actual fix should be behavioral — if firmware auto-starts tracking after `:hR#` that SmartTScope never requested, actively stop it (e.g. call the same verified-disable path REQ-ST-005 uses), not just reinterpret status while the mount keeps tracking underneath. This is a protocol-layer behavior change to `OnStepMount` — flagged per the never-edit-adapter-directly guardrail, awaiting user go-ahead before implementation. Still worth raising upstream too, since any GEM OnStep host hits the same firmware quirk. |
+| REQ-ST-004 | `enable_tracking()` at-home bypass | Positional limits unsound at CWD home (stale RA); safety lock still applies. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
+| REQ-ST-005 | `disable_tracking_verified()` flag clear | Consistent flag lifecycle. Confirmed as scoped correctly (2026-07-11) — stays an upstream ask as-is; becomes the mechanism REQ-ST-003's active-stop behavior would call. |
+| REQ-ST-006 | `stop()` / `park()` / `unpark()` flag clear | **Reframed 2026-07-11.** User direction: `unpark()` in general should drive the mount to a genuine non-tracking mechanical state, not just clear SmartTScope's own bookkeeping flag. Same protocol-layer-behavior-change status as REQ-ST-003 — flagged, awaiting go-ahead. |
+| REQ-ST-007 | `motion_safety_preflight()` pier-side guards | (a) terminal_state; (b) axis2 < 15° stale `:Gm#` suppression. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
+| REQ-ST-008 | `_haversine_m()` + `_lx200_round_degrees()` helpers, used by `get_sync_status()`'s meter-based location tolerance (M8-008) | Generic geo/LX200-format utilities any OnStep client doing location-sync checks would need; found via diff against the vendored copy 2026-07-09, never filed upstream when added. **Confirmed needed regardless of upstream outcome (2026-07-11) — stays local either way; upstream adoption is a nice-to-have, not a blocker.** |
 
 ## Upgrading onstep_adapter
 

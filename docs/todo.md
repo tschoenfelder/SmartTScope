@@ -94,19 +94,46 @@ checkout, per the OnStepAdapter guardrail.
 
 #### RFC preparation for remaining gaps (do not file without user approval)
 
-- [ ] ONS31-008 Draft upstream change-request content for `tschoenfelder/OnStepAdapter`
-      covering the confirmed-still-open items: REQ-1 (`move(direction, move_ms) → bool`),
-      REQ-ST-001 (`ensure_time_location_synced()`), REQ-ST-003/005/006 (`_explicit_tracking_started`
-      flag lifecycle in `get_state()`/`disable_tracking_verified()`/`stop()`/`park()`/`unpark()`),
-      REQ-ST-008 (`_haversine_m()` + `_lx200_round_degrees()` geo helpers). Present as a
-      reviewable draft (issue body text), not an opened GitHub issue `[P1 · External]`
+- [ ] ONS31-008 Draft upstream change-request content for `tschoenfelder/OnStepAdapter`.
+      **Rescoped 2026-07-11** — REQ-1 and REQ-ST-001 are no longer upstream asks (see
+      LOCAL-001/002 below); the RFC now covers only: REQ-ST-003/006 (recast as a behavior
+      request — actively stop unrequested tracking rather than just relabel status, still
+      worth raising since it's a general GEM/OnStep firmware quirk), REQ-ST-005 (unchanged,
+      `disable_tracking_verified()` flag clear), REQ-ST-008 (`_haversine_m()` +
+      `_lx200_round_degrees()` geo helpers — nice-to-have, not blocking, since it stays local
+      either way). Present as a reviewable draft (issue body text), not an opened GitHub issue
+      `[P1 · External]`
 - [ ] ONS31-009 Hold filing the GitHub issue until the user explicitly approves — matches the
       standing 2026-07-09 guardrail: never auto-file external requests against OnStepAdapter
       `[P1 · Process]`
 
+#### Local adaptation work identified 2026-07-11 (protocol-layer changes — flagged, awaiting go-ahead)
+
+Per the 2026-07-09 guardrail, none of these touch `smart_telescope/adapters/onstep/mount.py`
+until the user explicitly signs off — captured here so the decision isn't lost.
+
+- [ ] LOCAL-001 Rewrite `move(direction, move_ms)` to call `onstep_adapter`'s
+      `move_ra_timed()`/`move_dec_timed()` (`mode="center"`) directly, translating
+      direction/duration at the SmartTScope layer, instead of the current
+      `mechanical_manual_move()` interim. Not an upstream ask — SmartTScope adapts to the
+      adapter's real signature `[P1 · Runtime]`
+- [ ] LOCAL-002 `ensure_time_location_synced()` reclassified as a permanent local wrapper
+      (forwards SmartTScope's own config to upstream's `sync_onstep_time_location()`) — no
+      code change needed, already correct; just remove it from the upstream-ask list
+      `[P2 · Process]`
+- [ ] SAFETY-001 When firmware auto-starts tracking after `:hR#` that SmartTScope never
+      requested, actively stop it (route through the same verified-disable path REQ-ST-005
+      describes) instead of only reinterpreting `get_state()`'s reported status while tracking
+      continues underneath `[P0 · Safety]`
+- [ ] SAFETY-002 `unpark()` should drive the mount to a genuine non-tracking mechanical state
+      in general, not just clear SmartTScope's own `_explicit_tracking_started` bookkeeping
+      flag `[P0 · Safety]`
+
 ### Open Enhancement Requests (pending external delivery — tracked in SYNC.md)
 
-- [ ] REQ-1: `move(direction, move_ms)` at slew rate in `OnStepMount` — interim delegates to `guide()`
+- [ ] REQ-1: ~~`move(direction, move_ms)` at slew rate in `OnStepMount`~~ — **reclassified
+      2026-07-11, not an upstream ask; see LOCAL-001** — interim currently delegates to
+      `mechanical_manual_move()` (docs previously said `guide()`, which was stale)
 - [ ] REQ-2: `get_park_position() → MountPosition | None` and `set_park_position() → bool` — **stays in SmartTScope shim** (v0.3.0 already has `set_park_position_from_current()` and `get_stored_park_position()`; these two wrappers adapt to `MountPort` signatures)
 - [ ] REQ-3: Sticky AT_HOME state tracking in adapter (currently in `DeviceStateService`)
 - [ ] REQ-4: Hardware watchdog property on `OnStepMount` (currently in `DeviceStateService`)
@@ -130,15 +157,15 @@ File the following as issues/PRs on `tschoenfelder/OnStepAdapter`:
 
 | ID | Upstream ask | Reasoning |
 |----|-------------|-----------|
-| REQ-1 | `move(direction, move_ms) → bool` in `_BaseMount` | MountPort contract; generic center-rate timed move for any GEM user. |
+| ~~REQ-1~~ | ~~`move(direction, move_ms) → bool` in `_BaseMount`~~ | **NOT upstream (reclassified 2026-07-11)** — SmartTScope should call `move_ra_timed()`/`move_dec_timed()` directly and translate locally; see LOCAL-001. |
 | ~~REQ-2~~ | ~~`set_park_position() → bool`~~ | **NOT upstream** — v0.3.0 already has `set_park_position_from_current()` and `get_stored_park_position()`; SmartTScope's `set_park_position()` and `get_park_position()` are thin `MountPort`-compliance wrappers that stay in the shim. |
-| REQ-ST-001 | `ensure_time_location_synced()` | Pre-observation clock+location sync is needed by every OnStep client. |
-| REQ-ST-002 | `confirmed_by_user` param in `sync_onstep_time_location()` sets `time_trust_source="user_confirmed"` | Safety trust tracking — any safety-aware client needs this to clear clock locks. |
-| REQ-ST-003 | `_explicit_tracking_started` flag in `get_state()` prevents ``:hR#`` auto-tracking from masking AT_HOME | Firmware quirk (auto-tracking after unpark) affects all GEM OnStep users. |
-| REQ-ST-004 | `enable_tracking()` at-home bypass skips HA/altitude checks when HOME RA is stale | GEM HOME-position safety; stale RA produces false limit blocks at HOME. |
-| REQ-ST-005 | `disable_tracking_verified()` clears `_explicit_tracking_started` | Correctness: without the clear, `get_state()` returns TRACKING forever after verified disable. |
-| REQ-ST-006 | `stop()` / `park()` / `unpark()` each clear `_explicit_tracking_started` | Same flag lifecycle issue — all state-changing commands must reset the flag. |
-| REQ-ST-007 | `motion_safety_preflight()` pier-side guards: (a) `terminal_state` check; (b) suppress stale `:Gm#` when `axis2 < 15°` at HOME | GEM safety refinement; stale pier-side blocks valid GoTo at CWD home position. |
+| ~~REQ-ST-001~~ | ~~`ensure_time_location_synced()`~~ | **NOT upstream (reclassified 2026-07-11)** — pure SmartTScope config-forwarding glue over upstream's existing `sync_onstep_time_location()`; see LOCAL-002. |
+| REQ-ST-002 | `confirmed_by_user` param in `sync_onstep_time_location()` sets `time_trust_source="user_confirmed"` | Safety trust tracking — any safety-aware client needs this to clear clock locks. **Confirmed present in v0.3.1 (2026-07-11).** |
+| REQ-ST-003 | `_explicit_tracking_started` flag in `get_state()` prevents ``:hR#`` auto-tracking from masking AT_HOME | **Reframed 2026-07-11** — real fix is behavioral (actively stop unrequested tracking, see SAFETY-001), not just report-side disambiguation. Still worth raising upstream; firmware quirk affects all GEM OnStep users. |
+| REQ-ST-004 | `enable_tracking()` at-home bypass skips HA/altitude checks when HOME RA is stale | GEM HOME-position safety; stale RA produces false limit blocks at HOME. **Confirmed present in v0.3.1 (2026-07-11).** |
+| REQ-ST-005 | `disable_tracking_verified()` clears `_explicit_tracking_started` | Correctness: without the clear, `get_state()` returns TRACKING forever after verified disable. Confirmed scoped correctly 2026-07-11. |
+| REQ-ST-006 | `stop()` / `park()` / `unpark()` each clear `_explicit_tracking_started` | **Reframed 2026-07-11** — `unpark()` should drive a genuine non-tracking state in general, not just clear a bookkeeping flag; see SAFETY-002. |
+| REQ-ST-007 | `motion_safety_preflight()` pier-side guards: (a) `terminal_state` check; (b) suppress stale `:Gm#` when `axis2 < 15°` at HOME | GEM safety refinement; stale pier-side blocks valid GoTo at CWD home position. **Confirmed present in v0.3.1 (2026-07-11).** |
 | REQ-ST-008 | `_haversine_m()` (great-circle distance helper) + `_lx200_round_degrees()` (arcminute-precision rounding matching LX200 site format), used by `get_sync_status()`'s meter-based location tolerance (M8-008) | Generic geo/LX200-format utilities any OnStep client doing location-sync checks would need; found via diff against the vendored copy 2026-07-09 — not filed upstream when added in M8-008. |
 
 - [ ] ONS-MIGRATE-001 File upstream issue: REQ-1 `move(direction, move_ms) → bool` `[P1 · External]`

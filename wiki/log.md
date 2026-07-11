@@ -4,6 +4,49 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-07-11 — RESEARCH — OnStepAdapter v0.3.1 checked; upgrade task list added
+
+User asked to check `tschoenfelder/OnStepAdapter` release v0.3.1 for its
+supported FSM and plan fully moving OnStep USB connectivity onto that
+adapter, without editing it directly (RFC only, if needed). Fetched the
+release and source via `gh api` against the published tag — never a local
+checkout, per the standing guardrail (see 2026-07-09 entries below,
+`project_onstep_adapter_v030` memory).
+
+**Findings:** v0.3.1 is a packaging fix only — it removes the colliding
+top-level `smart_telescope/*` files that v0.3.0's wheel shipped, so
+`onstep_adapter` is now importable standalone
+(`from onstep_adapter import OnStepClient, OnStepSafetyConfig`) without
+namespace collision risk. It does **not** close the feature gap that has
+blocked the `ONS-MIGRATE-*` shrink-to-shim plan since 2026-06-17: diffing
+upstream `mount.py` (4,329 lines) against local
+`smart_telescope/adapters/onstep/mount.py` (4,502 lines) still shows a
+~173-line delta. `REQ-ST-002` and `REQ-ST-007` are now present upstream;
+`REQ-1`, `REQ-ST-001`, `REQ-ST-003/005/006`, and `REQ-ST-008` remain
+absent. `client.py` is already byte-for-byte identical upstream vs local.
+
+FSM confirmed: `MountState` enum (`UNKNOWN, PARKED, UNPARKED, SLEWING,
+TRACKING, AT_LIMIT`) in `onstep_adapter/ports/mount.py`, derived
+stateless-ly in `get_state()` from decoded `:GU#` flags. Focuser has no
+state enum (`is_moving`/`is_available` booleans only). Connection FSM is
+boolean-based (`OnStepConnectionResult`), never raises.
+
+An Explore pass also reconfirmed direct USB/serial connectivity is already
+100% consolidated in `smart_telescope/adapters/onstep/{mount,serial_bus}.py`
+— no legacy/duplicate direct-serial code exists elsewhere in the repo.
+
+**Action:** Added a new `### Upgrade to v0.3.1 — 2026-07-11` task block to
+`docs/todo.md` (`ONS31-001..009`, all `P1`), mirroring the existing
+`ONS3-001..006` v0.3.0-upgrade format: pin bump, install/verify, diff audit,
+cautious override-removal review, test run, `SYNC.md` update, commit — plus
+two RFC-prep items (draft upstream change-request text for the still-open
+REQ items, but hold filing until the user explicitly approves, per the
+2026-07-09 guardrail below). Did not touch `pyproject.toml`, `SYNC.md`, or
+any `smart_telescope/adapters/onstep/*.py` file — those are the execution
+steps the new task-list items describe, not part of this planning pass.
+
+---
+
 ## 2026-07-09 — GUARDRAIL — never edit OnStepMount/OnStepClient directly
 
 Follow-up to the prior entry's guardrail. User: "migrate to using the

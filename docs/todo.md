@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-07-09 (M9-027 done: _run_safe_stop() no longer blindly resends :hP# on every auto-advance retry — tracks whether a park command was already accepted and just re-checks device_state until it completes or 120s elapses)
+**Last updated:** 2026-07-11 (ONS31-001..009 added: OnStepAdapter v0.3.1 upgrade task block — packaging fix only, REQ-1/REQ-ST-001/003/005/006/008 still absent upstream; RFC drafting item added, gated on user approval before filing)
 **New sources (2026-07-06):** `smarttscope_requirements_full.md` (state-based observation system: BOOTSTRAP..PARKED_SAFE top-level flow, G1-G10 guards, MVP staging in §11) — drove the M9 rewrite of the main UI from a 5-tab wizard to a guided single-flow screen
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
@@ -63,6 +63,46 @@ Release: <https://github.com/tschoenfelder/OnStepAdapter/releases/tag/v0.3.0>
   - *Done:* 2942 passed, 24 skipped (2026-06-21); fixed 4 classes of pre-existing failures found during run: ArchiveConfig default, catalog/star-selector HA filtering not patched in tests, park tests missing `confirmed=True`, stretch test expected percentile behavior from sigma-stretch
 - [x] ONS3-006 Commit: `git commit -m "chore: upgrade onstep_adapter to v0.3.0"` `[P1 · Build]`
   - *Done:* committed 2026-06-21
+
+### Upgrade to v0.3.1 — 2026-07-11
+
+Release: <https://github.com/tschoenfelder/OnStepAdapter/releases/tag/v0.3.1>
+Packaging fix only (removes colliding `smart_telescope/*` files from the wheel; no new
+adapter features). Confirmed via `gh api` against the published release, not a local
+checkout, per the OnStepAdapter guardrail.
+
+- [ ] ONS31-001 Update `pyproject.toml` wheel URL to v0.3.1 `[P1 · Build]`
+- [ ] ONS31-002 Install new wheel; confirm `onstep_adapter.__version__ == "0.3.1"` and that
+      `from onstep_adapter import OnStepClient, OnStepSafetyConfig` works with no
+      `smart_telescope` namespace collision `[P1 · Build]`
+- [ ] ONS31-003 Diff `onstep_adapter/{mount.py,client.py,focuser.py,ports/*.py,safety.py,
+      serial_bus.py,state_store.py}` against `smart_telescope/adapters/onstep/*.py` and
+      record the result in `SYNC.md`. 2026-07-11 pre-check (via `gh api`, not local install)
+      found: REQ-ST-002, REQ-ST-007 now present upstream; REQ-1, REQ-ST-001, REQ-ST-003,
+      REQ-ST-005, REQ-ST-006, REQ-ST-008 still absent (~173-line gap persists); `client.py`
+      already identical `[P1 · Runtime]`
+- [ ] ONS31-004 For each REQ-ST-* override confirmed newly covered upstream (candidates:
+      REQ-ST-002, REQ-ST-007) — do NOT remove the local override without first verifying
+      byte-for-byte behavioral equivalence against the installed wheel; this is protocol-layer
+      code, so if removal reveals a real behavioral difference, stop and flag it rather than
+      patching `OnStepMount` directly `[P1 · Runtime]`
+- [ ] ONS31-005 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all pass
+      `[P1 · Tests]`
+- [ ] ONS31-006 Update `SYNC.md`: bump pinned wheel URL and "Last synced" date; update the
+      Pending upstream requests table with per-item status (covered vs. still open) `[P1 · Build]`
+- [ ] ONS31-007 Commit: `git commit -m "chore: upgrade onstep_adapter to v0.3.1"` `[P1 · Build]`
+
+#### RFC preparation for remaining gaps (do not file without user approval)
+
+- [ ] ONS31-008 Draft upstream change-request content for `tschoenfelder/OnStepAdapter`
+      covering the confirmed-still-open items: REQ-1 (`move(direction, move_ms) → bool`),
+      REQ-ST-001 (`ensure_time_location_synced()`), REQ-ST-003/005/006 (`_explicit_tracking_started`
+      flag lifecycle in `get_state()`/`disable_tracking_verified()`/`stop()`/`park()`/`unpark()`),
+      REQ-ST-008 (`_haversine_m()` + `_lx200_round_degrees()` geo helpers). Present as a
+      reviewable draft (issue body text), not an opened GitHub issue `[P1 · External]`
+- [ ] ONS31-009 Hold filing the GitHub issue until the user explicitly approves — matches the
+      standing 2026-07-09 guardrail: never auto-file external requests against OnStepAdapter
+      `[P1 · Process]`
 
 ### Open Enhancement Requests (pending external delivery — tracked in SYNC.md)
 

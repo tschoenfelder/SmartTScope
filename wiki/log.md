@@ -4108,3 +4108,49 @@ whether the reinstall actually happened.
 tests affected (shell-script-only fix). Not yet verified against a live Pi
 deploy from this machine — ask the user to confirm on next
 `astro_start.sh` run.
+
+---
+
+## 2026-07-15 — OnStepAdapter v0.3.1 FSM check + full USB-connectivity migration task list
+
+**Request:** Check tschoenfelder/OnStepAdapter v0.3.1 for its supported FSM and plan the
+full replacement of SmartTScope's local OnStep USB connectivity with that adapter — never
+modifying the adapter; genuine gaps become change requests. Add the migration task list as
+high-priority items to `docs/todo.md`.
+
+**Research (against the published release, per guardrail — release page, GitHub API,
+raw files at tag v0.3.1):**
+
+- v0.3.1 is a fully **independent** `onstep_adapter` package (own `mount.py`, `client.py`,
+  `serial_bus.py`, `focuser.py`, `safety.py`, `ports/`); wheel ships no `smart_telescope/*`
+  files. The 2026-07-11 "packaging fix only" assessment was wrong — corrected in todo.md.
+- Supported FSM: `MountState` = 6 enum states (UNKNOWN, PARKED, UNPARKED, SLEWING,
+  TRACKING, AT_LIMIT). HOME is a mechanical `:GU#` flag, not an enum state, exposed as
+  `client.mount.last_decoded_status["at_home"]` (clarified by user; canonical check is
+  `get_state()` then `last_decoded_status.get("at_home") is True`).
+- Routed op `unpark_to_home_stop_tracking()` unparks, stops firmware auto-tracking, and
+  returns `{"at_home", "final_status"}` — natively covers the quirk SmartTScope compensates
+  for locally (`_explicit_tracking_started`, REQ-ST-003/005/006, SAFETY-001/002).
+- Upstream `OnStepClient.__init__` hard-instantiates its own `OnStepMount` (no injection
+  parameter) — the reason local `client.py` replicates the constructor.
+
+**User decisions:** unpark switches to the routed op (retires local compensation after
+hardware verification); AT_HOME derived locally from the decoded flag (7-state enum in
+`smart_telescope/ports/mount.py` stays the app-facing FSM, no upstream change request
+needed); client shim uses swap-after-construction (deletes the copied constructor, no
+change request needed). Any gap found during audits goes to SYNC.md "Pending upstream
+requests" + GitHub issue only after explicit user approval.
+
+**Changes:**
+
+- `docs/todo.md`: corrected the v0.3.1 release note; added high-priority task block
+  ONS31-101..110 (Phase B FSM alignment & routed-op adoption, Phase C shim reduction,
+  Phase D hardware verification & closeout); annotated superseded items (LOCAL-001 →
+  ONS31-106; SAFETY-001/002 → ONS31-102; REQ-3 satisfied via decoded at_home flag;
+  ONS-MIGRATE-001/003/004/005/006/007/008/010/011/012/013/014 → ONS31-1xx equivalents);
+  updated header.
+- `wiki/index.md`: OnStepAdapter external-module entry rewritten (independent package,
+  FSM/at_home/routed-op findings, migration unblocked).
+
+No code changed; SYNC.md updates are themselves tasks (ONS31-104/110) executed during
+the migration.

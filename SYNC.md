@@ -83,6 +83,9 @@ because the upstream `OnStepMount` does not expose these signatures.
 These patches are currently in `mount.py`. They should be evaluated for adoption
 into `onstep_adapter`; raise with the package maintainer.
 
+**Filed 2026-07-11:** REQ-ST-003/005/006/008 raised as
+<https://github.com/tschoenfelder/OnStepAdapter/issues/3> (explicit user approval).
+
 | ID | Method | Reasoning for upstream adoption |
 |----|--------|----------------------------------|
 | REQ-ST-002 | `sync_onstep_time_location()` (confirmed_by_user extension) | Sets `time_trust_source="user_confirmed"`; base class leaves it unset. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |

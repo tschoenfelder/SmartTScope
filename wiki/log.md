@@ -4154,3 +4154,46 @@ requests" + GitHub issue only after explicit user approval.
 
 No code changed; SYNC.md updates are themselves tasks (ONS31-104/110) executed during
 the migration.
+
+---
+
+## 2026-07-15 — Working-tree cleanup: unsanctioned adapter WIP stashed, stale sync-status tests fixed
+
+While committing the ONS31-101..110 task block, the working tree was found to
+contain uncommitted changes from an earlier, unfinished session. Handled under
+delegated authority ("smart_telescope is fully under your control"):
+
+1. **Stashed (not deleted): partial SAFETY-001/LOCAL-001 implementation in the
+   guardrail-protected adapter layer.** `smart_telescope/adapters/onstep/mount.py`
+   had an uncommitted `_auto_stop_untracked_tracking()` branch in `get_state()`
+   (+31 lines), and `tests/unit/adapters/onstep/{fake_serial.py,
+   test_with_fake_serial.py}` had tests for BOTH that change AND a LOCAL-001
+   `move()` rewrite that was never implemented (5 tests failing, incl.
+   `test_mechanical_manual_move_removed`). The wiki log entry of 2026-07-11
+   explicitly records these items as "none were implemented — awaiting explicit
+   go-ahead", so this code was never sanctioned; it also implements exactly the
+   local protocol-layer compensation that today's decision replaced with the
+   upstream routed op (`unpark_to_home_stop_tracking()`, ONS31-102) and the
+   `move_ra_timed()` translation (ONS31-106). Preserved recoverably:
+   `git stash list` → "WIP SAFETY-001/LOCAL-001 in protected adapter layer …".
+   Drop it once ONS31-102/106 land.
+
+2. **Fixed 4 stale tests in `tests/unit/adapters/onstep/test_get_sync_status.py`
+   (pre-existing failures at the committed state, unrelated to the stash).**
+   Commit `9aeb3bb` ("LX200 precision delta") correctly changed
+   `get_sync_status()` to compare the reported site against the
+   arcminute-rounded config (`_lx200_round_degrees`; LX200 ±DD*MM stores only
+   ~1852 m resolution — raw-config comparison showed a false ~300 m offset on a
+   perfectly synced mount), but did not update the M8-008 tests (`daca95b`),
+   which mocked OnStep reporting full-precision coordinates — impossible on
+   real hardware. Tests now build the mocked site relative to
+   `_REF_LAT/_REF_LON = _lx200_round_degrees(base)`. Test-only change;
+   `get_sync_status()` untouched per the adapter guardrail. Result: full
+   `tests/unit/adapters/onstep` suite green (156 passed, 24 skipped).
+
+3. **Committed the legitimate leftover `SYNC.md` note** (issue #3 filed
+   2026-07-11 — matches the already-committed ONS31-009 todo entry).
+
+4. **`claude-skills/` added to `.gitignore`** — an unrelated cloned
+   skills-marketplace repo sitting untracked at the project root; contents left
+   in place, just excluded from git status.

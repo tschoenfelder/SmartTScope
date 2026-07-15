@@ -26,3 +26,6 @@ coverage.xml
 
 # ToupTek SDK binaries
 resources/touptek/
+
+# Cloned skills-marketplace repo (unrelated to SmartTScope)
+claude-skills/

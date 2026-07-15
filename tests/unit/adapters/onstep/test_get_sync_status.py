@@ -9,7 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from smart_telescope.adapters.onstep.mount import OnStepMount, _haversine_m
+from smart_telescope.adapters.onstep.mount import (
+    OnStepMount,
+    _haversine_m,
+    _lx200_round_degrees,
+)
 from smart_telescope.adapters.onstep.safety import OnStepSafetyConfig
 
 
@@ -17,6 +21,12 @@ from smart_telescope.adapters.onstep.safety import OnStepSafetyConfig
 
 _BASE_LAT = 50.336
 _BASE_LON = 8.533
+# get_sync_status() compares the reported site against the arcminute-rounded
+# config (LX200 ±DD*MM stores ~1852 m resolution) — real OnStep hardware can
+# only ever report these rounded values, so realistic site mocks must be
+# built relative to them, not to the raw config coordinates.
+_REF_LAT = _lx200_round_degrees(_BASE_LAT)
+_REF_LON = _lx200_round_degrees(_BASE_LON)
 
 
 def _make_cfg(
@@ -114,19 +124,21 @@ class TestGetSyncStatusLocationTolerance:
         assert result["location_tolerance_m"] == pytest.approx(100.0)
 
     def test_same_location_passes(self) -> None:
-        result = self._run(_BASE_LAT, _BASE_LON)
+        # After a sync, OnStep reports the arcminute-rounded site — that is
+        # the "same location" case on real hardware.
+        result = self._run(_REF_LAT, _REF_LON)
         assert result["location_ok"] is True
         assert result["location_delta_m"] == pytest.approx(0.0, abs=0.1)
 
     def test_below_100m_passes(self) -> None:
-        # ~50 m lat delta: 50 / 111320 ≈ 0.000449°
-        result = self._run(_BASE_LAT + 0.000449, _BASE_LON)
+        # ~50 m lat delta from the rounded reference: 50 / 111320 ≈ 0.000449°
+        result = self._run(_REF_LAT + 0.000449, _REF_LON)
         assert result["location_ok"] is True
 
     def test_at_tolerance_boundary_passes(self) -> None:
-        # ~100 m lat offset: 100 / 111320 ≈ 0.000898°
+        # ~100 m lat offset from the rounded reference: 100 / 111320 ≈ 0.000898°
         lat_offset = 100.0 / 111_320.0
-        result = self._run(_BASE_LAT + lat_offset, _BASE_LON)
+        result = self._run(_REF_LAT + lat_offset, _REF_LON)
         assert result["location_ok"] is True, (
             f"Expected PASS at boundary, delta={result['location_delta_m']:.2f}m"
         )
@@ -149,8 +161,8 @@ class TestGetSyncStatusLocationTolerance:
         assert result["location_delta_m"] > 100.0
 
     def test_custom_tolerance_500m(self) -> None:
-        # 300 m delta (~0.0027° lat) passes at 500 m tolerance
-        result = self._run(_BASE_LAT + 0.0027, _BASE_LON, tolerance_m=500.0)
+        # 300 m delta (~0.0027° lat) from the rounded reference passes at 500 m tolerance
+        result = self._run(_REF_LAT + 0.0027, _REF_LON, tolerance_m=500.0)
         assert result["location_ok"] is True
 
     def test_unavailable_site_fails_with_none_delta(self) -> None:

@@ -4197,3 +4197,10 @@ delegated authority ("smart_telescope is fully under your control"):
 4. **`claude-skills/` added to `.gitignore`** — an unrelated cloned
    skills-marketplace repo sitting untracked at the project root; contents left
    in place, just excluded from git status.
+
+**Addendum:** `claude-skills/` turned out to be committed as a bare gitlink
+(mode 160000, no `.gitmodules`) — accidentally added in commit `e97034c`,
+likely via `git add -A` with the nested clone present. A gitlink without
+`.gitmodules` breaks clones and leaves an empty dir on the Pi after
+`git reset --hard`. Removed from the index with `git rm --cached claude-skills`
+(directory kept on disk); the `.gitignore` entry now applies.

@@ -56,6 +56,39 @@ _TEST_SAFETY_CFG = OnStepSafetyConfig(
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+class _FastTime:
+    """Stand-in for the ``time`` module inside ``onstep_adapter.mount``.
+
+    Upstream verified/routed ops (``disable_tracking_verified``,
+    ``_wait_for_status_flag``) poll with real ``time.sleep`` against a
+    ``time.monotonic`` deadline — with mock serial ports that never converge,
+    each such call burns its full poll budget (8–45 s of wall time per test).
+    Here ``sleep()`` advances the value ``monotonic()`` returns instead of
+    sleeping, so poll loops still iterate and time out logically, in
+    microseconds. Everything else falls through to the real module.
+    """
+
+    def __init__(self) -> None:
+        import time as _real_time
+        self._real = _real_time
+        self._now = _real_time.monotonic()
+
+    def monotonic(self) -> float:
+        return self._now
+
+    def sleep(self, seconds: float) -> None:
+        self._now += max(float(seconds), 1e-3)
+
+    def __getattr__(self, name: str):
+        return getattr(self._real, name)
+
+
+@pytest.fixture(autouse=True)
+def _fast_upstream_time(monkeypatch):
+    import onstep_adapter.mount as _upstream_mount
+    monkeypatch.setattr(_upstream_mount, "time", _FastTime())
+
+
 def _make_mount(
     port: str = "/dev/ttyUSB0",
     baud_rate: int = 9600,
@@ -106,7 +139,7 @@ class TestConnect:
         assert mount.connect() is True
 
     def test_connect_opens_serial_with_configured_port(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         mount = _make_mount(port="/dev/ttyAMA0", baud_rate=9600)
         mount.connect()
         mock_serial.assert_called_once()
@@ -114,7 +147,7 @@ class TestConnect:
         assert call_args[0][0] == "/dev/ttyAMA0" or call_args[1].get("port") == "/dev/ttyAMA0"
 
     def test_connect_uses_configured_baud_rate(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         mount = _make_mount(baud_rate=19200)
         mount.connect()
         call_args = mock_serial.call_args
@@ -122,7 +155,7 @@ class TestConnect:
 
     def test_connect_returns_false_on_serial_exception(self, mocker):
         mocker.patch(
-            "smart_telescope.adapters.onstep.mount.serial.Serial",
+            "onstep_adapter.mount.serial.Serial",
             side_effect=serial.SerialException("port not found"),
         )
         mount = _make_mount()
@@ -130,7 +163,7 @@ class TestConnect:
 
     def test_connect_returns_false_on_os_error(self, mocker):
         mocker.patch(
-            "smart_telescope.adapters.onstep.mount.serial.Serial",
+            "onstep_adapter.mount.serial.Serial",
             side_effect=OSError("permission denied"),
         )
         mount = _make_mount()
@@ -138,7 +171,7 @@ class TestConnect:
 
     def test_connect_does_not_raise_on_failure(self, mocker):
         mocker.patch(
-            "smart_telescope.adapters.onstep.mount.serial.Serial",
+            "onstep_adapter.mount.serial.Serial",
             side_effect=serial.SerialException("no device"),
         )
         mount = _make_mount()
@@ -147,7 +180,7 @@ class TestConnect:
         assert result is False
 
     def test_connect_sends_stop_tracking(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # disable_tracking() uses raw_send() → read(1); GVP uses read(32)
         instance.read.side_effect = lambda n: b""
@@ -157,7 +190,7 @@ class TestConnect:
         assert b":Td#" in written
 
     def test_disconnect_closes_serial_port(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         mount = _make_mount()
         mount.connect()
@@ -177,7 +210,7 @@ class TestConnectRetry:
     """:GVP# retry loop handles stale ACKs left by previous sessions."""
 
     def _make_serial(self, mocker, read_responses: list[bytes]) -> object:
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # Use a lambda so extra read() calls (e.g. disable_tracking after GVP)
         # return b"" instead of raising StopIteration.
@@ -189,7 +222,7 @@ class TestConnectRetry:
     def test_valid_product_on_first_attempt_no_retry(self, mocker) -> None:
         instance = self._make_serial(mocker, [b"On-Step#"])
         mount = _make_mount()
-        with patch("smart_telescope.adapters.onstep.mount.time.sleep") as mock_sleep:
+        with patch("onstep_adapter.mount.time.sleep") as mock_sleep:
             result = mount.connect()
         assert result is True
         mock_sleep.assert_not_called()
@@ -199,14 +232,14 @@ class TestConnectRetry:
     def test_retry_once_on_stale_ack_then_succeeds(self, mocker) -> None:
         self._make_serial(mocker, [b"1", b"On-Step#"])
         mount = _make_mount()
-        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+        with patch("onstep_adapter.mount.time.sleep"):
             result = mount.connect()
         assert result is True
 
     def test_retry_exhausted_returns_false(self, mocker) -> None:
         self._make_serial(mocker, [b"1", b"1", b"1"])
         mount = _make_mount()
-        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+        with patch("onstep_adapter.mount.time.sleep"):
             result = mount.connect()
         assert result is False
 
@@ -214,7 +247,7 @@ class TestConnectRetry:
         # Empty product is "inconclusive but accepted" — connect succeeds immediately.
         self._make_serial(mocker, [b""])
         mount = _make_mount()
-        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+        with patch("onstep_adapter.mount.time.sleep"):
             result = mount.connect()
         assert result is True
 
@@ -222,7 +255,7 @@ class TestConnectRetry:
         # Firmware may send "On-Step#On-Step#" when reconnecting.
         self._make_serial(mocker, [b"On-Step#On-Step#"])
         mount = _make_mount()
-        with patch("smart_telescope.adapters.onstep.mount.time.sleep"):
+        with patch("onstep_adapter.mount.time.sleep"):
             result = mount.connect()
         assert result is True
 
@@ -231,7 +264,7 @@ class TestConnectRetry:
 
 class TestGetState:
     def test_parked_flag_returns_parked_state(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # :GU# fake-serial format: uppercase 'P' = parked, no lowercase 'p'
         instance.read_until.return_value = b"P|N|0|0|0|0|0|0|0|0|0|0|0|0|0#"
@@ -240,7 +273,7 @@ class TestGetState:
         assert mount.get_state() == MountState.PARKED
 
     def test_real_hardware_parked_format_returns_parked_state(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # Real OnStep V4 compact flags when parked: uppercase 'P', no lowercase 'p'
         instance.read_until.return_value = b"nNPEW260#"
@@ -249,7 +282,7 @@ class TestGetState:
         assert mount.get_state() == MountState.PARKED
 
     def test_real_hardware_unparked_format_is_not_parked(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # Real OnStep V4 compact flags when unparked: lowercase 'p', no uppercase 'P'
         instance.read_until.return_value = b"NpeEW260#"
@@ -258,7 +291,7 @@ class TestGetState:
         assert mount.get_state() != MountState.PARKED
 
     def test_tracking_flag_returns_unparked_tracking_state(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # 'n' = not parked, 'T' present = tracking active
         instance.read_until.return_value = b"n|T|0|0|0|0|0|0|0|0|0|0|0|0|0#"
@@ -268,7 +301,7 @@ class TestGetState:
         assert state in (MountState.UNPARKED, MountState.TRACKING)
 
     def test_slewing_flag_returns_slewing_state(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # 'S' flag = slewing
         instance.read_until.return_value = b"n|S|0|0|0|0|0|0|0|0|0|0|0|0|0#"
@@ -277,7 +310,7 @@ class TestGetState:
         assert mount.get_state() == MountState.SLEWING
 
     def test_limit_flag_returns_at_limit_state(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # OnStep V4 compact GU# format: 'N' = no-goto (not slewing), 'n' = not parked,
         # 'l' = at hardware limit. 'N' must be present so decoder doesn't flag slewing.
@@ -287,7 +320,7 @@ class TestGetState:
         assert mount.get_state() == MountState.AT_LIMIT
 
     def test_east_of_meridian_is_not_at_limit(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # 'E' = east of meridian — normal tracking position, must NOT be AT_LIMIT
         instance.read_until.return_value = b"nTE#"
@@ -296,7 +329,7 @@ class TestGetState:
         assert mount.get_state() != MountState.AT_LIMIT
 
     def test_unreadable_response_returns_unknown(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b""
         mount = _make_mount()
@@ -316,7 +349,7 @@ class TestGetState:
 )
 class TestUnpark:
     def test_unpark_sends_hR_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # read sequence: GVP(32) → b"", Td(1) → b"", hR(1) → b"1"
         instance.read.side_effect = [b"", b"", b"1"]
@@ -328,7 +361,7 @@ class TestUnpark:
 
     def test_unpark_returns_true_when_acknowledged(self, mocker):
         # :hR# blocks ~2 s then returns b"1" on success
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = [b"", b"", b"1"]
         mount = _make_mount()
@@ -337,7 +370,7 @@ class TestUnpark:
 
     def test_unpark_returns_false_when_rejected(self, mocker):
         # :hR# returns b"0" when OnStep rejects unpark (e.g. no alignment done)
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = [b"", b"", b"0"]
         mount = _make_mount()
@@ -356,7 +389,7 @@ class TestUnpark:
 )
 class TestEnableTracking:
     def test_enable_tracking_sends_Te_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # enable_tracking() uses send() → read_until(b'#')
         instance.read_until.return_value = b"1"
@@ -367,7 +400,7 @@ class TestEnableTracking:
         assert b":Te#" in sent
 
     def test_enable_tracking_returns_true_when_acknowledged(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"1"
         mount = _make_mount()
@@ -375,7 +408,7 @@ class TestEnableTracking:
         assert mount.enable_tracking() is True
 
     def test_enable_tracking_returns_false_when_rejected(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -394,7 +427,7 @@ class TestEnableTracking:
 )
 class TestGetPosition:
     def test_get_position_returns_mount_position(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # get_position() calls send() twice → read_until(b'#') for RA then Dec
         instance.read_until.side_effect = [b"05:35:17#", b"-05*23:28#"]
@@ -404,7 +437,7 @@ class TestGetPosition:
         assert isinstance(pos, MountPosition)
 
     def test_get_position_ra_converted_to_decimal_hours(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.side_effect = [b"06:00:00#", b"+00*00:00#"]
         mount = _make_mount()
@@ -413,7 +446,7 @@ class TestGetPosition:
         assert pos.ra == pytest.approx(6.0, abs=0.01)
 
     def test_get_position_dec_converted_to_decimal_degrees(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.side_effect = [b"05:35:17#", b"+45*30:00#"]
         mount = _make_mount()
@@ -422,7 +455,7 @@ class TestGetPosition:
         assert pos.dec == pytest.approx(45.5, abs=0.01)
 
     def test_negative_dec_is_negative(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.side_effect = [b"05:35:17#", b"-05*23:28#"]
         mount = _make_mount()
@@ -435,7 +468,7 @@ class TestGetPosition:
 
 class TestSync:
     def test_sync_sends_CM_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # sync() uses send() → read_until(b'#') for :Sr#, :Sd#, :CM#
         instance.read_until.return_value = b"M31 EX GAL MAG 3.5 SZ178.0'#"
@@ -446,7 +479,7 @@ class TestSync:
         assert b":CM#" in sent
 
     def test_sync_sets_target_ra_before_CM(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"#"
         mount = _make_mount()
@@ -456,7 +489,7 @@ class TestSync:
         assert b":Sr" in sent
 
     def test_sync_returns_true_on_success(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"#"
         mount = _make_mount()
@@ -468,7 +501,7 @@ class TestSync:
 
 class TestGoto:
     def test_goto_sends_MS_slew_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # goto() uses send() → read_until(b'#') for :Sr#, :Sd#, :MS#
         instance.read_until.return_value = b"0"
@@ -479,7 +512,7 @@ class TestGoto:
         assert b":MS#" in sent
 
     def test_goto_sends_target_ra_before_slew(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -489,7 +522,7 @@ class TestGoto:
         assert b":Sr" in sent
 
     def test_goto_sends_target_dec_before_slew(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -499,7 +532,7 @@ class TestGoto:
         assert b":Sd" in sent
 
     def test_goto_ra_formatted_as_sexagesimal(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -510,7 +543,7 @@ class TestGoto:
         assert b"06:00:00" in sent
 
     def test_goto_dec_formatted_as_sexagesimal_positive(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -521,7 +554,7 @@ class TestGoto:
         assert b"+45" in sent
 
     def test_goto_dec_formatted_with_minus_sign_when_negative(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -531,7 +564,7 @@ class TestGoto:
         assert b"-05" in sent or b"-5" in sent
 
     def test_goto_returns_true_when_slew_accepted(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"0"
         mount = _make_mount()
@@ -539,7 +572,7 @@ class TestGoto:
         assert mount.goto(ra=5.5881, dec=-5.391) is True
 
     def test_goto_raises_when_slew_rejected(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # "1" = slew not possible (object below horizon etc.)
         # New adapter raises OnStepLimitError (subclass of RuntimeError) with reason "below_horizon_limit"
@@ -555,7 +588,7 @@ class TestGoto:
 
 class TestIsSlewing:
     def test_pipe_character_means_slewing(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # :D# response; is_slewing() uses send() → read_until(b'#')
         instance.read_until.return_value = b"|#"
@@ -564,7 +597,7 @@ class TestIsSlewing:
         assert mount.is_slewing() is True
 
     def test_empty_response_means_not_slewing(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"#"
         mount = _make_mount()
@@ -572,7 +605,7 @@ class TestIsSlewing:
         assert mount.is_slewing() is False
 
     def test_is_slewing_sends_D_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read_until.return_value = b"#"
         mount = _make_mount()
@@ -586,7 +619,7 @@ class TestIsSlewing:
 
 class TestStop:
     def test_stop_sends_Q_emergency_stop_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         mount = _make_mount()
         mount.connect()
@@ -600,7 +633,7 @@ class TestStop:
         mount.stop()
 
     def test_stop_returns_none(self, mocker):
-        mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mocker.patch("onstep_adapter.mount.serial.Serial")
         mount = _make_mount()
         mount.connect()
         result = mount.stop()
@@ -619,7 +652,7 @@ class TestStop:
 )
 class TestPark:
     def test_park_sends_hP_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # read sequence: GVP(32) → b"", Td(1) → b"", hP(1) → b"1"
         instance.read.side_effect = [b"", b"", b"1"]
@@ -631,7 +664,7 @@ class TestPark:
 
     def test_park_returns_true_when_acknowledged(self, mocker):
         # :hP# returns b"1" immediately (~10 ms); mount slews to park asynchronously
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = [b"", b"", b"1"]
         mount = _make_mount()
@@ -640,7 +673,7 @@ class TestPark:
 
     def test_park_returns_false_when_rejected(self, mocker):
         # :hP# returns b"0" when OnStep rejects the command (no park position set, etc.)
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = [b"", b"", b"0"]
         mount = _make_mount()
@@ -661,7 +694,7 @@ class TestPark:
 )
 class TestDisableTracking:
     def test_disable_tracking_sends_Td_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # disable_tracking() uses raw_send() → read(1)
         instance.read.side_effect = lambda n: b""
@@ -672,7 +705,7 @@ class TestDisableTracking:
         assert b":Td#" in sent
 
     def test_disable_tracking_returns_true_when_acknowledged(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = lambda n: b""
         mount = _make_mount()
@@ -681,7 +714,7 @@ class TestDisableTracking:
 
     def test_disable_tracking_returns_true_regardless_of_response(self, mocker):
         # :Td# is fire-and-forget — returns True even when mount sends no ack
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = lambda n: b""
         mount = _make_mount()
@@ -701,7 +734,7 @@ class TestDisableTracking:
 )
 class TestGuide:
     def test_guide_sends_Mg_command(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # guide() uses raw_send() → read(1)
         instance.read.side_effect = lambda n: b""
@@ -712,7 +745,7 @@ class TestGuide:
         assert b":Mgn0500#" in sent
 
     def test_guide_returns_true_for_valid_direction(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = lambda n: b""
         mount = _make_mount()
@@ -721,7 +754,7 @@ class TestGuide:
             assert mount.guide(d, 200) is True
 
     def test_guide_returns_false_for_invalid_direction(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = lambda n: b""
         mount = _make_mount()
@@ -729,7 +762,7 @@ class TestGuide:
         assert mount.guide("x", 200) is False
 
     def test_guide_clamps_duration_to_valid_range(self, mocker):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         instance.read.side_effect = lambda n: b""
         mount = _make_mount()
@@ -741,7 +774,7 @@ class TestGuide:
 
 class TestAlignment:
     def _mount_with_response(self, mocker, response: bytes):
-        mock_serial = mocker.patch("smart_telescope.adapters.onstep.mount.serial.Serial")
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
         instance = mock_serial.return_value
         # alignment methods use send() → read_until(b'#')
         instance.read_until.return_value = response

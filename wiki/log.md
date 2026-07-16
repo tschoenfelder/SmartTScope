@@ -4204,3 +4204,53 @@ likely via `git add -A` with the nested clone present. A gitlink without
 `.gitmodules` breaks clones and leaves an empty dir on the Pi after
 `git reset --hard`. Removed from the index with `git rm --cached claude-skills`
 (directory kept on disk); the `.gitignore` entry now applies.
+
+---
+
+## 2026-07-17 — ONS31 migration finished: local OnStep USB connectivity replaced by onstep_adapter v0.3.1 (committed)
+
+Completed and committed the full USB-connectivity replacement that was implemented in
+the working tree on 2026-07-15 (ONS31-001..008, ONS31-101..108, ONS31-110):
+
+- `pyproject.toml` pinned to the v0.3.1 wheel; installed version verified 0.3.1,
+  `from onstep_adapter import OnStepClient, OnStepSafetyConfig` clean (no
+  `smart_telescope` namespace collision).
+- `smart_telescope/adapters/onstep/` is now a thin shim layer: `mount.py` 465 lines
+  (delegation + permanent wrappers + REQ-ST-004/007 method-copy SYNC-OVERRIDEs that the
+  wheel turned out NOT to contain), `client.py` swap-after-construction, `focuser.py`
+  M7-004 backlash + loader override (below), rest pure re-exports.
+- Full unit suite green: **3898 passed, 24 skipped**, coverage 88.73%.
+
+**New finding (2026-07-17): broken relative imports inside the v0.3.1 wheel.**
+`onstep_adapter/focuser.py:170` and `onstep_adapter/mount.py:621` both contain
+`from ... import config` — a leftover from when these files lived under
+`smart_telescope/adapters/onstep/`. Inside the top-level `onstep_adapter` package the
+import always raises and is swallowed:
+
+1. `OnStepFocuser._load_calibrated_max_position()` always returns 0 → the calibrated
+   focuser max position in `~/.SmartTScope/onstep_focuser_calibration.json` would be
+   silently ignored. Surfaced by
+   `tests/unit/adapters/test_onstep_focuser.py::test_load_calibrated_max_reads_json`.
+   Handled with a shim SYNC-OVERRIDE in `smart_telescope/adapters/onstep/focuser.py`
+   carrying the pre-migration loader (pure file/config glue, no serial logic — adapter
+   itself untouched per the guardrail). Documented in SYNC.md.
+2. `_default_safety_config()` in upstream `mount.py` can never reach
+   `build_onstep_safety_config()` and falls back to a permissive default — **latent
+   only** for SmartTScope, since `runtime.py` always passes an explicit safety config.
+   No override; recorded in SYNC.md as an upstream ask candidate.
+
+Both are upstream ask candidates — **not filed**; needs user approval per the
+ONS31-008/009 pattern (together with: client mount-injection parameter, subclass-safe
+internal state checks, safety-config tolerance fields).
+
+Bookkeeping: `docs/todo.md` ONS31 items checked off with done-notes; `wiki/index.md`
+OnStepAdapter entry rewritten to the completed state; SYNC.md extended with the
+broken-import SYNC-OVERRIDE row. The 2026-07-15 stash ("WIP SAFETY-001/LOCAL-001 in
+protected adapter layer") was dropped after the commit landed, as its own log entry
+prescribed — dropped stash commit SHA `8cf8aa7b5fee6e2145ae17fd57b304530cba16b4`
+(recoverable via `git checkout 8cf8aa7 -- <path>` while unreferenced objects persist).
+
+**Remaining open:** ONS31-109 Pi hardware smoke test (connect →
+`unpark_to_home_stop_tracking()` with `at_home=True` and no tracking → GoTo → STOP →
+park → disconnect; P0, hardware evidence required) and ONS31-104 (issue #3 comment,
+awaiting user approval).

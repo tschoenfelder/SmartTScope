@@ -6,6 +6,8 @@ instead of mocker patches, giving higher confidence in protocol correctness.
 No real hardware or serial port is used.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from smart_telescope.adapters.onstep.mount import OnStepMount
@@ -23,17 +25,52 @@ _TEST_SAFETY_CFG = OnStepSafetyConfig(
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_poll_sleep():
+    """Upstream routed ops (unpark_to_home_stop_tracking, disable_tracking_verified)
+    poll :GU# with real sleeps on a 45 s budget — no-op them; the fake transitions
+    instantly, so every poll converges on its first iteration."""
+    with patch("onstep_adapter.mount.time.sleep"):
+        yield
+
+
 def _mount(
     state: str = "parked", ra: float = 0.0, dec: float = 0.0
 ) -> tuple[OnStepMount, FakeOnStepSerial]:
     fake = FakeOnStepSerial(initial_state=state, initial_ra=ra, initial_dec=dec)
     mount = OnStepMount(port="/dev/ttyUSB0", safety_config=_TEST_SAFETY_CFG)
-    mount._serial = fake
+    mount._bus._serial = fake  # upstream OnStepSerialBus holds the port
     mount._home_confirmed = True
     # bypass location/limit readiness and motion preflight for protocol tests
     mount._raise_if_not_astronomy_ready = lambda cmd: None  # type: ignore[method-assign]
     mount.motion_safety_preflight = lambda **kw: {"motion_refused": False, "blockers": []}  # type: ignore[method-assign]
     return mount, fake
+
+
+# ── routed unpark (ONS31-102, supersedes SAFETY-001/002) ─────────────────────
+
+class TestRoutedUnpark:
+    def test_unpark_ends_at_home(self):
+        mount, fake = _mount(state="parked")
+        assert mount.unpark() is True
+        assert mount.get_state() == MountState.AT_HOME
+        assert fake._state == "home"
+
+    def test_unpark_stops_firmware_auto_tracking(self):
+        # SAFETY-001: the fake auto-starts tracking after :hR# like real
+        # firmware; the routed op must actively disable it (:Td#), not just
+        # relabel the reported state.
+        mount, fake = _mount(state="parked")
+        mount.unpark()
+        cmds = b"".join(fake.commands_received)
+        assert b":Td#" in cmds
+        assert fake._state != "tracking"
+
+    def test_unpark_routes_via_mechanical_home_command(self):
+        mount, fake = _mount(state="parked")
+        mount.unpark()
+        cmds = b"".join(fake.commands_received)
+        assert b":hC#" in cmds
 
 
 # ── full init sequence ────────────────────────────────────────────────────────

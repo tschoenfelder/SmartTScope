@@ -12,6 +12,24 @@ class MountState(Enum):
     AT_LIMIT = auto()
     AT_HOME = auto()
 
+    def __eq__(self, other: object) -> bool:
+        # ONS31-101: adapter packages (onstep_adapter) define their own
+        # MountState enum without AT_HOME. The OnStep shim overrides
+        # get_state() to return SmartTScope members, which upstream internals
+        # then compare against upstream members (e.g. `state == MountState.
+        # TRACKING` inside recovery_unpark_stop_tracking) — cross-enum
+        # identity comparison would always be False and silently disable
+        # those safety checks. Compare by member name across enums that are
+        # themselves named MountState; Enum.__hash__ is already name-based,
+        # so set membership stays consistent with this equality.
+        if self.__class__ is other.__class__:
+            return self is other
+        if isinstance(other, Enum) and type(other).__name__ == type(self).__name__:
+            return self.name == other.name
+        return NotImplemented
+
+    __hash__ = Enum.__hash__
+
 
 @dataclass
 class MountPosition:

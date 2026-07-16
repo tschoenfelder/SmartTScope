@@ -6,8 +6,14 @@ Maintains a mount state machine so tests exercise real command sequences
 without any hardware or mocker patching.
 
 State transitions:
-  parked  → unpark (:hR#)    → unparked
-  unparked → track (:Te#)    → tracking
+  parked   → unpark (:hR#)   → tracking   (mimics OnStep firmware auto-start
+                                           of tracking after unpark — the
+                                           quirk unpark_to_home_stop_tracking
+                                           exists to correct, SAFETY-001)
+  tracking → untrack (:Td#)  → unparked
+  unparked → home  (:hC#)    → home       (mechanical HOME route, at_home 'H'
+                                           flag set in :GU#)
+  unparked/home → track (:Te#) → tracking
   any      → goto  (:MS#)    → slewing
   slewing  → settle()        → tracking   (helper for tests)
   slewing  → stop  (:Q#)     → tracking
@@ -27,6 +33,7 @@ from smart_telescope.adapters.onstep.mount import (
 _GU_RESPONSES: dict[str, bytes] = {
     "parked":   b"P|N|0|0|0|0|0|0|0|0|0|0|0|0|0#",
     "unparked": b"n|N|0|0|0|0|0|0|0|0|0|0|0|0|0#",
+    "home":     b"n|H|0|0|0|0|0|0|0|0|0|0|0|0|0#",
     "tracking": b"n|T|0|0|0|0|0|0|0|0|0|0|0|0|0#",
     "slewing":  b"n|S|0|0|0|0|0|0|0|0|0|0|0|0|0#",
     "at_limit": b"n|E|0|0|0|0|0|0|0|0|0|0|0|0|0#",
@@ -99,7 +106,10 @@ class FakeOnStepSerial:
 
         if cmd == ":hR#":
             if self._state == "parked":
-                self._state = "unparked"
+                # OnStep firmware auto-starts sidereal tracking after unpark;
+                # the routed unpark_to_home_stop_tracking() must detect and
+                # stop it (SAFETY-001 regression coverage).
+                self._state = "tracking"
                 return b"1"
             return b"0"
 
@@ -107,8 +117,20 @@ class FakeOnStepSerial:
             self._state = "parked"
             return b"1"
 
+        if cmd == ":hC#":
+            # Mechanical HOME route (Find/Home). Instant arrival in the fake;
+            # no reply per LX200 (sent via write_no_reply).
+            if self._state != "parked":
+                self._state = "home"
+            return b""
+
+        if cmd == ":Td#":
+            if self._state == "tracking":
+                self._state = "unparked"
+            return b"1"
+
         if cmd == ":Te#":
-            if self._state in ("unparked", "parked", "tracking"):
+            if self._state in ("unparked", "parked", "tracking", "home"):
                 self._state = "tracking"
                 return b"1"
             return b"0"

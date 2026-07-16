@@ -1,3 +1,5 @@
+import onstep_adapter as _onstep_adapter
+
 from .client import OnStepClient
 from .focuser import OnStepFocuser
 from .mount import OnStepMount
@@ -17,8 +19,8 @@ from .safety import (
     SafetyViolation,
 )
 
-# SYNC-OVERRIDE: version tag stripped by external sync; re-added for readiness reporting.
-__version__ = "0.3.0"
+# Version comes from the installed wheel (readiness reporting reads this).
+__version__ = _onstep_adapter.__version__
 
 __all__ = [
     "AxisMotionResult",

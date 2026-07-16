@@ -3,7 +3,7 @@
 **Source:** `docs/smarttscope-final-product-architecture-ai-plan.md`  
 **Field bugs:** `resources/hlrequirements/Items_to_fix_20260513.txt`, `Items_to_fix_20260514.txt`  
 **Created:** 2026-05-15  
-**Last updated:** 2026-07-15 (ONS31-101..110 added: full OnStep USB-connectivity replacement via OnStepAdapter v0.3.1 — v0.3.1 re-checked and found to be an independent package, not just a packaging fix; AT_HOME derived from `last_decoded_status["at_home"]`, unpark routed via `unpark_to_home_stop_tracking()`; supersedes LOCAL-001, SAFETY-001/002, REQ-3, and most ONS-MIGRATE items)
+**Last updated:** 2026-07-17 (ONS31-001..008 and ONS31-101..108/110 completed and committed — full USB-connectivity replacement done, suite green 3898 passed; new SYNC-OVERRIDE: upstream wheel's `_load_calibrated_max_position()` has a broken relative import, shim carries the loader; remaining open: ONS31-109 Pi hardware smoke test, ONS31-104 issue-#3 update pending user approval)
 **New sources (2026-07-06):** `smarttscope_requirements_full.md` (state-based observation system: BOOTSTRAP..PARKED_SAFE top-level flow, G1-G10 guards, MVP staging in §11) — drove the M9 rewrite of the main UI from a 5-tab wizard to a guided single-flow screen
 **New sources (2026-06-24):** `E:\Bilder\Astro\SmartTScopeReq\smarttscope_additional_requirements.md`
 **Review source:** `resources/hlrequirements/development-state-review-2026-05-17.md`
@@ -79,26 +79,34 @@ contains no `smart_telescope/*` files. Supported FSM: `MountState` = 6 enum stat
 see ONS31-101..110 below. Confirmed via the published release, not a local checkout,
 per the OnStepAdapter guardrail.
 
-- [ ] ONS31-001 Update `pyproject.toml` wheel URL to v0.3.1 `[P1 · Build]`
-- [ ] ONS31-002 Install new wheel; confirm `onstep_adapter.__version__ == "0.3.1"` and that
+- [x] ONS31-001 Update `pyproject.toml` wheel URL to v0.3.1 `[P1 · Build]`
+  - *Done 2026-07-17:* pinned to `v0.3.1/onstep_adapter-0.3.1-py3-none-any.whl`
+- [x] ONS31-002 Install new wheel; confirm `onstep_adapter.__version__ == "0.3.1"` and that
       `from onstep_adapter import OnStepClient, OnStepSafetyConfig` works with no
       `smart_telescope` namespace collision `[P1 · Build]`
-- [ ] ONS31-003 Diff `onstep_adapter/{mount.py,client.py,focuser.py,ports/*.py,safety.py,
+  - *Done 2026-07-17:* version 0.3.1 confirmed from site-packages; imports clean
+- [x] ONS31-003 Diff `onstep_adapter/{mount.py,client.py,focuser.py,ports/*.py,safety.py,
       serial_bus.py,state_store.py}` against `smart_telescope/adapters/onstep/*.py` and
       record the result in `SYNC.md`. 2026-07-11 pre-check (via `gh api`, not local install)
       found: REQ-ST-002, REQ-ST-007 now present upstream; REQ-1, REQ-ST-001, REQ-ST-003,
       REQ-ST-005, REQ-ST-006, REQ-ST-008 still absent (~173-line gap persists); `client.py`
       already identical `[P1 · Runtime]`
-- [ ] ONS31-004 For each REQ-ST-* override confirmed newly covered upstream (candidates:
+  - *Done 2026-07-15/17:* recorded in `SYNC.md`; pre-check partially wrong — REQ-ST-004 and
+    REQ-ST-007 are NOT in the installed wheel (repo main ≠ tag); kept as SYNC-OVERRIDEs
+- [x] ONS31-004 For each REQ-ST-* override confirmed newly covered upstream (candidates:
       REQ-ST-002, REQ-ST-007) — do NOT remove the local override without first verifying
       byte-for-byte behavioral equivalence against the installed wheel; this is protocol-layer
       code, so if removal reveals a real behavioral difference, stop and flag it rather than
       patching `OnStepMount` directly `[P1 · Runtime]`
-- [ ] ONS31-005 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all pass
+  - *Done 2026-07-15/17:* REQ-ST-002 partially covered (residual post-processing stays);
+    REQ-ST-004/007 wheel-absent → method-copy overrides stay, documented in `SYNC.md`
+- [x] ONS31-005 Run full unit test suite: `python -m pytest tests/unit/ -x -q` — all pass
       `[P1 · Tests]`
-- [ ] ONS31-006 Update `SYNC.md`: bump pinned wheel URL and "Last synced" date; update the
+  - *Done 2026-07-17:* 3898 passed, 24 skipped, coverage 88.73%
+- [x] ONS31-006 Update `SYNC.md`: bump pinned wheel URL and "Last synced" date; update the
       Pending upstream requests table with per-item status (covered vs. still open) `[P1 · Build]`
-- [ ] ONS31-007 Commit: `git commit -m "chore: upgrade onstep_adapter to v0.3.1"` `[P1 · Build]`
+- [x] ONS31-007 Commit `[P1 · Build]`
+  - *Done 2026-07-17:* folded into the ONS31-110 migration commit (single working tree)
 
 #### RFC preparation for remaining gaps
 
@@ -118,21 +126,24 @@ per the OnStepAdapter guardrail.
 Per the 2026-07-09 guardrail, none of these touch `smart_telescope/adapters/onstep/mount.py`
 until the user explicitly signs off — captured here so the decision isn't lost.
 
-- [ ] LOCAL-001 Rewrite `move(direction, move_ms)` to call `onstep_adapter`'s
+- [x] LOCAL-001 Rewrite `move(direction, move_ms)` to call `onstep_adapter`'s
       `move_ra_timed()`/`move_dec_timed()` (`mode="center"`) directly, translating
       direction/duration at the SmartTScope layer, instead of the current
       `mechanical_manual_move()` interim. Not an upstream ask — SmartTScope adapts to the
       adapter's real signature `[P1 · Runtime]` — **folded into ONS31-106 (2026-07-15)**
-- [ ] LOCAL-002 `ensure_time_location_synced()` reclassified as a permanent local wrapper
+  - *Done 2026-07-17 via ONS31-106:* shim `move()` translates onto
+    `move_ra_timed()`/`move_dec_timed()`; `mechanical_manual_move()` interim retired
+- [x] LOCAL-002 `ensure_time_location_synced()` reclassified as a permanent local wrapper
       (forwards SmartTScope's own config to upstream's `sync_onstep_time_location()`) — no
       code change needed, already correct; just remove it from the upstream-ask list
       `[P2 · Process]`
-- [ ] SAFETY-001 When firmware auto-starts tracking after `:hR#` that SmartTScope never
+  - *Done:* listed as permanent wrapper in `SYNC.md`; removed from upstream asks
+- [x] SAFETY-001 When firmware auto-starts tracking after `:hR#` that SmartTScope never
       requested, actively stop it (route through the same verified-disable path REQ-ST-005
       describes) instead of only reinterpreting `get_state()`'s reported status while tracking
       continues underneath `[P0 · Safety]` — **superseded 2026-07-15 by ONS31-102** (resolved
       by upstream routed op `unpark_to_home_stop_tracking()`, not a local protocol change)
-- [ ] SAFETY-002 `unpark()` should drive the mount to a genuine non-tracking mechanical state
+- [x] SAFETY-002 `unpark()` should drive the mount to a genuine non-tracking mechanical state
       in general, not just clear SmartTScope's own `_explicit_tracking_started` bookkeeping
       flag `[P0 · Safety]` — **superseded 2026-07-15 by ONS31-102** (upstream routed op
       `unpark_to_home_stop_tracking()` provides exactly this)
@@ -151,36 +162,48 @@ Prerequisite: ONS31-001..007 (wheel bump, install, diff, override removal audit)
 
 #### Phase B — FSM alignment & routed-operation adoption (after ONS31-001..007)
 
-- [ ] ONS31-101 Shim `get_state()` post-processing: map upstream 6-state result +
+- [x] ONS31-101 Shim `get_state()` post-processing: map upstream 6-state result +
       `last_decoded_status.get("at_home") is True` → `MountState.AT_HOME` (SmartTScope's
       7-state enum in `smart_telescope/ports/mount.py` stays the app-facing FSM). Replaces
       the `_explicit_tracking_started`-based derivation `[P1 · Runtime]`
       - *Acceptance:* state reported AT_HOME when `:GU#` contains H and not slewing/parked;
         sticky AT_HOME in `DeviceStateService` keeps working unchanged
-- [ ] ONS31-102 Switch unpark flow (`services/mount_operations.py` / shim `unpark()`) to
+      - *Done 2026-07-17:* incl. cross-enum equality fix in `ports/mount.py` (upstream
+        internals compare against their own `MountState` in 19 call sites — see `SYNC.md`);
+        regression tests in `test_mount_state_cross_enum.py`
+- [x] ONS31-102 Switch unpark flow (`services/mount_operations.py` / shim `unpark()`) to
       `unpark_to_home_stop_tracking()`; assert `final_status` shows tracking stopped.
       Supersedes SAFETY-001/SAFETY-002 `[P0 · Safety]`
       - *Acceptance:* after unpark, mount is at HOME and NOT tracking (hardware-verified on
         Pi); no local tracking-flag compensation involved
-- [ ] ONS31-103 Retirement audit for REQ-ST-003/005/006 overrides: verify routed op +
+      - *Done 2026-07-17 (code + fake-serial regression: fake auto-starts tracking after
+        `:hR#`, asserts `:Td#` actually sent); hardware evidence pending → ONS31-109*
+- [x] ONS31-103 Retirement audit for REQ-ST-003/005/006 overrides: verify routed op +
       decoded flag cover each behavior against the installed wheel, then delete the local
       overrides. If a genuine behavioral gap remains, do NOT patch locally — record it in
       `SYNC.md` "Pending upstream requests" and flag to user (change-request path)
       `[P1 · Runtime]`
       - *Acceptance:* overrides deleted or gap documented; never both silently
+      - *Done 2026-07-17:* REQ-ST-003/005/006 deleted with the old `mount.py`; retirement
+        recorded in `SYNC.md`
 - [ ] ONS31-104 Update GitHub issue #3 (REQ-ST-003/005/006 largely superseded by the routed
       op; REQ-ST-008 stays local) — draft comment, post only after user approval. Update
       `SYNC.md` pending-requests table to match `[P2 · Process]`
+      - *2026-07-17:* SYNC.md table updated; issue comment drafted and awaiting user
+        approval; new upstream ask candidates also pending approval (broken relative
+        imports in wheel `focuser.py`/`mount.py`, client mount-injection param,
+        subclass-safe internal state checks, safety-config tolerance fields)
 
 #### Phase C — Shim reduction (delete local USB/serial implementation)
 
-- [ ] ONS31-105 `client.py`: replace the replicated constructor with swap-after-construction
+- [x] ONS31-105 `client.py`: replace the replicated constructor with swap-after-construction
       — subclass calls `super().__init__()`, then rebuilds `self.mount` as the SmartTScope
       `OnStepMount` subclass bound to `self._bus` (safe: no serial I/O before `connect()`)
       `[P1 · Runtime]`
       - *Acceptance:* no copied upstream constructor code remains; `runtime.py` lifecycle
         unchanged
-- [ ] ONS31-106 `mount.py` (4,534 lines) → thin shim
+      - *Done 2026-07-17*
+- [x] ONS31-106 `mount.py` (4,534 lines) → thin shim
       `class OnStepMount(onstep_adapter.OnStepMount, MountPort)` keeping ONLY: REQ-1
       `move()` translation → `move_ra_timed()`/`move_dec_timed()` (absorbs LOCAL-001),
       REQ-2 `set/get_park_position()` MountPort adapters, REQ-ST-001
@@ -190,29 +213,42 @@ Prerequisite: ONS31-001..007 (wheel bump, install, diff, override removal audit)
       `[P1 · Runtime]`
       - *Acceptance:* no LX200 command strings, no serial handling, no `:GU#` parsing in the
         file; goal ≤ ~200 lines of pure delegation/translation
-- [ ] ONS31-107 Convert `serial_bus.py`, `focuser.py`, `safety.py`, `results.py`,
+      - *Done 2026-07-17:* 465 lines — above the ~200 goal because the ONS31-004 audit
+        found REQ-ST-004 (28-line) and REQ-ST-007 (190-line) method copies must stay
+        (NOT in the wheel despite the 2026-07-11 pre-check); everything else is
+        delegation/translation
+- [x] ONS31-107 Convert `serial_bus.py`, `focuser.py`, `safety.py`, `results.py`,
       `state_store.py`, `firmware_proof.py` to thin re-exports from `onstep_adapter.*`;
       `__init__.py` re-exports the package surface and takes `__version__` from
       `onstep_adapter.__version__` (removes the SYNC-OVERRIDE hardcode) `[P2 · Runtime]`
       - *Acceptance:* no serial implementation code remains under
         `smart_telescope/adapters/onstep/`; readiness version report still works
-- [ ] ONS31-108 Retarget adapter tests: `tests/unit/adapters/onstep/*` (incl.
+      - *Done 2026-07-17:* `focuser.py` keeps M7-004 backlash + a new SYNC-OVERRIDE
+        `_load_calibrated_max_position()` (upstream wheel copy has a broken relative
+        import and always returns 0 — see `SYNC.md`); `safety.py` keeps the tolerance-field
+        subclass; rest are pure re-exports
+- [x] ONS31-108 Retarget adapter tests: `tests/unit/adapters/onstep/*` (incl.
       `fake_serial.py` suites) now exercise the installed wheel through the shim — keep as
       behavioral regression tests; adjust imports/patch targets; full suite
       `python -m pytest tests/unit/ -x -q` green `[P1 · Tests]`
       - *Acceptance:* all tests pass on Windows with mocks; no test imports deleted local
         modules
+      - *Done 2026-07-17:* 3898 passed, 24 skipped; patch targets moved to
+        `onstep_adapter.mount.*`/`onstep_adapter.focuser.*` per the SYNC.md patch-target
+        rule
 
 #### Phase D — Verification & closeout
 
 - [ ] ONS31-109 Pi hardware smoke test: connect → `unpark_to_home_stop_tracking()` (verify
       `at_home=True`, no tracking) → GoTo → STOP → park → disconnect `[P0 · Hardware]`
       - *Must have hardware evidence — not accepted on mock alone*
-- [ ] ONS31-110 Rewrite `SYNC.md` OnStep section to shim-only end state: pinned v0.3.1
+- [x] ONS31-110 Rewrite `SYNC.md` OnStep section to shim-only end state: pinned v0.3.1
       wheel, permanent-wrapper table, refreshed pending-requests table; update
       `wiki/log.md` + `wiki/index.md`; commit + push
       (`chore: replace local OnStep USB connectivity with onstep_adapter v0.3.1`)
       `[P1 · Build]`
+      - *Done 2026-07-17:* committed + pushed; ONS31-109 (Pi hardware smoke test) is the
+        only remaining migration item
 
 ### Open Enhancement Requests (pending external delivery — tracked in SYNC.md)
 

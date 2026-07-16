@@ -99,7 +99,7 @@ class TestConnectRetry:
     def test_available_on_first_attempt_sends_FA_once(self) -> None:
         foc, bus = _make_focuser()
         bus.send.side_effect = ["1", "5000"]
-        with patch("smart_telescope.adapters.onstep.focuser.time.sleep") as mock_sleep:
+        with patch("onstep_adapter.focuser.time.sleep") as mock_sleep:
             foc.connect()
         fa_calls = [c[0][0] for c in bus.send.call_args_list if c[0][0] == ":FA#"]
         assert len(fa_calls) == 1
@@ -109,7 +109,7 @@ class TestConnectRetry:
     def test_retry_if_first_FA_returns_0_then_1(self) -> None:
         foc, bus = _make_focuser()
         bus.send.side_effect = ["0", "1", "5000"]  # :FA# miss, :FA# hit, :FM#
-        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+        with patch("onstep_adapter.focuser.time.sleep"):
             foc.connect()
         fa_calls = [c[0][0] for c in bus.send.call_args_list if c[0][0] == ":FA#"]
         assert len(fa_calls) == 2
@@ -119,7 +119,7 @@ class TestConnectRetry:
     def test_retry_exhausted_stays_unavailable(self) -> None:
         foc, bus = _make_focuser()
         bus.send.return_value = "0"  # every :FA# returns 0
-        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+        with patch("onstep_adapter.focuser.time.sleep"):
             foc.connect()
         fa_calls = [c[0][0] for c in bus.send.call_args_list if c[0][0] == ":FA#"]
         assert len(fa_calls) == 3
@@ -128,7 +128,7 @@ class TestConnectRetry:
     def test_retry_on_empty_reply_then_available(self) -> None:
         foc, bus = _make_focuser()
         bus.send.side_effect = ["", "1", "8000"]  # empty/garbage, then available
-        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+        with patch("onstep_adapter.focuser.time.sleep"):
             foc.connect()
         assert foc.is_available is True
         assert foc.get_max_position() == 8000
@@ -156,12 +156,12 @@ class TestConnectIdempotency:
         """Reconnect after fixing hardware must still retry :FA#."""
         foc, bus = _make_focuser()
         bus.send.return_value = "0"
-        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+        with patch("onstep_adapter.focuser.time.sleep"):
             foc.connect()
         assert foc.is_available is False
 
         bus.send.side_effect = ["1", "6000"]
-        with patch("smart_telescope.adapters.onstep.focuser.time.sleep"):
+        with patch("onstep_adapter.focuser.time.sleep"):
             result = foc.connect()
         assert result is True
         assert foc.get_max_position() == 6000

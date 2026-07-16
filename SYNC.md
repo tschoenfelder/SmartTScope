@@ -1,13 +1,67 @@
 # OnStepAdapter Dependency
 
 `onstep_adapter` is a **pip-installed package**, not a synced source copy.
-Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.0/onstep_adapter-0.3.0-py3-none-any.whl`
+Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.1/onstep_adapter-0.3.1-py3-none-any.whl`
+Last synced/audited: 2026-07-15 (full USB-connectivity replacement, ONS31-101..110)
 
 The directory `smart_telescope/adapters/onstep/` is **SmartTScope-owned** — do NOT sync
-files from the OnStepAdapter GitHub repo into it. It is an override layer that subclasses
-the installed package.
+files from the OnStepAdapter GitHub repo into it. It is a **thin shim layer** that
+subclasses the installed package (see "Shim layer" below).
 
-## Current migration state (2026-06-17, corrected 2026-07-09)
+## Migration complete (2026-07-15): shim-only state
+
+v0.3.1 is a fully independent `onstep_adapter` package (own `mount.py`, `client.py`,
+`serial_bus.py`, `focuser.py`, `safety.py`, `ports/`; the wheel ships no
+`smart_telescope/*` files). The former 4,534-line local `mount.py` reimplementation was
+deleted; the adapter layer now contains only delegation, documented SYNC-OVERRIDEs, and
+permanent SmartTScope wrappers. FSM note: upstream `MountState` has 6 states — HOME is a
+mechanical `:GU#` flag (`client.mount.last_decoded_status["at_home"]`), mapped by the
+shim onto SmartTScope's 7-state enum (`smart_telescope/ports/mount.py` stays the
+app-facing FSM). `unpark()` routes through upstream's
+`unpark_to_home_stop_tracking()` (supersedes SAFETY-001/002 and the retired
+`_explicit_tracking_started` compensation, REQ-ST-003/005/006).
+
+### Shim layer (`smart_telescope/adapters/onstep/`)
+
+| File | Content |
+|------|---------|
+| `__init__.py` | Re-exports; `__version__` taken from the installed wheel |
+| `mount.py` | `OnStepMount(onstep_adapter.OnStepMount, MountPort)` — FSM mapping, routed unpark, SYNC-OVERRIDEs + permanent wrappers below; re-exports upstream module helpers for legacy imports |
+| `client.py` | `OnStepClient(onstep_adapter.OnStepClient)` — swap-after-construction: lets upstream `__init__` run, then rebuilds `self.mount`/`self.focuser` as SmartTScope shims on the same serial bus (upstream has no injection parameter — candidate upstream ask) |
+| `focuser.py` | `OnStepFocuser(onstep_adapter.OnStepFocuser, FocuserPort)` — M7-004 backlash compensation around `move_absolute()` (permanent SmartTScope feature) + SYNC-OVERRIDE `_load_calibrated_max_position()` (upstream copy broken, see below) |
+| `safety.py` | Re-exports + `OnStepSafetyConfig` frozen-dataclass extension adding `onstep_time_tolerance_s`/`onstep_location_tolerance_m` (pending upstream request) |
+| `results.py` | Re-exports upstream results; `FocuserStatus`/`FocuserMoveResult` stay canonical in `ports/focuser.py` (ONS-MIGRATE-009b) |
+| `serial_bus.py`, `state_store.py`, `firmware_proof.py` | Pure re-exports |
+
+### MountState cross-enum equality (ONS31-101 mechanics — found 2026-07-15)
+
+Upstream internals compare `self.get_state()` results against upstream's own
+`MountState` enum in 19 call sites (e.g. `state == MountState.TRACKING` inside
+`recovery_unpark_stop_tracking`, the PARKED guard in `return_home_mechanical`).
+Because the shim's `get_state()` override returns SmartTScope's 7-state enum,
+plain cross-enum comparison is always False — which would have silently skipped
+the firmware auto-tracking stop inside the routed unpark (the exact SAFETY-001
+behavior ONS31-102 adopted it for). Fixed **app-side** (adapter untouched):
+`smart_telescope/ports/mount.py MountState` compares equal by member name to any
+other `Enum` class itself named `MountState`; `Enum.__hash__` is name-based, so
+upstream set-membership checks stay consistent. Regression coverage:
+`tests/unit/adapters/onstep/test_mount_state_cross_enum.py` plus
+`TestRoutedUnpark` in `test_with_fake_serial.py` (fake auto-starts tracking
+after `:hR#` like real firmware; asserts `:Td#` is actually sent).
+Upstream ask candidate: subclass-safe internal state checks (compare decoded
+flags, or an internal non-virtual accessor) — needs user approval to file.
+
+### Test patch-target rule
+
+Patching `smart_telescope.adapters.onstep.mount.<helper>` does NOT affect
+upstream-internal calls — tests must patch `onstep_adapter.mount.<name>` /
+`onstep_adapter.focuser.<name>` instead (done 2026-07-15 for `serial` and `time`).
+The upstream routed ops poll `:GU#` with real sleeps (45 s budget) —
+`test_with_fake_serial.py` no-ops `onstep_adapter.mount.time.sleep` via an
+autouse fixture and injects the fake at `mount._bus._serial` (the upstream
+`OnStepSerialBus` holds the port; the old `mount._serial` attribute is dead).
+
+## Historical migration state (2026-06-17, corrected 2026-07-09)
 
 **Guardrail (restated by user 2026-07-09):** only `onstep_adapter`
 (github.com/tschoenfelder/OnStepAdapter) is to be used to connect to
@@ -67,16 +121,41 @@ pattern. Mount-side consumer API unchanged (MountPort covers it).
 | `results.py` | Thin re-export from `onstep_adapter.results` |
 | `state_store.py` | Thin re-export from `onstep_adapter.state_store` |
 
-## Active SYNC-OVERRIDEs (kept in `mount.py`)
+## Active SYNC-OVERRIDEs and permanent wrappers (2026-07-15 shim)
 
-These are original overrides that cannot be expressed as post-processing wrappers
-because the upstream `OnStepMount` does not expose these signatures.
+**Permanent wrappers** (stay forever, not upstream asks):
 
-| ID | Method | Why kept in SmartTScope |
-|----|--------|------------------------|
-| REQ-1 | `move(direction, move_ms)` | **Reclassified 2026-07-11 — NOT an upstream ask.** User direction: SmartTScope should call `onstep_adapter`'s actual public API directly (`move_ra_timed()`/`move_dec_timed()`, `mode="center"`) and translate `direction`/`move_ms` into that signature locally, rather than asking upstream to add a method matching SmartTScope's `MountPort` shape. Stays in shim permanently as a translation wrapper, same treatment as REQ-2. |
-| REQ-2 | `set_park_position() → bool` and `get_park_position() → MountPosition\|None` | `MountPort` ABC compliance; upstream already has `set_park_position_from_current()` and `get_stored_park_position()` — these two methods stay in shim permanently as interface adapters |
-| REQ-ST-001 | `ensure_time_location_synced()` | **Reclassified 2026-07-11 — NOT an upstream ask.** It's pure config-forwarding glue (pulls `lat`/`lon`/`alt_m` from SmartTScope's own `config.py`, then calls upstream's existing `sync_onstep_time_location()`). SmartTScope's config has no reason to live in a generic adapter; stays a permanent local wrapper. |
+| ID | Method | Why |
+|----|--------|-----|
+| REQ-1 / LOCAL-001 | `move(direction, move_ms)` | Translation onto upstream's public `move_ra_timed()`/`move_dec_timed()` (`mode="center"`) — implemented 2026-07-15, `mechanical_manual_move()` interim retired. |
+| REQ-2 | `set_park_position() → bool`, `get_park_position() → MountPosition\|None` | `MountPort` ABC adapters over upstream `set_park_position_from_current()`/`get_park_position()` (+ conversion to the local `MountPosition` dataclass, also done by `get_position()`). |
+| REQ-ST-001 | `ensure_time_location_synced()` | Pure config-forwarding glue (SmartTScope `config.py` → upstream `sync_onstep_time_location()`). |
+| ONS31-101 | `get_state()` | FSM mapping: upstream 6-state + decoded `at_home` flag (+ sticky `_at_mechanical_home`, first-'H' `confirm_home_position()`) → SmartTScope's 7-state enum. |
+| ONS31-102 | `unpark()` | Routed through upstream `unpark_to_home_stop_tracking()`; returns whether `:hR#` was accepted; incomplete home/stop phase logged, never blind-resent (M9-027). |
+| M7-004 | `OnStepFocuser.move_absolute()` backlash compensation | SmartTScope config-driven feature layered around upstream `move_absolute()` (public API only). |
+
+**SYNC-OVERRIDEs pending upstream delivery** (each tagged in the shim source; remove
+when upstream ships it — re-diff on every upgrade):
+
+| ID | Where | Gap in upstream v0.3.1 wheel |
+|----|-------|------------------------------|
+| REQ-ST-004 | `mount.py enable_tracking()` (28-line method copy) | At-home bypass of positional checks missing. **2026-07-11 pre-check wrongly reported this as present in v0.3.1 — the installed wheel does NOT have it** (repo main ≠ tag). |
+| REQ-ST-007 | `mount.py motion_safety_preflight()` (190-line method copy) | Pier-side guards missing: (a) stale `:Gm#` suppression at confirmed home with axis2 < 15°, (b) `pier_side_axis_inconsistent` suppressed in terminal state. **Same wrong pre-check as REQ-ST-004 — NOT in the wheel.** |
+| REQ-ST-002 (residual) | `mount.py sync_onstep_time_location()` (post-process) | Upstream accepts `confirmed_by_user` but does not set `time_trust_source="user_confirmed"`; shim sets it post-hoc. |
+| REQ-ST-008 | `mount.py` `_haversine_m()`, `_lx200_round_degrees()`, `get_sync_status()` | Stays local either way; upstream adoption nice-to-have. |
+| (new) tolerance fields | `safety.py OnStepSafetyConfig` subclass | `onstep_time_tolerance_s`/`onstep_location_tolerance_m` absent upstream. |
+| (new) client injection | `client.py` swap-after-construction | Upstream `OnStepClient.__init__` has no `mount_cls`/factory parameter. |
+| (new) broken relative import — focuser loader | `focuser.py _load_calibrated_max_position()` (method copy) | Upstream v0.3.1 `focuser.py:170` does `from ... import config` — climbs above the top-level `onstep_adapter` package, always raises, swallowed by `except Exception: return 0` → calibrated focuser max position silently never loaded from `~/.SmartTScope/onstep_focuser_calibration.json` (leftover from when the file lived under `smart_telescope/adapters/onstep/`). Shim carries the pre-migration loader (found 2026-07-17 via test failure `tests/unit/adapters/test_onstep_focuser.py::test_load_calibrated_max_reads_json`). Same bug exists in upstream `mount.py:621` `_default_safety_config()` — **latent only** for SmartTScope: `runtime.py` always passes an explicit `safety_config`, so the broken fallback (permissive lat/lon 0, alt 0–90 default) never fires here; no override needed, but any consumer relying on the default gets no app-level safety config. Upstream ask candidate — needs user approval to file. |
+
+**Known cosmetic deltas vs the retired local implementation** (accepted, not overridden):
+upstream labels the firmware-proof `reference_source` as `"host_application"` (was
+`"smart_telescope_application"`); the extra preflight-refusal warning log before
+`OnStepSafetyError` is gone (upstream ask candidate).
+
+**Retired 2026-07-15** (superseded by `unpark_to_home_stop_tracking()`):
+REQ-ST-003/005/006 `_explicit_tracking_started` lifecycle — deleted with the old
+`mount.py`; SAFETY-001/002 resolved by the routed op, pending Pi hardware verification
+(ONS31-109).
 
 ## Pending upstream requests
 

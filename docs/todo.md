@@ -1760,7 +1760,8 @@ histogram ceiling until it ships upstream.
       against `config.CAMERAS` / `OpticalTrainRegistry`; per-camera status
       DETECTED / MISSING; never blocks the mount flow `[P1 · Runtime]`
       - *Acceptance:* with one configured camera unplugged the app runs normally and
-        reports MISSING for that role while the mount flow proceeds.
+        reports MISSING for that role while the mount flow proceeds. Each detected
+        camera is joined with its train's full optical configuration (M10-013).
 - [ ] M10-003 Per-camera readiness FSM, parallel to the observing FSM:
       IDLE → TUNING (exposure/gain) → STAR_CHECK → FOCUSING (only `has_focuser`
       trains) → READY | DEGRADED(reason). Claims `camera:N` via `JobManager`; feeds
@@ -1791,10 +1792,11 @@ histogram ceiling until it ships upstream.
         camera is not READY; enabled the moment it is.
 - [ ] M10-008 Observe-screen camera card, parallel to the phase panel, visible from
       WAIT_CONTEXT_CONFIRMATION onward: per camera — detected, current exposure/gain,
-      star count, focus state, READY/DEGRADED badge; surfaced through the
-      `/api/observing/state` payload (M9-029 `mount_state` pattern, one poll loop).
-      Overlaps M9-020 (camera identity + preview) — coordinate, don't duplicate
-      `[P1 · UI]`
+      star count, focus state, READY/DEGRADED badge, and the train's optical
+      configuration (focuser / filter wheel / reducer / barlow / effective focal
+      length, M10-013); surfaced through the `/api/observing/state` payload (M9-029
+      `mount_state` pattern, one poll loop). Overlaps M9-020 (camera identity +
+      preview) — coordinate, don't duplicate `[P1 · UI]`
 - [ ] M10-009 Draft upstream feature requests to SmartTScopeLiveAnalysis — file
       **only after user approval** (ONS31-008/009 pattern), tracked in the new
       SYNC.md section: (a) histogram-ceiling parameter (70%) for exposure
@@ -1812,6 +1814,25 @@ histogram ceiling until it ships upstream.
       coarse focus reaches plate-solvable quality; polar align unblocks
       `[P0 · Hardware]`
       - *Must have hardware evidence — not accepted on mock alone*
+- [ ] M10-013 Per-train optical configuration completeness (user requirement
+      2026-07-17: the app must know each identified camera's optical configuration —
+      focuser / filter wheel / reducer / barlow; config-file based for now):
+      extend `OpticalTrainSpec`/`OpticalTrain` + the `[optical_trains.*]` schema with
+      `filter_wheel = "touptek" | ""` (links the train to the global `[filter_wheel]`
+      device — today that section is global with NO per-camera linkage; registry
+      validates the reference) and descriptive element declarations `reducer = ""` /
+      `barlow = ""` (labels, e.g. "celestron_f6.3", "2x"). `reducer_factor` stays the
+      single numeric authority for `focal_mm`/pixel-scale computation (backward
+      compatible — existing configs keep working); validation warns on label/factor
+      mismatch (element named but factor 1.0, or factor ≠ 1.0 with nothing named).
+      `templates/config.toml` updated in the same task (standing rule). M10-002 joins
+      each detected camera with its train's full optical configuration; the M10-008
+      camera card displays it (focuser / filter wheel / reducer / barlow / effective
+      focal length) `[P1 · Runtime/Config]`
+      - *Acceptance:* config declares all four element kinds per train; a detected
+        camera's API payload includes its optical configuration; a bad filter-wheel
+        reference fails registry validation with a clear message; label/factor
+        mismatch produces a startup warning, not a crash.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

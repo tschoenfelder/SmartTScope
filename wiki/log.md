@@ -4648,3 +4648,18 @@ pip dep with the OnStepAdapter guardrail.
 Bookkeeping: SYNC.md gained a planned-dependency section with draft upstream asks
 LA-REQ-1 (70% ceiling) / LA-REQ-2 (SCT donut + focus metric) — NOT filed, approval
 required; `wiki/index.md` gained the external-module entry. Backlog only — no code.
+
+---
+
+## 2026-07-17 — M10-013 filed: per-train optical configuration (focuser/filterwheel/reducer/barlow)
+
+User requirement folded into the M10 block: the app must know each identified
+camera''s complete optical configuration — focuser, filter wheel, reducer, barlow —
+config-file based for now. Gap analysis against the existing model
+(`OpticalTrainSpec`/`OpticalTrainRegistry`/`[optical_trains.*]`): per-train focuser
+and numeric `reducer_factor` already exist, but the `[filter_wheel]` section is
+global with no per-camera linkage, and reducer vs. barlow are an anonymous factor,
+not declared elements. M10-013 adds `filter_wheel`/`reducer`/`barlow` fields to the
+train schema (labels; `reducer_factor` stays the numeric authority — backward
+compatible), registry validation, template update, and wires the configuration into
+the M10-002 identification payload and M10-008 camera card. Backlog only — no code.

@@ -4398,3 +4398,21 @@ Tests: 2 new/updated FSM tests (`TestParkedSafe`), 5 new service tests
 `unpark.assert_not_called()`, readiness both ways). 72 observing tests green.
 Hardware walk-through pending the next Pi session (park from setup → continue →
 Home the mount → mount unparks and homes).
+
+---
+
+## 2026-07-17 — M9-031 filed + implemented: state-aware label for the STOP_SAFELY action
+
+User feedback on 3ec0d79: after park-at-home-step -> Continue setup, the page showed
+the PARKED state pill with a button offering to park below it. The action must stay
+(only graceful exit from setup to PARKED_SAFE, M9-017; completes without hardware
+motion when already parked) but the label now adapts: observed mount state PARKED ->
+"End session (mount already parked)", otherwise "Stop safely (park)" as before.
+
+Implementation: new `_stop_safely_label(mount_state)` in
+`services/observing_service.py`; `_secondary_actions()` takes the observed mount
+state already computed by `snapshot()` for M9-029 and applies the label at all three
+STOP_SAFELY emit sites (stoppable phases, stop-only wait phases, PAUSED_SAFE).
+Intent values and FSM unchanged; no frontend change (labels render from the payload).
+Tests: 3 new (`TestStopSafelyLabel` — parked, not parked, no observation yet);
+75 observing tests green.

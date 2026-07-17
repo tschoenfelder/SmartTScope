@@ -369,6 +369,38 @@ class TestSafeParkFromWaitPhases:
         assert snap["guards"]["g8_safe_stop_possible"] is True
 
 
+class TestStopSafelyLabel:
+    """M9-031: the STOP_SAFELY label is state-aware — offering to "park" while
+    the state pill already shows PARKED read as nonsense (user feedback
+    2026-07-17); the action itself is unchanged (flow exit to PARKED_SAFE)."""
+
+    def _stop_label(self, snap: dict) -> str:
+        return next(
+            a["label"] for a in snap["secondary_actions"]
+            if a["intent"] == IT.STOP_SAFELY.value
+        )
+
+    def test_label_when_mount_parked(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps = replace(deps, device_state=_device_state(MountState.PARKED))
+        snap = svc.snapshot(deps)
+        assert self._stop_label(snap) == "End session (mount already parked)"
+
+    def test_label_when_mount_not_parked(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps = replace(deps, device_state=_device_state(MountState.TRACKING))
+        snap = svc.snapshot(deps)
+        assert self._stop_label(snap) == "Stop safely (park)"
+
+    def test_label_default_before_first_poll(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc._phase = P.WAIT_CONTEXT_CONFIRMATION
+        snap = svc.snapshot(deps)  # deps fixture has an unseeded device_state
+        assert self._stop_label(snap) == "Stop safely (park)"
+
+
 class TestUnparkContinue:
     """M9-028: PARKED_SAFE reached from the setup phases must offer a way back
     into the guided flow (user report 2026-07-17 — safe-parking at the

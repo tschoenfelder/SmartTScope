@@ -196,17 +196,29 @@ def _primary_action(phase: ObservingPhase, guards: Guards, busy: bool) -> dict[s
     return None
 
 
-def _secondary_actions(phase: ObservingPhase) -> list[dict[str, Any]]:
+def _stop_safely_label(mount_state: str | None) -> str:
+    # M9-031: "Stop safely (park)" reads as nonsense when the state pill
+    # already shows PARKED — the action is then a pure flow exit to
+    # PARKED_SAFE with no hardware motion, so say that instead.
+    if mount_state == "PARKED":
+        return "End session (mount already parked)"
+    return "Stop safely (park)"
+
+
+def _secondary_actions(
+    phase: ObservingPhase, mount_state: str | None = None,
+) -> list[dict[str, Any]]:
+    stop_label = _stop_safely_label(mount_state)
     actions: list[dict[str, Any]] = []
     if phase in _STOPPABLE_PHASES:
         actions.append({"intent": Intent.PAUSE.value, "label": "Pause"})
-        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": stop_label})
     elif phase in _STOP_ONLY_PHASES:
-        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": stop_label})
     if phase is ObservingPhase.GUIDE_READYING:
         actions.append({"intent": Intent.SKIP_GUIDING.value, "label": "Skip guiding"})
     if phase is ObservingPhase.PAUSED_SAFE:
-        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": stop_label})
     if phase is ObservingPhase.FAULT:
         actions.append({"intent": Intent.ABORT_TO_PARK.value, "label": "Abort to safe park"})
     if phase is ObservingPhase.PARKED_SAFE:
@@ -286,7 +298,7 @@ class ObservingService:
             "detail": detail,
             "fault_message": fault_message,
             "primary_action": _primary_action(phase, guards, busy),
-            "secondary_actions": _secondary_actions(phase),
+            "secondary_actions": _secondary_actions(phase, mount_state),
             "readiness": _readiness(phase, guards),
             "mount_state": mount_state,
         }

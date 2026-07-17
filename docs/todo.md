@@ -1533,6 +1533,24 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         prominence (TRACKING/SLEWING green, UNPARKED/AT_HOME yellow, AT_LIMIT red,
         PARKED/UNKNOWN accent-blue instead of muted grey); backend/tests unchanged
         (JS/CSS only).
+- [x] M9-031 The "Stop safely (park)" secondary action reads as nonsense when the state
+      pill right above it already shows PARKED (user report 2026-07-17, on 3ec0d79:
+      park at the home step → "Continue setup" → PARKED pill + a button offering to
+      park). The action itself must stay — it is the only graceful exit from setup to
+      PARKED_SAFE (M9-017), and pressing it while parked completes immediately without
+      hardware motion. Make the label state-aware instead: observed mount state PARKED →
+      "End session (mount already parked)", otherwise "Stop safely (park)" as today
+      `[P3 · UI · Source: user feedback 2026-07-17 on M9-028]`
+      - *Acceptance:* in WAIT_CONTEXT/WAIT_HOME with the mount parked, the secondary
+        button reads "End session (mount already parked)" and still transitions to
+        PARKED_SAFE; with the mount in any other state the label is unchanged.
+      - *Implementation notes:* `_secondary_actions()` in
+        `services/observing_service.py` gains the observed mount state (already
+        computed in `snapshot()` for M9-029) to pick the STOP_SAFELY label; intent and
+        FSM unchanged; no frontend change (labels render from the payload).
+      - *Done 2026-07-17:* `_stop_safely_label()` helper applied to all three
+        STOP_SAFELY emit sites (stoppable phases, stop-only wait phases, PAUSED_SAFE);
+        3 new tests (`TestStopSafelyLabel`); 75 observing tests green.
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

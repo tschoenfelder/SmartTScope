@@ -39,6 +39,19 @@ class IntentRequest(BaseModel):
     intent: str
 
 
+def _camera_readiness_payload() -> dict[str, Any] | None:
+    """M10-002/M10-008: parallel camera identification for the Observe screen.
+
+    Added at the API layer (not inside ObservingService.snapshot) so the
+    mount-flow service stays camera-agnostic; None when the runtime service
+    is unavailable (early startup, tests without a runtime).
+    """
+    try:
+        return deps.get_camera_readiness().snapshot()
+    except Exception:
+        return None
+
+
 def _build_deps(
     camera: CameraPort,
     mount: MountPort,
@@ -96,7 +109,9 @@ def observing_state(
         camera, mount, focuser, solver, stacker, storage,
         coordinator, device_state, guiding_service, registry,
     )
-    return svc.snapshot(d)
+    snap = svc.snapshot(d)
+    snap["cameras"] = _camera_readiness_payload()
+    return snap
 
 
 @router.post("/intent")
@@ -126,4 +141,6 @@ def observing_intent(
         camera, mount, focuser, solver, stacker, storage,
         coordinator, device_state, guiding_service, registry,
     )
-    return svc.handle_intent(intent, d)
+    snap = svc.handle_intent(intent, d)
+    snap["cameras"] = _camera_readiness_payload()
+    return snap

@@ -123,6 +123,11 @@ def get_optical_train_registry() -> OpticalTrainRegistry:
     return get_runtime().get_optical_train_registry()  # type: ignore[return-value]
 
 
+def get_camera_readiness():
+    """M10-002: the parallel camera-identification service."""
+    return get_runtime().camera_readiness
+
+
 def get_pixel_scale(
     camera_index: int | None = None,
     camera_role: str | None = None,

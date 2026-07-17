@@ -259,6 +259,11 @@ class RuntimeContext:
         ))
         self.camera_offset_service: CameraOffsetService = CameraOffsetService.from_config()
         self._optical_train_registry: object | None = None  # OpticalTrainRegistry
+        # M10-002: parallel camera identification (starts in connect_devices()).
+        from .services.camera_readiness import CameraReadinessService
+        self.camera_readiness: CameraReadinessService = CameraReadinessService(
+            registry_provider=self.get_optical_train_registry,
+        )
         # Optional external frame analyzer (loaded when configured in [analysis])
         self.frame_analyzer: FrameAnalyzerProtocol | None = (
             load_external_analyzer(config.EXTERNAL_FRAME_ANALYZER_MODULE)
@@ -352,6 +357,9 @@ class RuntimeContext:
                 assert self._mount is not None
                 self.device_state.start(self._mount)
                 self.device_state.poll_now()  # BUG-012: populate cache immediately at startup
+                # M10-002: camera identification runs in parallel with the
+                # mount flow (user is typically still confirming time/location).
+                self.camera_readiness.start()
                 from . import config as _cfg
                 self.dawn_watcher.start(
                     self._mount,
@@ -383,6 +391,8 @@ class RuntimeContext:
         self.cooling_service.stop()
         self.dawn_watcher.stop()
         self.device_state.stop()
+        with contextlib.suppress(Exception):
+            self.camera_readiness.stop()
         with contextlib.suppress(Exception):
             self.section_logger.close()
         if self._focuser is not None:
@@ -441,6 +451,8 @@ class RuntimeContext:
         """Clear all cached singletons for test isolation."""
         self.dawn_watcher.stop()
         self.device_state.stop()
+        with contextlib.suppress(Exception):
+            self.camera_readiness.stop()
         if self._guiding_service is not None:
             with contextlib.suppress(Exception):
                 self._guiding_service.stop()

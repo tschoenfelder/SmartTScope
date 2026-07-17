@@ -1762,13 +1762,22 @@ histogram ceiling until it ships upstream.
         `scripts/astro_start.sh` gained a second version-sync block so the Pi's
         `--no-deps` wheel path picks the pin up automatically; SYNC.md section
         updated to installed state with upgrade procedure.
-- [ ] M10-002 `CameraReadinessService`: starts with `RuntimeContext` — in parallel to
+- [x] M10-002 `CameraReadinessService`: starts with `RuntimeContext` — in parallel to
       WAIT_CONTEXT_CONFIRMATION — enumerates connected ToupTek devices and maps them
       against `config.CAMERAS` / `OpticalTrainRegistry`; per-camera status
       DETECTED / MISSING; never blocks the mount flow `[P1 · Runtime]`
       - *Acceptance:* with one configured camera unplugged the app runs normally and
         reports MISSING for that role while the mount flow proceeds. Each detected
         camera is joined with its train's full optical configuration (M10-013).
+      - *Done 2026-07-17:* `services/camera_readiness.py` — background thread
+        (15 s rescan), model-only matching via `CameraNameResolver` (deliberately no
+        serial verification per scan — that would open in-use devices; serials stay
+        in the adapter build path), statuses DETECTED/MISSING/DISABLED + reason,
+        unassigned-device list, optical-configuration join, SDK-unavailable safe.
+        Started in `connect_devices()`, stopped in shutdown/reset. Surfaced as the
+        `cameras` field on `/api/observing/state` (+ intent responses) at the API
+        layer, keeping ObservingService camera-agnostic. 10 new tests; runtime +
+        observing API suites green. Pi verification pending (M10-012).
 - [ ] M10-003 Per-camera readiness FSM, parallel to the observing FSM:
       IDLE → TUNING (exposure/gain) → STAR_CHECK → FOCUSING (only `has_focuser`
       trains) → READY | DEGRADED(reason). Claims `camera:N` via `JobManager`; feeds
@@ -1804,6 +1813,13 @@ histogram ceiling until it ships upstream.
       length, M10-013); surfaced through the `/api/observing/state` payload (M9-029
       `mount_state` pattern, one poll loop). Overlaps M9-020 (camera identity +
       preview) — coordinate, don't duplicate `[P1 · UI]`
+      - *First slice done 2026-07-17 (with M10-002):* camera card on the Observe
+        screen — per role: status dot (green/red/grey), detected display name or
+        MISSING/DISABLED with reason tooltip, optical-configuration summary
+        (telescope · focal length · focuser · filter wheel · reducer · barlow ·
+        ″/px), plus a "connected but not configured" warning line. Remaining for
+        this task: exposure/gain, star count, focus state, READY/DEGRADED badge —
+        arrive with the M10-003 readiness FSM.
 - [ ] M10-009 Draft upstream feature requests to SmartTScopeLiveAnalysis — file
       **only after user approval** (ONS31-008/009 pattern), tracked in the new
       SYNC.md section: (a) histogram-ceiling parameter (70%) for exposure

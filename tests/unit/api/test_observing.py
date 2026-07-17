@@ -43,7 +43,12 @@ class TestObservingState:
         assert set(body) == {
             "phase", "guards", "busy", "detail", "fault_message",
             "primary_action", "secondary_actions", "readiness", "mount_state",
+            "cameras",
         }
+        # M10-002: camera identification payload (None only when the runtime
+        # service is unavailable; here it exists with the standard shape).
+        if body["cameras"] is not None:
+            assert set(body["cameras"]) == {"sdk_available", "scanned", "roles", "unassigned"}
 
 
 class TestObservingIntent:

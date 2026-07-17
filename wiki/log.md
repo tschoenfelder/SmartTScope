@@ -4766,3 +4766,37 @@ green (282 tests). templates/config.toml comment updated (override-only).
 
 User impact: the explicit per-train pixel_scale_arcsec overrides recommended
 earlier today are now optional — derived values are correct for all three cameras.
+
+---
+
+## 2026-07-17 — M10-002 implemented (+ first M10-008 slice): parallel camera identification with Observe-screen card
+
+New `services/camera_readiness.py` (`CameraReadinessService`): background thread
+started by `RuntimeContext.connect_devices()` — running while the user confirms
+time/location — enumerates connected ToupTek devices every 15 s and matches them
+against the configured `[cameras.*]` roles. Matching is model-only via
+`CameraNameResolver` (deliberately NO per-scan serial verification: reading a serial
+requires opening the device, which must not happen against cameras in active use;
+serial-verified resolution stays in the adapter build path). Per-role result:
+DETECTED (with SDK index + display name) / MISSING (with reason) / DISABLED, plus an
+unassigned-devices list and an sdk_available flag; each role is joined with its
+optical train''s `optical_configuration()` (M10-013). SDK-less environments and
+registry failures degrade gracefully; the service never blocks or raises into the
+mount flow. Stopped in shutdown()/reset_for_tests().
+
+API: `cameras` field added to `/api/observing/state` and intent responses at the
+API layer (`_camera_readiness_payload()` — ObservingService itself stays
+camera-agnostic; None when no runtime). New `deps.get_camera_readiness()`.
+
+UI (M10-008 first slice): "Cameras" card on the Observe screen, visible from
+WAIT_CONTEXT_CONFIRMATION onward — per role a status dot (green DETECTED /
+red MISSING / grey DISABLED), display name or reason tooltip, and the optical
+configuration summary (telescope · focal length · focuser · filter wheel ·
+reducer · barlow · arcsec/px); plus a "connected but not configured" warning line.
+Exposure/star/focus columns and the READY badge arrive with the M10-003 FSM.
+
+Tests: 10 new (`test_camera_readiness.py` — all-detected, unplugged→MISSING,
+disabled, SDK-unavailable, unassigned, optical join, provider-failure tolerance,
+lifecycle); observing API shape updated (cameras key); runtime suite green
+(56 tests in the targeted run). `node --check` clean. Pi verification pending
+(M10-012).

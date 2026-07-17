@@ -104,6 +104,8 @@ function _renderObservingState(state) {
       secondaryEl.appendChild(btn);
     }
 
+    _renderObsCameras(state.cameras);
+
     const guardGrid = document.getElementById('obs-guard-grid');
     guardGrid.innerHTML = '';
     for (const [key, label] of Object.entries(_GUARD_LABELS)) {
@@ -140,6 +142,65 @@ const _PHASE_TITLES = {
 
 function _obsPhaseLabel(phase) {
     return _PHASE_TITLES[phase] || String(phase).replaceAll('_', ' ');
+}
+
+// M10-002/M10-008: camera identification card — runs parallel to the mount
+// flow; a MISSING camera never blocks anything here (only automatic polar
+// alignment will gate on readiness later, M10-007).
+const _CAM_STATUS_DOT = { DETECTED: 'dot-green', MISSING: 'dot-red', DISABLED: 'dot-grey' };
+
+function _obsOpticalSummary(optical) {
+    if (!optical) return '';
+    const parts = [];
+    if (optical.telescope) parts.push(optical.telescope);
+    if (optical.focal_mm)  parts.push(`${optical.focal_mm} mm`);
+    if (optical.focuser)   parts.push(`focuser: ${optical.focuser}`);
+    if (optical.filter_wheel) parts.push(`filter wheel: ${optical.filter_wheel}`);
+    if (optical.reducer)   parts.push(`reducer: ${optical.reducer}`);
+    if (optical.barlow)    parts.push(`barlow: ${optical.barlow}`);
+    if (optical.pixel_scale_arcsec) parts.push(`${optical.pixel_scale_arcsec}″/px`);
+    return parts.join(' · ');
+}
+
+function _renderObsCameras(cameras) {
+    const card = document.getElementById('obs-camera-card');
+    if (!cameras || !cameras.roles || Object.keys(cameras.roles).length === 0) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+    const rows = document.getElementById('obs-camera-rows');
+    rows.innerHTML = '';
+    for (const [role, cam] of Object.entries(cameras.roles)) {
+      const row = document.createElement('div');
+      row.className = 'camera-row';
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (_CAM_STATUS_DOT[cam.status] || 'dot-grey');
+      const name = document.createElement('span');
+      name.className = 'camera-role';
+      name.textContent = role;
+      const status = document.createElement('span');
+      status.textContent = cam.status === 'DETECTED'
+        ? (cam.display_name || cam.model)
+        : `${cam.model || '—'} (${cam.status.toLowerCase()})`;
+      status.title = cam.reason || '';
+      row.appendChild(dot); row.appendChild(name); row.appendChild(status);
+      const summary = _obsOpticalSummary(cam.optical);
+      if (summary) {
+        const opt = document.createElement('span');
+        opt.className = 'camera-optical';
+        opt.textContent = summary;
+        row.appendChild(opt);
+      }
+      rows.appendChild(row);
+    }
+    const unEl = document.getElementById('obs-camera-unassigned');
+    if (cameras.unassigned && cameras.unassigned.length) {
+      unEl.style.display = '';
+      unEl.textContent = 'Connected but not configured: ' + cameras.unassigned.join(', ');
+    } else {
+      unEl.style.display = 'none';
+    }
 }
 
 async function refreshObservingState() {

@@ -1492,6 +1492,23 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         "Session complete" label); frontend button in `observing.js`. Also reconsider
         `_readiness()` returning READY for PARKED_SAFE — "READY" on a never-homed mount
         is part of what confused here.
+- [ ] M9-029 Observe screen: display the observed mount state (PARKED / AT_HOME /
+      SLEWING / TRACKING / …) next to the readiness badge ("LIMITED READY") in
+      WAIT_CONTEXT_CONFIRMATION `[P3 · UI · Source: user request 2026-07-17]`
+      - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
+        time/location is confirmed — mount-state display at this phase needs no gating
+        on context confirmation (mount is already connected at startup via
+        `RuntimeContext.connect_devices()`).
+      - *Acceptance:* in WAIT_CONTEXT_CONFIRMATION the phase panel shows the mount state
+        from the `DeviceStateService` observed-state cache (same source as
+        `/api/mount/status`) beside the readiness badge, updating with the normal
+        observing-state poll.
+      - *Implementation notes:* `/api/observing/state` handler
+        (`smart_telescope/api/observing.py`) already receives `DeviceStateService` — add
+        a `mount_state` field to the response; render a small badge next to
+        `#obs-readiness-badge` (`static/index.html` phase panel) in `observing.js`'s
+        render path. Nothing prevents showing it in all phases; the explicit ask is
+        WAIT_CONTEXT_CONFIRMATION.
 
 ### Phase 2 — Unified readiness aggregation (backlog)
 

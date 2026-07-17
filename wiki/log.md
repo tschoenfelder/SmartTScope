@@ -4304,3 +4304,19 @@ into the guided flow short of restarting. Filed as **M9-028** in `docs/todo.md`:
 "Unpark & continue setup" secondary action on PARKED_SAFE returning to
 WAIT_HOME_CONFIRMATION, plus a look at `_readiness()` reporting READY for a
 never-homed mount. Backlog only — not implemented in this session.
+
+---
+
+## 2026-07-17 — M9-029 filed: mount-state badge in WAIT_CONTEXT_CONFIRMATION; connect-before-time-sync decision recorded
+
+User request from the same Pi session as M9-028: show the observed mount state
+(PARKED / AT_HOME / SLEWING / TRACKING / ...) next to the "LIMITED READY" readiness
+badge on the WAIT_CONTEXT_CONFIRMATION page. Filed as **M9-029** in `docs/todo.md`
+(P3 UI; backlog only, not implemented).
+
+Decision recorded with it: **connecting to OnStep before time/location confirmation
+is OK** (user, 2026-07-17) — mount-state display at that phase needs no gating on
+context confirmation. The mount is in fact already connected at startup
+(`RuntimeContext.connect_devices()`), and the global `#mount-strip` polls
+`/api/mount/status` from page load; M9-029 only surfaces the same observed state
+inside the phase panel via a `mount_state` field on `/api/observing/state`.

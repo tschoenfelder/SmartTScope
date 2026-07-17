@@ -4692,3 +4692,20 @@ all example trains.
 Tests: 7 new in `test_optical_train_registry.py` (elements flow through, payload
 shape, both validation failures, both mismatch warnings, legacy compatibility);
 full services suite green (1173 passed). Bash syntax check clean on astro_start.sh.
+
+---
+
+## 2026-07-17 — M10-014 filed: filter-wheel slot naming with INDI names
+
+While reviewing the user''s Pi config after M10-013: the `[filters]` section is
+currently ignored (no parser in config.py; the ToupTek wheel adapter is numeric-slot
+only; no INDI backend exists in the codebase). Filed **M10-014**: parse a slot->name
+mapping using INDI-convention filter names (Red, Green, Blue, H_Alpha, SII, OIII,
+LPR, Luminance) for interoperability, validate against the wheel''s slot count,
+surface names in the filter-wheel API/UI; camera_adapter stays numeric-slot
+(no external changes). Noted: user config has 7 lowercase entries vs the 8-name INDI
+list (LPR extra) — reconcile at implementation. Backlog only.
+
+Also flagged to the user in chat: their new `[optical_trains.oag] camera = "oag"`
+will fail registry validation at startup unless an "oag" role is added to
+`[cameras]` — comment the train out until the OAG camera exists.

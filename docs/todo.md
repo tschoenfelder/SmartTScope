@@ -1849,6 +1849,24 @@ histogram ceiling until it ships upstream.
         `templates/config.toml` updated. 7 new tests; 1173 service tests green.
         API-payload wiring itself lands with M10-002 (service does not exist yet).
 
+- [ ] M10-014 Filter-wheel slot naming with INDI-convention names (user requirement
+      2026-07-17 — "for not losing it"): SmartTScope currently ignores the `[filters]`
+      section entirely (no parser in `config.py`; the ToupTek wheel adapter works on
+      numeric slots only, and no INDI backend exists). Add a parsed slot→name mapping
+      using the INDI filter names for interoperability: `Red`, `Green`, `Blue`,
+      `H_Alpha`, `SII`, `OIII`, `LPR`, `Luminance`. Validate the mapping against the
+      wheel's reported slot count; surface names (not bare numbers) in the
+      filter-wheel API and UI; `templates/config.toml` updated in the same task
+      (standing rule) `[P2 · Runtime/Config]`
+      - *Note:* the user's current config has 7 entries (`luminance/red/green/blue/
+        ha/oiii/sii`) vs. the 8-name INDI list (`LPR` extra) — reconcile during
+        implementation; key format switches from lowercase ad-hoc names to the INDI
+        spellings above.
+      - *Acceptance:* `[filters]` parses into config with INDI names; filter-wheel
+        status/API reports the active filter by name; a mapping that exceeds the
+        wheel's slot count fails validation with a clear message; no change to the
+        external camera_adapter (numeric slots remain its interface).
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

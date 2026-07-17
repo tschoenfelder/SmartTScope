@@ -10,6 +10,7 @@ mocked hardware exactly like the existing stage-function tests.
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
@@ -397,6 +398,24 @@ class TestSnapshotShape:
         snap = svc.snapshot(deps)
         assert set(snap) == {
             "phase", "guards", "busy", "detail", "fault_message",
-            "primary_action", "secondary_actions", "readiness",
+            "primary_action", "secondary_actions", "readiness", "mount_state",
         }
         assert snap["primary_action"]["intent"] == IT.CONFIRM_CONTEXT.value
+
+    # M9-029: observed mount state exposed for the phase-panel badge —
+    # available already in WAIT_CONTEXT_CONFIRMATION (connecting to OnStep
+    # before time/location confirmation is OK, user decision 2026-07-17).
+    def test_snapshot_reports_observed_mount_state(self, deps: ObservingDeps) -> None:
+        deps = replace(deps, device_state=_device_state(MountState.PARKED))
+        svc = ObservingService()
+        snap = svc.snapshot(deps)
+        assert snap["phase"] == P.WAIT_CONTEXT_CONFIRMATION.value
+        assert snap["mount_state"] == "PARKED"
+
+    def test_snapshot_mount_state_none_before_first_poll(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        assert svc.snapshot(deps)["mount_state"] is None
+
+    def test_snapshot_mount_state_none_without_deps(self) -> None:
+        svc = ObservingService()
+        assert svc.snapshot()["mount_state"] is None

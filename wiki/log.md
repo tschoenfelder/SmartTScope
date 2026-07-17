@@ -4320,3 +4320,24 @@ context confirmation. The mount is in fact already connected at startup
 (`RuntimeContext.connect_devices()`), and the global `#mount-strip` polls
 `/api/mount/status` from page load; M9-029 only surfaces the same observed state
 inside the phase panel via a `mount_state` field on `/api/observing/state`.
+
+---
+
+## 2026-07-17 — M9-029 implemented: mount-state badge in the Observe phase panel
+
+`ObservingService.snapshot()` now includes a `mount_state` field — the name of the
+`DeviceStateService` cached observed state (same source as `/api/mount/status`,
+including the sticky-AT_HOME handling), `null` until the first poll lands or when
+`snapshot()` is called without deps. Deliberately not gated on context confirmation
+(user decision 2026-07-17: connecting to OnStep before time sync is OK).
+
+Frontend: new grey pill `MOUNT: <STATE>` (`#obs-mount-state-badge`,
+`.phase-readiness.MOUNT_STATE`) rendered directly next to the readiness badge by
+`_renderObservingState()`; hidden while `mount_state` is null. Shown in all phases,
+not only WAIT_CONTEXT_CONFIRMATION — the explicit ask was that page, and showing it
+everywhere needs no special-casing.
+
+Tests: 3 new snapshot tests (`TestSnapshotShape`) covering observed-state reporting,
+null-before-first-poll, and null-without-deps; top-level-key assertions updated in
+both the service and API test files. `test_observing_service.py` +
+`tests/unit/api/` green (1034+ tests, incl. full api dir run).

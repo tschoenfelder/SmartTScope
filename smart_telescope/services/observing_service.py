@@ -248,6 +248,16 @@ class ObservingService:
             phase, guards, busy, detail, fault_message = (
                 self._phase, self._guards, self._busy, dict(self._detail), self._fault_message,
             )
+        # M9-029: observed mount state for the phase-panel badge. Read from the
+        # DeviceStateService cache (same source as /api/mount/status, including
+        # the sticky-AT_HOME handling); null until the first poll lands.
+        # Deliberately not gated on context confirmation — connecting to OnStep
+        # before time/location is confirmed is fine (user decision 2026-07-17).
+        mount_state: str | None = None
+        if deps is not None:
+            observed = deps.device_state.get_mount_state()
+            if observed is not None:
+                mount_state = observed.state.name
         return {
             "phase": phase.value,
             "guards": _guards_dict(guards),
@@ -257,6 +267,7 @@ class ObservingService:
             "primary_action": _primary_action(phase, guards, busy),
             "secondary_actions": _secondary_actions(phase),
             "readiness": _readiness(phase, guards),
+            "mount_state": mount_state,
         }
 
     def handle_intent(self, intent: Intent, deps: ObservingDeps) -> dict[str, Any]:

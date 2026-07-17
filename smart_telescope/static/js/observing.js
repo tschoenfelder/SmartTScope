@@ -39,6 +39,16 @@ function _renderObservingState(state) {
     badge.textContent = state.readiness.replace('_', ' ');
     badge.className = 'phase-readiness ' + state.readiness;
 
+    // M9-029: observed mount state next to the readiness badge (null until
+    // the first DeviceStateService poll lands — hide the badge then).
+    const mountBadge = document.getElementById('obs-mount-state-badge');
+    if (state.mount_state) {
+      mountBadge.style.display = '';
+      mountBadge.textContent = 'MOUNT: ' + state.mount_state.replace(/_/g, ' ');
+    } else {
+      mountBadge.style.display = 'none';
+    }
+
     const faultBanner = document.getElementById('obs-fault-banner');
     if (state.phase === 'FAULT' && state.fault_message) {
       faultBanner.style.display = '';

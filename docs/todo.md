@@ -1492,9 +1492,14 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         "Session complete" label); frontend button in `observing.js`. Also reconsider
         `_readiness()` returning READY for PARKED_SAFE — "READY" on a never-homed mount
         is part of what confused here.
-- [ ] M9-029 Observe screen: display the observed mount state (PARKED / AT_HOME /
+- [x] M9-029 Observe screen: display the observed mount state (PARKED / AT_HOME /
       SLEWING / TRACKING / …) next to the readiness badge ("LIMITED READY") in
       WAIT_CONTEXT_CONFIRMATION `[P3 · UI · Source: user request 2026-07-17]`
+      - *Done 2026-07-17:* `snapshot()` now returns `mount_state` (name of the
+        `DeviceStateService` cached state, null before first poll); grey
+        `MOUNT: <STATE>` badge rendered next to the readiness badge in all phases
+        (hidden while null). 3 new snapshot tests; API shape tests updated;
+        31 observing tests pass.
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

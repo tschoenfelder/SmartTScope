@@ -42,7 +42,7 @@ class TestObservingState:
         assert body["primary_action"]["intent"] == "CONFIRM_CONTEXT"
         assert set(body) == {
             "phase", "guards", "busy", "detail", "fault_message",
-            "primary_action", "secondary_actions", "readiness",
+            "primary_action", "secondary_actions", "readiness", "mount_state",
         }
 
 

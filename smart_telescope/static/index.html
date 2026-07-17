@@ -142,6 +142,7 @@
     .phase-readiness.READY        { background: rgba(63,185,80,0.15);  color: var(--success); }
     .phase-readiness.LIMITED_READY{ background: rgba(210,153,34,0.15); color: var(--warning); }
     .phase-readiness.NOT_READY    { background: rgba(248,81,73,0.15);  color: var(--danger);  }
+    .phase-readiness.MOUNT_STATE  { background: rgba(139,148,158,0.15); color: var(--muted); margin-left: 0.4rem; }
     .primary-action-btn {
       display: block; width: 100%;
       padding: 0.85rem 1rem; font-size: 1rem; font-weight: 600;
@@ -654,7 +655,8 @@
 <div id="observing-view" class="top-view active">
   <div id="observing-root">
     <div class="phase-title" id="obs-phase-title">Loading…</div>
-    <div class="phase-readiness" id="obs-readiness-badge">—</div>
+    <div class="phase-readiness" id="obs-readiness-badge">—</div><!--
+ --><div class="phase-readiness MOUNT_STATE" id="obs-mount-state-badge" style="display:none">—</div>
 
     <div class="fault-banner" id="obs-fault-banner" style="display:none">
       <strong>Fault:</strong> <span id="obs-fault-message"></span>

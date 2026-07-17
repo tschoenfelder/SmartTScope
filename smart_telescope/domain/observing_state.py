@@ -84,6 +84,7 @@ class Intent(Enum):
     STOP_SAFELY = "STOP_SAFELY"
     ACKNOWLEDGE_FAULT = "ACKNOWLEDGE_FAULT"
     ABORT_TO_PARK = "ABORT_TO_PARK"
+    UNPARK_CONTINUE = "UNPARK_CONTINUE"
 
 
 @dataclass(frozen=True)
@@ -159,7 +160,7 @@ class ObservingStateMachine:
             case ObservingPhase.SAFE_STOPPING:
                 return self._on_safe_stopping(inp)
             case ObservingPhase.PARKED_SAFE:
-                return ObservingPhase.PARKED_SAFE  # terminal
+                return self._on_parked_safe(inp)
             case ObservingPhase.PAUSED_SAFE:
                 return self._on_paused_safe(inp)
             case ObservingPhase.FAULT:
@@ -225,6 +226,18 @@ class ObservingStateMachine:
         if _guard_true(inp.guards.g8_safe_stop_possible):
             return ObservingPhase.PARKED_SAFE
         return ObservingPhase.SAFE_STOPPING
+
+    def _on_parked_safe(self, inp: ObservingInput) -> ObservingPhase:
+        # M9-028: PARKED_SAFE is no longer strictly terminal — safe-parking
+        # during setup (WAIT_CONTEXT/WAIT_HOME) previously left no way back
+        # into the guided flow. UNPARK_CONTINUE is a pure flow transition:
+        # the mount stays parked; the physical unpark happens through
+        # home_sequence()'s existing auto-unpark when START_HOME is issued
+        # in WAIT_HOME_CONFIRMATION. The caller must reset g2/g8 so the
+        # stale home confirmation and safe-stop guard don't leak forward.
+        if inp.intent == Intent.UNPARK_CONTINUE:
+            return ObservingPhase.WAIT_HOME_CONFIRMATION
+        return ObservingPhase.PARKED_SAFE
 
     def _on_paused_safe(self, inp: ObservingInput) -> ObservingPhase:
         if inp.intent == Intent.RESUME:

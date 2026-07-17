@@ -184,7 +184,15 @@ def _primary_action(phase: ObservingPhase, guards: Guards, busy: bool) -> dict[s
     if phase is ObservingPhase.SAFE_STOPPING:
         return {"intent": None, "label": "Stopping safely…", "enabled": False}
     if phase is ObservingPhase.PARKED_SAFE:
-        return {"intent": None, "label": "Session complete — parked safe", "enabled": False}
+        # M9-028: only a completed session (home was confirmed at some point)
+        # reads as "Session complete" — safe-parking during setup did not
+        # finish anything.
+        label = (
+            "Session complete — parked safe"
+            if guards.g2_home_confirmed is True
+            else "Parked safe — setup not finished"
+        )
+        return {"intent": None, "label": label, "enabled": False}
     return None
 
 
@@ -201,6 +209,14 @@ def _secondary_actions(phase: ObservingPhase) -> list[dict[str, Any]]:
         actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Stop safely (park)"})
     if phase is ObservingPhase.FAULT:
         actions.append({"intent": Intent.ABORT_TO_PARK.value, "label": "Abort to safe park"})
+    if phase is ObservingPhase.PARKED_SAFE:
+        # M9-028: way back into the guided flow. Pure flow transition — the
+        # mount stays parked; "Home the mount" (START_HOME → home_sequence())
+        # performs the actual unpark + home with its existing safeguards.
+        actions.append({
+            "intent": Intent.UNPARK_CONTINUE.value,
+            "label": "Continue setup (back to homing)",
+        })
     return actions
 
 
@@ -211,8 +227,13 @@ def _guards_dict(guards: Guards) -> dict[str, bool | None]:
 def _readiness(phase: ObservingPhase, guards: Guards) -> str:
     if phase in (ObservingPhase.FAULT, ObservingPhase.BOOTSTRAP):
         return "NOT_READY"
-    if phase in (ObservingPhase.CAPTURE_ACTIVE, ObservingPhase.PARKED_SAFE):
+    if phase is ObservingPhase.CAPTURE_ACTIVE:
         return "READY"
+    if phase is ObservingPhase.PARKED_SAFE:
+        # M9-028: green READY on a mount that was safe-parked straight out of
+        # setup (never homed) misled the user into thinking the session was
+        # complete. READY is reserved for a park after a confirmed home.
+        return "READY" if guards.g2_home_confirmed is True else "LIMITED_READY"
     return "LIMITED_READY"
 
 
@@ -282,6 +303,16 @@ class ObservingService:
         elif intent is Intent.SKIP_GUIDING and phase is ObservingPhase.GUIDE_READYING:
             with self._lock:
                 self._guards = replace(self._guards, g6_guiding_ok=True)
+        elif intent is Intent.UNPARK_CONTINUE and phase is ObservingPhase.PARKED_SAFE:
+            # M9-028: back into the flow at the homing step. Reset the stale
+            # guards — g2 (the previous home confirmation is void once the
+            # user intends to unpark again) and g8 (a leftover True would let
+            # the next SAFE_STOPPING auto-advance to PARKED_SAFE before the
+            # park actually completes, defeating the M9-027 protection).
+            with self._lock:
+                self._guards = replace(
+                    self._guards, g2_home_confirmed=False, g8_safe_stop_possible=False,
+                )
 
         with self._lock:
             inp = ObservingInput(

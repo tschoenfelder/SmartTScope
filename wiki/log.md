@@ -4364,3 +4364,37 @@ mirror the global mount strip's `_STRIP_DOT` semantics (new `_OBS_MOUNT_PILL` ma
 PARKED/UNKNOWN accent-blue instead of the muted grey the user rejected. CSS: new
 `.phase-readiness.MS-{green,yellow,red,blue}` classes in `index.html`;
 `.MOUNT_STATE` keeps only the spacing. `node --check` clean.
+
+---
+
+## 2026-07-17 — M9-028 implemented: "Continue setup" from PARKED_SAFE back to the homing step
+
+PARKED_SAFE is no longer strictly terminal. New `Intent.UNPARK_CONTINUE`
+(`domain/observing_state.py _on_parked_safe`): PARKED_SAFE offers a secondary action
+"Continue setup (back to homing)" that returns the flow to WAIT_HOME_CONFIRMATION.
+
+**Design choice (deviates from the task's original acceptance wording):** the action is
+a pure flow transition — it does NOT unpark the mount itself. `home_sequence()` already
+auto-unparks a PARKED mount (with the M9-025 immediate tracking-disable and, post-ONS31,
+the routed `unpark()`), so the physical unpark+home happens through that single hardened
+path when the user presses "Home the mount". This avoids a second hardware code path and
+never leaves the mount unparked-idle without a running action. The M9-030 state pill
+showing PARKED next to "Home the mount" matches a fresh session start, so the UI stays
+coherent.
+
+Guard hygiene on the transition (`handle_intent` side effect): `g2_home_confirmed`
+reset to False (previous home confirmation is void) and `g8_safe_stop_possible` reset
+to False — a leftover True would let the next SAFE_STOPPING auto-advance to PARKED_SAFE
+before the park actually completes, defeating the M9-027 single-`:hP#` protection.
+
+Readiness fix folded in (flagged in the task): PARKED_SAFE now reports READY only when
+g2 is True (park after a confirmed home / completed session, primary label "Session
+complete — parked safe"); safe-parked straight out of setup shows LIMITED READY with
+"Parked safe — setup not finished".
+
+No frontend change needed — secondary actions render generically from the API payload.
+Tests: 2 new/updated FSM tests (`TestParkedSafe`), 5 new service tests
+(`TestUnparkContinue`: action offered, transition + guard resets, pure-transition
+`unpark.assert_not_called()`, readiness both ways). 72 observing tests green.
+Hardware walk-through pending the next Pi session (park from setup → continue →
+Home the mount → mount unparks and homes).

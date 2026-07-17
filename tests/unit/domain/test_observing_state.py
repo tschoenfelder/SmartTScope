@@ -159,11 +159,20 @@ class TestSafeStopping:
 
 
 class TestParkedSafe:
-    def test_terminal_ignores_all_intents(self) -> None:
+    def test_ignores_all_intents_except_unpark_continue(self) -> None:
         fsm = ObservingStateMachine()
         for intent in Intent:
+            if intent is IT.UNPARK_CONTINUE:
+                continue
             assert fsm.next(_inp(P.PARKED_SAFE, intent)) == P.PARKED_SAFE
         assert fsm.next(_inp(P.PARKED_SAFE)) == P.PARKED_SAFE
+
+    def test_unpark_continue_returns_to_wait_home(self) -> None:
+        # M9-028: PARKED_SAFE is no longer strictly terminal — the user can
+        # return to the homing step (pure flow transition, no guard gate:
+        # the mount stays parked until START_HOME performs the real unpark).
+        fsm = ObservingStateMachine()
+        assert fsm.next(_inp(P.PARKED_SAFE, IT.UNPARK_CONTINUE)) == P.WAIT_HOME_CONFIRMATION
 
 
 class TestPausedSafe:

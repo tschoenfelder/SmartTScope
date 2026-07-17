@@ -369,6 +369,72 @@ class TestSafeParkFromWaitPhases:
         assert snap["guards"]["g8_safe_stop_possible"] is True
 
 
+class TestUnparkContinue:
+    """M9-028: PARKED_SAFE reached from the setup phases must offer a way back
+    into the guided flow (user report 2026-07-17 — safe-parking at the
+    "Home the mount" step left only a restart)."""
+
+    def _park_from_wait_home(self, svc: ObservingService, deps: ObservingDeps) -> dict:
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps.device_state = _device_state(MountState.PARKED)
+        svc.handle_intent(IT.STOP_SAFELY, deps)
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.PARKED_SAFE.value
+        return snap
+
+    def test_parked_safe_offers_unpark_continue(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        snap = self._park_from_wait_home(svc, deps)
+        intents = {a["intent"] for a in snap["secondary_actions"]}
+        assert IT.UNPARK_CONTINUE.value in intents
+
+    def test_unpark_continue_returns_to_wait_home_and_resets_guards(
+        self, deps: ObservingDeps,
+    ) -> None:
+        svc = ObservingService()
+        self._park_from_wait_home(svc, deps)
+        snap = svc.handle_intent(IT.UNPARK_CONTINUE, deps)
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
+        # g8 must not leak into the next SAFE_STOPPING (would auto-advance to
+        # PARKED_SAFE before the park completes); g2 home confirmation is void.
+        assert snap["guards"]["g8_safe_stop_possible"] is False
+        assert snap["guards"]["g2_home_confirmed"] is False
+        assert snap["primary_action"]["intent"] == IT.START_HOME.value
+
+    def test_unpark_continue_is_pure_flow_transition(self, deps: ObservingDeps) -> None:
+        """The mount stays parked — the physical unpark happens later via
+        home_sequence()'s auto-unpark when the user presses "Home the mount"."""
+        svc = ObservingService()
+        self._park_from_wait_home(svc, deps)
+        deps.mount.unpark.reset_mock()
+        svc.handle_intent(IT.UNPARK_CONTINUE, deps)
+        deps.mount.unpark.assert_not_called()
+
+    def test_readiness_limited_when_parked_from_setup(self, deps: ObservingDeps) -> None:
+        """M9-028: green READY on a never-homed mount misled the user into
+        thinking the session was complete."""
+        svc = ObservingService()
+        snap = self._park_from_wait_home(svc, deps)
+        assert snap["guards"]["g2_home_confirmed"] is not True
+        assert snap["readiness"] == "LIMITED_READY"
+        assert snap["primary_action"]["label"] == "Parked safe — setup not finished"
+
+    def test_readiness_ready_when_parked_after_confirmed_home(
+        self, deps: ObservingDeps,
+    ) -> None:
+        svc = ObservingService()
+        svc._phase = P.CAPTURE_ACTIVE
+        with svc._lock:
+            svc._guards = replace(svc._guards, g2_home_confirmed=True)
+        deps.mount.get_state.return_value = MountState.TRACKING
+        deps.device_state = _device_state(MountState.PARKED)
+        svc.handle_intent(IT.STOP_SAFELY, deps)
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.PARKED_SAFE.value
+        assert snap["readiness"] == "READY"
+        assert snap["primary_action"]["label"] == "Session complete — parked safe"
+
+
 class TestFaultHandling:
     def test_engine_exception_transitions_to_fault(self, deps: ObservingDeps) -> None:
         svc = ObservingService()

@@ -4729,3 +4729,40 @@ registry''s default-0 `camera_index` via `CameraNameResolver`. Backlog only.
 Interim note given to the user: until M10-015 lands, explicit per-train
 `pixel_scale_arcsec` overrides (0.29 / 3.32 / 0.20) remain advisable, since the
 fallback (0.38) matches none of the current cameras.
+
+---
+
+## 2026-07-17 — M10-015 implemented: pixel scale derived at runtime (model/driver × train × binning)
+
+`pixel_scale_arcsec` no longer needs configuring. Changes:
+
+1. **Root-cause fix:** `_derive_pixel_scale()` now resolves the camera profile via
+   the role''s configured `[cameras.<role>] model` — the old code matched profile
+   names against the role name ("main"/"guide"/"oag"), never matched, and silently
+   used the 0.38 global for every train. Legacy configs where the role IS the model
+   name keep working.
+2. **Binning-aware helper:** `OpticalTrain.effective_pixel_scale(binning,
+   pixel_size_um)` — precedence: explicit config override > driver-reported pixel
+   size (already exposed by the camera adapter''s public
+   `get_capabilities().pixel_size_um` — no external-module change needed) >
+   model-profile derivation. Binning multiplies the base. New
+   `pixel_scale_overridden` flag records whether config set an explicit value.
+3. **Real SDK indices:** `from_config(resolve_index=...)` + the runtime wires a
+   CameraNameResolver-backed resolver (best-effort; SDK-less dev machines and
+   unplugged cameras fall back to configured/default index) — removes the
+   default-0-for-all `camera_index` ambiguity.
+4. **Single API-side source:** new `deps.get_pixel_scale(camera_index, camera_role,
+   binning)`; migrated the raw `config.PIXEL_SCALE_ARCSEC` fallbacks in
+   `api/polar.py` (2 sites), `api/mount.py` goto-center, and `api/solver.py` solve.
+   Remaining raw readers: the final fallback inside `get_pixel_scale()` itself and
+   the pre-M9-018 hardcoded `OpticalProfile`s in `workflow/_types.py` (tracked by
+   M9-018).
+
+Tests: 6 new in `test_optical_train_registry.py` — acceptance numbers exact
+(0.2944 / 3.3232 / 0.2030 at binning 1, doubled at binning 2 for the user''s
+ATR585M/GPCMOS/G3M678M rig), driver-preferred, override-wins, legacy role
+matching, resolver win + exception fallback. Registry/mount/solver/polar suites
+green (282 tests). templates/config.toml comment updated (override-only).
+
+User impact: the explicit per-train pixel_scale_arcsec overrides recommended
+earlier today are now optional — derived values are correct for all three cameras.

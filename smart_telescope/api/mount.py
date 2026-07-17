@@ -728,7 +728,10 @@ async def mount_goto_and_center(
                     detail="Mount is currently slewing — stop it before centering",
                 )
             camera = deps.get_preview_camera(body.camera_index)
-            scale  = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
+            scale  = (
+                body.pixel_scale if body.pixel_scale is not None
+                else deps.get_pixel_scale(camera_index=body.camera_index)  # M10-015
+            )
             result = await goto_and_center(
                 mount, camera, solver,
                 body.ra, body.dec,

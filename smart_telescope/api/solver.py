@@ -105,7 +105,12 @@ async def solver_solve(
     camera = get_preview_camera(resolve_camera_index(body.camera_index, body.camera_role))
     if hasattr(camera, "set_gain"):
         camera.set_gain(body.gain)  # type: ignore[union-attr]
-    scale = body.pixel_scale if body.pixel_scale is not None else config.PIXEL_SCALE_ARCSEC
+    scale = (
+        body.pixel_scale if body.pixel_scale is not None
+        else _deps.get_pixel_scale(
+            camera_index=body.camera_index, camera_role=body.camera_role,  # M10-015
+        )
+    )
 
     _deps.get_user_action_logger().log("plate_solve_requested", result="ok")
     t0 = time.perf_counter()

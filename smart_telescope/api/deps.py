@@ -123,6 +123,35 @@ def get_optical_train_registry() -> OpticalTrainRegistry:
     return get_runtime().get_optical_train_registry()  # type: ignore[return-value]
 
 
+def get_pixel_scale(
+    camera_index: int | None = None,
+    camera_role: str | None = None,
+    binning: int = 1,
+) -> float:
+    """M10-015: single pixel-scale source for API consumers.
+
+    Prefers the matching optical train (by index, then role, then main) and
+    its derived binning-aware scale; falls back to the global
+    ``config.PIXEL_SCALE_ARCSEC`` only when no train matches. Consumers must
+    not read the raw config value directly anymore.
+    """
+    from .. import config
+    try:
+        registry = get_optical_train_registry()
+        train = None
+        if camera_index is not None:
+            train = registry.by_camera_index(camera_index)
+        if train is None and camera_role:
+            train = registry.by_camera_role(camera_role)
+        if train is None:
+            train = registry.main()
+        if train is not None:
+            return train.effective_pixel_scale(binning)
+    except Exception:  # registry unavailable (early startup, tests)
+        pass
+    return config.PIXEL_SCALE_ARCSEC
+
+
 _ctc_calibration_store: CTCCalibrationStore | None = None
 
 

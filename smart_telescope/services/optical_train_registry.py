@@ -11,6 +11,7 @@ Pixel scale priority:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
@@ -32,6 +33,30 @@ class OpticalTrain:
     filter_wheel: str = ""      # "touptek" (global [filter_wheel] device) | ""
     reducer: str = ""           # descriptive label, e.g. "celestron_f6.3"
     barlow: str = ""            # descriptive label, e.g. "2x"
+    # M10-015: True when pixel_scale_arcsec came from an explicit config
+    # override (which then also beats a driver-reported pixel size).
+    pixel_scale_overridden: bool = False
+
+    def effective_pixel_scale(
+        self, binning: int = 1, pixel_size_um: float | None = None,
+    ) -> float:
+        """M10-015: arcsec/px at the given binning — pixel scale is derived,
+        never a required config value.
+
+        Precedence for the binning-1 base: explicit config override >
+        driver-reported ``pixel_size_um`` (pass
+        ``camera.get_capabilities().pixel_size_um`` when the camera is
+        connected) > model-profile derivation done at registry build.
+        Binning multiplies the base (2×2 binning doubles arcsec/px).
+        """
+        base = self.pixel_scale_arcsec
+        if (
+            not self.pixel_scale_overridden
+            and pixel_size_um is not None and pixel_size_um > 0
+            and self.focal_mm > 0
+        ):
+            base = round(pixel_size_um * 206.265 / self.focal_mm, 4)
+        return round(base * max(1, int(binning)), 4)
 
     def optical_configuration(self) -> dict[str, object]:
         """Serializable summary for API payloads (M10-002/M10-008)."""
@@ -48,20 +73,36 @@ class OpticalTrain:
 
 
 def _derive_pixel_scale(camera_role: str, focal_mm: float) -> float:
-    """Try to compute pixel scale from camera model pixel size; fall back to global."""
+    """Compute pixel scale from the role's configured camera model; fall back to global.
+
+    M10-015: the profile lookup uses the *configured model* for this role
+    (``[cameras.<role>] model``). The old behavior matched profile names against
+    the role name itself ("main"/"guide"/"oag") — which never matched, so every
+    train silently used the global fallback. Role-name matching is kept only as
+    a legacy path for configs where the role IS the model name.
+    """
     from .. import config
     from ..domain.camera_profile import ALL_PROFILES
 
-    # Look for a profile whose model name appears in the camera role name (best-effort)
+    if focal_mm <= 0:
+        return config.PIXEL_SCALE_ARCSEC
+
+    spec = config.CAMERA_SPECS.get(camera_role)
+    lookup = (spec.model if spec is not None and spec.model else "") or camera_role
+
     for model, profile in ALL_PROFILES.items():
-        if model.lower() in camera_role.lower():
+        if model.lower() in lookup.lower():
             scale = round(profile.pixel_um * 206.265 / focal_mm, 4)
-            _log.debug("pixel scale for role '%s': %.4f arcsec/px (model=%s)", camera_role, scale, model)
+            _log.debug(
+                "pixel scale for role '%s': %.4f arcsec/px (model=%s, via %s)",
+                camera_role, scale, model,
+                "configured model" if lookup is not camera_role else "role name",
+            )
             return scale
 
     _log.debug(
-        "pixel scale for role '%s': no profile match — using global %.4f arcsec/px",
-        camera_role, config.PIXEL_SCALE_ARCSEC,
+        "pixel scale for role '%s': no profile match for '%s' — using global %.4f arcsec/px",
+        camera_role, lookup, config.PIXEL_SCALE_ARCSEC,
     )
     return config.PIXEL_SCALE_ARCSEC
 
@@ -101,8 +142,18 @@ class OpticalTrainRegistry:
     # ── factory ───────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_config(cls) -> OpticalTrainRegistry:
+    def from_config(
+        cls,
+        resolve_index: "Callable[[str], int | None] | None" = None,
+    ) -> OpticalTrainRegistry:
         """Build registry from config.TELESCOPES + config.OPTICAL_TRAINS + config.CAMERAS.
+
+        Args:
+            resolve_index: optional callable mapping a camera role to its real
+                SDK enumeration index (M10-015 — the runtime wires a
+                CameraNameResolver-backed one). ``None`` return values fall
+                back to the configured/default index. Kept injectable so tests
+                and SDK-less environments never touch hardware enumeration.
 
         Raises ValueError listing all validation errors if the config is invalid.
         """
@@ -133,9 +184,21 @@ class OpticalTrainRegistry:
                     f"[cameras] (configured roles: {all_roles})"
                 )
                 continue
+            # M10-015: prefer the real SDK enumeration index when a resolver
+            # is available (default-0-for-all made by_camera_index ambiguous).
+            if resolve_index is not None:
+                try:
+                    resolved = resolve_index(spec.camera)
+                except Exception as exc:  # resolver must never break startup
+                    _log.debug("index resolution failed for role '%s': %s", spec.camera, exc)
+                    resolved = None
+                if resolved is not None:
+                    camera_index = resolved
+
             focal_mm = round(tele.focal_mm * spec.reducer_factor, 2)
 
-            if spec.pixel_scale_arcsec > 0.0:
+            pixel_scale_overridden = spec.pixel_scale_arcsec > 0.0
+            if pixel_scale_overridden:
                 pixel_scale = spec.pixel_scale_arcsec
             else:
                 pixel_scale = _derive_pixel_scale(spec.camera, focal_mm)
@@ -183,6 +246,7 @@ class OpticalTrainRegistry:
                 filter_wheel=spec.filter_wheel,
                 reducer=spec.reducer,
                 barlow=spec.barlow,
+                pixel_scale_overridden=pixel_scale_overridden,
             )
 
         if errors:

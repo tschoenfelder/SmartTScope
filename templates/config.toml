@@ -110,7 +110,10 @@ telescope           = "c8"
 camera              = "main"        # camera role from [cameras]
 reducer_factor      = 1.0           # native f/10; use 0.63 for Celestron f/6.3 reducer
 focuser             = "onstep"      # "onstep" | "" (no focuser)
-# pixel_scale_arcsec = 0.38         # optional override; computed from focal_mm if omitted
+# pixel_scale_arcsec = 0.38         # optional override ONLY (M10-015): when omitted, the
+#                                   # scale is derived from the camera model's pixel size
+#                                   # (driver-reported when connected) × focal_mm × reducer,
+#                                   # and scaled by the active binning at runtime
 # M10-013: declared optical elements — name what is in this light path so the
 # app can report the full configuration per camera. reducer_factor above stays
 # the numeric authority for focal-length/pixel-scale math; mismatches between

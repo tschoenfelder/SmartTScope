@@ -1867,7 +1867,7 @@ histogram ceiling until it ships upstream.
         wheel's slot count fails validation with a clear message; no change to the
         external camera_adapter (numeric slots remain its interface).
 
-- [ ] M10-015 Pixel scale must be **derived at runtime, never required in config**
+- [x] M10-015 Pixel scale must be **derived at runtime, never required in config**
       (user requirement 2026-07-17): with the optical train known (focal_mm ×
       reducer_factor) and the camera's pixel size readable (preferred: from the
       ToupTek driver via the camera adapter's public API when the camera is
@@ -1891,6 +1891,22 @@ histogram ceiling until it ships upstream.
         180 mm + 2.9 µm; C8 + 2.0 µm) and 2× those values at binning 2; a configured
         override still wins; driver-reported pixel size preferred over the profile
         when available; no consumer reads the raw config value directly anymore.
+      - *Done 2026-07-17:* `_derive_pixel_scale()` looks up the profile via the
+        role's configured `model` (legacy role-named-as-model kept working); new
+        `OpticalTrain.effective_pixel_scale(binning, pixel_size_um)` — precedence
+        config override > driver pixel size (`camera.get_capabilities()
+        .pixel_size_um`, existing camera-adapter public API — no external change
+        needed) > profile; `pixel_scale_overridden` flag on the train;
+        `from_config(resolve_index=…)` + runtime wires a CameraNameResolver-backed
+        resolver (best-effort, SDK-less environments fall back);
+        `deps.get_pixel_scale(camera_index, camera_role, binning)` is the single
+        API-side source — polar (2 sites), mount goto-center, and solver solve
+        fallbacks migrated off raw `config.PIXEL_SCALE_ARCSEC`; template comment
+        updated. 6 new tests (acceptance numbers exact, binning, driver-preferred,
+        override-wins, legacy match, resolver win/fallback); registry+mount+solver+
+        polar suites green (282 tests). Remaining raw-config readers are only the
+        final fallback inside `get_pixel_scale()` and pre-M9-018 hardcoded
+        `OpticalProfile`s in `workflow/_types.py` (tracked there).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

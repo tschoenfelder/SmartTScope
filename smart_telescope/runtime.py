@@ -736,8 +736,31 @@ class RuntimeContext:
         """Return the OpticalTrainRegistry, building it lazily on first call."""
         if self._optical_train_registry is None:
             from .services.optical_train_registry import OpticalTrainRegistry
+
+            def _resolve_index(role: str) -> int | None:
+                # M10-015: give trains their real SDK enumeration index. Best
+                # effort only — any failure (no SDK on Windows, camera not yet
+                # plugged in) falls back to the configured/default index.
+                try:
+                    from .services.camera_name_resolver import CameraNameResolver
+                    spec = config.CAMERA_SPECS.get(role)
+                    if spec is not None and spec.index is not None:
+                        target: str | int = spec.index
+                    elif spec is not None and spec.model:
+                        target = spec.model
+                    elif role in config.CAMERAS:
+                        target = config.CAMERAS[role]
+                    else:
+                        return None
+                    return CameraNameResolver().resolve(target, config.CAMERA_SERIALS)
+                except Exception as exc:
+                    _log.debug("optical-train index resolution failed for '%s': %s", role, exc)
+                    return None
+
             try:
-                self._optical_train_registry = OpticalTrainRegistry.from_config()
+                self._optical_train_registry = OpticalTrainRegistry.from_config(
+                    resolve_index=_resolve_index,
+                )
             except ValueError as exc:
                 _log.error("OpticalTrainRegistry: %s", exc)
                 self._optical_train_registry = OpticalTrainRegistry({})

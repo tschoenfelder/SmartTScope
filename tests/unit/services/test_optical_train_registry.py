@@ -155,6 +155,88 @@ class TestOpticalElementDeclarations:
         assert reg.main().filter_wheel == ""
 
 
+# ── M10-015: derived pixel scale (model-based, binning-aware) ─────────────────
+
+class TestDerivedPixelScale:
+    _SPECS = {
+        "main":  CameraSpec(role="main",  model="ATR585M"),
+        "guide": CameraSpec(role="guide", model="GPCMOS02000KPA"),
+        "oag":   CameraSpec(role="oag",   model="G3M678M"),
+    }
+    _TELE = {
+        "c8":    TelescopeSpec(aperture_mm=203.2, focal_mm=2032.0, type="sct", obstruction=0.36),
+        "guide": TelescopeSpec(aperture_mm=50.0, focal_mm=180.0, type="refractor"),
+    }
+    _TRAINS = {
+        "main":  OpticalTrainSpec(telescope="c8",    camera="main"),
+        "guide": OpticalTrainSpec(telescope="guide", camera="guide"),
+        "oag":   OpticalTrainSpec(telescope="c8",    camera="oag"),
+    }
+
+    def _registry(self, **kw) -> OpticalTrainRegistry:
+        return _make_registry(
+            trains=kw.get("trains", self._TRAINS),
+            telescopes=self._TELE,
+            camera_specs=kw.get("camera_specs", self._SPECS),
+        )
+
+    def test_scale_derived_from_configured_model_not_role_name(self):
+        # M10-015 acceptance: no pixel_scale_arcsec configured anywhere —
+        # main/guide/oag report their real scales, not the 0.38 global.
+        reg = self._registry()
+        assert reg.get("main").pixel_scale_arcsec == pytest.approx(0.2944, abs=1e-4)
+        assert reg.get("guide").pixel_scale_arcsec == pytest.approx(3.3232, abs=1e-4)
+        assert reg.get("oag").pixel_scale_arcsec == pytest.approx(0.2030, abs=1e-4)
+
+    def test_binning_scales_effective_pixel_scale(self):
+        t = self._registry().get("main")
+        assert t.effective_pixel_scale(1) == pytest.approx(0.2944, abs=1e-4)
+        assert t.effective_pixel_scale(2) == pytest.approx(0.5888, abs=1e-3)
+
+    def test_driver_reported_pixel_size_preferred_over_profile(self):
+        t = self._registry().get("main")
+        # Driver says 2.0 µm (not the profile's 2.9): scale follows the driver.
+        assert t.effective_pixel_scale(1, pixel_size_um=2.0) == pytest.approx(0.2030, abs=1e-4)
+
+    def test_configured_override_beats_driver_and_profile(self):
+        trains = {
+            "main": OpticalTrainSpec(telescope="c8", camera="main", pixel_scale_arcsec=0.5),
+        }
+        t = self._registry(trains=trains).get("main")
+        assert t.pixel_scale_overridden is True
+        assert t.effective_pixel_scale(1, pixel_size_um=2.0) == pytest.approx(0.5)
+        assert t.effective_pixel_scale(2) == pytest.approx(1.0)
+
+    def test_legacy_role_named_after_model_still_matches(self):
+        # Pre-M10-015 behavior: a role literally named like the model keeps working
+        # even without a CameraSpec model entry.
+        trains = {"main": OpticalTrainSpec(telescope="c8", camera="G3M678M")}
+        cameras = {"G3M678M": 0}
+        reg = _make_registry(trains=trains, telescopes=self._TELE, cameras=cameras, camera_specs={})
+        assert reg.get("main").pixel_scale_arcsec == pytest.approx(0.2030, abs=1e-4)
+
+    def test_resolve_index_callable_wins_and_failures_are_safe(self):
+        import smart_telescope.config as cfg
+        calls: list[str] = []
+
+        def resolver(role: str):
+            calls.append(role)
+            if role == "guide":
+                raise RuntimeError("no SDK")
+            return {"main": 2, "oag": None}.get(role)
+
+        with patch.object(cfg, "OPTICAL_TRAINS", self._TRAINS), \
+             patch.object(cfg, "CAMERAS", _CAMERAS), \
+             patch.object(cfg, "CAMERA_SPECS", self._SPECS), \
+             patch.object(cfg, "TELESCOPES", self._TELE), \
+             patch.object(cfg, "PIXEL_SCALE_ARCSEC", 0.38):
+            reg = OpticalTrainRegistry.from_config(resolve_index=resolver)
+        assert sorted(calls) == ["guide", "main", "oag"]
+        assert reg.get("main").camera_index == 2      # resolver wins
+        assert reg.get("guide").camera_index == 0     # exception → fallback
+        assert reg.get("oag").camera_index == 0       # None → fallback
+
+
 # ── from_config — happy paths ─────────────────────────────────────────────────
 
 class TestFromConfig:

@@ -169,7 +169,7 @@ async def _run_workflow_loop(
         camera = deps.get_preview_camera(camera_index)
         if hasattr(camera, "set_gain"):
             camera.set_gain(gain)  # type: ignore[union-attr]
-        scale = config.PIXEL_SCALE_ARCSEC
+        scale = deps.get_pixel_scale(camera_index=camera_index)  # M10-015
 
         if await asyncio.to_thread(mount.get_state) == MountState.PARKED:
             await asyncio.to_thread(mount.unpark)
@@ -271,7 +271,7 @@ async def _run_live(
         camera = deps.get_preview_camera(camera_index)
         if hasattr(camera, "set_gain"):
             camera.set_gain(gain)  # type: ignore[union-attr]
-        scale = config.PIXEL_SCALE_ARCSEC
+        scale = deps.get_pixel_scale(camera_index=camera_index)  # M10-015
 
         while True:
             _state.step = "live"

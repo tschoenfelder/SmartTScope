@@ -1598,7 +1598,17 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
       - *Done 2026-07-17:* `_PHASE_TITLES` map in `static/js/observing.js` covering
         all 12 phases; `_obsPhaseLabel()` falls back to the old
         underscores-to-spaces for unknown values. JS-only; `node --check` clean.
-- [x] M9-034 Hardware report 2026-07-17 (STOP mid-park-slew): SAFE_STOPPING becomes a
+- [ ] M9-034 **REOPENED 2026-07-17** — Pi retest after 42a678f still fails: STOP during
+      park flips the state directly to AT HOME, Detail empty, app blocked. Both cache
+      stickies are provably cleared on this path, so the AT_HOME must be reported by
+      `mount.get_state()` itself (decoded `:GU#` H flag or the shim/upstream
+      `_at_mechanical_home` authority flag — possibly re-armed by the genuine H
+      observation right before the park started, or OnStep keeping H set after `:Q#`).
+      Diagnostic added: DeviceStateService now logs every observed state transition
+      with the raw adapter state, decoded `:GU#` flags, and both sticky layers —
+      next repro on the Pi is conclusive. Awaiting server.log evidence before the
+      next fix; do NOT guess further layers. Original report/fixes below.
+      Hardware report 2026-07-17 (STOP mid-park-slew): SAFE_STOPPING becomes a
       dead end — the M9-027 no-resend window silently blocks a park retry for 120 s,
       no actions are offered ("no way to continue parking or slewing back to home"),
       and the Detail panel still shows the *previous* action's record

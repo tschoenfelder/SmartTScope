@@ -4512,3 +4512,21 @@ park.call_count==2, back-to-homing transition, detail replacement), FSM
 SAFE_STOPPING+UNPARK_CONTINUE, sticky-cleared-by-goto-with-args. 283 tests green
 across domain/device-state/observing/mount suites. Hardware re-test of the STOP
 mid-park scenario pending the next Pi session.
+
+---
+
+## 2026-07-17 — M9-034 reopened: Pi retest still shows AT HOME after STOP mid-park; transition diagnostic added
+
+Retest on the Pi after 42a678f: STOP during the park slew still flips the state
+directly to AT HOME, Detail panel empty, app blocked. The M9-032/034 cache-sticky
+fixes are covered by tests and provably clear on this path, so the AT_HOME must
+originate from `mount.get_state()` itself — candidates: OnStep genuinely reporting
+the H flag after `:Q#` near home, or the shim/upstream `_at_mechanical_home`
+authority flag being re-armed by a genuine H observation before the park began
+(upstream `stop()` never clears it — the ask already recorded in SYNC.md).
+
+Not guessing further: added a conclusive diagnostic instead.
+`DeviceStateService._poll_once()` now logs every observed state transition at INFO
+with the raw adapter-reported state (pre-promotion), decoded `:GU#` flags,
+shim `_at_mechanical_home`, and the cache sticky/promotion flags. Next repro on the
+Pi pins the faulty layer definitively. 100 device-state/observing tests green.

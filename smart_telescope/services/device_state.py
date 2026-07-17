@@ -381,6 +381,7 @@ class DeviceStateService:
     def _poll_once(self, mount: MountPort) -> None:
         try:
             state = mount.get_state()
+            raw_state = state  # pre-promotion, as reported by the adapter
             pos: MountPosition | None = None
             if state != MountState.UNKNOWN:
                 try:
@@ -412,6 +413,23 @@ class DeviceStateService:
                         state = MountState.AT_HOME
                     elif self._sticky_at_home:
                         state = MountState.AT_HOME
+
+            # M9-034 diagnostic: log every observed state transition WITH the
+            # raw decoded :GU# flags and both sticky layers — needed to tell
+            # apart "firmware really reports H" from "a sticky promoted it"
+            # when AT_HOME shows up where it shouldn't (hardware 2026-07-17).
+            with self._lock:
+                prev = self._mount_state.state if self._mount_state else None
+            if prev != state:
+                decoded = getattr(mount, "last_decoded_status", None)
+                _log.info(
+                    "mount state change %s -> %s (raw=%s, shim_sticky=%s, "
+                    "cache_sticky=%s, home_cmd=%s, slew_seen=%s, decoded=%s)",
+                    prev.name if prev else "None", state.name, raw_state.name,
+                    getattr(mount, "_at_mechanical_home", "n/a"),
+                    self._sticky_at_home, self._home_cmd_issued, self._home_slew_seen,
+                    decoded,
+                )
 
             safety_lock = getattr(mount, "safety_lock", None)
             observed = MountObservedState(

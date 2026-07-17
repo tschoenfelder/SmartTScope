@@ -1500,7 +1500,7 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         `MOUNT: <STATE>` badge rendered next to the readiness badge in all phases
         (hidden while null). 3 new snapshot tests; API shape tests updated;
         31 observing tests pass.
-- [ ] M9-030 Refine the M9-029 mount-state badge per user feedback: display the mount
+- [x] M9-030 Refine the M9-029 mount-state badge per user feedback: display the mount
       state side by side with the readiness badge ("LIMITED READY") using the **same
       style** — equal visual prominence, not the current muted-grey pill — and show the
       **plain state name** ("PARKED", "AT HOME", "SLEWING", …) without the "MOUNT:"
@@ -1516,6 +1516,11 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         same color semantics: green for PARKED/AT_HOME/TRACKING-as-expected vs neutral
         for transitional states — implementer's call); drop the `'MOUNT: '` prefix in
         `_renderObservingState()` (`static/js/observing.js`).
+      - *Done 2026-07-17:* prefix dropped — pill shows the plain state name; per-state
+        colors mirror the mount strip's `_STRIP_DOT` semantics at full readiness-pill
+        prominence (TRACKING/SLEWING green, UNPARKED/AT_HOME yellow, AT_LIMIT red,
+        PARKED/UNKNOWN accent-blue instead of muted grey); backend/tests unchanged
+        (JS/CSS only).
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

@@ -142,7 +142,15 @@
     .phase-readiness.READY        { background: rgba(63,185,80,0.15);  color: var(--success); }
     .phase-readiness.LIMITED_READY{ background: rgba(210,153,34,0.15); color: var(--warning); }
     .phase-readiness.NOT_READY    { background: rgba(248,81,73,0.15);  color: var(--danger);  }
-    .phase-readiness.MOUNT_STATE  { background: rgba(139,148,158,0.15); color: var(--muted); margin-left: 0.4rem; }
+    /* M9-030: mount-state pill — same prominence as the readiness pills; colors
+       mirror the mount strip's state semantics (_STRIP_DOT in mount.js), with
+       blue instead of muted grey for the resting states so it reads as a peer
+       of the readiness badge, not a footnote. */
+    .phase-readiness.MOUNT_STATE  { margin-left: 0.4rem; }
+    .phase-readiness.MS-green  { background: rgba(63,185,80,0.15);  color: var(--success);   }
+    .phase-readiness.MS-yellow { background: rgba(210,153,34,0.15); color: var(--warning);   }
+    .phase-readiness.MS-red    { background: rgba(248,81,73,0.15);  color: var(--danger);    }
+    .phase-readiness.MS-blue   { background: rgba(56,139,253,0.15); color: var(--accent-hi); }
     .primary-action-btn {
       display: block; width: 100%;
       padding: 0.85rem 1rem; font-size: 1rem; font-weight: 600;

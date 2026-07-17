@@ -18,6 +18,15 @@ const _GUARD_LABELS = {
     g10_error_unrecoverable:   'Error not recoverable (G10)',
 };
 
+// M9-030: mount-state pill colors — mirrors the mount strip's state semantics
+// (_STRIP_DOT in mount.js); blue for resting/unknown states instead of muted grey.
+const _OBS_MOUNT_PILL = {
+    PARKED: 'MS-blue', UNKNOWN: 'MS-blue',
+    UNPARKED: 'MS-yellow', AT_HOME: 'MS-yellow',
+    TRACKING: 'MS-green', SLEWING: 'MS-green',
+    AT_LIMIT: 'MS-red',
+};
+
 let _obsPollTimer = null;
 let _obsBusy = false;
 let _obsLastState = null;
@@ -39,12 +48,15 @@ function _renderObservingState(state) {
     badge.textContent = state.readiness.replace('_', ' ');
     badge.className = 'phase-readiness ' + state.readiness;
 
-    // M9-029: observed mount state next to the readiness badge (null until
-    // the first DeviceStateService poll lands — hide the badge then).
+    // M9-029/M9-030: observed mount state as a pill beside the readiness badge,
+    // same style/prominence, plain state name — it is a state display, not an
+    // action. Hidden until the first DeviceStateService poll lands.
     const mountBadge = document.getElementById('obs-mount-state-badge');
     if (state.mount_state) {
       mountBadge.style.display = '';
-      mountBadge.textContent = 'MOUNT: ' + state.mount_state.replace(/_/g, ' ');
+      mountBadge.textContent = state.mount_state.replace(/_/g, ' ');
+      mountBadge.className = 'phase-readiness MOUNT_STATE '
+        + (_OBS_MOUNT_PILL[state.mount_state] || 'MS-blue');
     } else {
       mountBadge.style.display = 'none';
     }

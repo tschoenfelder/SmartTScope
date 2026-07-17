@@ -4351,3 +4351,16 @@ in the **same style** (equal prominence, not the muted grey), and read as the pl
 state name — "PARKED", not "MOUNT: PARKED", and never conveyed by the
 "Stop safely (park)" action button ("It's a state, not a button with action").
 Filed as **M9-030** in `docs/todo.md` (P3 UI, backlog only).
+
+---
+
+## 2026-07-17 — M9-030 implemented: mount-state pill restyled as a peer of the readiness badge
+
+Frontend-only change (no backend/tests touched). The Observe screen mount-state pill
+now shows the plain state name ("PARKED", "AT HOME", ...) — "MOUNT:" prefix dropped —
+side by side with the readiness badge at the same visual prominence. Per-state colors
+mirror the global mount strip's `_STRIP_DOT` semantics (new `_OBS_MOUNT_PILL` map in
+`observing.js`): TRACKING/SLEWING green, UNPARKED/AT_HOME yellow, AT_LIMIT red, and
+PARKED/UNKNOWN accent-blue instead of the muted grey the user rejected. CSS: new
+`.phase-readiness.MS-{green,yellow,red,blue}` classes in `index.html`;
+`.MOUNT_STATE` keeps only the spacing. `node --check` clean.

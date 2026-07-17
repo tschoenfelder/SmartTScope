@@ -4663,3 +4663,32 @@ not declared elements. M10-013 adds `filter_wheel`/`reducer`/`barlow` fields to 
 train schema (labels; `reducer_factor` stays the numeric authority — backward
 compatible), registry validation, template update, and wires the configuration into
 the M10-002 identification payload and M10-008 camera card. Backlog only — no code.
+
+---
+
+## 2026-07-17 — M10-001 + M10-013 implemented: LiveAnalysis pinned; per-train optical configuration
+
+**M10-001:** `smarttscope-live-analysis @ git+...SmartTScopeLiveAnalysis.git@v0.1.0`
+added to pyproject.toml (distribution/import names verified against the upstream
+pyproject: import `smarttscope_live_analysis`, `__version__ 0.1.0`,
+`analyze_camera_frame` exposed; installed and verified on Windows).
+`scripts/astro_start.sh` gained a second version-sync block (same rationale as the
+onstep_adapter one: the Pi wheel install runs `--no-deps`, so pin bumps would be
+silently skipped). SYNC.md section updated from "planned" to installed state with an
+upgrade procedure; LA-REQ-1/2 upstream asks remain drafts pending approval.
+
+**M10-013:** `OpticalTrainSpec`/`OpticalTrain` extended with `filter_wheel`
+("touptek" | "", linking a train to the global `[filter_wheel]` device),
+`reducer` and `barlow` (descriptive labels). `reducer_factor` stays the numeric
+authority for focal/pixel-scale math — legacy configs load unchanged (all new fields
+default to ""). Registry validation: unknown filter_wheel value or "touptek" without
+`[filter_wheel] enabled = true` fails startup with a clear ValueError; a declared
+element with factor 1.0 (or factor != 1.0 with nothing declared) logs a startup
+warning, never crashes. New `OpticalTrain.optical_configuration()` provides the
+serializable per-camera summary the M10-002 identification payload and M10-008
+camera card will consume. `templates/config.toml` extended with the three fields on
+all example trains.
+
+Tests: 7 new in `test_optical_train_registry.py` (elements flow through, payload
+shape, both validation failures, both mismatch warnings, legacy compatibility);
+full services suite green (1173 passed). Bash syntax check clean on astro_start.sh.

@@ -460,6 +460,12 @@ class OpticalTrainSpec:
     reducer_factor: float = 1.0  # 1.0=none, 0.63=Celestron reducer, 2.0=Barlow 2×
     focuser: str = ""            # "onstep" | "" (no focuser on this train)
     pixel_scale_arcsec: float = 0.0  # override; 0.0 = derive from focal_mm
+    # M10-013: declared optical elements. reducer_factor above stays the single
+    # numeric authority for focal/pixel-scale math; these name what is actually
+    # in the light path so the app (and the M10 camera card) can report it.
+    filter_wheel: str = ""       # "touptek" (links to the global [filter_wheel]) | ""
+    reducer: str = ""            # descriptive label, e.g. "celestron_f6.3"
+    barlow: str = ""             # descriptive label, e.g. "2x"
 
 
 def _parse_telescopes() -> dict[str, TelescopeSpec]:
@@ -487,6 +493,9 @@ def _parse_optical_trains() -> dict[str, OpticalTrainSpec]:
                 reducer_factor=float(vals.get("reducer_factor", 1.0)),
                 focuser=str(vals.get("focuser", "")),
                 pixel_scale_arcsec=float(vals.get("pixel_scale_arcsec", 0.0)),
+                filter_wheel=str(vals.get("filter_wheel", "")),
+                reducer=str(vals.get("reducer", "")),
+                barlow=str(vals.get("barlow", "")),
             )
     return result
 

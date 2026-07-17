@@ -189,13 +189,24 @@ into `onstep_adapter`; raise with the package maintainer.
 
 ---
 
-# SmartTScopeLiveAnalysis Dependency (planned — M10-001)
+# SmartTScopeLiveAnalysis Dependency
 
-`smart-tscope-live-analysis` will be a **pip-installed package** from
-<https://github.com/tschoenfelder/SmartTScopeLiveAnalysis> (pin to the v0.1.0 tag),
-providing star detection, temporal classification, and exposure/gain/offset
-recommendations for the M10 camera-readiness track (`analyze_camera_frame()`,
-NumPy-only). Planned to take over frame acquisition later as well.
+`smarttscope-live-analysis` is a **pip-installed package** (M10-001 done 2026-07-17).
+Install pin: `smarttscope-live-analysis @ git+https://github.com/tschoenfelder/SmartTScopeLiveAnalysis.git@v0.1.0`
+(import name `smarttscope_live_analysis`, `__version__ == "0.1.0"`, NumPy-only).
+Provides star detection, temporal classification, and exposure/gain/offset
+recommendations for the M10 camera-readiness track (`analyze_camera_frame()`).
+Planned to take over frame acquisition later as well.
+`scripts/astro_start.sh` auto-syncs the installed version against the pyproject pin
+on every Pi start (the SmartTScope wheel install uses `--no-deps`).
+
+## Upgrading smarttscope-live-analysis
+
+1. Bump the git tag in the `pyproject.toml` pin.
+2. `pip install -e ".[dev]"` (dev) — the Pi picks it up automatically via
+   `astro_start.sh`'s version sync.
+3. Re-check the pending-requests table below against the new release.
+4. Commit: `chore: upgrade smarttscope-live-analysis to vX.Y.Z`.
 
 **Guardrail (same as OnStepAdapter):** the canonical source is the published git
 release only — never edit module code locally, in site-packages, or in any checkout.

@@ -139,6 +139,21 @@ if [[ -n "$ONSTEP_URL" ]]; then
     fi
 fi
 
+# ── smarttscope-live-analysis version sync (M10-001, same --no-deps rationale) ─
+LA_URL="$(grep -o 'git+https://github.com/tschoenfelder/SmartTScopeLiveAnalysis.git@v[0-9.]*' "$REPO_DIR/pyproject.toml" | head -1 || true)"
+if [[ -n "$LA_URL" ]]; then
+    EXPECTED_LA="${LA_URL##*@v}"
+    INSTALLED_LA="$(cd / && "$VENV_DIR/bin/python" -c 'import smarttscope_live_analysis as m; print(m.__version__)' 2>/dev/null || echo 'none')"
+    if [[ "$INSTALLED_LA" != "$EXPECTED_LA" ]]; then
+        info "smarttscope-live-analysis $INSTALLED_LA → $EXPECTED_LA (pinned in pyproject.toml)..."
+        "$VENV_DIR/bin/pip" install --quiet --force-reinstall --no-deps "smarttscope-live-analysis @ $LA_URL" \
+            || err "smarttscope-live-analysis install failed — run scripts/install_pi.sh"
+        ok "smarttscope-live-analysis: $EXPECTED_LA"
+    else
+        ok "smarttscope-live-analysis: $INSTALLED_LA (matches pin)"
+    fi
+fi
+
 # ── storage directory ─────────────────────────────────────────────────────────
 export STORAGE_DIR="${STORAGE_DIR:-$HOME/smarttscope_data}"
 mkdir -p "$STORAGE_DIR"

@@ -70,6 +70,91 @@ class TestOpticalTrainDataclass:
             t.name = "y"  # type: ignore[misc]
 
 
+# ── M10-013: declared optical elements (filter wheel / reducer / barlow) ──────
+
+class TestOpticalElementDeclarations:
+    def _registry(self, trains, fw_enabled: bool = False) -> OpticalTrainRegistry:
+        import smart_telescope.config as cfg
+        from smart_telescope.config import FilterWheelSpec
+        with patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=fw_enabled)):
+            return _make_registry(trains=trains)
+
+    def test_declared_elements_flow_into_train(self):
+        trains = {
+            "main": OpticalTrainSpec(
+                telescope="c8", camera="main", reducer_factor=0.63,
+                focuser="onstep", filter_wheel="touptek",
+                reducer="celestron_f6.3",
+            ),
+        }
+        reg = self._registry(trains, fw_enabled=True)
+        t = reg.main()
+        assert t is not None
+        assert t.filter_wheel == "touptek"
+        assert t.reducer == "celestron_f6.3"
+        assert t.barlow == ""
+
+    def test_optical_configuration_payload(self):
+        trains = {
+            "main": OpticalTrainSpec(
+                telescope="c8", camera="main", reducer_factor=2.0,
+                focuser="onstep", barlow="2x",
+            ),
+        }
+        cfg_payload = self._registry(trains).main().optical_configuration()
+        assert cfg_payload["barlow"] == "2x"
+        assert cfg_payload["reducer"] is None
+        assert cfg_payload["filter_wheel"] is None
+        assert cfg_payload["focuser"] == "onstep"
+        assert cfg_payload["focal_mm"] == pytest.approx(4064.0)
+
+    def test_unknown_filter_wheel_value_fails_validation(self):
+        trains = {
+            "main": OpticalTrainSpec(
+                telescope="c8", camera="main", filter_wheel="zwo",
+            ),
+        }
+        with pytest.raises(ValueError, match="filter_wheel 'zwo' unknown"):
+            self._registry(trains)
+
+    def test_touptek_reference_requires_enabled_global_section(self):
+        trains = {
+            "main": OpticalTrainSpec(
+                telescope="c8", camera="main", filter_wheel="touptek",
+            ),
+        }
+        with pytest.raises(ValueError, match=r"\[filter_wheel\] section is not enabled"):
+            self._registry(trains, fw_enabled=False)
+
+    def test_element_named_but_factor_one_warns_not_crashes(self, caplog):
+        trains = {
+            "main": OpticalTrainSpec(
+                telescope="c8", camera="main", reducer_factor=1.0,
+                reducer="celestron_f6.3",
+            ),
+        }
+        with caplog.at_level("WARNING"):
+            reg = self._registry(trains)
+        assert reg.main() is not None  # loaded despite mismatch
+        assert any("reducer_factor is 1.0" in r.message for r in caplog.records)
+
+    def test_factor_without_element_warns_not_crashes(self, caplog):
+        trains = {
+            "main": OpticalTrainSpec(telescope="c8", camera="main", reducer_factor=0.63),
+        }
+        with caplog.at_level("WARNING"):
+            reg = self._registry(trains)
+        assert reg.main() is not None
+        assert any("no reducer/barlow declared" in r.message for r in caplog.records)
+
+    def test_legacy_config_without_element_fields_still_loads(self):
+        # Backward compatibility: the pre-M10-013 specs in _TRAINS_3 have no
+        # element declarations at all.
+        reg = self._registry(_TRAINS_3)
+        assert len(reg.all()) == 3
+        assert reg.main().filter_wheel == ""
+
+
 # ── from_config — happy paths ─────────────────────────────────────────────────
 
 class TestFromConfig:

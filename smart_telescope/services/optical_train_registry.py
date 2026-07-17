@@ -28,6 +28,23 @@ class OpticalTrain:
     pixel_scale_arcsec: float
     has_focuser: bool
     focuser: str                # "onstep" | ""
+    # M10-013: declared optical elements — what is actually in this light path.
+    filter_wheel: str = ""      # "touptek" (global [filter_wheel] device) | ""
+    reducer: str = ""           # descriptive label, e.g. "celestron_f6.3"
+    barlow: str = ""            # descriptive label, e.g. "2x"
+
+    def optical_configuration(self) -> dict[str, object]:
+        """Serializable summary for API payloads (M10-002/M10-008)."""
+        return {
+            "telescope": self.telescope_name,
+            "focuser": self.focuser or None,
+            "filter_wheel": self.filter_wheel or None,
+            "reducer": self.reducer or None,
+            "barlow": self.barlow or None,
+            "reducer_factor": self.reducer_factor,
+            "focal_mm": self.focal_mm,
+            "pixel_scale_arcsec": self.pixel_scale_arcsec,
+        }
 
 
 def _derive_pixel_scale(camera_role: str, focal_mm: float) -> float:
@@ -123,6 +140,36 @@ class OpticalTrainRegistry:
             else:
                 pixel_scale = _derive_pixel_scale(spec.camera, focal_mm)
 
+            # M10-013: validate declared optical elements.
+            if spec.filter_wheel not in ("", "touptek"):
+                errors.append(
+                    f"[optical_trains.{name}]: filter_wheel '{spec.filter_wheel}' unknown "
+                    f"— supported: \"touptek\" or \"\" (none)"
+                )
+                continue
+            if spec.filter_wheel == "touptek" and not config.FILTER_WHEEL.enabled:
+                errors.append(
+                    f"[optical_trains.{name}]: filter_wheel = \"touptek\" but the global "
+                    f"[filter_wheel] section is not enabled — set [filter_wheel] enabled = true "
+                    f"or remove the reference"
+                )
+                continue
+            # Label/factor consistency is a warning, not an error (the factor
+            # stays the numeric authority for focal/pixel-scale math).
+            has_element = bool(spec.reducer or spec.barlow)
+            if has_element and spec.reducer_factor == 1.0:
+                _log.warning(
+                    "[optical_trains.%s]: reducer/barlow declared (%s) but reducer_factor "
+                    "is 1.0 — focal length math ignores the declared element",
+                    name, spec.reducer or spec.barlow,
+                )
+            elif not has_element and spec.reducer_factor != 1.0:
+                _log.warning(
+                    "[optical_trains.%s]: reducer_factor %.2f set but no reducer/barlow "
+                    "declared — consider naming the element for the camera card",
+                    name, spec.reducer_factor,
+                )
+
             trains[name] = OpticalTrain(
                 name=name,
                 camera_role=spec.camera,
@@ -133,6 +180,9 @@ class OpticalTrainRegistry:
                 pixel_scale_arcsec=pixel_scale,
                 has_focuser=bool(spec.focuser),
                 focuser=spec.focuser,
+                filter_wheel=spec.filter_wheel,
+                reducer=spec.reducer,
+                barlow=spec.barlow,
             )
 
         if errors:

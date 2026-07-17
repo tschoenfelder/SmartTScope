@@ -111,12 +111,22 @@ camera              = "main"        # camera role from [cameras]
 reducer_factor      = 1.0           # native f/10; use 0.63 for Celestron f/6.3 reducer
 focuser             = "onstep"      # "onstep" | "" (no focuser)
 # pixel_scale_arcsec = 0.38         # optional override; computed from focal_mm if omitted
+# M10-013: declared optical elements — name what is in this light path so the
+# app can report the full configuration per camera. reducer_factor above stays
+# the numeric authority for focal-length/pixel-scale math; mismatches between
+# a declared element and the factor produce a startup warning.
+filter_wheel        = ""            # "touptek" (links to [filter_wheel], must be enabled) | ""
+reducer             = ""            # descriptive label, e.g. "celestron_f6.3"
+barlow              = ""            # descriptive label, e.g. "2x"
 
 [optical_trains.guide]
 telescope      = "guide_scope"
 camera         = "guide"
 reducer_factor = 1.0
 focuser        = ""
+filter_wheel   = ""
+reducer        = ""
+barlow         = ""
 # pixel_scale_arcsec = 3.32         # guide scope 50/180 + 2.9 µm sensor
 
 [optical_trains.oag]
@@ -124,6 +134,9 @@ telescope      = "c8"          # OAG shares the main telescope beam
 camera         = "oag"         # add "oag" to [cameras] when a third camera is connected
 reducer_factor = 1.0
 focuser        = "onstep"      # OAG shares main focuser
+filter_wheel   = ""
+reducer        = ""
+barlow         = ""
 
 # ── Time / location trust (M8-006..M8-009) ───────────────────────────────────
 # M8-006: MasterSourceService selects master source in priority order:

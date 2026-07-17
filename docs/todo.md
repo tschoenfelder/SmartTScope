@@ -1749,12 +1749,19 @@ the precision step; (3) integration = pinned pip dep + SYNC.md section;
 (4) module recommends exposure/gain, app applies with config clamps + app-side 70%
 histogram ceiling until it ships upstream.
 
-- [ ] M10-001 Add `smart-tscope-live-analysis` to `pyproject.toml` pinned to the
+- [x] M10-001 Add `smart-tscope-live-analysis` to `pyproject.toml` pinned to the
       v0.1.0 git tag; new SYNC.md section (guardrail mirror of OnStepAdapter:
       canonical source = published release, never edit locally, upstream asks need
       approval, upgrade procedure) `[P1 · Build]`
       - *Acceptance:* package imports on Windows + Pi (verify actual package name from
         the repo); SYNC.md section exists and is referenced from `wiki/index.md`.
+      - *Done 2026-07-17:* pinned `smarttscope-live-analysis @ git+…@v0.1.0`
+        (distribution name per upstream pyproject; import
+        `smarttscope_live_analysis`, `__version__ == "0.1.0"`, `analyze_camera_frame`
+        present — verified on Windows; Pi import pending first deploy).
+        `scripts/astro_start.sh` gained a second version-sync block so the Pi's
+        `--no-deps` wheel path picks the pin up automatically; SYNC.md section
+        updated to installed state with upgrade procedure.
 - [ ] M10-002 `CameraReadinessService`: starts with `RuntimeContext` — in parallel to
       WAIT_CONTEXT_CONFIRMATION — enumerates connected ToupTek devices and maps them
       against `config.CAMERAS` / `OpticalTrainRegistry`; per-camera status
@@ -1814,7 +1821,7 @@ histogram ceiling until it ships upstream.
       coarse focus reaches plate-solvable quality; polar align unblocks
       `[P0 · Hardware]`
       - *Must have hardware evidence — not accepted on mock alone*
-- [ ] M10-013 Per-train optical configuration completeness (user requirement
+- [x] M10-013 Per-train optical configuration completeness (user requirement
       2026-07-17: the app must know each identified camera's optical configuration —
       focuser / filter wheel / reducer / barlow; config-file based for now):
       extend `OpticalTrainSpec`/`OpticalTrain` + the `[optical_trains.*]` schema with
@@ -1833,6 +1840,14 @@ histogram ceiling until it ships upstream.
         camera's API payload includes its optical configuration; a bad filter-wheel
         reference fails registry validation with a clear message; label/factor
         mismatch produces a startup warning, not a crash.
+      - *Done 2026-07-17:* `OpticalTrainSpec`/`OpticalTrain` gained `filter_wheel` /
+        `reducer` / `barlow` (defaults `""` — legacy configs load unchanged);
+        registry validates filter-wheel references (unknown value or "touptek"
+        without `[filter_wheel] enabled = true` → startup ValueError) and warns on
+        label/factor mismatch; new `OpticalTrain.optical_configuration()` returns the
+        serializable per-camera summary for the M10-002/008 payload;
+        `templates/config.toml` updated. 7 new tests; 1173 service tests green.
+        API-payload wiring itself lands with M10-002 (service does not exist yet).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

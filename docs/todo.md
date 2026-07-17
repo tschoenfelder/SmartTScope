@@ -1475,6 +1475,23 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
   - **Why:** user pointed out that OnStep's own UI can always request move-to-park successfully, and questioned whether the adapter should really be sending `:hP#` the way it was. `:hP#` is documented (`wiki/onstep-protocol.md`) as fire-and-forget, its slew taking 30–120 s, with no documented case of it ever returning a rejection (`0`) — unlike `:hR#` (unpark), whose doc explicitly notes it can be rejected. A real `'0'` reply for `:hP#` was therefore unusual, and `_maybe_auto_advance()` re-spawning `_run_safe_stop()` (and therefore re-calling `park_sequence()` → `mount.park()` → a fresh `:hP#`) on *every single poll* (observing.js polls every 2.5 s) while `g8` stays False was the most likely reason a second `:hP#` ever got sent while the first (accepted) one might still have been resolving — exactly the M9-026 log sequence.
   - *Done:* `ObservingService` now tracks `_park_command_issued_at` — set once `park_sequence()` successfully issues `:hP#` (doesn't raise), cleared once PARKED is actually observed. While set and within `_PARK_COMMAND_MAX_WAIT_S` (120 s, matching the documented max slew time), `_run_safe_stop()` skips calling `park_sequence()` again on subsequent auto-advance retries — it just re-checks `device_state` instead of re-sending the command. Falls back to resending only if genuinely stuck past 120 s.
   - Tests: new `test_stop_safely_does_not_resend_park_command_on_retry` in `test_observing_service.py`, asserting `mount.park()` is called at most once across repeated auto-advance retries while the mount never reaches PARKED. 199 tests pass, 0 regressions.
+- [ ] M9-028 PARKED_SAFE is a dead end when reached from the setup phases: safe-parking
+      from WAIT_CONTEXT_CONFIRMATION / WAIT_HOME_CONFIRMATION (the M9-017 path) shows
+      "Session complete — parked safe" + green READY with no way to continue — the only
+      way back into the guided flow is restarting. Add an "Unpark & continue setup"
+      secondary action on PARKED_SAFE that unparks and returns the flow to
+      WAIT_HOME_CONFIRMATION (the "Home the mount" step) `[P2 · UI/Runtime · Source: user
+      report 2026-07-17, first Pi session after ONS31 migration]`
+      - *Acceptance:* from PARKED_SAFE, the new action unparks via the shim `unpark()`
+        (routes through `unpark_to_home_stop_tracking()`, ONS31-102) and the phase panel
+        shows WAIT_HOME_CONFIRMATION with the "Home the mount" primary action; mount-strip
+        reflects the observed state; verified on real hardware.
+      - *Implementation notes:* new `Intent` + transition in `domain/observing_state.py`;
+        action wiring in `services/observing_service.py` (`_primary_action` /
+        `_secondary_actions` — PARKED_SAFE currently returns only the disabled
+        "Session complete" label); frontend button in `observing.js`. Also reconsider
+        `_readiness()` returning READY for PARKED_SAFE — "READY" on a never-homed mount
+        is part of what confused here.
 
 ### Phase 2 — Unified readiness aggregation (backlog)
 

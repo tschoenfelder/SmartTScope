@@ -4287,3 +4287,20 @@ Hardening committed:
 One-time manual cleanup on the Pi (guard reports it): move `onstep_adapter/` and
 `smart_telescope_old/` out of `~/astro_sw/SmartTScope/`, then rerun
 `astro_pull_start.sh` — the version sync then pulls v0.3.1 automatically.
+
+---
+
+## 2026-07-17 — First Pi hardware session after ONS31 migration: deploy confirmed working; M9-028 filed
+
+After the stale-directory cleanup and hardened start script, the server started
+cleanly on the Pi with onstep_adapter v0.3.1. The user ran the guided flow through
+time/location confirmation (WAIT_CONTEXT_CONFIRMATION) and then safe-parked from the
+"Home the mount" step (WAIT_HOME_CONFIRMATION) — flow correctly reached PARKED_SAFE
+with green READY. (Partial real-hardware evidence toward ONS31-109; the full smoke
+test — unpark/home/GoTo/STOP/park — is still open.)
+
+Gap found: PARKED_SAFE is terminal — safe-parking during setup leaves no way back
+into the guided flow short of restarting. Filed as **M9-028** in `docs/todo.md`:
+"Unpark & continue setup" secondary action on PARKED_SAFE returning to
+WAIT_HOME_CONFIRMATION, plus a look at `_readiness()` reporting READY for a
+never-homed mount. Backlog only — not implemented in this session.

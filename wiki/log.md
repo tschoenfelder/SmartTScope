@@ -4416,3 +4416,24 @@ STOP_SAFELY emit sites (stoppable phases, stop-only wait phases, PAUSED_SAFE).
 Intent values and FSM unchanged; no frontend change (labels render from the payload).
 Tests: 3 new (`TestStopSafelyLabel` — parked, not parked, no observation yet);
 75 observing tests green.
+
+---
+
+## 2026-07-17 — M9-032 filed: premature AT HOME during second home cycle (stale sticky), diagnosis
+
+Hardware session (75db812 deployed): home #1 + confirm worked, safe-park worked,
+Continue setup worked (real-hardware evidence for M9-028/030/031 and partial
+ONS31-109). New bug: on the second "Home the mount", the state pill shows AT HOME
+immediately while the mount is still slewing; STOP mid-slew leaves AT HOME displayed
+and the flow asking for an impossible home confirmation.
+
+Diagnosis (code-level, see M9-032 in docs/todo.md for full detail): stale
+`DeviceStateService._sticky_at_home` from home #1. Only `record_command()`
+("goto"/"park"/"track") clears the sticky, and only the `/api/mount/*` endpoints call
+it — the guided flow (`_run_home`/`_run_safe_stop`) records nothing, so the park never
+cleared the sticky and poll rule 4 (UNPARKED + sticky -> AT_HOME) mislabels the whole
+second cycle. "home"/"unpark"/"stop" also missing from the clearing logic. Fix is
+service-layer only. Separately noted as an upstream ask candidate (approval pending):
+upstream `stop()` keeps `_at_mechanical_home` authority through a mid-slew STOP.
+
+Backlog only — awaiting go-ahead to implement.

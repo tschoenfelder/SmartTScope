@@ -1551,6 +1551,36 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
       - *Done 2026-07-17:* `_stop_safely_label()` helper applied to all three
         STOP_SAFELY emit sites (stoppable phases, stop-only wait phases, PAUSED_SAFE);
         3 new tests (`TestStopSafelyLabel`); 75 observing tests green.
+- [ ] M9-032 Hardware report 2026-07-17 (second home cycle after park→continue): the
+      state pill jumps to AT HOME **immediately** when "Home the mount" is pressed,
+      while the mount is still slewing to home; pressing STOP mid-slew leaves the pill
+      on AT HOME and the flow asking for a home confirmation that cannot honestly be
+      given `[P1 · Bug/UI · Source: user hardware session 2026-07-17]`
+      - *Root cause (diagnosed from code, 2026-07-17):* stale
+        `DeviceStateService._sticky_at_home`. The sticky set during the *first*
+        confirmed home is never cleared in the guided flow: `record_command()` — whose
+        "goto"/"park"/"track" branch is the only thing that clears the sticky — is
+        called **only by the `/api/mount/*` endpoints** (R2-003); the guided flow
+        (`_run_home`/`_run_safe_stop`) calls `mount_operations` directly and records
+        nothing. With the sticky stale-True, poll rule 4 ("UNPARKED with existing
+        sticky → AT_HOME") promotes every UNPARKED reading during the second home
+        cycle — OnStep reports UNPARKED (not SLEWING) during parts of `:hC#` travel,
+        and always after a mid-slew STOP. Two secondary lifecycle gaps:
+        `record_command("home")` does not clear the sticky either (a new home command
+        means *not* at home until confirmed), and "unpark"/"stop" are not in the
+        clearing set at all.
+      - *Fix (service layer only — no adapter changes):* (1) `record_command("home")`
+        additionally clears `_sticky_at_home`; add `"unpark"` and `"stop"` to the
+        clearing branch; (2) the guided flow records its commands:
+        `_run_home` → `record_command("home")` before `home_sequence()`,
+        `_run_safe_stop` → `record_command("park")` before `park_sequence()`.
+      - *Acceptance:* second home cycle shows SLEWING/UNPARKED during travel and
+        AT HOME only once the H flag (or the slew-seen promotion) confirms it; STOP
+        mid-home-slew shows UNPARKED, not AT HOME; hardware-verified on the Pi.
+      - *Upstream ask candidate (needs user approval, SYNC.md):* upstream
+        `OnStepMount.stop()` does not clear `_at_mechanical_home`, so mechanical home
+        authority survives a mid-slew STOP (position no longer trustworthy);
+        `note_external_motion()` exists as the public API for exactly this.
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

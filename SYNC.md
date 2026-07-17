@@ -189,6 +189,31 @@ into `onstep_adapter`; raise with the package maintainer.
 
 ---
 
+# SmartTScopeLiveAnalysis Dependency (planned — M10-001)
+
+`smart-tscope-live-analysis` will be a **pip-installed package** from
+<https://github.com/tschoenfelder/SmartTScopeLiveAnalysis> (pin to the v0.1.0 tag),
+providing star detection, temporal classification, and exposure/gain/offset
+recommendations for the M10 camera-readiness track (`analyze_camera_frame()`,
+NumPy-only). Planned to take over frame acquisition later as well.
+
+**Guardrail (same as OnStepAdapter):** the canonical source is the published git
+release only — never edit module code locally, in site-packages, or in any checkout.
+Gaps become upstream feature requests, filed **only with explicit user approval**,
+tracked here.
+
+## Pending upstream requests (draft — NOT filed, see M10-009)
+
+| ID | Ask | Status |
+|----|-----|--------|
+| LA-REQ-1 | Histogram-ceiling parameter (default 70% full scale) constraining exposure/gain recommendations | draft — app-side clamp until shipped (M10-005) |
+| LA-REQ-2 | SCT donut detection/classification + focus-quality metric (e.g. HFD / donut radius) | draft — needed by the M10-006 focus algorithm |
+
+SmartTScope-owned surface: only the thin adapter shim (camera_settings mapping, frame
+handoff) from M10-004 and the focus/control loops that consume the module's results.
+
+---
+
 # camera_adapter Sync State
 
 Last synced: 2026-05-22

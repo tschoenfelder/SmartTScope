@@ -4624,3 +4624,27 @@ ordering note + M9-036 stop() row).
 Expected on next Pi run: park slew shows SLEWING; ■ Stop mid-way shows UNPARKED
 with phase "Paused" (Resume / Stop safely); stopping while genuinely at home still
 shows AT HOME.
+
+---
+
+## 2026-07-17 — M10 task block specified: parallel camera readiness via SmartTScopeLiveAnalysis
+
+New milestone block M10-001..012 added to `docs/todo.md` from a planning session with
+the user ("grill me"): after home confirmation the flow offered polar alignment, but
+the system may be out of focus or on an empty star field. Solution: a camera-readiness
+track running **in parallel** to the mount flow, starting while the user confirms
+time/location — enumerate all connected ToupTek cameras, auto-tune exposure/gain via
+the external SmartTScopeLiveAnalysis module (v0.1.0; module recommends, app applies,
+app-side 70% histogram ceiling until it ships upstream), verify stars are detectable,
+and coarse-focus focuser-equipped trains until plate-solvable.
+
+Key decisions recorded (AskUserQuestion, 2026-07-17): parallel per-camera FSM instead
+of a new mount-FSM phase (only automatic polar align gates on a READY camera); focus
+algorithm is a separate, independently testable, **SCT-aware** component (donut
+recognition) reused later for in-capture focus checks on each last long-exposure
+frame; V-curve AutofocusService stays as the precision step; integration as pinned
+pip dep with the OnStepAdapter guardrail.
+
+Bookkeeping: SYNC.md gained a planned-dependency section with draft upstream asks
+LA-REQ-1 (70% ceiling) / LA-REQ-2 (SCT donut + focus metric) — NOT filed, approval
+required; `wiki/index.md` gained the external-module entry. Backlog only — no code.

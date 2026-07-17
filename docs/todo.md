@@ -1723,6 +1723,106 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
 
 ---
 
+## M10 — Parallel Camera Readiness & LiveAnalysis Integration — specified 2026-07-17
+
+*Problem: after home confirmation the flow offers polar alignment, but the system may be
+out of focus or pointed at an empty star field — automatic polar alignment / plate
+solving would fail. Solution: a camera-readiness track running **in parallel** to the
+mount flow (starting while the user is still confirming time/location): identify all
+connected ToupTek cameras, auto-tune exposure/gain, verify stars are detectable, and
+coarse-focus focuser-equipped trains until plate-solvable.*
+
+**External module:** <https://github.com/tschoenfelder/SmartTScopeLiveAnalysis>
+(v0.1.0, NumPy-only; `analyze_camera_frame(camera_settings, frame, previous_star_state)`
+→ star detections, temporal classification, movement tracking, exposure/gain/offset
+recommendations). Same guardrail as OnStepAdapter: **never edit locally; gaps become
+upstream feature requests filed only with explicit user approval.** The module is
+planned to take over frame acquisition later as well.
+
+**Design decisions (user, 2026-07-17):** (1) parallel per-camera FSM, not a phase in
+the mount FSM — no hard gate except automatic polar align needs a READY camera;
+(2) focus target = "fine enough to plate solve", algorithm is a **separate,
+independently testable component** and **SCT-aware** (must recognize and drive
+out-of-focus donuts); same component later re-checks focus on each last long-exposure
+frame during capture; the V-curve AutofocusService (M7-007, FOCUS_READYING) stays as
+the precision step; (3) integration = pinned pip dep + SYNC.md section;
+(4) module recommends exposure/gain, app applies with config clamps + app-side 70%
+histogram ceiling until it ships upstream.
+
+- [ ] M10-001 Add `smart-tscope-live-analysis` to `pyproject.toml` pinned to the
+      v0.1.0 git tag; new SYNC.md section (guardrail mirror of OnStepAdapter:
+      canonical source = published release, never edit locally, upstream asks need
+      approval, upgrade procedure) `[P1 · Build]`
+      - *Acceptance:* package imports on Windows + Pi (verify actual package name from
+        the repo); SYNC.md section exists and is referenced from `wiki/index.md`.
+- [ ] M10-002 `CameraReadinessService`: starts with `RuntimeContext` — in parallel to
+      WAIT_CONTEXT_CONFIRMATION — enumerates connected ToupTek devices and maps them
+      against `config.CAMERAS` / `OpticalTrainRegistry`; per-camera status
+      DETECTED / MISSING; never blocks the mount flow `[P1 · Runtime]`
+      - *Acceptance:* with one configured camera unplugged the app runs normally and
+        reports MISSING for that role while the mount flow proceeds.
+- [ ] M10-003 Per-camera readiness FSM, parallel to the observing FSM:
+      IDLE → TUNING (exposure/gain) → STAR_CHECK → FOCUSING (only `has_focuser`
+      trains) → READY | DEGRADED(reason). Claims `camera:N` via `JobManager`; feeds
+      frames through `analyze_camera_frame()` with rolling `previous_star_state`
+      `[P1 · Runtime]`
+      - *Acceptance:* per-camera states observable via API; no camera resource
+        conflicts with autogain or a running session (JobManager arbitration).
+- [ ] M10-004 LiveAnalysis adapter shim (SmartTScope-owned, thin): map camera settings
+      (exposure_s, gain, offset, bit_depth, binning, raw_mode, conversion gain) to the
+      module's `camera_settings`; pass native unscaled 2D numpy frames (respect the
+      camera adapter's pixel-shift/BITDEPTH handling) `[P1 · Runtime]`
+- [ ] M10-005 Exposure/gain auto-tune loop: apply module recommendations clamped by
+      new `[live_analysis]` config (max setup exposure — proposal 5 s —, gain/offset
+      ranges; **templates/config.toml updated in the same task**); app-side ceiling:
+      step down when histogram 99.5th percentile > 70% full scale (until the upstream
+      70% parameter ships, see M10-009); exposure adjusted first, gain only when the
+      exposure limit is reached `[P1 · Runtime]`
+- [ ] M10-006 Separate SCT-aware focus algorithm (`services/focus_algorithm.py`, own
+      test suite with synthetic point-star AND donut fixtures): consumes LiveAnalysis
+      detections/metrics, recognizes SCT donuts, drives the OnStep focuser within
+      calibrated limits (FocuserPort public API only) toward plate-solvable focus.
+      Explicitly separate from — and not replacing — the V-curve AutofocusService.
+      Designed for reuse by M10-010 `[P1 · Runtime]`
+- [ ] M10-007 Gate automatic polar alignment on camera readiness: START_POLAR_ALIGN's
+      guard requires the polar-align camera (main role) READY; all other flow steps
+      unaffected `[P1 · Runtime]`
+      - *Acceptance:* polar-align start disabled with a visible reason while the
+        camera is not READY; enabled the moment it is.
+- [ ] M10-008 Observe-screen camera card, parallel to the phase panel, visible from
+      WAIT_CONTEXT_CONFIRMATION onward: per camera — detected, current exposure/gain,
+      star count, focus state, READY/DEGRADED badge; surfaced through the
+      `/api/observing/state` payload (M9-029 `mount_state` pattern, one poll loop).
+      Overlaps M9-020 (camera identity + preview) — coordinate, don't duplicate
+      `[P1 · UI]`
+- [ ] M10-009 Draft upstream feature requests to SmartTScopeLiveAnalysis — file
+      **only after user approval** (ONS31-008/009 pattern), tracked in the new
+      SYNC.md section: (a) histogram-ceiling parameter (70%) for exposure
+      recommendations; (b) SCT donut detection/classification + focus-quality metric
+      (e.g. HFD / donut radius); (c) gaps found during M10-003..006 integration
+      `[P2 · External]`
+- [ ] M10-010 In-capture focus monitoring: after each completed long exposure, run the
+      last frame through the M10-006 focus metric; on drift beyond threshold surface a
+      focus warning (auto-correction is a later product decision) `[P2 · Runtime]`
+- [ ] M10-011 Unit tests: readiness FSM transitions, tuning-loop clamps (70% ceiling,
+      exposure-before-gain ordering), focus algorithm on synthetic point/donut frames,
+      missing-camera degradation — all against mock cameras, no hardware `[P1 · Tests]`
+- [ ] M10-012 Pi hardware verification: cameras identified while the user is still
+      confirming time/location; tuning converges without clipping; stars detected;
+      coarse focus reaches plate-solvable quality; polar align unblocks
+      `[P0 · Hardware]`
+      - *Must have hardware evidence — not accepted on mock alone*
+
+**Open parameters (config defaults, tune later):** star-count threshold for
+STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
+gating role (main).
+
+**Quality gate:** camera readiness runs without delaying or blocking any mount action;
+polar align is gated only on the camera it needs; no LiveAnalysis code duplicated into
+SmartTScope; all frame analysis flows through the pinned module.
+
+---
+
 ## Safety Regression Checklist
 
 *Run before every milestone demo and release. STOP response time target: **< 1 s** (POD-002).*

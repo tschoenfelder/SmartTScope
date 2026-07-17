@@ -4341,3 +4341,13 @@ Tests: 3 new snapshot tests (`TestSnapshotShape`) covering observed-state report
 null-before-first-poll, and null-without-deps; top-level-key assertions updated in
 both the service and API test files. `test_observing_service.py` +
 `tests/unit/api/` green (1034+ tests, incl. full api dir run).
+
+---
+
+## 2026-07-17 — M9-030 filed: mount-state pill same style as readiness badge, plain state name
+
+User feedback on M9-029: the mount state should sit side by side with "LIMITED READY"
+in the **same style** (equal prominence, not the muted grey), and read as the plain
+state name — "PARKED", not "MOUNT: PARKED", and never conveyed by the
+"Stop safely (park)" action button ("It's a state, not a button with action").
+Filed as **M9-030** in `docs/todo.md` (P3 UI, backlog only).

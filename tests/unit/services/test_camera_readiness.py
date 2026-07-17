@@ -86,6 +86,50 @@ class TestIdentification:
         assert snap["roles"]["main"]["optical"] == {"telescope": "c8", "focal_mm": 2032.0}
         assert snap["roles"]["guide"]["optical"] is None
 
+    def test_filter_wheel_device_not_listed_as_unconfigured_camera(self):
+        # Hardware 2026-07-17: the ToupTek wheel enumerates as "FILTERWHEEL"
+        # and was reported "connected but not configured" — it IS configured,
+        # just not a camera role.
+        import smart_telescope.config as cfg
+        from smart_telescope.config import FilterWheelSpec
+        svc = CameraReadinessService(
+            enumerate_fn=lambda: list(_ALL_DEVICES) + [_dev("FILTERWHEEL")],
+        )
+        with patch.object(cfg, "CAMERA_SPECS", _SPECS), \
+             patch.object(cfg, "CAMERAS", {}), \
+             patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=True)):
+            svc.scan_now()
+        snap = svc.snapshot()
+        assert snap["unassigned"] == []
+        assert snap["filter_wheel"] == {
+            "configured": True, "detected": True, "display_name": "FILTERWHEEL",
+        }
+        # Camera indices still refer to the full enumeration order.
+        assert snap["roles"]["main"]["sdk_index"] == 0
+
+    def test_configured_wheel_not_detected_is_reported(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import FilterWheelSpec
+        svc = CameraReadinessService(enumerate_fn=lambda: list(_ALL_DEVICES))
+        with patch.object(cfg, "CAMERA_SPECS", _SPECS), \
+             patch.object(cfg, "CAMERAS", {}), \
+             patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=True)):
+            svc.scan_now()
+        snap = svc.snapshot()
+        assert snap["filter_wheel"] == {
+            "configured": True, "detected": False, "display_name": None,
+        }
+
+    def test_no_wheel_configured_and_none_detected_gives_none(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import FilterWheelSpec
+        svc = CameraReadinessService(enumerate_fn=lambda: list(_ALL_DEVICES))
+        with patch.object(cfg, "CAMERA_SPECS", _SPECS), \
+             patch.object(cfg, "CAMERAS", {}), \
+             patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=False)):
+            svc.scan_now()
+        assert svc.snapshot()["filter_wheel"] is None
+
     def test_snapshot_before_first_scan_is_empty_but_valid(self):
         svc = CameraReadinessService(enumerate_fn=lambda: [])
         snap = svc.snapshot()

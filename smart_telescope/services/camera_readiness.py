@@ -29,6 +29,16 @@ _log = logging.getLogger(__name__)
 
 _POLL_INTERVAL_S = 15.0
 
+# ToupTek filter wheels enumerate alongside cameras (observed on hardware
+# 2026-07-17: displayname "FILTERWHEEL"). Recognize them so they are reported
+# as the configured wheel, not as an unconfigured camera.
+_FILTER_WHEEL_MARKERS = ("FILTERWHEEL", "FILTER WHEEL", "CFW")
+
+
+def _is_filter_wheel(display_name: str) -> bool:
+    upper = display_name.upper()
+    return any(marker in upper for marker in _FILTER_WHEEL_MARKERS)
+
 
 class CameraReadinessService:
     """Background camera identification with a thread-safe snapshot API."""
@@ -46,6 +56,7 @@ class CameraReadinessService:
         self._thread: threading.Thread | None = None
         self._cameras: dict[str, dict[str, Any]] = {}
         self._unassigned: list[str] = []
+        self._filter_wheel: dict[str, Any] | None = None
         self._sdk_available: bool = False
         self._last_scan_at: float | None = None
 
@@ -82,6 +93,7 @@ class CameraReadinessService:
                 "scanned": self._last_scan_at is not None,
                 "roles": {role: dict(entry) for role, entry in self._cameras.items()},
                 "unassigned": list(self._unassigned),
+                "filter_wheel": dict(self._filter_wheel) if self._filter_wheel else None,
             }
 
     # ── internals ─────────────────────────────────────────────────────────────
@@ -113,6 +125,25 @@ class CameraReadinessService:
 
         cameras: dict[str, dict[str, Any]] = {}
         matched_indices: set[int] = set()
+
+        # Split filter-wheel devices out before role matching — they are not
+        # cameras and must not appear as "connected but not configured".
+        wheel_names = [
+            str(dev.displayname)
+            for dev in devices
+            if _is_filter_wheel(str(dev.displayname))
+        ]
+        camera_devices = [
+            (i, dev) for i, dev in enumerate(devices)
+            if not _is_filter_wheel(str(dev.displayname))
+        ]
+        filter_wheel: dict[str, Any] | None = None
+        if config.FILTER_WHEEL.enabled or wheel_names:
+            filter_wheel = {
+                "configured": config.FILTER_WHEEL.enabled,
+                "detected": bool(wheel_names),
+                "display_name": wheel_names[0] if wheel_names else None,
+            }
 
         for role, spec in config.CAMERA_SPECS.items():
             entry: dict[str, Any] = {
@@ -159,13 +190,14 @@ class CameraReadinessService:
 
         unassigned = [
             str(dev.displayname)
-            for i, dev in enumerate(devices)
+            for i, dev in camera_devices
             if i not in matched_indices
         ]
 
         with self._lock:
             self._cameras = cameras
             self._unassigned = unassigned
+            self._filter_wheel = filter_wheel
             self._sdk_available = sdk_available
             self._last_scan_at = time.monotonic()
 

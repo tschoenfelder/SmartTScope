@@ -4800,3 +4800,23 @@ disabled, SDK-unavailable, unassigned, optical join, provider-failure tolerance,
 lifecycle); observing API shape updated (cameras key); runtime suite green
 (56 tests in the targeted run). `node --check` clean. Pi verification pending
 (M10-012).
+
+---
+
+## 2026-07-17 — M10-002/012 hardware evidence + filter-wheel recognition in the camera scan
+
+Pi verification of the camera-identification slice succeeded: all three cameras
+DETECTED with correct optical configurations and the M10-015-derived pixel scales
+confirmed on hardware (0.2944 / 3.3232 / 0.203 arcsec/px for ATR585M/GPCMOS/G3M678M).
+The "no cameras visible" report was browser cache — a hard refresh showed the card.
+(Partial M10-012 evidence: identification leg done; tuning/star/focus legs pending
+their implementation.)
+
+Follow-up fix from the same session: the ToupTek filter wheel enumerates alongside
+cameras (displayname "FILTERWHEEL") and was reported "connected but not configured".
+`CameraReadinessService` now splits wheel devices out (marker match: FILTERWHEEL /
+FILTER WHEEL / CFW), reports them in a new `filter_wheel` snapshot field
+({configured (from [filter_wheel] enabled), detected, display_name}), and excludes
+them from the unassigned-camera warning; camera sdk_index values still refer to the
+full enumeration order. The Observe card shows a "wheel" row (green when configured +
+detected, yellow on mismatch either way). 3 new tests; 17 targeted tests green.

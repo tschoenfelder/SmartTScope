@@ -194,6 +194,27 @@ function _renderObsCameras(cameras) {
       }
       rows.appendChild(row);
     }
+    // Filter wheel: reported separately — it enumerates like a camera but is
+    // the configured [filter_wheel] device, not an unconfigured camera.
+    if (cameras.filter_wheel) {
+      const fw = cameras.filter_wheel;
+      const row = document.createElement('div');
+      row.className = 'camera-row';
+      const dot = document.createElement('span');
+      dot.className = 'dot ' + (fw.detected && fw.configured ? 'dot-green'
+        : (fw.configured || fw.detected ? 'dot-yellow' : 'dot-grey'));
+      const name = document.createElement('span');
+      name.className = 'camera-role';
+      name.textContent = 'wheel';
+      const status = document.createElement('span');
+      status.textContent = fw.detected
+        ? (fw.display_name || 'filter wheel')
+          + (fw.configured ? '' : ' (not configured — [filter_wheel] disabled)')
+        : 'not detected';
+      row.appendChild(dot); row.appendChild(name); row.appendChild(status);
+      rows.appendChild(row);
+    }
+
     const unEl = document.getElementById('obs-camera-unassigned');
     if (cameras.unassigned && cameras.unassigned.length) {
       unEl.style.display = '';

@@ -109,9 +109,33 @@ class OnStepMount(_BaseOnStepMount, MountPort):
                 self._at_mechanical_home = True
                 self.confirm_home_position()
             return MountState.AT_HOME
+        # M9-036: observed motion beats the sticky authority flag. The flag
+        # re-arms on the genuine H still visible in the first seconds of a
+        # park slew leaving home; letting it override SLEWING displayed
+        # AT HOME through the entire park travel (hardware 2026-07-17).
+        # Ordering note: the decoded at_home check above still wins over
+        # SLEWING on purpose (M9-021 — H appears while the goto-active flag
+        # may still be set at the end of a home slew).
+        if upstream_state.name == "SLEWING":
+            return MountState.SLEWING
         if self._at_mechanical_home:
             return MountState.AT_HOME
         return MountState[upstream_state.name]
+
+    # ── M9-036: stop() invalidates mechanical-home authority ──────────────────
+
+    def stop(self) -> None:
+        # A manual/emergency :Q# means the mount may have halted anywhere —
+        # the sticky home authority is no longer trustworthy. Upstream
+        # stop() does not clear ``_at_mechanical_home`` (upstream ask
+        # recorded in SYNC.md); route the invalidation through upstream's
+        # public ``note_external_motion()``. If the mount really is still
+        # at home, the next poll re-detects the genuine H flag and re-arms.
+        super().stop()
+        try:
+            self.note_external_motion("manual_stop")
+        except Exception:  # never let bookkeeping break an emergency stop
+            _log.warning("OnStepMount.stop(): note_external_motion failed", exc_info=True)
 
     # ── ONS31-102: routed unpark (supersedes SAFETY-001/002) ──────────────────
 

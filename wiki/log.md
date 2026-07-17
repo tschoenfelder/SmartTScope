@@ -4588,3 +4588,39 @@ no-op outside SAFE_STOPPING, guiding stopped exactly once across retries).
 63 observing/emergency tests green. Pi retest expected behavior: ■ Stop mid-park
 -> phase "Paused" with Resume / Stop safely; no autonomous re-park; "Back to
 homing" works even while busy.
+
+---
+
+## 2026-07-17 — M9-036: park slew showed AT HOME — shim get_state ordering fixed; stop() drops home authority
+
+Hardware retest confirmed M9-035 works (Resume button after emergency stop) and
+narrowed the last false display to the shim mapping layer: home slew shows SLEWING
+correctly, but the park slew showed AT HOME for the entire travel.
+
+Root cause (shim `get_state()`, ONS31-101 mapping): upstream `park()` clears the
+`_at_mechanical_home` authority flag, but the first poll of the park slew still sees
+OnStep''s genuine H flag (mount still inside the home zone) and re-arms it; the sticky
+check sat ABOVE the motion check, so AT_HOME masked SLEWING from then on. This also
+explains the earlier "Mount park: state still AT_HOME after 5 s" warning.
+
+Fix (SmartTScope-owned shim only; upstream untouched):
+1. `get_state()` ordering: decoded H > SLEWING > sticky authority > upstream state.
+   The decoded-H-beats-SLEWING rule (M9-021: H appears while goto-active is still
+   set at the end of a home slew) is preserved; only the STICKY flag can no longer
+   override observed motion.
+2. New shim `stop()` wrapper: `super().stop()` then upstream public
+   `note_external_motion("manual_stop")` — a manual/emergency :Q# invalidates
+   mechanical-home authority (upstream `stop()` does not clear the flag; that
+   upstream ask remains recorded in SYNC.md). A mount genuinely at home re-arms
+   from the next H observation.
+
+Tests: `TestGetStateAuthorityFlagVsMotion` (5 tests) driving the shim with the real
+GU# strings captured from the Pi transition log (`nNpHEo260`, `nphET260`,
+`nNpeET260`): slewing beats stale flag, genuine H still beats slewing, stop clears
+authority (idle then honest UNPARKED), re-arm when genuinely at home. 255
+adapter+service tests green. SYNC.md permanent-wrapper table updated (get_state
+ordering note + M9-036 stop() row).
+
+Expected on next Pi run: park slew shows SLEWING; ■ Stop mid-way shows UNPARKED
+with phase "Paused" (Resume / Stop safely); stopping while genuinely at home still
+shows AT HOME.

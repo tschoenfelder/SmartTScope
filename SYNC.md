@@ -130,8 +130,9 @@ pattern. Mount-side consumer API unchanged (MountPort covers it).
 | REQ-1 / LOCAL-001 | `move(direction, move_ms)` | Translation onto upstream's public `move_ra_timed()`/`move_dec_timed()` (`mode="center"`) — implemented 2026-07-15, `mechanical_manual_move()` interim retired. |
 | REQ-2 | `set_park_position() → bool`, `get_park_position() → MountPosition\|None` | `MountPort` ABC adapters over upstream `set_park_position_from_current()`/`get_park_position()` (+ conversion to the local `MountPosition` dataclass, also done by `get_position()`). |
 | REQ-ST-001 | `ensure_time_location_synced()` | Pure config-forwarding glue (SmartTScope `config.py` → upstream `sync_onstep_time_location()`). |
-| ONS31-101 | `get_state()` | FSM mapping: upstream 6-state + decoded `at_home` flag (+ sticky `_at_mechanical_home`, first-'H' `confirm_home_position()`) → SmartTScope's 7-state enum. |
+| ONS31-101 | `get_state()` | FSM mapping: upstream 6-state + decoded `at_home` flag (+ sticky `_at_mechanical_home`, first-'H' `confirm_home_position()`) → SmartTScope's 7-state enum. **M9-036 ordering:** decoded H > SLEWING (M9-021) > sticky authority flag > upstream state — observed motion must never be masked by a stale/re-armed authority flag (park slew showed AT HOME throughout, hardware 2026-07-17). |
 | ONS31-102 | `unpark()` | Routed through upstream `unpark_to_home_stop_tracking()`; returns whether `:hR#` was accepted; incomplete home/stop phase logged, never blind-resent (M9-027). |
+| M9-036 | `stop()` | `super().stop()` then upstream public `note_external_motion("manual_stop")` — a manual/emergency `:Q#` invalidates mechanical-home authority (upstream `stop()` doesn't clear `_at_mechanical_home`; upstream ask below). Genuine at-home re-arms from the next H observation. |
 | M7-004 | `OnStepFocuser.move_absolute()` backlash compensation | SmartTScope config-driven feature layered around upstream `move_absolute()` (public API only). |
 
 **SYNC-OVERRIDEs pending upstream delivery** (each tagged in the shim source; remove

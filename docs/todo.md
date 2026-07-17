@@ -1647,6 +1647,25 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         "Working…"). 5 new tests (TestEmergencyStopHaltsParkRetries); 63 observing +
         emergency tests green. Hardware verification pending (retest: ■ Stop mid-park
         → phase "Paused", no auto re-park, Resume finishes the park).
+- [x] M9-036 Hardware retest 2026-07-17: home slew shows SLEWING correctly, but the
+      park slew shows AT HOME the whole way (and after ■ Stop; M9-035's Resume button
+      appeared correctly). Root cause in the shim's ONS31-101 `get_state()` mapping:
+      upstream `park()` clears the `_at_mechanical_home` authority flag, but the first
+      poll of the park slew still sees OnStep's genuine H flag (mount within the home
+      zone) and **re-arms** it — and the sticky check sat above the motion check, so
+      AT_HOME masked SLEWING for the entire travel `[P1 · Bug/Shim · Source: user
+      hardware session 2026-07-17]`
+      - *Done 2026-07-17 (shim mapping + wrapper only — upstream untouched):*
+        (1) `get_state()` ordering is now decoded-H > SLEWING (M9-021 preserved) >
+        sticky authority > upstream state — observed motion always reported;
+        (2) new shim `stop()` wrapper: `super().stop()` +
+        `note_external_motion("manual_stop")` (upstream *public* API) so a manual/
+        emergency stop drops stale home authority; a genuinely at-home mount re-arms
+        from the next H observation. 5 new tests using the real GU# strings from the
+        Pi log (`TestGetStateAuthorityFlagVsMotion`); 255 adapter+service tests green.
+        Documented in SYNC.md (permanent-wrapper table). Hardware re-test pending:
+        park slew should now show SLEWING; ■ Stop mid-way should show UNPARKED +
+        "Paused".
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

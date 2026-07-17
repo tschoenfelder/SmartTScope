@@ -337,6 +337,57 @@ class TestGetState:
         assert mount.get_state() == MountState.UNKNOWN
 
 
+class TestGetStateAuthorityFlagVsMotion:
+    """M9-036 (hardware 2026-07-17): the ``_at_mechanical_home`` authority
+    flag re-arms on the genuine H flag still visible at the start of a park
+    slew leaving home; it must never mask observed motion. GU# strings below
+    are the real ones captured from the Pi transition log."""
+
+    def _mount_armed_at_home(self, mocker):
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.read_until.return_value = b"nNpHEo260#"  # at home, H set
+        mount = _make_mount()
+        mount.connect()
+        assert mount.get_state() == MountState.AT_HOME
+        assert mount._at_mechanical_home is True
+        return mount, instance
+
+    def test_slewing_beats_stale_authority_flag(self, mocker):
+        mount, instance = self._mount_armed_at_home(mocker)
+        # Park slew under way: H gone, goto active — was shown AT_HOME before.
+        instance.read_until.return_value = b"nphET260#"
+        assert mount.get_state() == MountState.SLEWING
+
+    def test_genuine_h_flag_still_beats_slewing(self, mocker):
+        # M9-021 ordering preserved: H visible while goto-active is still set
+        # (end of a home slew) must report AT_HOME, not SLEWING.
+        mock_serial = mocker.patch("onstep_adapter.mount.serial.Serial")
+        instance = mock_serial.return_value
+        instance.read_until.return_value = b"npHET260#"  # H + no 'N' (goto active)
+        mount = _make_mount()
+        mount.connect()
+        assert mount.get_state() == MountState.AT_HOME
+
+    def test_stop_invalidates_home_authority(self, mocker):
+        mount, instance = self._mount_armed_at_home(mocker)
+        # Halted mid-way after :Q#: idle, no H — authority still masks it…
+        instance.read_until.return_value = b"nNpeET260#"
+        assert mount.get_state() == MountState.AT_HOME
+        # …until stop() routes the invalidation through note_external_motion().
+        mount.stop()
+        assert mount._at_mechanical_home is False
+        assert mount.get_state() == MountState.UNPARKED
+
+    def test_stop_then_still_at_home_rearms_from_h_flag(self, mocker):
+        # Stopping while genuinely at home: next poll re-detects H and re-arms.
+        mount, instance = self._mount_armed_at_home(mocker)
+        mount.stop()
+        assert mount._at_mechanical_home is False
+        assert mount.get_state() == MountState.AT_HOME  # H still in GU#
+        assert mount._at_mechanical_home is True
+
+
 # ── unpark ────────────────────────────────────────────────────────────────────
 
 @pytest.mark.skip(

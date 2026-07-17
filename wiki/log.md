@@ -4254,3 +4254,36 @@ prescribed — dropped stash commit SHA `8cf8aa7b5fee6e2145ae17fd57b304530cba16b
 `unpark_to_home_stop_tracking()` with `at_home=True` and no tracking → GoTo → STOP →
 park → disconnect; P0, hardware evidence required) and ONS31-104 (issue #3 comment,
 awaiting user approval).
+
+---
+
+## 2026-07-17 — Pi startup crash after v0.3.1 deploy: stale repo-root dirs + --no-deps pin skip; deploy hardened
+
+First Pi start after the ONS31 migration failed with a circular
+`ImportError` in `onstep_adapter/__init__.py`. Root causes (none in the new code):
+
+1. A stale untracked `onstep_adapter/` directory (old v0.3.0 re-export shim) at the
+   Pi repo root. `astro_start.sh` launches with CWD = repo root, so it shadowed the
+   venv's site-packages → the shim's `from smart_telescope.adapters.onstep import ...`
+   re-entered the partially initialized package. `git reset --hard` never removes
+   untracked dirs, which is how it survived deploys.
+2. `astro_start.sh` installs the rebuilt SmartTScope wheel with `--no-deps`, so the
+   pyproject pin bump to onstep_adapter v0.3.1 was silently never installed on the Pi.
+3. Bonus defect in the build: `[tool.setuptools.packages.find] include =
+   ["smart_telescope*"]` also matches the stray `smart_telescope_old/` sitting on the
+   Pi, baking it into the deployed wheel.
+
+Hardening committed:
+
+- `pyproject.toml`: package include tightened to `["smart_telescope",
+  "smart_telescope.*"]` (verified with a decoy `smart_telescope_old/`: no strays).
+- `scripts/astro_start.sh`: (a) stale-directory guard — refuses to start while
+  `onstep_adapter/` or `smart_telescope_old/` exist at the repo root, with the `mv`
+  command to run; (b) onstep_adapter version sync — after the `--no-deps` wheel
+  install, compares `onstep_adapter.__version__` (imported from `/` to dodge CWD
+  shadowing) against the version pinned in pyproject.toml and force-reinstalls the
+  pinned wheel URL on mismatch.
+
+One-time manual cleanup on the Pi (guard reports it): move `onstep_adapter/` and
+`smart_telescope_old/` out of `~/astro_sw/SmartTScope/`, then rerun
+`astro_pull_start.sh` — the version sync then pulls v0.3.1 automatically.

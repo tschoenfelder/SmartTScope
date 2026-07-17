@@ -70,6 +70,17 @@ else
     warn "Pull     : skipped (--no-pull)"
 fi
 
+# ── stale-directory guard ─────────────────────────────────────────────────────
+# The server runs with CWD = repo root, so any stray top-level directory named
+# like an importable package shadows the venv's site-packages (a leftover
+# onstep_adapter/ checkout caused a circular-import crash on 2026-07-17), and
+# stray smart_telescope* siblings get baked into the wheel by the build below.
+for stale in onstep_adapter smart_telescope_old; do
+    if [[ -e "$REPO_DIR/$stale" ]]; then
+        err "Stale '$stale/' in repo root shadows installed packages — move it away first:  mv $REPO_DIR/$stale ~/stale_$stale"
+    fi
+done
+
 # ── install / update ──────────────────────────────────────────────────────────
 if [[ "$INSTALL" == true ]]; then
     info "Reinstalling package (Debian 13 / pip 26 workaround)..."
@@ -109,6 +120,23 @@ PYEOF
     ok "Installed: $(basename "$WHEEL")"
 else
     warn "Install  : skipped (--no-install)"
+fi
+
+# ── onstep_adapter version sync ───────────────────────────────────────────────
+# The wheel install above uses --no-deps, so a bumped onstep-adapter pin in
+# pyproject.toml is otherwise silently ignored until a full install_pi.sh run.
+ONSTEP_URL="$(grep -o 'https://github.com/tschoenfelder/OnStepAdapter[^"]*\.whl' "$REPO_DIR/pyproject.toml" | head -1 || true)"
+if [[ -n "$ONSTEP_URL" ]]; then
+    EXPECTED_ONSTEP="$(echo "$ONSTEP_URL" | grep -o 'onstep_adapter-[0-9.]*-' | sed 's/onstep_adapter-//;s/-$//')"
+    INSTALLED_ONSTEP="$(cd / && "$VENV_DIR/bin/python" -c 'import onstep_adapter; print(onstep_adapter.__version__)' 2>/dev/null || echo 'none')"
+    if [[ "$INSTALLED_ONSTEP" != "$EXPECTED_ONSTEP" ]]; then
+        info "onstep_adapter $INSTALLED_ONSTEP → $EXPECTED_ONSTEP (pinned in pyproject.toml)..."
+        "$VENV_DIR/bin/pip" install --quiet --force-reinstall --no-deps "$ONSTEP_URL" \
+            || err "onstep_adapter install failed — run scripts/install_pi.sh"
+        ok "onstep_adapter: $EXPECTED_ONSTEP"
+    else
+        ok "onstep_adapter: $INSTALLED_ONSTEP (matches pin)"
+    fi
 fi
 
 # ── storage directory ─────────────────────────────────────────────────────────

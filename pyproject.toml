@@ -32,7 +32,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["smart_telescope*"]
+# NOT "smart_telescope*": that glob also matches stray sibling dirs like
+# smart_telescope_old/ and bakes them into the wheel (seen on the Pi 2026-07-17)
+include = ["smart_telescope", "smart_telescope.*"]
 
 [tool.setuptools.package-data]
 "smart_telescope" = ["static/*", "static/js/*"]

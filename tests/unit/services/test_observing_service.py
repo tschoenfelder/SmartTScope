@@ -448,6 +448,59 @@ class TestSafeStoppingRecovery:
         assert snap["detail"]["safe_stop"]["parked"] is True
 
 
+class TestEmergencyStopHaltsParkRetries:
+    """M9-035: the hardware emergency stop must halt SAFE_STOPPING's automatic
+    park retries — hardware evidence 2026-07-17 showed the app would have
+    re-issued :hP# ~120 s after the user emergency-stopped the park slew."""
+
+    def _stuck_safe_stop(self, svc: ObservingService, deps: ObservingDeps) -> None:
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps.mount.get_state.return_value = MountState.TRACKING
+        deps.mount.park.return_value = True
+        deps.device_state = _device_state(MountState.SLEWING)  # never reaches PARKED
+        svc.handle_intent(IT.STOP_SAFELY, deps)
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        assert deps.mount.park.call_count == 1
+
+    def test_moves_safe_stopping_to_paused_and_clears_window(
+        self, deps: ObservingDeps,
+    ) -> None:
+        svc = ObservingService()
+        self._stuck_safe_stop(svc, deps)
+        svc.on_emergency_stop()
+        snap = svc.snapshot()
+        assert snap["phase"] == P.PAUSED_SAFE.value
+        with svc._lock:
+            assert svc._park_command_issued_at is None
+
+    def test_resume_reenters_safe_stopping_and_reissues_park(
+        self, deps: ObservingDeps,
+    ) -> None:
+        svc = ObservingService()
+        self._stuck_safe_stop(svc, deps)
+        svc.on_emergency_stop()
+        snap = svc.handle_intent(IT.RESUME, deps)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        _wait_idle(svc, deps, timeout=10.0)
+        assert deps.mount.park.call_count == 2  # window cleared → fresh park
+
+    def test_noop_outside_safe_stopping(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc.on_emergency_stop()
+        assert svc.snapshot()["phase"] == P.WAIT_CONTEXT_CONFIRMATION.value
+
+    def test_guiding_stopped_only_when_issuing_park(self, deps: ObservingDeps) -> None:
+        # M9-035: guiding stop ran on every 2.5 s retry pass before (log spam,
+        # busy churn) — it must run only when the park is actually issued.
+        deps = replace(deps, guide_role_cameras={"guide": Mock()})
+        svc = ObservingService()
+        self._stuck_safe_stop(svc, deps)
+        for _ in range(3):  # further retry passes within the no-resend window
+            _wait_idle(svc, deps, timeout=10.0)
+        assert deps.guiding_service.stop.call_count == 1
+
+
 class TestGuidedFlowRecordsCommands:
     """M9-032: the guided flow bypasses the /api/mount/* endpoints, so it must
     register its own commands with DeviceStateService — record_command() is

@@ -385,6 +385,26 @@ class ObservingService:
 
         return self.snapshot(deps)
 
+    def on_emergency_stop(self) -> None:
+        """M9-035: the hardware emergency stop must also halt the observing
+        flow's automatic park retries. Without this, SAFE_STOPPING re-issues
+        :hP# on its own once the M9-027 window expires — observed on hardware
+        2026-07-17: the user emergency-stops a park slew and the app would
+        re-park the mount ~120 s later. The flow moves to PAUSED_SAFE:
+        "Resume" re-enters SAFE_STOPPING and re-issues the park immediately
+        (window cleared here); "Stop safely" does the same.
+        """
+        with self._lock:
+            if self._phase is not ObservingPhase.SAFE_STOPPING:
+                return
+            self._paused_from = ObservingPhase.SAFE_STOPPING
+            self._phase = ObservingPhase.PAUSED_SAFE
+            self._park_command_issued_at = None
+        _log.warning(
+            "Emergency stop: observing flow SAFE_STOPPING -> PAUSED_SAFE "
+            "(automatic park retries halted)"
+        )
+
     # ── auto-advance (safe-stop retries whenever the caller polls) ────────────
 
     def _maybe_auto_advance(self, deps: ObservingDeps) -> None:
@@ -603,10 +623,6 @@ class ObservingService:
                 self._detail["capture"]["saved_image_path"] = log.saved_image_path
 
     def _run_safe_stop(self, deps: ObservingDeps) -> None:
-        if deps.guide_role_cameras:
-            with contextlib.suppress(Exception):
-                deps.guiding_service.stop()
-
         # _maybe_auto_advance() re-spawns this on every poll while SAFE_STOPPING
         # hasn't reached PARKED yet. Don't blindly resend :hP# on each of those
         # retries — it's fire-and-forget and its slew can take up to 120 s, and
@@ -619,6 +635,12 @@ class ObservingService:
         now = time.monotonic()
         still_waiting = issued_at is not None and (now - issued_at) < _PARK_COMMAND_MAX_WAIT_S
         if not still_waiting:
+            # M9-035: stop guiding only when actually issuing the park — this
+            # ran on every 2.5 s retry pass before, spamming the log and
+            # keeping the worker busy for most of each poll interval.
+            if deps.guide_role_cameras:
+                with contextlib.suppress(Exception):
+                    deps.guiding_service.stop()
             # M9-032: register the command (clears the sticky AT_HOME and the
             # home-promotion flags in DeviceStateService; guided flow bypasses
             # the /api/mount/* endpoints that normally do this).

@@ -1598,16 +1598,17 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
       - *Done 2026-07-17:* `_PHASE_TITLES` map in `static/js/observing.js` covering
         all 12 phases; `_obsPhaseLabel()` falls back to the old
         underscores-to-spaces for unknown values. JS-only; `node --check` clean.
-- [ ] M9-034 **REOPENED 2026-07-17** — Pi retest after 42a678f still fails: STOP during
-      park flips the state directly to AT HOME, Detail empty, app blocked. Both cache
-      stickies are provably cleared on this path, so the AT_HOME must be reported by
-      `mount.get_state()` itself (decoded `:GU#` H flag or the shim/upstream
-      `_at_mechanical_home` authority flag — possibly re-armed by the genuine H
-      observation right before the park started, or OnStep keeping H set after `:Q#`).
-      Diagnostic added: DeviceStateService now logs every observed state transition
-      with the raw adapter state, decoded `:GU#` flags, and both sticky layers —
-      next repro on the Pi is conclusive. Awaiting server.log evidence before the
-      next fix; do NOT guess further layers. Original report/fixes below.
+- [x] M9-034 **RESOLVED 2026-07-17 via Pi diagnostic evidence** — the reopened
+      symptom decomposed into: (a) the AT HOME pill was **genuine** — the emergency
+      stop landed seconds after `:hP#` was issued, the mount never meaningfully left
+      home, and OnStep kept reporting the H flag (transition log showed decoded
+      `at_home: True` throughout; no false promotion anywhere); (b) "app blocked" =
+      the busy gate silently dropping UNPARK_CONTINUE while `_maybe_auto_advance`
+      kept a worker in flight on nearly every poll (fixed — escape intents pass the
+      busy gate; late workers can't clobber the escape); (c) the emergency stop
+      never informed the observing flow, which would have **auto re-issued the park
+      120 s later** — split out and fixed as M9-035. Final Pi verification pending.
+      Original report/fixes below.
       Hardware report 2026-07-17 (STOP mid-park-slew): SAFE_STOPPING becomes a
       dead end — the M9-027 no-resend window silently blocks a park retry for 120 s,
       no actions are offered ("no way to continue parking or slewing back to home"),
@@ -1633,6 +1634,19 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         accepted from both PARKED_SAFE and SAFE_STOPPING. 7 new tests
         (TestSafeStoppingRecovery ×4, FSM ×1 (2 asserts), sticky goto-with-args ×1,
         plus updated M9-032 set); 283 tests green. Hardware re-test pending.
+- [x] M9-035 Emergency stop (`/api/emergency_stop`) never informed the observing flow:
+      after ■ Stop during a park slew, SAFE_STOPPING kept auto-retrying and would have
+      **re-issued `:hP#` on its own ~120 s later** — mount motion the user explicitly
+      stopped `[P0 · Safety · Source: Pi diagnostic log 2026-07-17 (M9-034 evidence)]`
+      - *Done 2026-07-17:* endpoint now calls `ObservingService.on_emergency_stop()` —
+        SAFE_STOPPING → PAUSED_SAFE with the park window cleared; "Resume" re-enters
+        SAFE_STOPPING and re-issues the park immediately as a *user* decision. Endpoint
+        also `record_command("stop")` (R2-003 gap; clears sticky flags). Bonus:
+        `_run_safe_stop` stops guiding only when actually issuing the park — it ran on
+        every 2.5 s retry pass before (log spam + busy churn ≈ the permanent
+        "Working…"). 5 new tests (TestEmergencyStopHaltsParkRetries); 63 observing +
+        emergency tests green. Hardware verification pending (retest: ■ Stop mid-park
+        → phase "Paused", no auto re-park, Resume finishes the park).
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

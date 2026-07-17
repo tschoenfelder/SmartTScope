@@ -4555,3 +4555,36 @@ clobber the escape. 2 new tests; 84 observing tests green.
 Still needed from the Pi: full log slice around the repro
 (`grep -E "park|guiding|unpark|WARNING|ERROR" server.log | tail -50`) and whether
 busy stays true persistently (re-curl after a minute) — that names the wedge line.
+
+---
+
+## 2026-07-17 — M9-034 resolved by evidence; M9-035: emergency stop halts SAFE_STOPPING auto re-park
+
+Second Pi diagnostic capture settled M9-034 conclusively. Timeline from the
+transition log: home slew -> genuine H flag (decoded at_home=True) -> `command
+issued park` -> `Mount park issued` (:hP# accepted) -> `Emergency stop` seconds
+later -> `state still AT_HOME after 5 s`. **The AT HOME pill was truthful** — the
+mount never meaningfully left home; no false sticky promotion occurred anywhere.
+The perceived "blocked app" was: (a) the busy gate silently dropping the escape
+intent while _maybe_auto_advance kept a safe-stop worker in flight on nearly every
+poll (fixed in 5b35b65), and (b) guiding stop + serial polling running on every
+2.5 s retry pass (permanent "Working…" + repeated "GuidingService stopped" log
+lines).
+
+New P0 found in the same log: the emergency stop never informed the observing
+flow — SAFE_STOPPING would have **auto re-issued :hP# ~120 s after the user
+emergency-stopped the mount**. Fixed as M9-035:
+
+- `/api/emergency_stop` now calls `ObservingService.on_emergency_stop()`:
+  SAFE_STOPPING -> PAUSED_SAFE, park window cleared. "Resume" re-enters
+  SAFE_STOPPING and re-issues the park immediately — as an explicit user
+  decision, never automatically. No-op in other phases.
+- Endpoint also records the "stop" command with DeviceStateService (R2-003 gap;
+  clears sticky/home-promotion flags).
+- `_run_safe_stop` stops guiding only when actually issuing the park.
+
+Tests: TestEmergencyStopHaltsParkRetries (pause + window clear, resume re-park,
+no-op outside SAFE_STOPPING, guiding stopped exactly once across retries).
+63 observing/emergency tests green. Pi retest expected behavior: ■ Stop mid-park
+-> phase "Paused" with Resume / Stop safely; no autonomous re-park; "Back to
+homing" works even while busy.

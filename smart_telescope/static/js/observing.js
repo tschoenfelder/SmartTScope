@@ -120,8 +120,26 @@ function _renderObservingState(state) {
     _obsBusy = !!state.busy;
 }
 
+// M9-033: user-facing titles for the phase headline — raw FSM names like
+// "WAIT CONTEXT CONFIRMATION" read as jargon in exactly the place that is
+// supposed to tell the user what to do next.
+const _PHASE_TITLES = {
+    BOOTSTRAP:                 'Starting up…',
+    WAIT_CONTEXT_CONFIRMATION: 'Confirm time & location',
+    WAIT_HOME_CONFIRMATION:    'Home the mount',
+    POLAR_ALIGN:               'Polar alignment',
+    FOCUS_READYING:            'Focus',
+    TARGET_ACQUIRE:            'Target acquisition',
+    GUIDE_READYING:            'Guiding setup',
+    CAPTURE_ACTIVE:            'Capturing',
+    SAFE_STOPPING:             'Stopping safely…',
+    PARKED_SAFE:               'Parked safe',
+    PAUSED_SAFE:               'Paused',
+    FAULT:                     'Fault',
+};
+
 function _obsPhaseLabel(phase) {
-    return String(phase).replaceAll('_', ' ');
+    return _PHASE_TITLES[phase] || String(phase).replaceAll('_', ' ');
 }
 
 async function refreshObservingState() {

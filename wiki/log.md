@@ -4467,3 +4467,15 @@ guided-flow recording tests in `test_observing_service.py`. 241 tests green
 (device-state, observing service/API, mount API). Hardware re-test of the exact
 report sequence (home -> park -> continue -> home, STOP mid-slew) pending the
 next Pi session.
+
+---
+
+## 2026-07-17 — M9-033 filed + implemented: plain-language phase titles on the Observe screen
+
+User report (after 92ff256 restart, mount correctly showing PARKED): the headline read
+"WAIT CONTEXT CONFIRMATION" — a raw FSM name in exactly the place that should tell the
+user what to do. `_obsPhaseLabel()` only swapped underscores for spaces. New
+`_PHASE_TITLES` map in `static/js/observing.js` gives all 12 phases user-facing titles
+(WAIT_CONTEXT_CONFIRMATION -> "Confirm time & location", WAIT_HOME_CONFIRMATION ->
+"Home the mount", SAFE_STOPPING -> "Stopping safely...", PARKED_SAFE -> "Parked safe",
+etc.), falling back to the old formatting for unknown values. JS-only change.

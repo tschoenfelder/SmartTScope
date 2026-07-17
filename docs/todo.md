@@ -1588,6 +1588,16 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         second-cycle regression, 2 guided-flow recording); 241 tests green across
         device-state/observing/mount suites. Upstream stop() ask recorded in SYNC.md,
         not filed. Hardware re-test pending next Pi session.
+- [x] M9-033 The Observe-screen headline shows raw FSM phase names ("WAIT CONTEXT
+      CONFIRMATION") — `_obsPhaseLabel()` only replaces underscores with spaces. Give
+      every phase a proper user-facing title; the context step is asking the user to
+      confirm time/location, so say that `[P3 · UI · Source: user report 2026-07-17]`
+      - *Acceptance:* WAIT_CONTEXT_CONFIRMATION shows "Confirm time & location";
+        all other phases show plain-language titles (e.g. "Home the mount",
+        "Stopping safely…", "Parked safe"), never raw enum names.
+      - *Done 2026-07-17:* `_PHASE_TITLES` map in `static/js/observing.js` covering
+        all 12 phases; `_obsPhaseLabel()` falls back to the old
+        underscores-to-spaces for unknown values. JS-only; `node --check` clean.
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

@@ -4437,3 +4437,33 @@ service-layer only. Separately noted as an upstream ask candidate (approval pend
 upstream `stop()` keeps `_at_mechanical_home` authority through a mid-slew STOP.
 
 Backlog only — awaiting go-ahead to implement.
+
+---
+
+## 2026-07-17 — M9-032 implemented: stale sticky AT_HOME cleared by command lifecycle; guided flow records commands
+
+Service-layer fix, adapter untouched:
+
+1. `DeviceStateService.record_command()`: a `"home"` command now clears
+   `_sticky_at_home` (the mount is not at home until this command's own slew
+   confirms it — the promotion flags `_home_cmd_issued`/`_home_slew_seen` were
+   already reset, only the sticky leaked); `"unpark"` and `"stop"` added to the
+   goto/park/track clearing branch.
+2. The guided Observe flow registers its commands (it bypasses the `/api/mount/*`
+   endpoints, which were the only `record_command()` callers — the root of the
+   stale sticky): `_run_home` records "home" before `home_sequence()`;
+   `_run_safe_stop` records "park" before `park_sequence()`, only when actually
+   issuing (inside the M9-027 no-resend window nothing is recorded). Bonus: the
+   last-command telemetry in `/api/mount/status` is now correct for guided
+   operations too.
+
+Upstream ask candidate recorded in SYNC.md (NOT filed, needs approval): upstream
+`stop()` keeps `_at_mechanical_home` authority through a mid-slew STOP;
+`note_external_motion()` is the public API that should be called.
+
+Tests: 4 new sticky-lifecycle tests in `test_device_state.py` (new-home clears
+sticky, full second-cycle promotion regression, unpark/stop clearing) + 2 new
+guided-flow recording tests in `test_observing_service.py`. 241 tests green
+(device-state, observing service/API, mount API). Hardware re-test of the exact
+report sequence (home -> park -> continue -> home, STOP mid-slew) pending the
+next Pi session.

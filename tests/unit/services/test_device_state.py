@@ -648,6 +648,54 @@ class TestStickyAtHome:
         svc._poll_once(mount2)
         assert svc.get_mount_state().state == MountState.UNPARKED
 
+    def test_sticky_cleared_by_new_home_command(self):
+        # M9-032 regression (hardware 2026-07-17): a sticky left over from an
+        # earlier confirmed home promoted every UNPARKED reading to AT_HOME for
+        # the whole second home slew. A new home command means NOT at home
+        # until this command's own slew confirms it.
+        svc = DeviceStateService()
+        self._establish_at_home(svc)
+        mount2 = _mock_mount(MountState.UNPARKED)
+        svc.record_command("home")
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.UNPARKED
+
+    def test_second_home_cycle_promotes_only_after_slew(self):
+        # M9-032: full second cycle — home #1 confirmed, then a new home
+        # command; AT_HOME must only reappear after this cycle's own
+        # SLEWING → UNPARKED promotion.
+        svc = DeviceStateService()
+        self._establish_at_home(svc)
+        svc.record_command("home")
+        mount2 = MagicMock()
+        mount2.get_state.side_effect = [
+            MountState.UNPARKED, MountState.SLEWING, MountState.UNPARKED,
+        ]
+        mount2.get_position.return_value = MountPosition(ra=0.0, dec=89.0)
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.UNPARKED  # pre-slew
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.SLEWING   # travelling
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.AT_HOME   # confirmed
+
+    def test_sticky_cleared_by_unpark_command(self):
+        svc = DeviceStateService()
+        self._establish_at_home(svc)
+        mount2 = _mock_mount(MountState.UNPARKED)
+        svc.record_command("unpark")
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.UNPARKED
+
+    def test_sticky_cleared_by_stop_command(self):
+        # M9-032: STOP mid-home-slew must not leave a stale AT_HOME display.
+        svc = DeviceStateService()
+        self._establish_at_home(svc)
+        mount2 = _mock_mount(MountState.UNPARKED)
+        svc.record_command("stop")
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.UNPARKED
+
     def test_no_sticky_without_home_command_or_observation(self):
         mount = MagicMock()
         mount.get_state.return_value = MountState.UNPARKED

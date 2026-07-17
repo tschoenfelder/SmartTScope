@@ -167,10 +167,15 @@ class DeviceStateService:
             # home: don't set sticky immediately — wait until SLEWING is observed
             # (OnStep's S flag), then promote UNPARKED → AT_HOME after slew ends.
             # Prevents premature HOME display before OnStep sets the S flag.
+            # M9-032: a new home command also CLEARS the sticky — the mount is
+            # not at home until this command confirms it. A sticky left over
+            # from an earlier confirmed home otherwise promotes every UNPARKED
+            # reading to AT_HOME for the whole slew (hardware, 2026-07-17).
             if command == "home":
+                self._sticky_at_home  = False
                 self._home_cmd_issued = True
                 self._home_slew_seen  = False
-            elif command in ("goto", "park", "track"):
+            elif command in ("goto", "park", "track", "unpark", "stop"):
                 self._sticky_at_home  = False
                 self._home_cmd_issued = False
                 self._home_slew_seen  = False

@@ -1551,7 +1551,7 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
       - *Done 2026-07-17:* `_stop_safely_label()` helper applied to all three
         STOP_SAFELY emit sites (stoppable phases, stop-only wait phases, PAUSED_SAFE);
         3 new tests (`TestStopSafelyLabel`); 75 observing tests green.
-- [ ] M9-032 Hardware report 2026-07-17 (second home cycle after park→continue): the
+- [x] M9-032 Hardware report 2026-07-17 (second home cycle after park→continue): the
       state pill jumps to AT HOME **immediately** when "Home the mount" is pressed,
       while the mount is still slewing to home; pressing STOP mid-slew leaves the pill
       on AT HOME and the flow asking for a home confirmation that cannot honestly be
@@ -1581,6 +1581,13 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
         `OnStepMount.stop()` does not clear `_at_mechanical_home`, so mechanical home
         authority survives a mid-slew STOP (position no longer trustworthy);
         `note_external_motion()` exists as the public API for exactly this.
+      - *Done 2026-07-17:* `record_command("home")` now clears the sticky;
+        `"unpark"`/`"stop"` added to the clearing branch; `_run_home` records "home",
+        `_run_safe_stop` records "park" (only when actually issuing, respecting the
+        M9-027 no-resend window). 6 new tests (4 sticky-lifecycle incl. full
+        second-cycle regression, 2 guided-flow recording); 241 tests green across
+        device-state/observing/mount suites. Upstream stop() ask recorded in SYNC.md,
+        not filed. Hardware re-test pending next Pi session.
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

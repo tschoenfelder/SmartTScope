@@ -451,6 +451,11 @@ class ObservingService:
         # configured EEPROM park position. Park position must only be set by
         # explicit user action — there is currently no such action anywhere
         # in this app at all (removed again in a later session; see wiki/log.md).
+        # M9-032: register the command with DeviceStateService — this clears a
+        # sticky AT_HOME left over from an earlier confirmed home (which would
+        # otherwise promote UNPARKED readings to AT_HOME for the whole slew)
+        # and keeps last-command telemetry correct for the guided flow.
+        deps.device_state.record_command("home")
         at_home = mount_operations.home_sequence(deps.mount, deps.coordinator)
         # Force the device_state cache to refresh immediately, same as
         # _run_safe_stop() does after park_sequence() — otherwise the
@@ -584,6 +589,10 @@ class ObservingService:
         now = time.monotonic()
         still_waiting = issued_at is not None and (now - issued_at) < _PARK_COMMAND_MAX_WAIT_S
         if not still_waiting:
+            # M9-032: register the command (clears the sticky AT_HOME and the
+            # home-promotion flags in DeviceStateService; guided flow bypasses
+            # the /api/mount/* endpoints that normally do this).
+            deps.device_state.record_command("park")
             mount_operations.park_sequence(deps.mount, deps.coordinator, deps.device_state)
             with self._lock:
                 self._park_command_issued_at = time.monotonic()

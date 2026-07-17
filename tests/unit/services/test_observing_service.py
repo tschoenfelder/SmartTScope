@@ -369,6 +369,29 @@ class TestSafeParkFromWaitPhases:
         assert snap["guards"]["g8_safe_stop_possible"] is True
 
 
+class TestGuidedFlowRecordsCommands:
+    """M9-032: the guided flow bypasses the /api/mount/* endpoints, so it must
+    register its own commands with DeviceStateService — record_command() is
+    what clears the sticky AT_HOME (and the home-promotion flags) that
+    otherwise mislabel the second home cycle (hardware report 2026-07-17)."""
+
+    def test_run_home_records_home_command(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc.handle_intent(IT.CONFIRM_CONTEXT, deps)
+        deps.mount.get_state.return_value = MountState.AT_HOME
+        svc.handle_intent(IT.START_HOME, deps)
+        _wait_idle(svc, deps)
+        assert deps.device_state.get_last_command()[0] == "home"
+
+    def test_run_safe_stop_records_park_command(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps = replace(deps, device_state=_device_state(MountState.PARKED))
+        svc.handle_intent(IT.STOP_SAFELY, deps)
+        _wait_idle(svc, deps, timeout=10.0)
+        assert deps.device_state.get_last_command()[0] == "park"
+
+
 class TestStopSafelyLabel:
     """M9-031: the STOP_SAFELY label is state-aware — offering to "park" while
     the state pill already shows PARKED read as nonsense (user feedback

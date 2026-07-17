@@ -1598,6 +1598,31 @@ Guide camera processing subsystem: acquire frames through camera adapter, measur
       - *Done 2026-07-17:* `_PHASE_TITLES` map in `static/js/observing.js` covering
         all 12 phases; `_obsPhaseLabel()` falls back to the old
         underscores-to-spaces for unknown values. JS-only; `node --check` clean.
+- [x] M9-034 Hardware report 2026-07-17 (STOP mid-park-slew): SAFE_STOPPING becomes a
+      dead end — the M9-027 no-resend window silently blocks a park retry for 120 s,
+      no actions are offered ("no way to continue parking or slewing back to home"),
+      and the Detail panel still shows the *previous* action's record
+      (`home: AT_HOME`), which reads as a wrong live status `[P1 · Bug/UI · Source:
+      user hardware session 2026-07-17]`
+      - *Fixes:* (1) stale detail: `_spawn()` clears `_detail` at action start;
+        `_run_safe_stop` writes its own `safe_stop` detail. (2) SAFE_STOPPING offers
+        two secondary actions: "Retry park now" (STOP_SAFELY — explicitly clears the
+        M9-027 window; a *user-initiated* retry is exactly the case where re-issuing
+        `:hP#` is right, the manual STOP killed the first one) and "Back to homing"
+        (UNPARK_CONTINUE → WAIT_HOME_CONFIRMATION, same guard resets as from
+        PARKED_SAFE + clears the park window). (3) `record_command()` lifecycle
+        matches on the first word — the goto endpoint records "goto ra=…", which never
+        matched the literal "goto", so API gotos silently kept the sticky AT_HOME too.
+      - *Acceptance:* after STOP mid-park-slew: Detail no longer shows the stale home
+        record; "Retry park now" re-issues the park immediately; "Back to homing"
+        returns to WAIT_HOME_CONFIRMATION and the mount can be homed again;
+        hardware-verified on the Pi.
+      - *Done 2026-07-17:* all three fixes in; FSM gets SAFE_STOPPING+UNPARK_CONTINUE
+        → WAIT_HOME_CONFIRMATION (intent checked before g8 — explicit user choice
+        wins); UNPARK_CONTINUE side effect (g2/g8 reset + park-window clear) now
+        accepted from both PARKED_SAFE and SAFE_STOPPING. 7 new tests
+        (TestSafeStoppingRecovery ×4, FSM ×1 (2 asserts), sticky goto-with-args ×1,
+        plus updated M9-032 set); 283 tests green. Hardware re-test pending.
       - *Decision recorded (user, 2026-07-17):* it is OK to connect to OnStep before
         time/location is confirmed — mount-state display at this phase needs no gating
         on context confirmation (mount is already connected at startup via

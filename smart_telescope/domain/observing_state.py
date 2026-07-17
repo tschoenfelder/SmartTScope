@@ -223,6 +223,12 @@ class ObservingStateMachine:
         return ObservingPhase.CAPTURE_ACTIVE
 
     def _on_safe_stopping(self, inp: ObservingInput) -> ObservingPhase:
+        # M9-034: a manual STOP mid-park-slew leaves the mount neither parked
+        # nor moving — SAFE_STOPPING must not be a dead end. UNPARK_CONTINUE
+        # returns to the homing step (checked before g8 so an explicit user
+        # choice wins even if the park happened to complete concurrently).
+        if inp.intent == Intent.UNPARK_CONTINUE:
+            return ObservingPhase.WAIT_HOME_CONFIRMATION
         if _guard_true(inp.guards.g8_safe_stop_possible):
             return ObservingPhase.PARKED_SAFE
         return ObservingPhase.SAFE_STOPPING

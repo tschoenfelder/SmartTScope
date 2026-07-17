@@ -171,11 +171,14 @@ class DeviceStateService:
             # not at home until this command confirms it. A sticky left over
             # from an earlier confirmed home otherwise promotes every UNPARKED
             # reading to AT_HOME for the whole slew (hardware, 2026-07-17).
-            if command == "home":
+            # M9-034: match on the first word — goto is recorded with its
+            # arguments ("goto ra=…h dec=…°") and never matched the literal.
+            cmd_word = command.split(" ", 1)[0]
+            if cmd_word == "home":
                 self._sticky_at_home  = False
                 self._home_cmd_issued = True
                 self._home_slew_seen  = False
-            elif command in ("goto", "park", "track", "unpark", "stop"):
+            elif cmd_word in ("goto", "park", "track", "unpark", "stop"):
                 self._sticky_at_home  = False
                 self._home_cmd_issued = False
                 self._home_slew_seen  = False

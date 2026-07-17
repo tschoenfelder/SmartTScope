@@ -4479,3 +4479,36 @@ user what to do. `_obsPhaseLabel()` only swapped underscores for spaces. New
 (WAIT_CONTEXT_CONFIRMATION -> "Confirm time & location", WAIT_HOME_CONFIRMATION ->
 "Home the mount", SAFE_STOPPING -> "Stopping safely...", PARKED_SAFE -> "Parked safe",
 etc.), falling back to the old formatting for unknown values. JS-only change.
+
+---
+
+## 2026-07-17 — M9-034 filed + implemented: SAFE_STOPPING recovery after manual STOP; stale detail; goto lifecycle match
+
+Hardware report (STOP pressed mid-park-slew): Detail panel still showed the previous
+home action record (home: AT_HOME) reading as wrong live status; the flow offered no
+way to continue parking or return to homing (M9-027 no-resend window silently blocks
+a park retry for 120 s and SAFE_STOPPING had no secondary actions).
+
+Three fixes (service/domain layer, adapter untouched):
+
+1. **Stale detail:** `_spawn()` clears `_detail` at action start — detail describes
+   the CURRENT action; `_run_safe_stop` now writes its own `safe_stop` record
+   (`parked`, `mount_state`).
+2. **SAFE_STOPPING recovery actions:** "Retry park now" (STOP_SAFELY while in
+   SAFE_STOPPING clears `_park_command_issued_at` — an explicit user retry is
+   exactly the case where re-issuing :hP# is right, the manual STOP killed the
+   first one; automatic retries stay throttled per M9-027) and "Back to homing"
+   (UNPARK_CONTINUE: FSM now allows SAFE_STOPPING -> WAIT_HOME_CONFIRMATION,
+   intent checked before g8 so the explicit choice wins; side effect resets
+   g2/g8 and abandons the park window — accepted from PARKED_SAFE and
+   SAFE_STOPPING alike).
+3. **Sticky lifecycle bug (bonus find):** the goto endpoint records
+   "goto ra=...h dec=...deg", which never matched the literal "goto" in
+   `record_command()`s clearing branch — API gotos silently kept the sticky
+   AT_HOME. Matching is now on the first word.
+
+Tests: TestSafeStoppingRecovery (actions offered, retry bypasses window with
+park.call_count==2, back-to-homing transition, detail replacement), FSM
+SAFE_STOPPING+UNPARK_CONTINUE, sticky-cleared-by-goto-with-args. 283 tests green
+across domain/device-state/observing/mount suites. Hardware re-test of the STOP
+mid-park scenario pending the next Pi session.

@@ -369,6 +369,63 @@ class TestSafeParkFromWaitPhases:
         assert snap["guards"]["g8_safe_stop_possible"] is True
 
 
+class TestSafeStoppingRecovery:
+    """M9-034: after a manual STOP mid-park-slew the mount is neither parked
+    nor moving — SAFE_STOPPING must offer a way out (hardware report
+    2026-07-17): explicit park retry (bypasses the M9-027 no-resend window)
+    and a route back to the homing step."""
+
+    def _stuck_safe_stop(self, svc: ObservingService, deps: ObservingDeps) -> dict:
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps.mount.get_state.return_value = MountState.TRACKING
+        deps.mount.park.return_value = True
+        deps.device_state = _device_state(MountState.SLEWING)  # never reaches PARKED
+        svc.handle_intent(IT.STOP_SAFELY, deps)
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert snap["phase"] == P.SAFE_STOPPING.value
+        assert deps.mount.park.call_count == 1
+        return snap
+
+    def test_safe_stopping_offers_retry_and_back_to_homing(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        snap = self._stuck_safe_stop(svc, deps)
+        intents = {a["intent"] for a in snap["secondary_actions"]}
+        assert intents == {IT.STOP_SAFELY.value, IT.UNPARK_CONTINUE.value}
+
+    def test_explicit_retry_bypasses_no_resend_window(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        self._stuck_safe_stop(svc, deps)
+        svc.handle_intent(IT.STOP_SAFELY, deps)  # "Retry park now"
+        snap = _wait_idle(svc, deps, timeout=10.0)
+        assert deps.mount.park.call_count == 2
+        assert snap["phase"] == P.SAFE_STOPPING.value  # mock still never parks
+
+    def test_back_to_homing_returns_to_wait_home(self, deps: ObservingDeps) -> None:
+        svc = ObservingService()
+        self._stuck_safe_stop(svc, deps)
+        snap = svc.handle_intent(IT.UNPARK_CONTINUE, deps)
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
+        assert snap["guards"]["g8_safe_stop_possible"] is False
+        assert snap["primary_action"]["intent"] == IT.START_HOME.value
+
+    def test_detail_reflects_current_action_not_previous(self, deps: ObservingDeps) -> None:
+        # M9-034: the stale home record (home: AT_HOME) kept showing in the
+        # Detail panel during/after a park, reading as a wrong live status.
+        svc = ObservingService()
+        svc.handle_intent(IT.CONFIRM_CONTEXT, deps)
+        deps.mount.get_state.return_value = MountState.AT_HOME
+        svc.handle_intent(IT.START_HOME, deps)
+        snap = _wait_idle(svc, deps)
+        assert "home" in snap["detail"]
+
+        deps.mount.get_state.return_value = MountState.TRACKING
+        deps2 = replace(deps, device_state=_device_state(MountState.PARKED))
+        svc.handle_intent(IT.STOP_SAFELY, deps2)
+        snap = _wait_idle(svc, deps2, timeout=10.0)
+        assert "home" not in snap["detail"]
+        assert snap["detail"]["safe_stop"]["parked"] is True
+
+
 class TestGuidedFlowRecordsCommands:
     """M9-032: the guided flow bypasses the /api/mount/* endpoints, so it must
     register its own commands with DeviceStateService — record_command() is

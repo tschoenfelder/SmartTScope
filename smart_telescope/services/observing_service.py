@@ -219,6 +219,13 @@ def _secondary_actions(
         actions.append({"intent": Intent.SKIP_GUIDING.value, "label": "Skip guiding"})
     if phase is ObservingPhase.PAUSED_SAFE:
         actions.append({"intent": Intent.STOP_SAFELY.value, "label": stop_label})
+    if phase is ObservingPhase.SAFE_STOPPING:
+        # M9-034: SAFE_STOPPING must not be a dead end after a manual STOP
+        # mid-park-slew. Retry bypasses the M9-027 no-resend window (a
+        # user-initiated retry is exactly the case where re-issuing :hP# is
+        # right — the manual STOP killed the first one).
+        actions.append({"intent": Intent.STOP_SAFELY.value, "label": "Retry park now"})
+        actions.append({"intent": Intent.UNPARK_CONTINUE.value, "label": "Back to homing"})
     if phase is ObservingPhase.FAULT:
         actions.append({"intent": Intent.ABORT_TO_PARK.value, "label": "Abort to safe park"})
     if phase is ObservingPhase.PARKED_SAFE:
@@ -315,16 +322,27 @@ class ObservingService:
         elif intent is Intent.SKIP_GUIDING and phase is ObservingPhase.GUIDE_READYING:
             with self._lock:
                 self._guards = replace(self._guards, g6_guiding_ok=True)
-        elif intent is Intent.UNPARK_CONTINUE and phase is ObservingPhase.PARKED_SAFE:
-            # M9-028: back into the flow at the homing step. Reset the stale
-            # guards — g2 (the previous home confirmation is void once the
-            # user intends to unpark again) and g8 (a leftover True would let
-            # the next SAFE_STOPPING auto-advance to PARKED_SAFE before the
-            # park actually completes, defeating the M9-027 protection).
+        elif intent is Intent.UNPARK_CONTINUE and phase in (
+            ObservingPhase.PARKED_SAFE, ObservingPhase.SAFE_STOPPING,
+        ):
+            # M9-028/M9-034: back into the flow at the homing step. Reset the
+            # stale guards — g2 (the previous home confirmation is void once
+            # the user intends to unpark again) and g8 (a leftover True would
+            # let the next SAFE_STOPPING auto-advance to PARKED_SAFE before
+            # the park actually completes, defeating the M9-027 protection) —
+            # and abandon any pending park command window.
             with self._lock:
                 self._guards = replace(
                     self._guards, g2_home_confirmed=False, g8_safe_stop_possible=False,
                 )
+                self._park_command_issued_at = None
+        elif intent is Intent.STOP_SAFELY and phase is ObservingPhase.SAFE_STOPPING:
+            # M9-034: explicit user retry ("Retry park now") — clear the
+            # M9-027 no-resend window so the next _run_safe_stop re-issues
+            # :hP# immediately instead of waiting out the 120 s budget. Only
+            # an explicit intent does this; automatic retries stay throttled.
+            with self._lock:
+                self._park_command_issued_at = None
 
         with self._lock:
             inp = ObservingInput(
@@ -395,6 +413,10 @@ class ObservingService:
                 return
             self._busy = True
             fault_from_phase = self._phase
+            # M9-034: detail describes the CURRENT action — a leftover record
+            # from a previous step (e.g. home: AT_HOME shown during a park)
+            # reads as a wrong live status in the UI.
+            self._detail.clear()
 
         def _run() -> None:
             try:
@@ -605,3 +627,9 @@ class ObservingService:
                 self._park_command_issued_at = None
         with self._lock:
             self._guards = replace(self._guards, g8_safe_stop_possible=parked)
+            # M9-034: current-action record (replaces whatever the previous
+            # action left in detail — cleared by _spawn()).
+            self._detail["safe_stop"] = {
+                "parked": parked,
+                "mount_state": obs.state.name if obs is not None else "UNKNOWN",
+            }

@@ -679,6 +679,17 @@ class TestStickyAtHome:
         svc._poll_once(mount2)
         assert svc.get_mount_state().state == MountState.AT_HOME   # confirmed
 
+    def test_sticky_cleared_by_goto_command_with_arguments(self):
+        # M9-034: the goto endpoint records "goto ra=…h dec=…°" — the
+        # lifecycle branch must match on the first word, not the full string
+        # (the literal comparison silently kept the sticky on every API goto).
+        svc = DeviceStateService()
+        self._establish_at_home(svc)
+        mount2 = _mock_mount(MountState.UNPARKED)
+        svc.record_command("goto ra=12.0000h dec=45.00°")
+        svc._poll_once(mount2)
+        assert svc.get_mount_state().state == MountState.UNPARKED
+
     def test_sticky_cleared_by_unpark_command(self):
         svc = DeviceStateService()
         self._establish_at_home(svc)

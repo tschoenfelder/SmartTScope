@@ -157,6 +157,14 @@ class TestSafeStopping:
         allowed = _inp(P.SAFE_STOPPING, None, g8_safe_stop_possible=True)
         assert fsm.next(allowed) == P.PARKED_SAFE
 
+    def test_unpark_continue_returns_to_wait_home(self) -> None:
+        # M9-034: a manual STOP mid-park-slew must not dead-end SAFE_STOPPING.
+        fsm = ObservingStateMachine()
+        assert fsm.next(_inp(P.SAFE_STOPPING, IT.UNPARK_CONTINUE)) == P.WAIT_HOME_CONFIRMATION
+        # The explicit user choice wins even if the park completed concurrently.
+        inp = _inp(P.SAFE_STOPPING, IT.UNPARK_CONTINUE, g8_safe_stop_possible=True)
+        assert fsm.next(inp) == P.WAIT_HOME_CONFIRMATION
+
 
 class TestParkedSafe:
     def test_ignores_all_intents_except_unpark_continue(self) -> None:

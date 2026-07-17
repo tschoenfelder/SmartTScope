@@ -4530,3 +4530,28 @@ Not guessing further: added a conclusive diagnostic instead.
 with the raw adapter-reported state (pre-promotion), decoded `:GU#` flags,
 shim `_at_mechanical_home`, and the cache sticky/promotion flags. Next repro on the
 Pi pins the faulty layer definitively. 100 device-state/observing tests green.
+
+---
+
+## 2026-07-17 — M9-034 evidence round 1: no transitions after home confirm; busy-gate escape fixed
+
+First diagnostic capture from the Pi (repro: home -> confirm -> stop safely -> STOP):
+the transition log ends at `SLEWING -> AT_HOME` (home slew completing, OnStep genuinely
+reporting H — decoded at_home=True, raw GU# `nNpHEo260`). **No transition was ever
+logged for the park slew or the manual STOP**, and `/api/observing/state` showed
+`busy: true` with empty detail. `park_sequence()` logs pre-park state and "Mount park
+issued" unconditionally — so either the safe-stop worker wedged BEFORE issuing :hP#
+(only unbounded call on that path: `guiding_service.stop()`; the coordinator raises on
+conflict, all serial calls have timeouts) or it never ran. The AT HOME pill was
+therefore likely *true* this run (mount still at home, park never issued) — the
+"blocked app" is the real defect.
+
+Fixed now (service layer): UNPARK_CONTINUE added to the busy-gate bypass — it is the
+escape hatch out of SAFE_STOPPING and was silently dropped while a worker was in
+flight (which is most of the time, since _maybe_auto_advance spawns on every UI poll).
+_run_safe_stop re-checks the phase before writing g8/detail so a late worker cannot
+clobber the escape. 2 new tests; 84 observing tests green.
+
+Still needed from the Pi: full log slice around the repro
+(`grep -E "park|guiding|unpark|WARNING|ERROR" server.log | tail -50`) and whether
+busy stays true persistently (re-curl after a minute) — that names the wedge line.

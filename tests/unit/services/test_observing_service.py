@@ -408,6 +408,28 @@ class TestSafeStoppingRecovery:
         assert snap["guards"]["g8_safe_stop_possible"] is False
         assert snap["primary_action"]["intent"] == IT.START_HOME.value
 
+    def test_unpark_continue_passes_busy_gate(self, deps: ObservingDeps) -> None:
+        # M9-034 reopened (Pi 2026-07-17): _maybe_auto_advance keeps a worker
+        # in flight during most UI polls, so a busy-gated UNPARK_CONTINUE was
+        # silently dropped — the escape hatch must work while busy.
+        svc = ObservingService()
+        self._stuck_safe_stop(svc, deps)
+        with svc._lock:
+            svc._busy = True  # simulate a worker still in flight
+        snap = svc.handle_intent(IT.UNPARK_CONTINUE, deps)
+        assert snap["phase"] == P.WAIT_HOME_CONFIRMATION.value
+
+    def test_late_safe_stop_worker_does_not_clobber_escape(self, deps: ObservingDeps) -> None:
+        # A worker finishing AFTER the user escaped must not write g8=True
+        # into WAIT_HOME_CONFIRMATION (would fast-forward the next safe-stop).
+        svc = ObservingService()
+        svc._phase = P.WAIT_HOME_CONFIRMATION
+        deps = replace(deps, device_state=_device_state(MountState.PARKED))
+        svc._run_safe_stop(deps)  # simulate the late worker body directly
+        snap = svc.snapshot()
+        assert snap["guards"]["g8_safe_stop_possible"] is not True
+        assert "safe_stop" not in snap["detail"]
+
     def test_detail_reflects_current_action_not_previous(self, deps: ObservingDeps) -> None:
         # M9-034: the stale home record (home: AT_HOME) kept showing in the
         # Detail panel during/after a park, reading as a wrong live status.

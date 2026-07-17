@@ -313,7 +313,15 @@ class ObservingService:
     def handle_intent(self, intent: Intent, deps: ObservingDeps) -> dict[str, Any]:
         with self._lock:
             phase, busy = self._phase, self._busy
-        if busy and intent not in (Intent.PAUSE, Intent.STOP_SAFELY, Intent.ABORT_TO_PARK):
+        # M9-034 (reopened): UNPARK_CONTINUE must pass the busy gate too — it
+        # is the escape hatch out of SAFE_STOPPING, and _maybe_auto_advance
+        # keeps a _run_safe_stop worker in flight during most UI polls, so a
+        # gated intent was silently dropped ("app blocked" on real hardware).
+        # It is a pure flow transition (no hardware I/O), safe while a worker
+        # runs; _run_safe_stop re-checks the phase before writing its result.
+        if busy and intent not in (
+            Intent.PAUSE, Intent.STOP_SAFELY, Intent.ABORT_TO_PARK, Intent.UNPARK_CONTINUE,
+        ):
             return self.snapshot(deps)
 
         # Side effects resolved synchronously before the FSM sees the intent.
@@ -626,9 +634,15 @@ class ObservingService:
             with self._lock:
                 self._park_command_issued_at = None
         with self._lock:
+            # M9-034 (reopened): the user may have escaped via UNPARK_CONTINUE
+            # while this worker was running — don't clobber the fresh guard
+            # reset (a late g8=True would let the NEXT safe-stop auto-advance
+            # to PARKED_SAFE before its park completes).
+            if self._phase is not ObservingPhase.SAFE_STOPPING:
+                return
             self._guards = replace(self._guards, g8_safe_stop_possible=parked)
-            # M9-034: current-action record (replaces whatever the previous
-            # action left in detail — cleared by _spawn()).
+            # current-action record (replaces whatever the previous action
+            # left in detail — cleared by _spawn()).
             self._detail["safe_stop"] = {
                 "parked": parked,
                 "mount_state": obs.state.name if obs is not None else "UNKNOWN",

@@ -1867,6 +1867,31 @@ histogram ceiling until it ships upstream.
         wheel's slot count fails validation with a clear message; no change to the
         external camera_adapter (numeric slots remain its interface).
 
+- [ ] M10-015 Pixel scale must be **derived at runtime, never required in config**
+      (user requirement 2026-07-17): with the optical train known (focal_mm ×
+      reducer_factor) and the camera's pixel size readable (preferred: from the
+      ToupTek driver via the camera adapter's public API when the camera is
+      connected; fallback: `domain/camera_profile.py` looked up via the role's
+      **configured `model`**), `pixel_scale_arcsec` needs no manual value — and a
+      static value is wrong anyway because **binning scales it** (effective scale =
+      base × binning). `[P1 · Runtime]`
+      - *Bug being fixed:* `_derive_pixel_scale()` matches profile model names
+        against the *role name* ("main"/"guide"/"oag") — never matches, so every
+        train silently falls back to the global `PIXEL_SCALE_ARCSEC` (0.38, stale
+        for the current ATR585M main camera).
+      - *Scope:* single runtime helper (e.g. `effective_pixel_scale(train, binning)`
+        on the registry or a service) consumed by plate-solve hints, collimation,
+        and guiding math; `pixel_scale_arcsec` in config demoted to an optional
+        override/escape hatch only; also resolve the train `camera_index` via
+        `CameraNameResolver` instead of the current default-0-for-all (device
+        selection already works by model at runtime; the registry field is the
+        ambiguous leftover).
+      - *Acceptance:* with no `pixel_scale_arcsec` configured anywhere, main/guide/
+        oag report 0.29 / 3.32 / 0.20 ″/px at binning 1 (C8 2032 mm + 2.9 µm;
+        180 mm + 2.9 µm; C8 + 2.0 µm) and 2× those values at binning 2; a configured
+        override still wins; driver-reported pixel size preferred over the profile
+        when available; no consumer reads the raw config value directly anymore.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

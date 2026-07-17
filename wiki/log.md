@@ -4709,3 +4709,23 @@ list (LPR extra) — reconcile at implementation. Backlog only.
 Also flagged to the user in chat: their new `[optical_trains.oag] camera = "oag"`
 will fail registry validation at startup unless an "oag" role is added to
 `[cameras]` — comment the train out until the OAG camera exists.
+
+---
+
+## 2026-07-17 — M10-015 filed: pixel scale derived at runtime (driver pixel size × train × binning)
+
+User requirement from the three-camera config review (main=ATR585M, guide=GPCMOS,
+oag=G3M678M): `pixel_scale_arcsec` must not need manual configuration — the optical
+train provides focal_mm × reducer_factor, the camera''s pixel size is readable (driver
+preferred, model profile fallback), and binning scales the result, so a static config
+number is wrong under binning anyway. Review also uncovered the actual defect:
+`_derive_pixel_scale()` matches profile models against the ROLE name ("main"/"guide"/
+"oag") — never matches — so every train silently uses the global 0.38 fallback, stale
+for the ATR585M main camera. M10-015 specifies the runtime helper
+(`effective_pixel_scale(train, binning)`), demotes the config value to an optional
+override, migrates consumers (plate-solve hints, collimation, guiding), and fixes the
+registry''s default-0 `camera_index` via `CameraNameResolver`. Backlog only.
+
+Interim note given to the user: until M10-015 lands, explicit per-train
+`pixel_scale_arcsec` overrides (0.29 / 3.32 / 0.20) remain advisable, since the
+fallback (0.38) matches none of the current cameras.

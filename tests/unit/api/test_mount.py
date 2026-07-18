@@ -1146,6 +1146,18 @@ class TestMountNudge:
         assert r.status_code == 200
         m.enable_tracking.assert_called_once()
 
+    # ── M10-027: at-home axis-motion refusal surfaces as a clean 409 ───────
+
+    def test_at_home_refusal_returns_409_not_500(self) -> None:
+        from onstep_adapter.safety import OnStepSafetyError, SafetyViolation
+        m = self._inject_nudge_mount(state=MountState.TRACKING)
+        m.move.side_effect = OnStepSafetyError(
+            SafetyViolation(reason="axis_motion_refused_at_home", command="move")
+        )
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 409
+        assert r.json()["detail"] == "axis_motion_refused_at_home"
+
 
 # ── M8-005: Structured 409 gate responses ────────────────────────────────────
 

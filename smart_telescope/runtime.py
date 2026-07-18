@@ -295,6 +295,7 @@ class RuntimeContext:
         self.camera_readiness: CameraReadinessService = CameraReadinessService(
             registry_provider=self.get_optical_train_registry,
             wheel_provider=self.get_filter_wheel,
+            open_lock=self._camera_open_lock,
         )
         # M10-003: per-camera setup FSM (tuning/star-check/focus) — launches a
         # JobManager-arbitrated worker for each camera the identification scan
@@ -812,7 +813,14 @@ class RuntimeContext:
 
         if not config.FILTER_WHEEL.enabled:
             raise RuntimeError("Filter wheel is disabled in config")
-        if self._filter_wheel is None:
+        if self._filter_wheel is not None:
+            return self._filter_wheel
+        # M10-023: the wheel's first Open() shares _camera_open_lock with
+        # every camera-open path — its EnumV2/Open must not race a camera's
+        # SDK open on the same USB bus. One-time cost only: cached after.
+        with self._camera_open_lock:
+            if self._filter_wheel is not None:
+                return self._filter_wheel
             spec = config.FILTER_WHEEL
             if spec.backend.lower() != "native":
                 raise RuntimeError(f"Unsupported filter wheel backend: {spec.backend}")

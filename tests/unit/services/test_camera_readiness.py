@@ -197,6 +197,65 @@ class TestFilterInPlace:
         assert fw["filter_name"] is None
 
 
+class TestOpenLockSerialization:
+    """M10-023: the scan must never run concurrently with a camera SDK open."""
+
+    def test_scan_skips_without_blocking_when_lock_is_held(self):
+        import threading
+        import time as _time
+        lock = threading.RLock()
+        svc = CameraReadinessService(
+            enumerate_fn=lambda: list(_ALL_DEVICES),
+            open_lock=lock,
+        )
+        import smart_telescope.config as cfg
+        # RLock allows the same thread to re-acquire — hold it from a
+        # different thread to simulate real cross-thread contention with an
+        # in-progress camera open (readiness runs on its own thread in prod).
+        held = threading.Event()
+        release = threading.Event()
+
+        def _hold_lock():
+            with lock:
+                held.set()
+                release.wait(timeout=5.0)
+
+        holder = threading.Thread(target=_hold_lock, daemon=True)
+        holder.start()
+        held.wait(timeout=5.0)
+        try:
+            with patch.object(cfg, "CAMERA_SPECS", _SPECS), patch.object(cfg, "CAMERAS", {}):
+                t0 = _time.monotonic()
+                svc.scan_now()
+                elapsed = _time.monotonic() - t0
+        finally:
+            release.set()
+            holder.join(timeout=5.0)
+        assert elapsed < 0.5, "scan_now() blocked instead of skipping"
+        assert svc.snapshot()["scanned"] is False
+
+    def test_scan_proceeds_normally_when_lock_is_free(self):
+        import threading
+        lock = threading.RLock()
+        svc = CameraReadinessService(
+            enumerate_fn=lambda: list(_ALL_DEVICES),
+            open_lock=lock,
+        )
+        import smart_telescope.config as cfg
+        with patch.object(cfg, "CAMERA_SPECS", _SPECS), patch.object(cfg, "CAMERAS", {}):
+            svc.scan_now()
+        snap = svc.snapshot()
+        assert snap["scanned"] is True
+        assert snap["roles"]["main"]["status"] == "DETECTED"
+
+    def test_no_lock_injected_behaves_as_before(self):
+        svc = CameraReadinessService(enumerate_fn=lambda: list(_ALL_DEVICES))
+        import smart_telescope.config as cfg
+        with patch.object(cfg, "CAMERA_SPECS", _SPECS), patch.object(cfg, "CAMERAS", {}):
+            svc.scan_now()
+        assert svc.snapshot()["scanned"] is True
+
+
 class TestLifecycle:
     def test_start_stop_background_loop(self):
         svc = CameraReadinessService(enumerate_fn=lambda: list(_ALL_DEVICES))

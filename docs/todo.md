@@ -2099,7 +2099,7 @@ histogram ceiling until it ships upstream.
         endpoints still return 200. 7 new tests; runtime+API suites green
         (1048).
 
-- [ ] M10-023 One serialization discipline for all ToupTek SDK entry points:
+- [x] M10-023 One serialization discipline for all ToupTek SDK entry points:
       readiness `EnumV2` (every 15 s via `CameraNameResolver._enumerate`), the
       lazy filter-wheel open in `runtime.get_filter_wheel()` (M10-014 addition —
       currently the least-serialized path), and the legacy preview
@@ -2110,6 +2110,22 @@ histogram ceiling until it ships upstream.
       `[P2 · Runtime]`
       - *Acceptance:* no SDK enumerate/open runs concurrently with a camera open;
         the readiness scan skips (not queues) when an open is in progress.
+      - *Done 2026-07-18:* legacy preview `ToupcamCamera.connect` turned out to
+        already be covered — both its call sites in `get_preview_camera()`
+        already sit inside `_camera_open_lock`. The two real gaps: (1)
+        `CameraReadinessService` gained an injected `open_lock` (wired to
+        `runtime._camera_open_lock`); `_scan_once()` now does a non-blocking
+        `acquire(blocking=False)` at entry and **skips** the whole scan
+        (logged at debug) when busy, relying on the existing 15 s retry —
+        never blocks the readiness thread. (2) `runtime.get_filter_wheel()`'s
+        first open now sits inside `_camera_open_lock` (double-checked, same
+        pattern as `_connect_main_camera()`) — after the first successful
+        connect, later calls stay lock-free (cached return). No
+        `adapters/touptek/*.py` edits — `managed.py`'s own
+        `_sdk_lifecycle_lock` didn't need touching since `_camera_open_lock`
+        already wraps every `managed.py`-based open end-to-end. 5 new tests
+        (scan skip/proceed/no-lock-injected, wheel-open dedup, wheel-vs-camera
+        cross-serialization); full API + touptek/camera suites green (1093).
 
 - [ ] M10-024 Hardware evidence: lock-wait vs. GIL freeze during camera connect
       (feeds M10-021/022 acceptance numbers): on the Pi during startup camera
@@ -2179,6 +2195,40 @@ histogram ceiling until it ships upstream.
         difference, or a disconnected/faulty G3M678M) is unconfirmed and
         needs the actual `~/.SmartTScope/config.toml` / server log from the
         Pi to close out.
+
+- [x] M10-027 At-home axis-motion refusal has no manual-jog bypass in
+      `onstep_adapter` (hardware evidence 2026-07-18: pressing a jog button on
+      the M10-019 Cameras screen while the mount sat at mechanical HOME failed
+      with a raw HTTP 500, `OnStepSafetyError: axis_motion_refused_at_home`).
+      `[P2 · Mount/API]`
+      - *Root cause (traced, no adapter edit):* `onstep_adapter`'s
+        `_axis_motion()` (shared by guide-mode and center/jog-mode moves alike)
+        unconditionally refuses any axis motion while the mount's mechanical
+        HOME flag is set — hardcoded, no bypass parameter on
+        `move_ra_timed`/`move_dec_timed`/`_axis_motion`. The shim's REQ-ST-007
+        override runs on the same call path but only touches unrelated
+        pier-side blockers, not this `at_home` check. `note_external_motion()`
+        cannot legitimately satisfy it either — `motion_safety_preflight()`
+        re-reads the raw `:GU#` decoded flag fresh every call, so a genuinely-
+        at-home mount re-triggers the refusal regardless of local bookkeeping.
+      - *Done 2026-07-18 (app-side only):* `mount_nudge()`
+        (`api/mount.py`) now catches `OnStepSafetyError` and returns a clean
+        `409` with `exc.violation.reason` — the same pattern `_safe_goto()`
+        already uses for goto. The jog pad's existing error display
+        (`multicam.js` `#mc-jog-note`) now shows the real reason instead of an
+        opaque 500. 1 new test (`TestMountNudge::test_at_home_refusal_returns_409_not_500`).
+      - *Not done — needs approval before filing:* the actual behavior gap
+        (a manual/terrestrial jog cannot proceed at all while genuinely at
+        mechanical HOME) has no app-side fix — it requires an `onstep_adapter`
+        change (e.g. a "non-astronomical manual jog" bypass parameter,
+        analogous to the existing REQ-ST-004 `enable_tracking()` at-home
+        bypass). Recorded as a draft candidate ask in `SYNC.md`, **not filed**
+        — same approval gate as REQ-ST-003/005/006/008. Practical implication
+        for the M10-019 terrestrial workflow in the meantime: jogging from a
+        mount still sitting exactly at mechanical HOME will always 409 until
+        either upstream ships a bypass or the mount has moved off home (e.g.
+        after any goto/slew) — worth reflecting in the jog-pad UI copy as a
+        follow-up, not just relying on the error string.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

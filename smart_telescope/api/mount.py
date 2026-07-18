@@ -620,7 +620,15 @@ def mount_nudge(
     if state != MountState.TRACKING and not body.keep_tracking_state:
         if not mount.enable_tracking():
             raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
-    ok = mount.move(body.direction.lower(), body.duration_ms)
+    try:
+        ok = mount.move(body.direction.lower(), body.duration_ms)
+    except Exception as exc:
+        # M10-027: axis motion at mechanical HOME is unconditionally refused
+        # by onstep_adapter (no bypass for manual/terrestrial jogs) — surface
+        # it as a clean 409 instead of an unhandled 500.
+        if OnStepSafetyError is not None and isinstance(exc, OnStepSafetyError):
+            raise HTTPException(status_code=409, detail=exc.violation.reason) from exc
+        raise
     if not ok:
         raise HTTPException(
             status_code=500,

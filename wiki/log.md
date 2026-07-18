@@ -5007,3 +5007,28 @@ touptek/camera-service/runtime suites (152) and the full API suite (1013)
 green. Still needed: Pi evidence on why [cameras.oag]'s model selector failed
 to match in the first place (config typo vs SDK name mismatch vs a genuinely
 disconnected G3M678M) - filed as the remaining open item under M10-026.
+
+## 2026-07-18 - M10-023 done; M10-027 filed (at-home jog refusal)
+
+M10-023 (SDK serialization discipline): legacy preview ToupcamCamera.connect
+turned out already covered by _camera_open_lock. The two real gaps fixed:
+CameraReadinessService now takes an injected open_lock (wired to
+runtime._camera_open_lock) and does a non-blocking acquire at the top of
+_scan_once() - skips the whole scan (not queues) when a camera open is in
+progress, relying on the existing 15s retry. runtime.get_filter_wheel()'s
+first Open() now sits inside _camera_open_lock too (double-checked, same
+pattern as _connect_main_camera()); cached returns after that stay lock-free.
+No adapters/touptek/*.py edits needed. 5 new tests; full API + touptek/camera
+suites green (1093).
+
+M10-027 (new hardware report, same session): the Cameras-screen jog pad
+failed with a raw 500 "OnStepSafetyError: axis_motion_refused_at_home" when
+pressed at mechanical HOME. Traced to onstep_adapter's _axis_motion(), which
+unconditionally refuses any axis motion at home with no bypass parameter -
+same family as the existing REQ-ST-004 enable_tracking() at-home bypass.
+Local fix: mount_nudge() (api/mount.py) now catches OnStepSafetyError and
+returns a clean 409 with the real reason, same pattern _safe_goto() already
+uses. The underlying behavior gap (jog genuinely cannot move the mount at
+home) needs an onstep_adapter change - recorded as draft candidate REQ-ST-009
+in SYNC.md, NOT filed upstream, awaiting the same explicit approval gate as
+REQ-ST-003/005/006/008. 1 new test.

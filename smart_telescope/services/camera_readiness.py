@@ -48,10 +48,16 @@ class CameraReadinessService:
         enumerate_fn: Callable[[], list[Any]] | None = None,
         registry_provider: Callable[[], Any] | None = None,
         wheel_provider: Callable[[], Any] | None = None,
+        open_lock: threading.RLock | None = None,
     ) -> None:
         self._enumerate_fn = enumerate_fn or CameraNameResolver()._enumerate
         self._registry_provider = registry_provider
         self._wheel_provider = wheel_provider
+        # M10-023: shared with runtime's camera-open lock so this scan's
+        # EnumV2 (and any lazy wheel open through wheel_provider) never runs
+        # concurrently with a camera SDK open on the same USB bus. None in
+        # tests that construct the service directly — behavior is unchanged.
+        self._open_lock = open_lock
         self._resolver = CameraNameResolver()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -112,6 +118,19 @@ class CameraReadinessService:
     def _scan_once(self) -> None:
         from .. import config
 
+        # M10-023: skip this tick (don't block) if a camera SDK open is in
+        # progress — EnumV2/wheel-open must never race a camera Open on the
+        # same bus. _loop() retries every _POLL_INTERVAL_S regardless.
+        if self._open_lock is not None and not self._open_lock.acquire(blocking=False):
+            _log.debug("CameraReadinessService: camera-open lock busy — skipping this scan")
+            return
+        try:
+            self._scan_once_locked(config)
+        finally:
+            if self._open_lock is not None:
+                self._open_lock.release()
+
+    def _scan_once_locked(self, config: Any) -> None:
         try:
             devices = list(self._enumerate_fn())
             sdk_available = True

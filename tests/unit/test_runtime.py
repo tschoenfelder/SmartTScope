@@ -531,3 +531,83 @@ class TestNonBlockingBringup:
         ctx._cam_mode = "mock"
         ctx._update_hardware_mode()
         assert ctx.hardware_mode == "mock"
+
+
+class TestFilterWheelOpenSerialization:
+    """M10-023: the wheel's first Open() shares _camera_open_lock with every
+    camera-open path — EnumV2/Open must never race a camera SDK open."""
+
+    def test_concurrent_callers_open_wheel_once(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import FilterWheelSpec
+        opens = []
+
+        class SlowWheel:
+            def __init__(self, **kwargs):
+                pass
+            def connect(self):
+                opens.append(1)
+                time.sleep(0.1)
+                return True
+
+        ctx = _make_ctx()
+        results = []
+        with patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=True)), \
+             patch("smart_telescope.adapters.touptek.filter_wheel.TouptekFilterWheel", SlowWheel):
+            threads = [
+                threading.Thread(target=lambda: results.append(ctx.get_filter_wheel()))
+                for _ in range(2)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5.0)
+        assert len(opens) == 1
+        assert len(results) == 2
+        assert results[0] is results[1]
+
+    def test_wheel_open_serializes_against_concurrent_camera_role_open(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import CameraSpec, FilterWheelSpec
+        active: list[int] = []
+        max_concurrent = [0]
+
+        def _mark_active():
+            active.append(1)
+            max_concurrent[0] = max(max_concurrent[0], len(active))
+            time.sleep(0.1)
+            active.pop()
+
+        class SlowCamera:
+            def __init__(self, **kwargs):
+                pass
+            def connect(self):
+                _mark_active()
+                return True
+            def set_gain(self, gain):
+                pass
+            def get_logical_name(self):
+                return "slow-cam"
+
+        class SlowWheel:
+            def __init__(self, **kwargs):
+                pass
+            def connect(self):
+                _mark_active()
+                return True
+
+        ctx = _make_ctx()
+        spec = {"guide": CameraSpec(role="guide", model="GPCMOS02000KPA")}
+        with patch.object(cfg, "CAMERA_SPECS", spec), \
+             patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=True)), \
+             patch("smart_telescope.adapters.touptek.managed.SmartTouptekCamera", SlowCamera), \
+             patch("smart_telescope.adapters.touptek.filter_wheel.TouptekFilterWheel", SlowWheel):
+            threads = [
+                threading.Thread(target=ctx.get_camera_by_role, args=("guide",)),
+                threading.Thread(target=ctx.get_filter_wheel),
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5.0)
+        assert max_concurrent[0] == 1

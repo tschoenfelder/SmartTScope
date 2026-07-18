@@ -167,10 +167,12 @@ def _safe_goto(
     coordinator: HardwareCommandCoordinator,
     ra: float,
     dec: float,
+    *,
+    keep_tracking_state: bool = False,
 ) -> None:
     """Issue a goto via the service layer; map domain exceptions to HTTP."""
     try:
-        mount_ops.safe_goto(mount, coordinator, ra, dec)
+        mount_ops.goto_sequence(mount, coordinator, ra, dec, keep_tracking_state=keep_tracking_state)
     except mount_ops.MountSlewingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except CommandConflictError as exc:
@@ -184,6 +186,11 @@ def _safe_goto(
 class GotoRequest(BaseModel):
     ra: float
     dec: float
+    # M10-025: mirrors /api/mount/nudge's flag — when True, the pre-slew
+    # tracking state is restored once the slew finishes instead of accepting
+    # whatever OnStep leaves tracking as (some firmware auto-starts tracking
+    # on/after a goto). Default False keeps today's behavior for sky targets.
+    keep_tracking_state: bool = False
 
 
 def _get_lst() -> float | None:
@@ -402,7 +409,7 @@ def mount_goto(
         ual.log("goto_requested", result="ok")
     device_state.record_command(f"goto ra={body.ra:.4f}h dec={body.dec:.2f}°")
     try:
-        _safe_goto(mount, coordinator, body.ra, body.dec)
+        _safe_goto(mount, coordinator, body.ra, body.dec, keep_tracking_state=body.keep_tracking_state)
     except Exception as exc:
         command_history.update(rec.command_id, CommandStatus.FAILED, human_message=str(exc))
         raise

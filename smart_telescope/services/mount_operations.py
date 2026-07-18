@@ -56,6 +56,66 @@ def safe_goto(
         raise
 
 
+# M10-025: matches the documented max-slew budget (see M9-027's park-command
+# resend guard) — long enough for any real goto, short enough to not hang a
+# background poll forever if something goes wrong.
+_GOTO_TRACKING_RESTORE_POLL_S = 0.5
+_GOTO_TRACKING_RESTORE_TIMEOUT_S = 120.0
+
+
+def goto_sequence(
+    mount: MountPort,
+    coordinator: HardwareCommandCoordinator,
+    ra: float,
+    dec: float,
+    *,
+    keep_tracking_state: bool = False,
+) -> None:
+    """Issue a goto; when ``keep_tracking_state``, restore the pre-slew
+    tracking state once the slew finishes instead of accepting whatever
+    OnStep leaves tracking as afterward (some firmware auto-starts tracking
+    on/after a goto) — mirrors ``/api/mount/nudge``'s ``keep_tracking_state``
+    flag (M10-019). Default ``False`` is a plain passthrough to `safe_goto()`
+    — no behavior change for existing sky-target callers.
+
+    Raises the same exceptions as `safe_goto()` for the goto itself — those
+    propagate before any tracking-restore logic runs. The restore step itself
+    never raises: a failure there is logged, not surfaced, since the goto
+    already succeeded by that point.
+    """
+    # Only read state up front when the flag is actually set — the default
+    # path must be a pure passthrough to safe_goto(), no extra mount I/O.
+    pre_tracking = mount.get_state() == MountState.TRACKING if keep_tracking_state else False
+    safe_goto(mount, coordinator, ra, dec)
+    if not keep_tracking_state or pre_tracking:
+        return
+
+    deadline = time.monotonic() + _GOTO_TRACKING_RESTORE_TIMEOUT_S
+    state = MountState.SLEWING
+    while time.monotonic() < deadline:
+        try:
+            state = mount.get_state()
+        except Exception as exc:
+            _log.warning("goto_sequence: get_state failed while waiting for slew: %s", exc)
+            return
+        if state != MountState.SLEWING:
+            break
+        time.sleep(_GOTO_TRACKING_RESTORE_POLL_S)
+    else:
+        _log.warning(
+            "goto_sequence: slew did not finish within %.0f s — tracking state left as-is",
+            _GOTO_TRACKING_RESTORE_TIMEOUT_S,
+        )
+        return
+
+    if state == MountState.TRACKING:
+        _log.info("goto_sequence: restoring tracking OFF after slew (keep_tracking_state=True)")
+        try:
+            mount.disable_tracking()
+        except Exception as exc:
+            _log.warning("goto_sequence: disable_tracking failed: %s", exc)
+
+
 # ── Multi-step sequences ──────────────────────────────────────────────────────
 
 def unpark_sequence(mount: MountPort, device_state: DeviceStateService) -> bool:

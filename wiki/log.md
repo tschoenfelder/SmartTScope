@@ -5032,3 +5032,20 @@ uses. The underlying behavior gap (jog genuinely cannot move the mount at
 home) needs an onstep_adapter change - recorded as draft candidate REQ-ST-009
 in SYNC.md, NOT filed upstream, awaiting the same explicit approval gate as
 REQ-ST-003/005/006/008. 1 new test.
+
+## 2026-07-18 - M10-025: goto can now keep tracking off after the slew
+
+New mount_operations.goto_sequence() wraps safe_goto() unchanged (exceptions
+still propagate before any tracking logic) and adds an opt-in
+keep_tracking_state flag, mirroring the M10-019 nudge flag. Default False is
+a pure passthrough - zero extra mount I/O, no behavior change for existing
+sky-target callers (setup wizard, collimation, mount test moves - none pass
+the flag). When True and the mount was not tracking before the goto, it polls
+get_state() (0.5s / 120s budget) until the slew ends and calls
+disable_tracking() if firmware auto-re-enabled tracking, since some OnStep
+firmware does this on/after a goto. Timeout or a mid-poll get_state() failure
+is logged, never raised - the goto itself already succeeded. GotoRequest
+gained keep_tracking_state; mount_goto_sky (elevation-based, always
+astronomical) stays on the default. App-side only, no adapter touch.
+
+10 new tests (7 service, 3 API); full mount/API suites green (1017).

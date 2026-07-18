@@ -15,6 +15,7 @@ from smart_telescope.services.device_state import DeviceStateService, MountObser
 from smart_telescope.services.mount_operations import (
     MountSlewingError,
     safe_goto,
+    goto_sequence,
     unpark_sequence,
     track_sequence,
     park_sequence,
@@ -88,6 +89,85 @@ def test_safe_goto_raises_conflict_when_coordinator_busy():
     with c.mount_command():
         with pytest.raises(CommandConflictError):
             safe_goto(m, c, ra=5.0, dec=45.0)
+
+
+# ── goto_sequence (M10-025) ────────────────────────────────────────────────────
+
+def test_goto_sequence_default_is_pure_passthrough():
+    # keep_tracking_state=False (default): no extra mount I/O beyond safe_goto.
+    m = _mock_mount(state=MountState.UNPARKED)
+    c = _coordinator()
+    goto_sequence(m, c, ra=5.0, dec=45.0)
+    m.goto.assert_called_once_with(5.0, 45.0)
+    m.get_state.assert_not_called()
+    m.disable_tracking.assert_not_called()
+
+
+def test_goto_sequence_propagates_goto_exceptions_before_restore_logic():
+    m = _mock_mount(slewing=True)
+    c = _coordinator()
+    with pytest.raises(MountSlewingError):
+        goto_sequence(m, c, ra=5.0, dec=45.0, keep_tracking_state=True)
+    m.disable_tracking.assert_not_called()
+
+
+def test_goto_sequence_skips_restore_when_already_tracking_before_slew():
+    # Pre-slew tracking was already ON — nothing to restore.
+    m = _mock_mount(state=MountState.TRACKING)
+    c = _coordinator()
+    goto_sequence(m, c, ra=5.0, dec=45.0, keep_tracking_state=True)
+    m.disable_tracking.assert_not_called()
+
+
+def test_goto_sequence_restores_tracking_off_after_slew_completes():
+    # Pre-slew: UNPARKED (tracking off). Slew runs, then firmware re-enables
+    # tracking on its own — goto_sequence must turn it back off.
+    m = _mock_mount(state=MountState.UNPARKED)
+    m.get_state.side_effect = [
+        MountState.UNPARKED,  # pre-slew check
+        MountState.SLEWING,   # poll: still slewing
+        MountState.TRACKING,  # poll: slew finished, firmware auto-tracked
+    ]
+    c = _coordinator()
+    with patch("smart_telescope.services.mount_operations.time") as mock_time:
+        mock_time.monotonic.side_effect = [0.0, 0.5, 1.0]
+        goto_sequence(m, c, ra=5.0, dec=45.0, keep_tracking_state=True)
+    m.disable_tracking.assert_called_once()
+
+
+def test_goto_sequence_leaves_tracking_off_when_slew_ends_untracked():
+    # Slew finishes and tracking is already off — nothing to do.
+    m = _mock_mount(state=MountState.UNPARKED)
+    m.get_state.side_effect = [
+        MountState.UNPARKED,  # pre-slew check
+        MountState.UNPARKED,  # poll: slew already done, tracking off
+    ]
+    c = _coordinator()
+    with patch("smart_telescope.services.mount_operations.time") as mock_time:
+        mock_time.monotonic.side_effect = [0.0, 0.5]
+        goto_sequence(m, c, ra=5.0, dec=45.0, keep_tracking_state=True)
+    m.disable_tracking.assert_not_called()
+
+
+def test_goto_sequence_gives_up_after_timeout_without_raising():
+    m = _mock_mount(state=MountState.UNPARKED)
+    m.get_state.side_effect = [MountState.UNPARKED, MountState.SLEWING]
+    c = _coordinator()
+    with patch("smart_telescope.services.mount_operations.time") as mock_time:
+        # deadline = 0.0 + 120.0; loop check 200.0 < 120.0 → False → falls to else
+        mock_time.monotonic.side_effect = [0.0, 200.0]
+        goto_sequence(m, c, ra=5.0, dec=45.0, keep_tracking_state=True)
+    m.disable_tracking.assert_not_called()
+
+
+def test_goto_sequence_get_state_failure_during_poll_is_tolerated():
+    m = _mock_mount(state=MountState.UNPARKED)
+    m.get_state.side_effect = [MountState.UNPARKED, RuntimeError("serial error")]
+    c = _coordinator()
+    with patch("smart_telescope.services.mount_operations.time") as mock_time:
+        mock_time.monotonic.side_effect = [0.0, 0.5]
+        goto_sequence(m, c, ra=5.0, dec=45.0, keep_tracking_state=True)  # must not raise
+    m.disable_tracking.assert_not_called()
 
 
 # ── unpark_sequence ───────────────────────────────────────────────────────────

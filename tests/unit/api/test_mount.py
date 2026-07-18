@@ -375,6 +375,39 @@ class TestMountGoto:
         _inject(_mock_mount(slewing=True))
         assert client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39}).status_code == 409
 
+    # ── M10-025: keep_tracking_state ─────────────────────────────────────────
+
+    def test_keep_tracking_state_default_false_unchanged(self) -> None:
+        m = _mock_mount(state=MountState.UNPARKED)
+        _inject(m)
+        r = client.post("/api/mount/goto", json={"ra": 5.58, "dec": -5.39})
+        assert r.status_code == 200
+        m.get_state.assert_not_called()
+
+    def test_keep_tracking_state_restores_tracking_off_after_slew(self) -> None:
+        m = _mock_mount(state=MountState.UNPARKED)
+        m.get_state.side_effect = [
+            MountState.UNPARKED,  # pre-slew check
+            MountState.TRACKING,  # poll: slew already done, firmware auto-tracked
+        ]
+        _inject(m)
+        with patch("smart_telescope.services.mount_operations.time") as mock_time:
+            mock_time.monotonic.side_effect = [0.0, 0.5]
+            r = client.post("/api/mount/goto", json={
+                "ra": 5.58, "dec": -5.39, "keep_tracking_state": True,
+            })
+        assert r.status_code == 200
+        m.disable_tracking.assert_called_once()
+
+    def test_keep_tracking_state_skips_restore_when_already_tracking(self) -> None:
+        m = _mock_mount(state=MountState.TRACKING)
+        _inject(m)
+        r = client.post("/api/mount/goto", json={
+            "ra": 5.58, "dec": -5.39, "keep_tracking_state": True,
+        })
+        assert r.status_code == 200
+        m.disable_tracking.assert_not_called()
+
 
 # ── Solar gate tests ───────────────────────────────────────────────────────────
 

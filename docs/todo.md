@@ -2139,7 +2139,7 @@ histogram ceiling until it ships upstream.
         JobManager resource bookkeeping, FSM capture loops on cached handles,
         FastAPI threadpool exhaustion (captures run in dedicated daemon threads).
 
-- [ ] M10-025 Separate slewing (on way to target) from tracking (user request
+- [x] M10-025 Separate slewing (on way to target) from tracking (user request
       2026-07-18): slewing to a target and sidereal tracking are distinct mount
       modes but are currently coupled — GoTo paths assume tracking is (or gets
       switched) on, and OnStep itself may auto-start tracking when a slew
@@ -2160,8 +2160,22 @@ histogram ceiling until it ships upstream.
       - *Acceptance:* a goto issued with tracking off completes with tracking
         still off; default goto behavior for sky targets unchanged; nudge and
         goto use the same flag semantics.
-
-- [x] M10-026 Fix camera role cross-wiring on selector-match failure (hardware
+      - *Done 2026-07-18:* new `mount_operations.goto_sequence()` wraps the
+        existing `safe_goto()` unchanged (all exceptions propagate before any
+        tracking logic runs) — when `keep_tracking_state=False` (default) it
+        is a pure passthrough with zero extra mount I/O. When `True`, it
+        records the pre-slew tracking state (skipping the read entirely
+        otherwise), then — only if tracking was off before — polls
+        `get_state()` (0.5 s interval, 120 s budget matching the documented
+        max-slew window) until the slew leaves `SLEWING`, and calls
+        `disable_tracking()` if the mount came out of the slew `TRACKING`
+        again. Poll timeout or a `get_state()` failure mid-poll is logged and
+        left as-is, never raised — the goto itself already succeeded by that
+        point. `GotoRequest` gained `keep_tracking_state: bool = False`;
+        `_safe_goto()`/`mount_goto()` pass it through; `mount_goto_sky()`
+        (elevation-based, always astronomical) is untouched — defaults to
+        `False`. App-side only, no adapter edit. 7 new service tests + 3 new
+        API tests; full mount/API suites green (1017). Fix camera role cross-wiring on selector-match failure (hardware
       evidence 2026-07-18: on the M10-019 Cameras screen, covering the guide
       camera GPCMOS02000KPA changed the frame shown in the **OAG** panel —
       the OAG role was bound to the guide camera's physical device). Root

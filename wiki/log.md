@@ -4868,3 +4868,27 @@ decodes known ToupTek HRESULTs (busy / access denied / device not functioning /
 timeout) into the setup reason, and ERROR_BUSY is now retryable - the role stays
 IDLE ("camera busy: ...") and the watcher retries until the holder releases,
 instead of terminal DEGRADED. 4 new tests; 24 targeted tests green.
+
+## 2026-07-18 - M10-018: single camera handle per physical device
+
+Evidence closed: `fuser -v /dev/bus/usb/003/009` showed the SmartTScope process
+itself (PID 3334) holding the guide camera. A UI poll had hit the legacy preview
+path ("no [cameras] config - trying SDK auto-detect"), opening the GPCMOS02000KPA
+as a raw preview handle; the setup FSM role path then got 0x800700AA ERROR_BUSY on
+its second open of the same device.
+
+SDK threading check (user question, from resources/touptek/toupcam.py
+v59.29030.20250722): the ToupTek SDK fully supports multiple cameras in a single
+app thread - each opened handle runs its own internal SDK thread for USB data
+(TOUPCAM_OPTION_THREAD_PRIORITY) and delivers frames via per-handle
+StartPullModeWithCallback callbacks; handles are usable from any thread. The
+hard constraint is one Open per physical device. Our thread-per-camera FSM model
+stays because the adapter capture() is blocking - app choice, not SDK need.
+
+Fix: runtime._role_for_sdk_index() maps SDK index -> configured role without
+opening devices (readiness snapshot first, resolver fallback pre-scan);
+get_preview_camera routes role-owned indices to the shared role handle;
+new _camera_open_lock serializes the check-then-open sections of both camera
+paths (the parallel FSM launches had made the dict mutations racy); resolver
+per-tick INFO logs demoted to DEBUG. 5 new tests; 88 targeted tests green.
+Pi verification pending: guide should leave "waiting..." and tune normally.

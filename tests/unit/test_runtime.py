@@ -373,3 +373,88 @@ class TestLifespan:
         # After __exit__, shutdown() was called; thread should be dead
         if ds_thread is not None:
             assert not ds_thread.is_alive()
+
+
+# M10-018: single camera handle per physical device -------------------------------
+
+class TestCameraHandleOwnership:
+    """Preview requests for role-owned devices must share the role handle."""
+
+    def test_preview_redirects_to_role_handle(self):
+        ctx = _make_ctx()
+        role_cam = MagicMock(name="guide-role-camera")
+        with patch.object(ctx.camera_readiness, "snapshot", return_value={
+            "scanned": True,
+            "roles": {"guide": {"status": "DETECTED", "sdk_index": 0}},
+        }), patch.object(ctx, "get_camera_by_role", return_value=role_cam) as by_role:
+            cam = ctx.get_preview_camera(0)
+        assert cam is role_cam
+        by_role.assert_called_once_with("guide")
+        assert ctx._preview_cameras == {}  # no duplicate raw handle opened
+
+    def test_preview_unowned_index_uses_legacy_path(self):
+        ctx = _make_ctx()
+        with patch.object(ctx.camera_readiness, "snapshot", return_value={
+            "scanned": True,
+            "roles": {"guide": {"status": "DETECTED", "sdk_index": 0}},
+        }):
+            # index 5 is owned by nobody; on Windows the SDK import fails and
+            # the legacy path falls back to the primary camera.
+            cam = ctx.get_preview_camera(5)
+        assert cam is ctx._camera
+
+    def test_role_lookup_falls_back_to_resolver_before_first_scan(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import CameraSpec
+        ctx = _make_ctx()
+        with patch.object(ctx.camera_readiness, "snapshot",
+                          return_value={"scanned": False, "roles": {}}), \
+             patch.object(cfg, "CAMERA_SPECS",
+                          {"oag": CameraSpec(role="oag", model="G3M678M")}), \
+             patch("smart_telescope.services.camera_name_resolver."
+                   "CameraNameResolver.resolve", return_value=3):
+            assert ctx._role_for_sdk_index(3) == "oag"
+
+    def test_scanned_but_unmatched_index_is_unowned(self):
+        ctx = _make_ctx()
+        with patch.object(ctx.camera_readiness, "snapshot", return_value={
+            "scanned": True,
+            "roles": {"guide": {"status": "MISSING", "sdk_index": None}},
+        }):
+            assert ctx._role_for_sdk_index(0) is None
+
+    def test_concurrent_role_opens_create_one_handle(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import CameraSpec
+
+        opens = []
+
+        class SlowCamera:
+            def __init__(self, **kwargs):
+                pass
+            def connect(self):
+                opens.append(1)
+                time.sleep(0.1)  # widen the race window
+                return True
+            def set_gain(self, gain):
+                pass
+            def get_logical_name(self):
+                return "slow-cam"
+
+        ctx = _make_ctx()
+        spec = {"guide": CameraSpec(role="guide", model="GPCMOS02000KPA")}
+        results = []
+        with patch.object(cfg, "CAMERA_SPECS", spec), \
+             patch("smart_telescope.adapters.touptek.managed.SmartTouptekCamera",
+                   SlowCamera):
+            threads = [
+                threading.Thread(target=lambda: results.append(ctx.get_camera_by_role("guide")))
+                for _ in range(2)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5.0)
+        assert len(opens) == 1
+        assert len(results) == 2
+        assert results[0] is results[1]

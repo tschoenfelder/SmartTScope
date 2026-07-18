@@ -1963,10 +1963,35 @@ histogram ceiling until it ships upstream.
         (busy / access denied / device not functioning / timeout decoded, hex code
         always shown); busy open → IDLE "camera busy: …" and auto-retry once the
         holder releases. 4 new tests.
-      - *Open (evidence pending):* WHO held the guide camera (no indiserver was
-        running) — awaiting `fuser -v /dev/bus/usb/003/009`. Suspected in-process
-        aliasing: `get_preview_camera(N)` and the role-camera path can open the
-        same physical device via two separate handles.
+      - *Resolved 2026-07-18:* `fuser -v /dev/bus/usb/003/009` → the SmartTScope
+        process itself (PID 3334). Server log: a UI poll hit the legacy preview
+        path ("no [cameras] config — trying SDK auto-detect") which opened the
+        GPCMOS as a raw preview handle; the role path's second open then got
+        ERROR_BUSY. Fixed by M10-018.
+- [x] M10-018 Single camera handle per physical device (hardware evidence
+      2026-07-18, see M10-017): `get_preview_camera` and `get_camera_by_role`
+      each kept their own handle cache and could open the same physical device
+      twice — the ToupTek SDK allows exactly one Open per device. Route preview
+      requests for role-owned devices to the shared role handle; serialize all
+      open paths `[P1 · Runtime]`
+      - *SDK threading check (user question, answered from
+        `resources/touptek/toupcam.py` v59.29030.20250722):* multiple cameras in
+        a single app thread are fully supported — each opened handle runs its own
+        internal SDK thread grabbing USB data (`TOUPCAM_OPTION_THREAD_PRIORITY`),
+        frames arrive via `StartPullModeWithCallback` callbacks per handle, and
+        handles are usable from any thread (`E_WRONG_THREAD` covers only a few
+        platform-specific calls). Our one-JobManager-thread-per-camera model
+        exists only because the camera adapter's `capture()` is blocking — an
+        app-level choice, not an SDK requirement; it stays. The adapter's
+        `_capture_lock` makes handle sharing across consumers safe.
+      - *Done 2026-07-18:* `runtime._role_for_sdk_index()` (readiness snapshot
+        first, CameraNameResolver fallback before the first scan, never opens a
+        device); `get_preview_camera` returns `get_camera_by_role(role)` for
+        role-owned indices; new `_camera_open_lock` around the check-then-open
+        sections of both paths (concurrent FSM launches exposed the race);
+        resolver per-tick INFO logs demoted to DEBUG. 5 new tests; runtime +
+        camera suites green (88). Pi verification: guide camera should now leave
+        "waiting…" and pass TUNING/STAR_CHECK.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

@@ -225,6 +225,10 @@ class RuntimeContext:
         self._filter_wheel: object | None = None
         self._adapters_built: bool = False
         self._adapters_lock: threading.Lock = threading.Lock()
+        # M10-018: the ToupTek SDK allows exactly one Open per physical device
+        # (second open → 0x800700AA busy). Serialize all camera-open paths so
+        # concurrent setup-FSM jobs / requests never race check-then-open.
+        self._camera_open_lock: threading.Lock = threading.Lock()
         self._app_session_id: str = str(_uuid.uuid4())
         self.coordinator         = HardwareCommandCoordinator()
         self.cooling_service     = CoolingService()
@@ -522,6 +526,39 @@ class RuntimeContext:
 
     # ── camera access ─────────────────────────────────────────────────────────
 
+    def _role_for_sdk_index(self, index: int) -> str | None:
+        """M10-018: map an SDK enumeration index to its configured enabled role.
+
+        Never opens a device. Primary source is the readiness scan (already
+        model-matched from enumeration); before the first scan, fall back to
+        resolving each configured spec through CameraNameResolver.
+        """
+        from . import config
+        scanned = False
+        try:
+            snap = self.camera_readiness.snapshot()
+            scanned = bool(snap.get("scanned"))
+            for role, entry in snap.get("roles", {}).items():
+                if entry.get("status") == "DETECTED" and entry.get("sdk_index") == index:
+                    return role
+        except Exception:
+            pass
+        if scanned:
+            return None  # scan ran and nobody owns this index
+        from .services.camera_name_resolver import CameraNameResolver
+        for role, spec in config.CAMERA_SPECS.items():
+            if not spec.enabled:
+                continue
+            target = spec.index if spec.index is not None else (spec.model or None)
+            if target is None:
+                continue
+            try:
+                if CameraNameResolver().resolve(target, {}) == index:
+                    return role
+            except Exception:
+                continue
+        return None
+
     def get_camera(self) -> CameraPort:
         self.connect_devices()
         assert self._camera is not None
@@ -539,6 +576,18 @@ class RuntimeContext:
             )
 
         self.connect_devices()
+        # M10-018: a configured role's device must never be opened twice — the
+        # SDK allows one handle per device. Route preview requests for
+        # role-owned devices to the shared role handle (hardware evidence
+        # 2026-07-18: a preview auto-detect open of the guide camera starved
+        # the role path with ERROR_BUSY).
+        owner_role = self._role_for_sdk_index(index)
+        if owner_role is not None:
+            _log.info(
+                "get_preview_camera(%d): device owned by role %r — sharing role handle",
+                index, owner_role,
+            )
+            return self.get_camera_by_role(owner_role)
         main_index_str = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
         _log.info(
             "get_preview_camera(%d): main_index=%r cached=%s primary=%s",
@@ -564,38 +613,40 @@ class RuntimeContext:
                 _log.info("get_preview_camera(%d): returning primary camera (%s)", index, type(self._camera).__name__)
                 assert self._camera is not None
                 return self._camera
-            if index not in self._preview_cameras:
-                _log.info("get_preview_camera(%d): opening secondary ToupcamCamera", index)
-                from .adapters.touptek.camera import ToupcamCamera
-                cam = ToupcamCamera(index=index)
-                if not cam.connect():
-                    raise RuntimeError(f"Camera {index} failed to connect")
-                self._preview_cameras[index] = cam
-                _log.info("get_preview_camera(%d): connected → %s", index, cam.get_logical_name())
-                try:
-                    self.camera_offset_service.apply(cam)
-                except Exception as exc:
-                    _log.warning("Camera offset apply failed for preview camera: %s", exc, exc_info=True)
+            with self._camera_open_lock:
+                if index not in self._preview_cameras:
+                    _log.info("get_preview_camera(%d): opening secondary ToupcamCamera", index)
+                    from .adapters.touptek.camera import ToupcamCamera
+                    cam = ToupcamCamera(index=index)
+                    if not cam.connect():
+                        raise RuntimeError(f"Camera {index} failed to connect")
+                    self._preview_cameras[index] = cam
+                    _log.info("get_preview_camera(%d): connected → %s", index, cam.get_logical_name())
+                    try:
+                        self.camera_offset_service.apply(cam)
+                    except Exception as exc:
+                        _log.warning("Camera offset apply failed for preview camera: %s", exc, exc_info=True)
             return self._preview_cameras[index]
 
-        if index not in self._preview_cameras:
-            _log.info("get_preview_camera(%d): no [cameras] config — trying SDK auto-detect", index)
-            try:
-                from .adapters.touptek.camera import ToupcamCamera
-                cam = ToupcamCamera(index=index)
-                if not cam.connect():
-                    raise RuntimeError(f"Camera {index}: connect() returned False")
-                self._preview_cameras[index] = cam
-                _log.info("get_preview_camera(%d): auto-detect connected → %s", index, cam.get_logical_name())
+        with self._camera_open_lock:
+            if index not in self._preview_cameras:
+                _log.info("get_preview_camera(%d): no [cameras] config — trying SDK auto-detect", index)
                 try:
-                    self.camera_offset_service.apply(cam)
-                except Exception as exc:
-                    _log.warning("Camera offset apply failed for preview camera: %s", exc, exc_info=True)
-            except (ImportError, RuntimeError) as exc:
-                _log.warning("get_preview_camera(%d): SDK unavailable (%s) — falling back to %s",
-                             index, exc, type(self._camera).__name__)
-                assert self._camera is not None
-                return self._camera
+                    from .adapters.touptek.camera import ToupcamCamera
+                    cam = ToupcamCamera(index=index)
+                    if not cam.connect():
+                        raise RuntimeError(f"Camera {index}: connect() returned False")
+                    self._preview_cameras[index] = cam
+                    _log.info("get_preview_camera(%d): auto-detect connected → %s", index, cam.get_logical_name())
+                    try:
+                        self.camera_offset_service.apply(cam)
+                    except Exception as exc:
+                        _log.warning("Camera offset apply failed for preview camera: %s", exc, exc_info=True)
+                except (ImportError, RuntimeError) as exc:
+                    _log.warning("get_preview_camera(%d): SDK unavailable (%s) — falling back to %s",
+                                 index, exc, type(self._camera).__name__)
+                    assert self._camera is not None
+                    return self._camera
         return self._preview_cameras[index]
 
     def get_camera_by_role(self, role: str) -> CameraPort:
@@ -606,38 +657,39 @@ class RuntimeContext:
             self.connect_devices()
             if role == "main" and self._camera is not None:
                 return self._camera
-            if role not in self._role_cameras:
-                spec = config.CAMERA_SPECS[role]
-                if spec.backend.lower() != "native":
-                    raise HTTPException(
-                        status_code=501,
-                        detail=(
-                            f"Camera role '{role}' requests backend '{spec.backend}'. "
-                            "The MVP runtime currently supports native cameras only."
-                        ),
+            with self._camera_open_lock:
+                if role not in self._role_cameras:
+                    spec = config.CAMERA_SPECS[role]
+                    if spec.backend.lower() != "native":
+                        raise HTTPException(
+                            status_code=501,
+                            detail=(
+                                f"Camera role '{role}' requests backend '{spec.backend}'. "
+                                "The MVP runtime currently supports native cameras only."
+                            ),
+                        )
+                    from .adapters.touptek.managed import SmartTouptekCamera
+                    cam = SmartTouptekCamera(
+                        index=spec.index or 0,
+                        camera_id=spec.camera_id or None,
+                        model=spec.model or None,
+                        name=spec.name or None,
+                        capture_mode=spec.capture_mode,
+                        setup_profile=spec.setup_profile,
+                        startup_delay_s=spec.startup_delay_s,
+                        startup_monitor_interval_s=spec.startup_monitor_interval_s,
+                        prime_attempts=spec.prime_attempts,
+                        prime_timeout_s=spec.prime_timeout_s,
+                        prime_exposure_s=spec.prime_exposure_s,
+                        bit_depth=spec.bit_depth,
                     )
-                from .adapters.touptek.managed import SmartTouptekCamera
-                cam = SmartTouptekCamera(
-                    index=spec.index or 0,
-                    camera_id=spec.camera_id or None,
-                    model=spec.model or None,
-                    name=spec.name or None,
-                    capture_mode=spec.capture_mode,
-                    setup_profile=spec.setup_profile,
-                    startup_delay_s=spec.startup_delay_s,
-                    startup_monitor_interval_s=spec.startup_monitor_interval_s,
-                    prime_attempts=spec.prime_attempts,
-                    prime_timeout_s=spec.prime_timeout_s,
-                    prime_exposure_s=spec.prime_exposure_s,
-                    bit_depth=spec.bit_depth,
-                )
-                if not cam.connect():
-                    raise RuntimeError(f"Camera role {role!r} failed to connect — no device found")
-                cam.set_gain(spec.gain)
-                if spec.offset_hcg or spec.offset_lcg:
-                    cam.set_black_level(spec.offset_for("HCG"))
-                self._role_cameras[role] = cam
-                _log.info("get_camera_by_role(%s): connected %s", role, cam.get_logical_name())
+                    if not cam.connect():
+                        raise RuntimeError(f"Camera role {role!r} failed to connect — no device found")
+                    cam.set_gain(spec.gain)
+                    if spec.offset_hcg or spec.offset_lcg:
+                        cam.set_black_level(spec.offset_for("HCG"))
+                    self._role_cameras[role] = cam
+                    _log.info("get_camera_by_role(%s): connected %s", role, cam.get_logical_name())
             return self._role_cameras[role]
 
         if role not in config.CAMERAS:

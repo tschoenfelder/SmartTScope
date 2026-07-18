@@ -50,7 +50,8 @@ class CameraNameResolver:
                     f"Camera index {idx} out of range — "
                     f"found {len(devs)} device(s): {self._names(devs)}"
                 )
-            _log.info("CameraNameResolver: index=%d (no name-based lookup)", idx)
+            # debug: fires on every readiness/registry tick (M10-018)
+            _log.debug("CameraNameResolver: index=%d (no name-based lookup)", idx)
             return idx
         except (ValueError, TypeError):
             pass  # not numeric — fall through to name lookup
@@ -78,7 +79,8 @@ class CameraNameResolver:
                             f"expected '{expected_serial}', got '{actual_serial}'. "
                             f"Check [camera_serials] in config."
                         )
-                _log.info(
+                # debug: fires on every readiness/registry tick (M10-018)
+                _log.debug(
                     "CameraNameResolver: '%s' resolved to index=%d (displayname='%s')",
                     name, i, dev.displayname,
                 )

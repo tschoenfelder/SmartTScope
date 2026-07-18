@@ -4892,3 +4892,35 @@ new _camera_open_lock serializes the check-then-open sections of both camera
 paths (the parallel FSM launches had made the dict mutations racy); resolver
 per-tick INFO logs demoted to DEBUG. 5 new tests; 88 targeted tests green.
 Pi verification pending: guide should leave "waiting..." and tune normally.
+
+## 2026-07-18 - M10-014 + M10-019: filter-in-place display, Cameras compare screen
+
+M10-014: config._parse_filters() parses [filters] as a 1-based slot -> INDI-name
+table (Luminance, Red, Green, Blue, H_Alpha, SII, OIII, LPR); the legacy
+name = slot format is inverted with canonical entries winning, so the user's
+current 7 lowercase entries keep loading until migrated. CameraReadinessService
+takes a wheel_provider and adds position/filter_name to the filter_wheel
+snapshot (best-effort; unnamed slots show "slot N"; a [filters] entry above the
+wheel's reported slot count logs a one-time warning). Observe wheel row now
+shows e.g. "FILTERWHEEL - H_Alpha". templates/config.toml gained the missing
+[filter_wheel] stub plus commented [filters] INDI examples.
+
+M10-019: new top-level "Cameras" view (static/js/multicam.js + #cameras-view in
+index.html; showTopView generalized to three views). One
+/ws/preview?camera_role=...&autogain=true socket per DETECTED camera, all closed
+on leaving the view. Panels ordered by FOV (pixel_scale_arcsec x sensor px;
+JPEG dims doubled for colour previews since debayer halves resolution), labeled
+"WxH px - W' x H'". Scale toggle: fit-each-panel vs one shared
+arcsec-per-screen-pixel. Top-right jog pad: timed center-rate steps
+(0.2/0.5/1/2 s) via POST /api/mount/nudge with new keep_tracking_state=true
+(NudgeRequest field, default false = old behavior) so terrestrial jogs no
+longer force sidereal tracking on; red center button = mountEmergencyStop();
+arrows disabled while parked.
+
+M10-020 filed as an open task: main/oag footprint overlay in the guide panel,
+radio button plate-solve (sky) vs frame-search (terrestrial); LA-REQ-3 remains
+a candidate upstream request, to be filed only with user approval.
+
+Tests: 13 new (filters parser 6, readiness merge 4, nudge flag 3); readiness +
+filters + nudge + observing + config suites green (57 targeted). node --check
+clean on multicam.js/app.js/observing.js.

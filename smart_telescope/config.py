@@ -310,8 +310,38 @@ def _parse_guiding_spec() -> GuidingSpec:
     )
 
 
+def _parse_filters() -> dict[int, str]:
+    """[filters] — 1-based wheel slot → filter name (M10-014).
+
+    Canonical format uses INDI-convention names so external tools agree on
+    spelling: Red, Green, Blue, H_Alpha, SII, OIII, LPR, Luminance.
+
+        [filters]
+        1 = "Luminance"
+        2 = "Red"
+
+    The legacy pre-M10-014 format (name = slot, lowercase ad-hoc names) is
+    tolerated by inverting it, so existing configs keep loading until the
+    user migrates.
+    """
+    section = _cfg.get("filters", {})
+    result: dict[int, str] = {}
+    for key, value in section.items():
+        try:
+            result[int(key)] = str(value)
+            continue
+        except (ValueError, TypeError):
+            pass
+        try:
+            result.setdefault(int(value), str(key))  # legacy name = slot
+        except (ValueError, TypeError):
+            continue
+    return result
+
+
 COOLING: CoolingSpec = _parse_cooling_spec()
 FILTER_WHEEL: FilterWheelSpec = _parse_filter_wheel_spec()
+FILTERS: dict[int, str] = _parse_filters()
 GUIDING: GuidingSpec = _parse_guiding_spec()
 LIVE_ANALYSIS: LiveAnalysisSpec = _parse_live_analysis_spec()
 

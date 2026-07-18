@@ -267,6 +267,7 @@ class RuntimeContext:
         from .services.camera_readiness import CameraReadinessService
         self.camera_readiness: CameraReadinessService = CameraReadinessService(
             registry_provider=self.get_optical_train_registry,
+            wheel_provider=self.get_filter_wheel,
         )
         # M10-003: per-camera setup FSM (tuning/star-check/focus) — launches a
         # JobManager-arbitrated worker for each camera the identification scan

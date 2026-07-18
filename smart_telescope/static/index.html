@@ -638,6 +638,44 @@
       -webkit-user-select: none;
       touch-action: none;
     }
+
+    /* ── Cameras compare screen (M10-019) ── */
+    #multicam-root { padding: 0.75rem 1%; }
+    #mc-toolbar {
+      display: flex; gap: 0.75rem; align-items: center;
+      margin-bottom: 0.6rem; flex-wrap: wrap;
+    }
+    #multicam-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      grid-template-areas: "top top jog" "b1 b2 jog";
+      gap: 0.6rem;
+      align-items: start;
+    }
+    .mc-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.4rem; min-width: 0;
+    }
+    .mc-panel[data-slot="top"] { grid-area: top; }
+    .mc-panel[data-slot="b1"]  { grid-area: b1; }
+    .mc-panel[data-slot="b2"]  { grid-area: b2; }
+    .mc-head {
+      display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap;
+      font-size: 0.78rem; color: var(--muted); margin-bottom: 0.3rem;
+    }
+    .mc-role {
+      font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--text);
+    }
+    .mc-canvas-wrap { width: 100%; }
+    .mc-panel[data-slot="top"] .mc-canvas-wrap { height: 46vh; }
+    .mc-panel[data-slot="b1"] .mc-canvas-wrap,
+    .mc-panel[data-slot="b2"] .mc-canvas-wrap { height: 32vh; }
+    .mc-canvas { width: 100%; height: 100%; display: block; background: #000; border-radius: 4px; }
+    #mc-jog {
+      grid-area: jog;
+      display: flex; flex-direction: column; gap: 0.5rem; align-items: center;
+    }
   </style>
 </head>
 <body>
@@ -661,6 +699,9 @@
   </button>
   <button class="top-view-btn" id="top-view-btn-maintenance" onclick="showTopView('maintenance')">
     Maintenance
+  </button>
+  <button class="top-view-btn" id="top-view-btn-cameras" onclick="showTopView('cameras')">
+    Cameras
   </button>
 </nav>
 
@@ -2512,6 +2553,46 @@
 
 </div> <!-- /#maintenance-view -->
 
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- CAMERAS — all camera images in parallel + stepwise mount jog (M10-019)-->
+<!-- Panels ordered by field of view (largest on top); streams close on    -->
+<!-- leaving the screen. Driven entirely by multicam.js.                   -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div id="cameras-view" class="top-view">
+  <div id="multicam-root">
+    <div id="mc-toolbar">
+      <button id="mc-scale-btn" onclick="multicamToggleScale()">Scale: fit each panel</button>
+      <span id="mc-status" style="font-size:0.78rem;color:var(--muted)"></span>
+    </div>
+    <div id="multicam-grid">
+      <!-- camera panels injected by multicam.js -->
+      <div id="mc-jog">
+        <div style="font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Step slew</div>
+        <div class="guide-pad">
+          <div></div>
+          <button class="guide-btn mc-jog-btn" onclick="multicamJog('n')" title="Step north">▲</button>
+          <div></div>
+          <button class="guide-btn mc-jog-btn" onclick="multicamJog('w')" title="Step west">◀</button>
+          <button class="guide-btn danger" onclick="multicamStop()" title="Stop all mount motion">■</button>
+          <button class="guide-btn mc-jog-btn" onclick="multicamJog('e')" title="Step east">▶</button>
+          <div></div>
+          <button class="guide-btn mc-jog-btn" onclick="multicamJog('s')" title="Step south">▼</button>
+          <div></div>
+        </div>
+        <label style="font-size:0.78rem;color:var(--muted)">Step
+          <select id="mc-jog-dur">
+            <option value="200">0.2 s</option>
+            <option value="500" selected>0.5 s</option>
+            <option value="1000">1 s</option>
+            <option value="2000">2 s</option>
+          </select>
+        </label>
+        <span id="mc-jog-note" style="font-size:0.72rem;color:var(--muted);max-width:9rem;text-align:center"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="/static/js/api.js"></script>
 <script src="/static/js/setup.js"></script>
 <script src="/static/js/mount.js"></script>
@@ -2523,6 +2604,7 @@
 <script src="/static/js/guiding.js"></script>
 <script src="/static/js/click_to_center.js"></script>
 <script src="/static/js/observing.js"></script>
+<script src="/static/js/multicam.js"></script>
 <script src="/static/js/app.js"></script>
 
 </body>

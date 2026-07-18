@@ -596,6 +596,9 @@ def mount_guide(
 class NudgeRequest(BaseModel):
     direction: str = Field(pattern=r"^[nsewNSEW]$")
     duration_ms: int = Field(default=500, ge=50, le=5000)
+    # M10-019: leave tracking as-is (terrestrial targets must not start
+    # sidereal tracking just because the user jogs the mount).
+    keep_tracking_state: bool = False
 
 
 @router.post("/nudge")
@@ -614,7 +617,7 @@ def mount_nudge(
         raise HTTPException(status_code=409, detail="Mount is parked — unpark first")
     if state == MountState.SLEWING:
         raise HTTPException(status_code=409, detail="Mount is slewing — wait for it to stop")
-    if state != MountState.TRACKING:
+    if state != MountState.TRACKING and not body.keep_tracking_state:
         if not mount.enable_tracking():
             raise HTTPException(status_code=503, detail="Could not enable tracking — check mount connection")
     ok = mount.move(body.direction.lower(), body.duration_ms)

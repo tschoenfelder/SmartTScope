@@ -1121,6 +1121,31 @@ class TestMountNudge:
         r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 10})
         assert r.status_code == 422
 
+    # ── M10-019: keep_tracking_state — terrestrial jog must not start
+    #    sidereal tracking ───────────────────────────────────────────────
+
+    def test_keep_tracking_state_skips_enable_tracking(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.UNPARKED)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 500, "keep_tracking_state": True,
+        })
+        assert r.status_code == 200
+        m.enable_tracking.assert_not_called()
+        m.move.assert_called_once_with("n", 500)
+
+    def test_keep_tracking_state_still_blocked_when_parked(self) -> None:
+        self._inject_nudge_mount(state=MountState.PARKED)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 500, "keep_tracking_state": True,
+        })
+        assert r.status_code == 409
+
+    def test_default_behavior_unchanged_without_flag(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.UNPARKED, track_ok=True)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
+        assert r.status_code == 200
+        m.enable_tracking.assert_called_once()
+
 
 # ── M8-005: Structured 409 gate responses ────────────────────────────────────
 

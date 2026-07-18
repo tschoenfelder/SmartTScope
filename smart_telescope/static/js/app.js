@@ -127,13 +127,24 @@ function _renderStageBar() {
      Maintenance (manual/diagnostic tools; the former single-screen UI,
      REQ-UX-006 structural separation from the main process)
 ══════════════════════════════════════════════════════════════════════ */
+const _TOP_VIEWS = {
+    observe:     'observing-view',
+    maintenance: 'maintenance-view',
+    cameras:     'cameras-view',
+};
+
 function showTopView(view) {
-    const isObserve = view === 'observe';
-    document.getElementById('observing-view').classList.toggle('active', isObserve);
-    document.getElementById('maintenance-view').classList.toggle('active', !isObserve);
-    document.getElementById('top-view-btn-observe').classList.toggle('active', isObserve);
-    document.getElementById('top-view-btn-maintenance').classList.toggle('active', !isObserve);
-    if (isObserve && typeof refreshObservingState === 'function') refreshObservingState();
+    for (const [name, id] of Object.entries(_TOP_VIEWS)) {
+      const active = name === view;
+      const el  = document.getElementById(id);
+      const btn = document.getElementById('top-view-btn-' + name);
+      if (el)  el.classList.toggle('active', active);
+      if (btn) btn.classList.toggle('active', active);
+    }
+    if (view === 'observe' && typeof refreshObservingState === 'function') refreshObservingState();
+    // Cameras view streams all cameras live — enter/leave manage the sockets.
+    if (view === 'cameras') { if (typeof multicamEnter === 'function') multicamEnter(); }
+    else if (typeof multicamLeave === 'function') multicamLeave();
 }
 
 /* ══════════════════════════════════════════════════════════════════════

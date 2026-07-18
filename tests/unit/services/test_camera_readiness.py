@@ -103,6 +103,7 @@ class TestIdentification:
         assert snap["unassigned"] == []
         assert snap["filter_wheel"] == {
             "configured": True, "detected": True, "display_name": "FILTERWHEEL",
+            "position": None, "filter_name": None,
         }
         # Camera indices still refer to the full enumeration order.
         assert snap["roles"]["main"]["sdk_index"] == 0
@@ -118,6 +119,7 @@ class TestIdentification:
         snap = svc.snapshot()
         assert snap["filter_wheel"] == {
             "configured": True, "detected": False, "display_name": None,
+            "position": None, "filter_name": None,
         }
 
     def test_no_wheel_configured_and_none_detected_gives_none(self):
@@ -149,6 +151,50 @@ class TestIdentification:
         snap = svc.snapshot()
         assert snap["roles"]["main"]["status"] == "DETECTED"
         assert snap["roles"]["main"]["optical"] is None
+
+
+class TestFilterInPlace:
+    """M10-014: the wheel snapshot names the filter currently in place."""
+
+    def _scan_with_wheel(self, wheel_provider, filters):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import FilterWheelSpec
+        svc = CameraReadinessService(
+            enumerate_fn=lambda: list(_ALL_DEVICES) + [_dev("FILTERWHEEL")],
+            wheel_provider=wheel_provider,
+        )
+        with patch.object(cfg, "CAMERA_SPECS", _SPECS), \
+             patch.object(cfg, "CAMERAS", {}), \
+             patch.object(cfg, "FILTER_WHEEL", FilterWheelSpec(enabled=True)), \
+             patch.object(cfg, "FILTERS", filters):
+            svc.scan_now()
+        return svc.snapshot()["filter_wheel"]
+
+    def test_named_slot_reports_filter_name(self):
+        wheel = SimpleNamespace(get_position=lambda: 5)
+        fw = self._scan_with_wheel(lambda: wheel, {5: "H_Alpha"})
+        assert fw["position"] == 5
+        assert fw["filter_name"] == "H_Alpha"
+
+    def test_unnamed_slot_falls_back_to_slot_number(self):
+        wheel = SimpleNamespace(get_position=lambda: 3)
+        fw = self._scan_with_wheel(lambda: wheel, {1: "Luminance"})
+        assert fw["position"] == 3
+        assert fw["filter_name"] == "slot 3"
+
+    def test_wheel_position_failure_is_tolerated(self):
+        def boom():
+            raise RuntimeError("Filter wheel not connected")
+        wheel = SimpleNamespace(get_position=boom)
+        fw = self._scan_with_wheel(lambda: wheel, {1: "Luminance"})
+        assert fw["position"] is None
+        assert fw["filter_name"] is None
+
+    def test_unknown_position_reports_none(self):
+        wheel = SimpleNamespace(get_position=lambda: None)
+        fw = self._scan_with_wheel(lambda: wheel, {1: "Luminance"})
+        assert fw["position"] is None
+        assert fw["filter_name"] is None
 
 
 class TestLifecycle:

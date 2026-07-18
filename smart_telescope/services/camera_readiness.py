@@ -47,9 +47,11 @@ class CameraReadinessService:
         self,
         enumerate_fn: Callable[[], list[Any]] | None = None,
         registry_provider: Callable[[], Any] | None = None,
+        wheel_provider: Callable[[], Any] | None = None,
     ) -> None:
         self._enumerate_fn = enumerate_fn or CameraNameResolver()._enumerate
         self._registry_provider = registry_provider
+        self._wheel_provider = wheel_provider
         self._resolver = CameraNameResolver()
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -59,6 +61,7 @@ class CameraReadinessService:
         self._filter_wheel: dict[str, Any] | None = None
         self._sdk_available: bool = False
         self._last_scan_at: float | None = None
+        self._warned_filter_slots = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
@@ -143,7 +146,35 @@ class CameraReadinessService:
                 "configured": config.FILTER_WHEEL.enabled,
                 "detected": bool(wheel_names),
                 "display_name": wheel_names[0] if wheel_names else None,
+                "position": None,
+                "filter_name": None,
             }
+            # M10-014: name the filter currently in place. Best-effort — the
+            # wheel provider may connect lazily and can fail without the SDK.
+            if config.FILTER_WHEEL.enabled and self._wheel_provider is not None:
+                position: int | None = None
+                try:
+                    wheel = self._wheel_provider()
+                    position = wheel.get_position()
+                    slot_count = int(getattr(wheel, "slots", 0) or 0)
+                    if (
+                        not self._warned_filter_slots
+                        and slot_count and config.FILTERS
+                        and max(config.FILTERS) > slot_count
+                    ):
+                        self._warned_filter_slots = True
+                        _log.warning(
+                            "[filters] names slot %d but the wheel reports only "
+                            "%d slots — check the [filters] table",
+                            max(config.FILTERS), slot_count,
+                        )
+                except Exception as exc:
+                    _log.debug("CameraReadinessService: wheel position unavailable: %s", exc)
+                filter_wheel["position"] = position
+                if position is not None:
+                    filter_wheel["filter_name"] = (
+                        config.FILTERS.get(position) or f"slot {position}"
+                    )
 
         for role, spec in config.CAMERA_SPECS.items():
             entry: dict[str, Any] = {

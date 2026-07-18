@@ -243,6 +243,7 @@ function _renderObsCameras(cameras) {
       const status = document.createElement('span');
       status.textContent = fw.detected
         ? (fw.display_name || 'filter wheel')
+          + (fw.filter_name ? ' · ' + fw.filter_name : '')
           + (fw.configured ? '' : ' (not configured — [filter_wheel] disabled)')
         : 'not detected';
       row.appendChild(dot); row.appendChild(name); row.appendChild(status);

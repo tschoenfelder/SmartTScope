@@ -80,6 +80,32 @@ G3M678M        = "tp-4-2-11-0547-14bc"
 ATR585M        = "tp-4-1-10-0547-157c"
 GPCMOS02000KPA = "tp-3-4-23-0547-1367"
 
+# ── Filter wheel ──────────────────────────────────────────────────────────────
+# ToupTek standalone filter wheel (enumerates on USB alongside the cameras).
+
+[filter_wheel]
+enabled            = false
+backend            = "native"        # "native" = ToupTek SDK direct
+model              = ""              # match by model, e.g. "FILTERWHEEL"
+name               = ""              # or match by display name
+wheel_id           = ""              # or pin the exact SDK device id
+settle_s           = 1.5             # wait after a slot change, seconds
+active_camera_role = "main"          # the camera behind the wheel
+
+# ── Filter names (M10-014) ────────────────────────────────────────────────────
+# 1-based wheel slot → filter name.  Use INDI-convention spellings so external
+# tools (KStars/Ekos, ASTAP) agree: Luminance, Red, Green, Blue, H_Alpha,
+# SII, OIII, LPR.  Unnamed slots display as "slot N".
+
+[filters]
+# 1 = "Luminance"
+# 2 = "Red"
+# 3 = "Green"
+# 4 = "Blue"
+# 5 = "H_Alpha"
+# 6 = "OIII"
+# 7 = "SII"
+
 # ── Optical hardware inventory ────────────────────────────────────────────────
 # Define each physical telescope once, then build optical trains from them.
 # Reducer/Barlow factors are set per train, not per telescope.

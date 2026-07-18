@@ -1886,7 +1886,7 @@ histogram ceiling until it ships upstream.
         `templates/config.toml` updated. 7 new tests; 1173 service tests green.
         API-payload wiring itself lands with M10-002 (service does not exist yet).
 
-- [ ] M10-014 Filter-wheel slot naming with INDI-convention names (user requirement
+- [x] M10-014 Filter-wheel slot naming with INDI-convention names (user requirement
       2026-07-17 — "for not losing it"): SmartTScope currently ignores the `[filters]`
       section entirely (no parser in `config.py`; the ToupTek wheel adapter works on
       numeric slots only, and no INDI backend exists). Add a parsed slot→name mapping
@@ -1903,6 +1903,19 @@ histogram ceiling until it ships upstream.
         status/API reports the active filter by name; a mapping that exceeds the
         wheel's slot count fails validation with a clear message; no change to the
         external camera_adapter (numeric slots remain its interface).
+      - *Done 2026-07-18:* `config._parse_filters()` → `FILTERS: dict[int, str]`
+        (canonical `slot = "Name"`; the legacy `name = slot` format is tolerated
+        by inverting it, so the user's current 7 lowercase entries keep loading
+        until migrated to the INDI spellings — canonical entries win on
+        conflict). Readiness snapshot `filter_wheel` gained `position` +
+        `filter_name` (best-effort via injected `wheel_provider`; unnamed slots
+        display "slot N"). Slot-count check relaxed from startup failure to a
+        one-time runtime warning — the wheel's slot count is only known after
+        connect, and a wheelless bench run must not brick the config. Observe
+        wheel row shows `FILTERWHEEL · H_Alpha`; Cameras screen (M10-019) shows
+        the filter on the wheel-equipped train's panel. `templates/config.toml`:
+        `[filter_wheel]` stub + commented `[filters]` INDI examples. 10 new
+        tests (parser 6, readiness merge 4).
 
 - [x] M10-015 Pixel scale must be **derived at runtime, never required in config**
       (user requirement 2026-07-17): with the optical train known (focal_mm ×
@@ -1992,6 +2005,44 @@ histogram ceiling until it ships upstream.
         resolver per-tick INFO logs demoted to DEBUG. 5 new tests; runtime +
         camera suites green (88). Pi verification: guide camera should now leave
         "waiting…" and pass TUNING/STAR_CHECK.
+
+- [x] M10-019 "Cameras" compare screen with stepwise mount jog (user request
+      2026-07-18): third top-level view streaming all DETECTED cameras in
+      parallel — largest FOV on top, other two side by side below — with a
+      top-right arrow pad + Stop for terrestrial-style stepwise slewing.
+      `[P2 · UI]`
+      - *Done 2026-07-18:* new `static/js/multicam.js` + `#cameras-view` in
+        `index.html`; one `/ws/preview?camera_role=…&autogain=true` socket per
+        DETECTED role (all closed on leaving the view / beforeunload); panels
+        ordered by FOV computed from `optical.pixel_scale_arcsec` × sensor px
+        (JPEG dims × 2 for colour previews — debayer halves resolution); FOV
+        label `W×H px · W′×H′` (arcsec/arcmin/deg auto-format); scale toggle:
+        fit-each-panel vs. one shared arcsec-per-screen-pixel (true relative
+        sky coverage, largest FOV just fits its panel); jog pad = timed steps
+        at center rate via `POST /api/mount/nudge` with new
+        `keep_tracking_state: true` (NudgeRequest field, default false keeps
+        old behavior; terrestrial jogs no longer force sidereal tracking ON),
+        selectable step 0.2/0.5/1/2 s, buttons disabled while parked, red
+        center button = existing `mountEmergencyStop()`. 3 new nudge tests.
+
+- [ ] M10-020 Guide-frame overlay showing where main/oag point (user request
+      2026-07-18, future): draw the main and OAG camera footprints inside the
+      guide panel of the Cameras screen. Mode selected by radio button:
+      **plate solve** (sky targets — solve guide + main/oag frames, draw true
+      footprints incl. rotation) vs. **frame search** (terrestrial — locate the
+      main/oag frame inside the guide frame by normalized cross-correlation,
+      no solving). `[P3 · UI/Analysis]`
+      - *First approximation without solving:* centered FOV rectangles from the
+        M10-019 pixel-scale math (assumes co-alignment, no rotation) — cheap and
+        already useful for rough framing.
+      - *Frame search:* candidate LiveAnalysis upstream request (LA-REQ-3,
+        **file only with user approval**) or local scipy correlation; must
+        handle scale difference (guide 3.32″/px vs main 0.29″/px ≈ 11×) by
+        downsampling the narrow-field frame before matching; rotation between
+        trains is the main accuracy caveat — document measured offset once
+        plate solve is available to calibrate it.
+      - *Acceptance:* radio button on the Cameras screen; sky mode draws solved
+        footprints; terrestrial mode never calls the solver.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

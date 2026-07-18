@@ -2127,7 +2127,7 @@ histogram ceiling until it ships upstream.
         (scan skip/proceed/no-lock-injected, wheel-open dedup, wheel-vs-camera
         cross-serialization); full API + touptek/camera suites green (1093).
 
-- [ ] M10-024 Hardware evidence: lock-wait vs. GIL freeze during camera connect
+- [x] M10-024 Hardware evidence: lock-wait vs. GIL freeze during camera connect
       (feeds M10-021/022 acceptance numbers): on the Pi during startup camera
       connect, curl a static asset and `/api/location/status` in a loop — if those
       stall too, the toupcam binding holds the GIL through Open/EnumV2 (then file
@@ -2154,8 +2154,39 @@ histogram ceiling until it ships upstream.
         M10-021/022's locks aren't the whole story after all; no stalls means
         those fixes are sufficient. 2 new tests confirming the timing log
         line fires for both camera-open paths; runtime + full API suites
-        green (1019). *Still needed:* run the script on the Pi during a real
-        camera connect and record the verdict + measured durations here.
+        green (1019).
+      - *Pi evidence 2026-07-18 (verdict: NOT a GIL freeze):* ran
+        `check_connect_stall.sh` during a real 3-camera connect (oag
+        measured 41.84 s connect+prime — main 1.28 s, guide 1.05 s, from the
+        new timing log). The static asset stayed fast the entire 30 s window
+        (max 39 ms) even while oag was still connecting — this rules out the
+        toupcam SDK binding holding the GIL through `Open()`/`EnumV2()`.
+        M10-021/022/023's lock-based fixes are structurally sound; **no**
+        SYNC.md external-requirement candidate needed for this.
+      - *Unexpected finding, investigated and fixed:* `/api/location/status`
+        was consistently ~780 ms on **every single call** throughout the
+        30 s window (not a stall-while-camera-opens pattern — a flat,
+        steady cost, so unrelated to M10-021/022 despite that endpoint being
+        specifically built to never touch a camera). Root cause:
+        `GpsdService.get_fix()` (`services/gpsd_service.py`) sent `?WATCH`
+        (subscribe to gpsd's live stream) together with `?POLL;` in the same
+        request, but only recognized a bare `"class":"TPV"` line as an
+        answer — gpsd actually answers `?POLL;` with a `"class":"POLL"`
+        envelope nesting the *already-cached* fix in a `"tpv"` array,
+        answered instantly with no device wait. Because that envelope was
+        never recognized, every call ended up waiting for the next
+        naturally-streamed bare-TPV report instead — i.e. the receiver's own
+        report cadence (~780 ms, consistent with a ~1 Hz GPS update rate),
+        not gpsd's instant cached answer. Fixed: new `_extract_tpv()` reads
+        both the `POLL`-envelope and bare-`TPV` shapes; `GpsdService` also
+        gained a 2 s TTL cache (mirrors `api/cameras.py`'s `_scan_cache`
+        pattern) so the ~2.5 s observing poll cadence doesn't pay even the
+        fixed per-query cost every single tick. App-side only, SmartTScope's
+        own service code. 5 new tests (POLL-envelope parsing ×2, TTL cache
+        ×3); full gpsd/location/master-source/raspberry-trust suites green
+        (122); full API+services regression green (2248). *Still needed:*
+        Pi re-run of `check_connect_stall.sh` to confirm `/api/location/status`
+        latency actually drops after this fix.
 
 - [x] M10-025 Separate slewing (on way to target) from tracking (user request
       2026-07-18): slewing to a target and sidereal tracking are distinct mount

@@ -119,6 +119,36 @@ class TestGpsdServiceGetFix:
             fix = self._service().get_fix()
         assert fix is None
 
+    # ── M10-024 follow-up: ?POLL; answers from gpsd's cache, not the stream ──
+
+    def test_returns_fix_from_poll_envelope(self) -> None:
+        # Hardware evidence 2026-07-18: gpsd answers ?POLL with a
+        # "class":"POLL" object nesting the current fix in "tpv" — the
+        # previous code only recognized a bare "class":"TPV" line and so
+        # waited for the next live-streamed report instead of reading this.
+        poll_response = {
+            "class": "POLL", "time": "2026-06-21T21:00:00.000Z",
+            "tpv": [{
+                "class": "TPV", "lat": 50.336, "lon": 8.533, "alt": 123.4,
+                "time": "2026-06-21T21:00:00.000Z", "mode": 3, "hdop": 1.2,
+            }],
+            "sky": [],
+        }
+        sock = _make_socket_with_data([json.dumps(poll_response)])
+        with patch("socket.create_connection", return_value=sock):
+            fix = self._service().get_fix()
+        assert fix is not None
+        assert fix.lat == pytest.approx(50.336)
+        assert fix.lon == pytest.approx(8.533)
+        assert fix.mode == 3
+
+    def test_poll_envelope_with_empty_tpv_list_returns_none(self) -> None:
+        poll_response = {"class": "POLL", "tpv": [], "sky": []}
+        sock = _make_socket_with_data([json.dumps(poll_response)])
+        with patch("socket.create_connection", return_value=sock):
+            fix = self._service().get_fix()
+        assert fix is None
+
 
 # ── CFG-002: fix age validation ───────────────────────────────────────────────
 
@@ -190,3 +220,35 @@ class TestGpsdFixAge:
         assert fix is not None
         assert not fix.is_fresh()
         mock_log.warning.assert_called_once()
+
+
+class TestGpsdServiceCaching:
+    """M10-024 follow-up: repeated polls within cache_ttl_s must not re-query."""
+
+    def _tpv_socket(self, lat: float = 50.0) -> MagicMock:
+        tpv = {"class": "TPV", "lat": lat, "lon": 8.0, "mode": 3}
+        return _make_socket_with_data([json.dumps(tpv)])
+
+    def test_second_call_within_ttl_reuses_cached_result(self) -> None:
+        svc = GpsdService(host="127.0.0.1", port=2947, timeout_s=1.0, cache_ttl_s=10.0)
+        with patch("socket.create_connection", return_value=self._tpv_socket()) as conn:
+            fix1 = svc.get_fix()
+            fix2 = svc.get_fix()
+        assert conn.call_count == 1
+        assert fix1 is fix2
+
+    def test_call_after_ttl_expires_requeries(self) -> None:
+        svc = GpsdService(host="127.0.0.1", port=2947, timeout_s=1.0, cache_ttl_s=0.0)
+        with patch("socket.create_connection", side_effect=lambda *a, **k: self._tpv_socket()) as conn:
+            svc.get_fix()
+            svc.get_fix()
+        assert conn.call_count == 2
+
+    def test_none_result_is_also_cached(self) -> None:
+        svc = GpsdService(host="127.0.0.1", port=2947, timeout_s=1.0, cache_ttl_s=10.0)
+        with patch("socket.create_connection", side_effect=ConnectionRefusedError) as conn:
+            fix1 = svc.get_fix()
+            fix2 = svc.get_fix()
+        assert conn.call_count == 1
+        assert fix1 is None
+        assert fix2 is None

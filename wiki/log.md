@@ -5075,3 +5075,32 @@ aren't the whole story; no stalls on either means those fixes are sufficient.
 2 new tests confirming the timing log fires for both camera-open paths;
 runtime + full API suites green (1019). Still needed: run the script on the
 Pi during a real camera connect and record the verdict here.
+
+## 2026-07-18 - M10-024 verdict + gpsd ?POLL fix (Pi evidence)
+
+Ran check_connect_stall.sh during a real 3-camera connect (measured
+connect+prime: main 1.28s, guide 1.05s, oag 41.84s from the new timing log).
+Static asset stayed fast the whole 30s window (max 39ms) even while oag was
+still connecting - rules out the toupcam SDK binding the GIL through
+Open()/EnumV2(). M10-021/022/023's locks are structurally sound; no SYNC.md
+external-requirement candidate needed.
+
+Unexpected finding: /api/location/status was a flat ~780ms on every single
+call throughout the window - not a stall-while-camera-opens pattern, so
+unrelated to M10-021/022 despite that endpoint deliberately never touching a
+camera. Root cause: GpsdService.get_fix() sent ?WATCH (subscribe to gpsd's
+live stream) together with ?POLL; in the same request but only recognized a
+bare "class":"TPV" line as an answer. gpsd actually answers ?POLL; with a
+"class":"POLL" envelope nesting the already-cached fix in a "tpv" array,
+answered instantly with no device wait - since that envelope was never
+recognized, every call waited for the next naturally-streamed bare-TPV
+report instead, i.e. the GPS receiver's own report cadence (~780ms, ~1Hz).
+
+Fixed: new _extract_tpv() reads both the POLL-envelope and bare-TPV shapes;
+GpsdService also gained a 2s TTL cache (mirrors api/cameras.py's
+_scan_cache pattern) so the ~2.5s observing poll doesn't pay even the fixed
+per-query cost every tick. App-side only, SmartTScope's own service code.
+
+5 new tests; gpsd/location/master-source/raspberry-trust suites green (122);
+full API+services regression green (2248). Still needed: Pi re-run of
+check_connect_stall.sh to confirm /api/location/status latency drops.

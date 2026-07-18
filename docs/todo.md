@@ -1945,6 +1945,29 @@ histogram ceiling until it ships upstream.
         final fallback inside `get_pixel_scale()` and pre-M9-018 hardcoded
         `OpticalProfile`s in `workflow/_types.py` (tracked there).
 
+- [x] M10-016 Cache-bust static UI assets: three hardware sessions in a row lost
+      time to browsers rendering stale cached JS after a Pi deploy ("no cameras
+      visible" 2026-07-17 and again 2026-07-18 — server payload was correct both
+      times). Serve `/` and `/static/*` with `Cache-Control: no-cache` so browsers
+      revalidate (ETag/304 keeps it cheap on the LAN); no more mandatory Ctrl+F5
+      after deploys `[P1 · UI]`
+      - *Done 2026-07-18:* HTTP middleware in `app.py` stamps the header on the UI
+        shell and all static responses.
+- [x] M10-017 Readable camera-open errors: the ToupTek SDK surfaces bare HRESULT
+      numbers — hardware evidence 2026-07-18: guide camera setup reported
+      "camera unavailable: -2147024726" (0x800700AA = ERROR_BUSY, device held by
+      another handle). Map known HRESULTs to plain language in the setup FSM
+      reason; treat ERROR_BUSY as retryable (stay IDLE, watcher retries) instead
+      of terminal DEGRADED `[P2 · Runtime]`
+      - *Done 2026-07-18:* `_describe_camera_error()` in `camera_setup_fsm.py`
+        (busy / access denied / device not functioning / timeout decoded, hex code
+        always shown); busy open → IDLE "camera busy: …" and auto-retry once the
+        holder releases. 4 new tests.
+      - *Open (evidence pending):* WHO held the guide camera (no indiserver was
+        running) — awaiting `fuser -v /dev/bus/usb/003/009`. Suspected in-process
+        aliasing: `get_preview_camera(N)` and the role-camera path can open the
+        same physical device via two separate handles.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

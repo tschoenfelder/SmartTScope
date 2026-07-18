@@ -35,6 +35,31 @@ _log = logging.getLogger(__name__)
 
 _WATCH_INTERVAL_S = 5.0
 
+# M10-017: the ToupTek SDK raises bare HRESULT numbers ("-2147024726") on
+# open failures — translate the ones seen in the field to plain language.
+_HRESULT_BUSY = -2147024726          # 0x800700AA — ERROR_BUSY
+_HRESULT_HINTS = {
+    _HRESULT_BUSY: "device already in use by another process or handle",
+    -2147024891: "access denied — check USB permissions/udev rules",   # 0x80070005
+    -2147024865: "device not functioning — USB link problem",          # 0x8007001F
+    -2147023436: "timed out waiting for the device",                   # 0x800705B4
+}
+
+
+def _describe_camera_error(exc: BaseException) -> str:
+    text = str(exc).strip()
+    try:
+        code = int(text)
+    except ValueError:
+        return str(exc)
+    hint = _HRESULT_HINTS.get(code)
+    hex_code = format(code & 0xFFFFFFFF, "#010x")
+    return f"{text} ({hex_code}: {hint})" if hint else f"{text} ({hex_code})"
+
+
+def _is_busy_error(exc: BaseException) -> bool:
+    return str(exc).strip() == str(_HRESULT_BUSY)
+
 
 class CameraSetupPhase(str, Enum):
     IDLE = "IDLE"
@@ -160,14 +185,25 @@ class CameraSetupService:
             self._run_phases(role, cancel)
         except Exception as exc:
             _log.warning("CameraSetupService: setup for %r failed: %s", role, exc)
-            self._set(role, CameraSetupPhase.DEGRADED, reason=str(exc))
+            self._set(role, CameraSetupPhase.DEGRADED, reason=_describe_camera_error(exc))
 
     def _run_phases(self, role: str, cancel: threading.Event) -> None:
         settings = self._settings()
         try:
             camera = self._camera_provider(role)
         except Exception as exc:
-            self._set(role, CameraSetupPhase.DEGRADED, reason=f"camera unavailable: {exc}")
+            if _is_busy_error(exc):
+                # Whoever holds the device may release it (preview page closed,
+                # autogain finished) — stay IDLE so the watcher retries.
+                self._set(
+                    role, CameraSetupPhase.IDLE,
+                    reason=f"camera busy: {_describe_camera_error(exc)}",
+                )
+            else:
+                self._set(
+                    role, CameraSetupPhase.DEGRADED,
+                    reason=f"camera unavailable: {_describe_camera_error(exc)}",
+                )
             return
 
         star_state: dict[str, Any] | None = None

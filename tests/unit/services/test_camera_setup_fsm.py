@@ -131,6 +131,67 @@ class TestPhases:
         assert "LiveAnalysis module unavailable" in entry["reason"]
 
 
+class TestCameraErrors:
+    # Pi hardware 2026-07-18: the guide-camera open failed with the bare
+    # ToupTek HRESULT "-2147024726" (0x800700AA, ERROR_BUSY).
+    def test_busy_hresult_stays_idle_for_retry_with_readable_reason(self):
+        entry = self._svc_with_provider_error("-2147024726")
+        assert entry["phase"] == "IDLE"
+        assert "0x800700aa" in entry["reason"]
+        assert "already in use" in entry["reason"]
+
+    def test_non_busy_hresult_degrades_with_readable_reason(self):
+        entry = self._svc_with_provider_error("-2147024891")
+        assert entry["phase"] == "DEGRADED"
+        assert "access denied" in entry["reason"]
+
+    def test_plain_error_message_passes_through(self):
+        entry = self._svc_with_provider_error("no device found")
+        assert entry["phase"] == "DEGRADED"
+        assert entry["reason"] == "camera unavailable: no device found"
+
+    def test_busy_camera_recovers_once_released(self):
+        import smart_telescope.config as cfg
+        holder = {"busy": True}
+
+        def provider(role):
+            if holder["busy"]:
+                raise RuntimeError("-2147024726")
+            return _FakeCamera()
+
+        svc = CameraSetupService(
+            job_manager=JobManager(),
+            camera_provider=provider,
+            readiness_snapshot=_readiness(dict(_DETECTED_MAIN)),
+            analyze_fn=_analyze_with_stars(5),
+            camera_info_fn=_camera_info_fn,
+        )
+        with patch.object(cfg, "LIVE_ANALYSIS", _SPEC):
+            svc.poll_once()
+            entry = _wait_phase(svc, "main", {"IDLE"})
+            assert "camera busy" in entry["reason"]
+            holder["busy"] = False
+            svc.poll_once()
+            entry = _wait_phase(svc, "main", {"READY", "DEGRADED"})
+        assert entry["phase"] == "READY"
+
+    @staticmethod
+    def _svc_with_provider_error(message):
+        def provider(role):
+            raise RuntimeError(message)
+        svc = CameraSetupService(
+            job_manager=JobManager(),
+            camera_provider=provider,
+            readiness_snapshot=_readiness(dict(_DETECTED_MAIN)),
+            analyze_fn=_analyze_with_stars(5),
+            camera_info_fn=_camera_info_fn,
+        )
+        import smart_telescope.config as cfg
+        with patch.object(cfg, "LIVE_ANALYSIS", _SPEC):
+            svc.poll_once()
+            return _wait_phase(svc, "main", {"IDLE", "DEGRADED"})
+
+
 class TestArbitration:
     def test_busy_camera_stays_idle_then_recovers_after_release(self):
         import smart_telescope.config as cfg

@@ -4847,3 +4847,24 @@ Per-role state is merged into `cameras.roles.*.setup` on /api/observing/state;
 the camera card shows phase / stars / exposure / gain (READY green, DEGRADED
 amber with reason). 16 new tests (incl. a real round-trip against the pinned
 package); 33 targeted tests green. Pi verification pending (M10-012).
+
+## 2026-07-18 - M10-016/M10-017: static cache-busting + readable camera errors
+
+Pi evidence for the "UI doesn't find cameras" report: the API payload was complete
+(all three roles DETECTED, wheel detected, setup FSM results present) - the browser
+was rendering stale cached JS for the third session in a row. M10-016: HTTP
+middleware now serves `/` and `/static/*` with `Cache-Control: no-cache`
+(ETag revalidation keeps it a cheap 304 on the LAN) - no more mandatory hard
+refresh after deploys.
+
+The same payload showed the setup FSM working as designed: main/oag captured and
+analyzed 8 frames each, DEGRADED "only 0 star(s) detected" with image_quality
+too_dark (correct - not looking at sky), module already recommending 2 s exposure.
+The guide camera failed to open with bare HRESULT "-2147024726" = 0x800700AA
+ERROR_BUSY (no indiserver running; holder identification pending via
+`fuser -v /dev/bus/usb/003/009` - suspected in-process aliasing between
+get_preview_camera and the role-camera path). M10-017: `_describe_camera_error()`
+decodes known ToupTek HRESULTs (busy / access denied / device not functioning /
+timeout) into the setup reason, and ERROR_BUSY is now retryable - the role stays
+IDLE ("camera busy: ...") and the watcher retries until the holder releases,
+instead of terminal DEGRADED. 4 new tests; 24 targeted tests green.

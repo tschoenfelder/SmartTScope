@@ -73,6 +73,22 @@ app = FastAPI(title="SmartTelescope", version="0.1.0", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
+@app.middleware("http")
+async def _no_stale_static(request: Request, call_next):
+    """M10-016: force revalidation of static assets and the UI shell.
+
+    Repeated hardware sessions were lost to browsers rendering stale cached
+    JS after a Pi deploy.  `no-cache` still allows conditional requests
+    (StaticFiles serves ETag/Last-Modified → 304 when unchanged), so the only
+    cost is a revalidation round-trip on the local network.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.exception_handler(SerialException)
 async def serial_exception_handler(request: Request, exc: SerialException) -> JSONResponse:
     _log.warning("Serial I/O error on %s: %s", request.url.path, exc)

@@ -2305,18 +2305,37 @@ histogram ceiling until it ships upstream.
         already uses for goto. The jog pad's existing error display
         (`multicam.js` `#mc-jog-note`) now shows the real reason instead of an
         opaque 500. 1 new test (`TestMountNudge::test_at_home_refusal_returns_409_not_500`).
-      - *Not done — needs approval before filing:* the actual behavior gap
-        (a manual/terrestrial jog cannot proceed at all while genuinely at
-        mechanical HOME) has no app-side fix — it requires an `onstep_adapter`
-        change (e.g. a "non-astronomical manual jog" bypass parameter,
-        analogous to the existing REQ-ST-004 `enable_tracking()` at-home
-        bypass). Recorded as a draft candidate ask in `SYNC.md`, **not filed**
-        — same approval gate as REQ-ST-003/005/006/008. Practical implication
-        for the M10-019 terrestrial workflow in the meantime: jogging from a
-        mount still sitting exactly at mechanical HOME will always 409 until
-        either upstream ships a bypass or the mount has moved off home (e.g.
-        after any goto/slew) — worth reflecting in the jog-pad UI copy as a
-        follow-up, not just relying on the error string.
+      - *Superseded by M10-028 (2026-07-19):* the "jog cannot work at home
+        until upstream ships a bypass" limitation below no longer applies —
+        the user approved a shim-level SYNC-OVERRIDE and the upstream ask was
+        filed. See M10-028.
+
+- [x] M10-028 Manual jog works at confirmed mechanical HOME (user decision
+      2026-07-19: "Being at confirmed home manual movement should be allowed
+      and not an issue — like move to park is allowed as well"). `[P1 · Mount]`
+      - *Done 2026-07-19 (SYNC-OVERRIDE REQ-ST-009):* the shim's `move()`
+        (`adapters/onstep/mount.py`, SmartTScope-owned) sets a
+        `_jog_bypass_active` window flag (try/finally) around the
+        `move_ra_timed`/`move_dec_timed` delegation; the existing REQ-ST-007
+        `motion_safety_preflight` override post-processes only the *returned*
+        `at_home` to False for exactly the two jog preflight commands
+        (`move_ra_center`/`move_dec_center`) while that window is open —
+        upstream `_axis_motion()`'s hardcoded at-home refusal then doesn't
+        fire. The internal `at_home`/`terminal_state` stay truthful (the
+        pier/HA blockers must remain suppressed at home or the jog would be
+        refused with a different reason); `motion_refused` and all mechanical
+        blockers are untouched (verified by test: at-limit still refuses even
+        with the window open); every other preflight consumer (device-state
+        poller, goto, live-poll) keeps seeing the true at-home state.
+        Upstream ask filed with approval:
+        <https://github.com/tschoenfelder/OnStepAdapter/issues/5> — an
+        `allow_at_home`/manual mode on the timed-axis API skipping both
+        at-home gates (the refusal AND the projected-target `validate_target`
+        block, which is dormant here only because `runtime.py` passes no
+        `motion_calibration`); delete the shim override when it ships.
+        8 new tests (`tests/unit/adapters/onstep/test_jog_at_home.py`, real
+        preflight against `FakeOnStepSerial` + new `:GS#` handler); onstep
+        adapter suite green (157).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

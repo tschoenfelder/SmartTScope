@@ -156,6 +156,11 @@ class FakeOnStepSerial:
             self._dec = self._target_dec
             return b"Synchronized#"
 
+        if cmd == ":GS#":
+            # Sidereal time — needed by the real motion_safety_preflight()
+            # (an unanswerable :GS# becomes a motion_refused blocker).
+            return b"05:35:00#"
+
         if cmd == ":GR#":
             return (_format_ra(self._ra) + "#").encode()
 

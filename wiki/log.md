@@ -5129,3 +5129,28 @@ static setup_exposure_s regardless of what TUNING found.
 unit suite green (4042 passed). One unrelated pre-existing flaky test in
 tests/unit/workflow/test_logging.py found during the full run - confirmed
 order-dependent (passes standalone) and untouched by this change.
+
+## 2026-07-19 - M10-028: manual jog now works at confirmed mechanical HOME
+
+User decision: manual movement at confirmed home is legitimate (same spirit
+as the allowed home->park move). Implemented as SYNC-OVERRIDE REQ-ST-009 in
+the SmartTScope-owned shim (adapters/onstep/mount.py): move() opens a
+_jog_bypass_active window (try/finally) around the move_*_timed delegation;
+the REQ-ST-007 preflight override post-processes only the RETURNED at_home
+to False for exactly the two jog preflight commands (move_ra_center /
+move_dec_center) while the window is open. Internal at_home/terminal_state
+stay truthful (pier/HA blockers must remain suppressed at home);
+motion_refused and all mechanical blockers untouched (at-limit still refuses
+under the window - tested); all other preflight consumers see the true
+state. Latent hazard documented: safe only while runtime.py passes no
+motion_calibration - otherwise upstream's projected-target validate_target
+gate re-activates and needs the upstream fix.
+
+Upstream ask filed with explicit approval:
+https://github.com/tschoenfelder/OnStepAdapter/issues/5 (allow_at_home /
+manual mode on the timed-axis API, skipping both at-home gates while
+honoring every mechanical blocker). Delete the shim override when it ships.
+
+8 new tests (test_jog_at_home.py, REAL motion_safety_preflight against
+FakeOnStepSerial + new :GS# handler in the fake); onstep adapter suite green
+(157). Pi verification pending: arrow jog at confirmed HOME moves the mount.

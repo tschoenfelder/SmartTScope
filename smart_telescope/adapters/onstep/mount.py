@@ -358,6 +358,24 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         )
         sample_age_ms = round((time.monotonic() - sample_started) * 1000.0, 3)
         motion_refused = bool(blockers)
+        # SYNC-OVERRIDE REQ-ST-009: during a manual jog (see move()), report
+        # at_home=False for exactly the two jog preflight commands so
+        # upstream _axis_motion()'s hardcoded at-home refusal doesn't fire.
+        # Deliberately a post-process on the RETURNED value only: the local
+        # at_home/terminal_state above must stay truthful so the pier/HA
+        # blockers remain suppressed at home (flipping it earlier would
+        # re-add them and refuse the jog with a different reason). All
+        # mechanical blockers (motion_refused) are untouched. NOTE: safe
+        # today only because runtime.py constructs OnStepClient without
+        # motion_calibration — with calibration wired, upstream's projected-
+        # target validate_target gate re-activates and needs the upstream
+        # manual-jog mode instead (REQ-ST-009 issue).
+        report_at_home = at_home
+        if (
+            getattr(self, "_jog_bypass_active", False)
+            and command in ("move_ra_center", "move_dec_center")
+        ):
+            report_at_home = False
         return {
             "command": command,
             "sampled_at_utc": sampled_at.isoformat(),
@@ -366,7 +384,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
             "tracking": bool(decoded.get("tracking") or state == MountState.TRACKING),
             "slewing": bool(decoded.get("slewing") or state == MountState.SLEWING),
             "parked": parked,
-            "at_home": at_home,
+            "at_home": report_at_home,
             "mechanical_position_authority": authority,
             "mechanical_safe": mechanical_safe,
             "logical_position": position,
@@ -517,14 +535,30 @@ class OnStepMount(_BaseOnStepMount, MountPort):
     def move(self, direction: str, move_ms: int) -> bool:
         # LOCAL-001 / REQ-1 (permanent local translation): MountPort.move()
         # routed through the SDK's public timed-axis API at center rate.
+        #
+        # SYNC-OVERRIDE REQ-ST-009 (user approval 2026-07-19): a deliberate
+        # manual jog must work at confirmed mechanical HOME (terrestrial
+        # workflow, M10-019/M10-028) — upstream _axis_motion() unconditionally
+        # refuses on preflight["at_home"] with no bypass parameter. The window
+        # flag below makes our motion_safety_preflight override report
+        # at_home=False for exactly the two jog preflight commands while this
+        # call is on the stack; every other preflight consumer (poller, goto,
+        # tracking) keeps seeing the true at-home state, and all mechanical
+        # blockers (motion_refused) stay fully active. Delete the flag and the
+        # matching post-process in motion_safety_preflight() once upstream
+        # ships a manual-jog mode (REQ-ST-009 issue).
         d = direction.lower()
-        if d in ("e", "w", "east", "west"):
-            result = self.move_ra_timed(d, move_ms, mode="center")
-        elif d in ("n", "s", "north", "south"):
-            result = self.move_dec_timed(d, move_ms, mode="center")
-        else:
-            _log.warning("OnStepMount.move(): invalid direction %r", direction)
-            return False
+        try:
+            self._jog_bypass_active = True
+            if d in ("e", "w", "east", "west"):
+                result = self.move_ra_timed(d, move_ms, mode="center")
+            elif d in ("n", "s", "north", "south"):
+                result = self.move_dec_timed(d, move_ms, mode="center")
+            else:
+                _log.warning("OnStepMount.move(): invalid direction %r", direction)
+                return False
+        finally:
+            self._jog_bypass_active = False
         return bool(result.ok)
 
     def set_park_position(self) -> bool:

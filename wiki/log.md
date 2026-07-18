@@ -4943,3 +4943,13 @@ not just device ones). Fixes must stay app-side (managed.py external-owned).
 Tasks M10-021 (decouple mount from camera build, P1), M10-022 (no inline camera
 opens on hot observing paths, P1), M10-023 (one SDK serialization discipline,
 P2), M10-024 (Pi evidence: lock-wait vs GIL freeze, P2) in docs/todo.md.
+
+## 2026-07-18 - M10-025 filed: separate slewing from tracking
+
+User request: slewing to a target and sidereal tracking must be independently
+controllable - GoTo paths currently assume tracking on, and OnStep may
+auto-start tracking when a slew completes, which is wrong for terrestrial
+targets. Task M10-025 filed in docs/todo.md: extend goto/slew with a
+keep-tracking-state option (same semantics as the M10-019 nudge flag), restore
+the pre-slew tracking state after slew completion, app-side only (OnStep
+adapter is external-owned; unsuppressible auto-track goes to SYNC.md).

@@ -2101,6 +2101,28 @@ histogram ceiling until it ships upstream.
         JobManager resource bookkeeping, FSM capture loops on cached handles,
         FastAPI threadpool exhaustion (captures run in dedicated daemon threads).
 
+- [ ] M10-025 Separate slewing (on way to target) from tracking (user request
+      2026-07-18): slewing to a target and sidereal tracking are distinct mount
+      modes but are currently coupled — GoTo paths assume tracking is (or gets
+      switched) on, and OnStep itself may auto-start tracking when a slew
+      completes. For terrestrial targets (and the M10-019 Cameras-screen
+      workflow) a slew must be possible with tracking remaining OFF afterwards.
+      `[P2 · Mount/API]`
+      - *Scope:* extend the goto/slew API with a keep-tracking-state option
+        analogous to the M10-019 `keep_tracking_state` flag on
+        `/api/mount/nudge` (default preserves today's behavior for sky
+        targets); after slew completion, restore/enforce the pre-slew tracking
+        state instead of accepting whatever OnStep leaves on; the mount strip
+        already labels SLEWING vs TRACKING distinctly — verify the state shown
+        during and after a tracking-off slew is correct.
+      - *Constraint:* OnStepMount/OnStepClient internals are external-owned —
+        implement app-side (`mount_operations` / `api/mount.py`); if OnStep's
+        auto-track-on-goto cannot be suppressed via existing adapter API,
+        record the gap in SYNC.md instead of patching the adapter.
+      - *Acceptance:* a goto issued with tracking off completes with tracking
+        still off; default goto behavior for sky targets unchanged; nudge and
+        goto use the same flag semantics.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

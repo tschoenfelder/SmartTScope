@@ -373,10 +373,19 @@ class SmartTouptekCamera(CameraPort):
         return "RGGB"
 
     def _select_device(self, devices: Any) -> tuple[int, Any | None]:
+        # SYNC-OVERRIDE (M10-026): an explicit camera_id/model/name selector
+        # that fails to match must report "not found", not silently fall back
+        # to a positional index — that binds the role to whatever physical
+        # device happens to sit at that index (hardware evidence 2026-07-18:
+        # the OAG role, selector "G3M678M", silently bound to the guide
+        # camera's device when the selector match failed). Mirrors
+        # resolve_device_id()'s already-correct behavior below. Pure
+        # positional-index configs (no selector at all) are unaffected.
         if self._camera_id_hint:
             for idx, dev in enumerate(devices):
                 if str(dev.id) == self._camera_id_hint:
                     return idx, dev
+            return self._index, None
         selector = self._name_selector or self._model_selector
         if selector:
             needle = _normalise_camera_name(selector)
@@ -384,6 +393,7 @@ class SmartTouptekCamera(CameraPort):
                 haystack = _normalise_camera_name(f"{dev.displayname} {dev.model.name}")
                 if needle in haystack:
                     return idx, dev
+            return self._index, None
         if len(devices) > self._index:
             return self._index, devices[self._index]
         return self._index, None

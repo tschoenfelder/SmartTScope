@@ -251,6 +251,7 @@ Source commit: 03d5823a4e26172c55dfd3df4e18fd38e72dd8c0
 | smart_telescope/adapters/touptek/managed.py | Same pixel-shift detection as camera.py: `_FLAG_RAW16`, `_detect_pixel_shift()`, `self._pixel_shift`, right-shift in `capture()`, `BITDEPTH` header, updated `get_bit_depth()` | camera_adapter to incorporate pixel-shift detection |
 | smart_telescope/adapters/touptek/camera.py | `_detect_pixel_shift` replaced with GCD-of-differences algorithm (robust to non-aligned black-level offsets); `set_black_level` resets `_pixel_shift=-1` | camera_adapter to incorporate GCD shift detection |
 | smart_telescope/adapters/touptek/managed.py | Same GCD `_detect_pixel_shift` fix + `set_black_level` resets `_pixel_shift=-1` | camera_adapter to incorporate GCD shift detection |
+| smart_telescope/adapters/touptek/managed.py | `_select_device()`: a configured `camera_id`/`model`/`name` selector that matches no enumerated device now returns "not found" instead of silently falling back to a positional index (M10-026, hardware evidence 2026-07-18: OAG role bound to the guide camera's physical device when its model selector failed to match). Mirrors the already-correct `resolve_device_id()` behavior in the same file. Pure index-only configs (no selector at all) are unaffected. | camera_adapter to align `_select_device()` with `resolve_device_id()` |
 
 ## Pending external requirements
 

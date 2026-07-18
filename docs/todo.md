@@ -2145,6 +2145,41 @@ histogram ceiling until it ships upstream.
         still off; default goto behavior for sky targets unchanged; nudge and
         goto use the same flag semantics.
 
+- [x] M10-026 Fix camera role cross-wiring on selector-match failure (hardware
+      evidence 2026-07-18: on the M10-019 Cameras screen, covering the guide
+      camera GPCMOS02000KPA changed the frame shown in the **OAG** panel —
+      the OAG role was bound to the guide camera's physical device). Root
+      cause traced to `SmartTouptekCamera._select_device()` in
+      `adapters/touptek/managed.py`: when a role's configured `model`/`name`/
+      `camera_id` selector matched no enumerated device, the method silently
+      fell through to a positional-index pick (`devices[self._index]`,
+      defaulting to index 0) instead of reporting "not found" — binding the
+      role to whichever physical camera happened to enumerate at that index.
+      `resolve_device_id()` (used by the startup role-uniqueness validator,
+      same file) already treated a failed selector match as "not found", so
+      the startup conflict check could never catch this — it uses different,
+      safer semantics than the actual `connect()` path. `[P1 · Runtime]`
+      - *Done 2026-07-18 (SYNC-OVERRIDE):* `_select_device()` now returns
+        "not found" whenever a `camera_id`/`model`/`name` selector was
+        configured but matched nothing — mirroring `resolve_device_id()`.
+        Pure index-only configs (no selector at all) keep falling back to
+        position exactly as before. `connect()`'s existing SYNC-OVERRIDE
+        (return `False` instead of raising) then surfaces this as a normal
+        "camera failed to connect" — readable per M10-017 — rather than a
+        silent wrong-camera bind. Tracked in `SYNC.md` Active SYNC-OVERRIDEs
+        (camera_adapter is external-owned; overrides applied directly per the
+        established pattern for this file, unlike OnStepAdapter's flag-and-
+        wait policy). 8 new tests
+        (`tests/unit/adapters/touptek/test_managed_select_device.py`);
+        touptek/camera-service/runtime + full API suites green (1013+152).
+      - *Still needed:* Pi verification that the real `[cameras.oag]` model
+        selector now either matches G3M678M correctly or fails loudly with a
+        clear log line naming the mismatch — the underlying reason the
+        selector didn't match in the first place (typo, SDK-reported name
+        difference, or a disconnected/faulty G3M678M) is unconfirmed and
+        needs the actual `~/.SmartTScope/config.toml` / server log from the
+        Pi to close out.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

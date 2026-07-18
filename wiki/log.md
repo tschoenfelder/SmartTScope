@@ -4976,3 +4976,34 @@ M10-023 (SDK serialization discipline) and M10-024 (Pi lock-vs-GIL evidence)
 remain open. 7 new tests; runtime + full API + camera service suites green
 (1048). Pi acceptance pending: confirm time/location < 1 s while all three
 cameras connect/prime.
+
+## 2026-07-18 - M10-026: camera role cross-wiring fixed (Cameras screen)
+
+Hardware evidence: covering the guide camera (GPCMOS02000KPA) changed the
+frame in the OAG panel on the M10-019 Cameras screen - the OAG role was bound
+to the guide camera's physical device instead of its own (G3M678M).
+
+Root cause: SmartTouptekCamera._select_device() in
+adapters/touptek/managed.py silently fell back to a positional index
+(devices[self._index], default 0) whenever a configured model/name/camera_id
+selector matched nothing, instead of reporting "not found". A role whose
+selector fails to match (typo, SDK-reported name mismatch, disconnected
+camera) then silently binds to whatever device happens to sit at that index -
+here, the guide camera. resolve_device_id() (used by the startup
+validate_unique_camera_roles() conflict check, same file) already treated a
+failed selector match as "not found", so the startup check could never catch
+this divergence between the two functions.
+
+Fix (SYNC-OVERRIDE, tracked in SYNC.md - camera_adapter permits direct
+overrides for this file, unlike OnStepAdapter's stricter flag-and-wait
+policy): _select_device() now returns "not found" whenever a selector was
+configured but didn't match, mirroring resolve_device_id(). Pure index-only
+configs are unaffected. connect()'s existing SYNC-OVERRIDE (return False
+instead of raising) surfaces this as a normal, readable "camera failed to
+connect" per the M10-017 pattern, rather than a silent wrong-camera bind.
+
+8 new tests (tests/unit/adapters/touptek/test_managed_select_device.py);
+touptek/camera-service/runtime suites (152) and the full API suite (1013)
+green. Still needed: Pi evidence on why [cameras.oag]'s model selector failed
+to match in the first place (config typo vs SDK name mismatch vs a genuinely
+disconnected G3M678M) - filed as the remaining open item under M10-026.

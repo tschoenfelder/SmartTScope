@@ -1778,17 +1778,33 @@ histogram ceiling until it ships upstream.
         `cameras` field on `/api/observing/state` (+ intent responses) at the API
         layer, keeping ObservingService camera-agnostic. 10 new tests; runtime +
         observing API suites green. Pi verification pending (M10-012).
-- [ ] M10-003 Per-camera readiness FSM, parallel to the observing FSM:
+- [x] M10-003 Per-camera readiness FSM, parallel to the observing FSM:
       IDLE → TUNING (exposure/gain) → STAR_CHECK → FOCUSING (only `has_focuser`
       trains) → READY | DEGRADED(reason). Claims `camera:N` via `JobManager`; feeds
       frames through `analyze_camera_frame()` with rolling `previous_star_state`
       `[P1 · Runtime]`
       - *Acceptance:* per-camera states observable via API; no camera resource
         conflicts with autogain or a running session (JobManager arbitration).
-- [ ] M10-004 LiveAnalysis adapter shim (SmartTScope-owned, thin): map camera settings
+      - *Done 2026-07-18:* `services/camera_setup_fsm.py` — `CameraSetupService`
+        watcher launches one JobManager job (`camera-setup:<role>`, resource
+        `camera:<sdk_index>`) per DETECTED camera; a held camera stays IDLE with
+        "camera busy" and retries next tick. TUNING captures `[live_analysis]`
+        `tuning_frames` frames recording module recommendations (applied in
+        M10-005); STAR_CHECK needs `star_count_min` stars within
+        `star_check_frames` extra frames else DEGRADED(reason); FOCUSING only on
+        `has_focuser` trains — injectable `focus_fn` hook, until M10-006 completes
+        with a pending note. New `[live_analysis]` config + templates. Per-role
+        state merged into the `cameras.roles.*.setup` API field and shown on the
+        camera card. 10 FSM tests green; Pi verification pending (M10-012).
+- [x] M10-004 LiveAnalysis adapter shim (SmartTScope-owned, thin): map camera settings
       (exposure_s, gain, offset, bit_depth, binning, raw_mode, conversion gain) to the
       module's `camera_settings`; pass native unscaled 2D numpy frames (respect the
       camera adapter's pixel-shift/BITDEPTH handling) `[P1 · Runtime]`
+      - *Done 2026-07-18:* `services/live_analysis_shim.py` — `build_camera_info()`
+        (per-frame EXPTIME/BITDEPTH win over camera queries; best-effort fields),
+        `analyze()` passes `FitsFrame.pixels` untouched (adapters already
+        right-shift to native ADC range), `live_analysis_available()`. 6 tests
+        incl. a real round-trip against the pinned v0.1.0 package.
 - [ ] M10-005 Exposure/gain auto-tune loop: apply module recommendations clamped by
       new `[live_analysis]` config (max setup exposure — proposal 5 s —, gain/offset
       ranges; **templates/config.toml updated in the same task**); app-side ceiling:
@@ -1820,6 +1836,11 @@ histogram ceiling until it ships upstream.
         ″/px), plus a "connected but not configured" warning line. Remaining for
         this task: exposure/gain, star count, focus state, READY/DEGRADED badge —
         arrive with the M10-003 readiness FSM.
+      - *Second slice done 2026-07-18 (with M10-003):* per-row setup summary —
+        phase label (tuning… / star check… / focusing… / READY / DEGRADED+reason),
+        star count, setup exposure and gain; READY green, DEGRADED amber, focus
+        note as tooltip. Remaining: live preview / camera identity overlap with
+        M9-020.
 - [ ] M10-009 Draft upstream feature requests to SmartTScopeLiveAnalysis — file
       **only after user approval** (ONS31-008/009 pattern), tracked in the new
       SYNC.md section: (a) histogram-ceiling parameter (70%) for exposure

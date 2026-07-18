@@ -4820,3 +4820,30 @@ FILTER WHEEL / CFW), reports them in a new `filter_wheel` snapshot field
 them from the unassigned-camera warning; camera sdk_index values still refer to the
 full enumeration order. The Observe card shows a "wheel" row (green when configured +
 detected, yellow on mismatch either way). 3 new tests; 17 targeted tests green.
+
+## 2026-07-18 - M10-003/M10-004: per-camera setup FSM + LiveAnalysis shim
+
+Implemented the camera-readiness backbone. `services/live_analysis_shim.py`
+(M10-004) is the only place that knows the pinned SmartTScopeLiveAnalysis v0.1.0
+call signature: `build_camera_info()` maps live camera state (exposure_s, gain,
+offset, bit_depth, binning, raw_mode, conversion gain) with per-frame facts
+winning (EXPTIME, BITDEPTH header from the adapter's pixel-shift detection), and
+`analyze()` passes `FitsFrame.pixels` untouched - the ToupTek adapters already
+right-shift to native ADC range.
+
+`services/camera_setup_fsm.py` (M10-003): `CameraSetupService` watches the
+M10-002 identification snapshot and, per DETECTED camera, submits a JobManager
+job (`camera-setup:<role>`, resource `camera:<sdk_index>`) driving
+IDLE -> TUNING -> STAR_CHECK -> FOCUSING (has_focuser trains only) -> READY |
+DEGRADED(reason). A camera held by autogain/session stays IDLE ("camera busy")
+and retries on the next tick - no resource conflicts by construction. TUNING
+records module recommendations (clamped application is M10-005); STAR_CHECK
+requires `star_count_min` stars; FOCUSING has an injectable `focus_fn` hook and
+completes with a "pending (M10-006)" note until the SCT-aware algorithm lands.
+New `[live_analysis]` config section (enabled, setup_exposure_s, tuning_frames,
+star_check_frames, star_count_min) + templates/config.toml. Runtime starts the
+service in connect_devices() and stops it before job cancel_all in shutdown.
+Per-role state is merged into `cameras.roles.*.setup` on /api/observing/state;
+the camera card shows phase / stars / exposure / gain (READY green, DEGRADED
+amber with reason). 16 new tests (incl. a real round-trip against the pinned
+package); 33 targeted tests green. Pi verification pending (M10-012).

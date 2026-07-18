@@ -162,6 +162,32 @@ function _obsOpticalSummary(optical) {
     return parts.join(' · ');
 }
 
+// M10-003: per-camera setup FSM state (tuning → star check → focusing →
+// READY/DEGRADED) shown next to the identification result.
+const _CAM_PHASE_LABEL = {
+    IDLE:       'waiting…',
+    TUNING:     'tuning…',
+    STAR_CHECK: 'star check…',
+    FOCUSING:   'focusing…',
+    READY:      'READY',
+    DEGRADED:   'degraded',
+};
+
+function _obsSetupSummary(setup) {
+    if (!setup || !setup.phase) return null;
+    const parts = [_CAM_PHASE_LABEL[setup.phase] || setup.phase];
+    if (setup.phase === 'DEGRADED' && setup.reason) parts.push(setup.reason);
+    if (setup.stars_found !== null && setup.stars_found !== undefined)
+      parts.push(`${setup.stars_found} stars`);
+    if (setup.exposure_s) parts.push(`${setup.exposure_s} s`);
+    if (setup.gain !== null && setup.gain !== undefined) parts.push(`gain ${setup.gain}`);
+    return {
+      text: parts.join(' · '),
+      phase: setup.phase,
+      title: setup.reason || setup.focus_note || '',
+    };
+}
+
 function _renderObsCameras(cameras) {
     const card = document.getElementById('obs-camera-card');
     if (!cameras || !cameras.roles || Object.keys(cameras.roles).length === 0) {
@@ -191,6 +217,14 @@ function _renderObsCameras(cameras) {
         opt.className = 'camera-optical';
         opt.textContent = summary;
         row.appendChild(opt);
+      }
+      const setup = _obsSetupSummary(cam.setup);
+      if (setup) {
+        const st = document.createElement('span');
+        st.className = `camera-setup camera-setup-${setup.phase}`;
+        st.textContent = setup.text;
+        st.title = setup.title;
+        row.appendChild(st);
       }
       rows.appendChild(row);
     }

@@ -279,6 +279,20 @@ max_frames_per_session   = 50
 # ---------------------------------------------------------------------------
 # Guiding
 # ---------------------------------------------------------------------------
+[live_analysis]
+# M10-003: per-camera setup FSM (runs while you confirm time/location).
+# Frames are analyzed by the external SmartTScopeLiveAnalysis module;
+# recommendations are recorded now and applied (clamped) with M10-005.
+enabled           = true
+# Exposure used for setup frames (tuning / star check), seconds
+setup_exposure_s  = 1.0
+# Frames captured during TUNING before the star check starts
+tuning_frames     = 3
+# Max additional frames the STAR_CHECK phase tries before reporting DEGRADED
+star_check_frames = 5
+# Minimum detected stars for a camera to pass STAR_CHECK
+star_count_min    = 3
+
 [guiding]
 # Primary guide source role: "guide" or "oag"
 primary_role              = "guide"

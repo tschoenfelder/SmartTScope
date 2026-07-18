@@ -245,6 +245,17 @@ class FilterWheelSpec:
 
 
 @dataclass(frozen=True)
+class LiveAnalysisSpec:
+    """[live_analysis] — camera setup FSM (M10-003) and, later, the clamped
+    auto-tune loop (M10-005)."""
+    enabled: bool = True
+    setup_exposure_s: float = 1.0
+    tuning_frames: int = 3
+    star_check_frames: int = 5
+    star_count_min: int = 3
+
+
+@dataclass(frozen=True)
 class GuidingSpec:
     primary_role: str = "guide"
     allow_fallback: bool = True
@@ -274,6 +285,17 @@ def _parse_filter_wheel_spec() -> FilterWheelSpec:
     )
 
 
+def _parse_live_analysis_spec() -> LiveAnalysisSpec:
+    section = _cfg.get("live_analysis", {})
+    return LiveAnalysisSpec(
+        enabled=bool(section.get("enabled", True)),
+        setup_exposure_s=float(section.get("setup_exposure_s", 1.0)),
+        tuning_frames=int(section.get("tuning_frames", 3)),
+        star_check_frames=int(section.get("star_check_frames", 5)),
+        star_count_min=int(section.get("star_count_min", 3)),
+    )
+
+
 def _parse_guiding_spec() -> GuidingSpec:
     section = _cfg.get("guiding", {})
     return GuidingSpec(
@@ -291,6 +313,7 @@ def _parse_guiding_spec() -> GuidingSpec:
 COOLING: CoolingSpec = _parse_cooling_spec()
 FILTER_WHEEL: FilterWheelSpec = _parse_filter_wheel_spec()
 GUIDING: GuidingSpec = _parse_guiding_spec()
+LIVE_ANALYSIS: LiveAnalysisSpec = _parse_live_analysis_spec()
 
 
 def _parse_camera_serials() -> dict[str, str]:

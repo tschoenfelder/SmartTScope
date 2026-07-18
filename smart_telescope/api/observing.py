@@ -47,9 +47,18 @@ def _camera_readiness_payload() -> dict[str, Any] | None:
     is unavailable (early startup, tests without a runtime).
     """
     try:
-        return deps.get_camera_readiness().snapshot()
+        snap = deps.get_camera_readiness().snapshot()
     except Exception:
         return None
+    # M10-003: merge per-camera setup FSM state (phase, stars, exposure/gain)
+    # into each identified role so the card renders from one payload.
+    try:
+        setup = deps.get_camera_setup().snapshot()
+        for role, entry in snap.get("roles", {}).items():
+            entry["setup"] = setup.get(role)
+    except Exception:
+        pass
+    return snap
 
 
 def _build_deps(

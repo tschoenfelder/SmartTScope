@@ -264,6 +264,16 @@ class RuntimeContext:
         self.camera_readiness: CameraReadinessService = CameraReadinessService(
             registry_provider=self.get_optical_train_registry,
         )
+        # M10-003: per-camera setup FSM (tuning/star-check/focus) — launches a
+        # JobManager-arbitrated worker for each camera the identification scan
+        # detects; starts alongside camera_readiness in connect_devices().
+        from .services.camera_setup_fsm import CameraSetupService
+        self.camera_setup: CameraSetupService = CameraSetupService(
+            job_manager=self.job_manager,
+            camera_provider=self.get_camera_by_role,
+            readiness_snapshot=self.camera_readiness.snapshot,
+            registry_provider=self.get_optical_train_registry,
+        )
         # Optional external frame analyzer (loaded when configured in [analysis])
         self.frame_analyzer: FrameAnalyzerProtocol | None = (
             load_external_analyzer(config.EXTERNAL_FRAME_ANALYZER_MODULE)
@@ -360,6 +370,9 @@ class RuntimeContext:
                 # M10-002: camera identification runs in parallel with the
                 # mount flow (user is typically still confirming time/location).
                 self.camera_readiness.start()
+                # M10-003: per-camera setup FSM follows the identification
+                # results; a busy or missing camera never blocks the mount flow.
+                self.camera_setup.start()
                 from . import config as _cfg
                 self.dawn_watcher.start(
                     self._mount,
@@ -387,6 +400,10 @@ class RuntimeContext:
             with contextlib.suppress(Exception):
                 self._guiding_service.stop()
             self._guiding_service = None
+        # Stop the setup watcher before cancel_all — a live watcher tick could
+        # otherwise relaunch a camera job between cancellation and close.
+        with contextlib.suppress(Exception):
+            self.camera_setup.stop()
         self.job_manager.cancel_all()
         self.cooling_service.stop()
         self.dawn_watcher.stop()
@@ -451,6 +468,8 @@ class RuntimeContext:
         """Clear all cached singletons for test isolation."""
         self.dawn_watcher.stop()
         self.device_state.stop()
+        with contextlib.suppress(Exception):
+            self.camera_setup.stop()
         with contextlib.suppress(Exception):
             self.camera_readiness.stop()
         if self._guiding_service is not None:

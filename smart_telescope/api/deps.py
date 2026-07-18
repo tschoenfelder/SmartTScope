@@ -128,6 +128,11 @@ def get_camera_readiness():
     return get_runtime().camera_readiness
 
 
+def get_camera_setup():
+    """M10-003: the per-camera setup FSM (tuning/star-check/focus)."""
+    return get_runtime().camera_setup
+
+
 def get_pixel_scale(
     camera_index: int | None = None,
     camera_role: str | None = None,

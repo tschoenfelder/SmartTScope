@@ -2044,7 +2044,7 @@ histogram ceiling until it ships upstream.
       - *Acceptance:* radio button on the Cameras screen; sky mode draws solved
         footprints; terrestrial mode never calls the solver.
 
-- [ ] M10-021 Decouple mount availability from camera bring-up in
+- [x] M10-021 Decouple mount availability from camera bring-up in
       `connect_devices()` (hardware evidence 2026-07-18: "Confirm Time & Location"
       stalls during camera connect/first frame — violates the M10 quality gate):
       `runtime.py connect_devices()` holds `_adapters_lock` across the whole
@@ -2061,8 +2061,18 @@ histogram ceiling until it ships upstream.
         `POST /api/location/confirm` and mount endpoints respond in < 1 s; the
         Observe flow reaches WAIT_HOME_CONFIRMATION while cameras are still in
         TUNING.
+      - *Done 2026-07-18:* `_build_adapters` split into `_build_mount_focuser`
+        (runs first, alone, under `_adapters_lock`) and `_build_main_camera`
+        (runs in a background `main-camera-connect` thread spawned at the end
+        of `connect_devices()`, serialized on `_camera_open_lock` — now an
+        RLock). Requests that genuinely need the camera join the in-progress
+        build via `_main_camera()`; `get_camera_by_role("main")` routes there
+        too (no duplicate main handle possible). Hardware mode (R5-011)
+        ignores the camera side until its build lands, so a real mount never
+        shows a false "mock" while the camera is still connecting. Pi
+        acceptance check pending (confirm < 1 s during camera prime).
 
-- [ ] M10-022 No inline camera opens on hot observing paths (same 2026-07-18
+- [x] M10-022 No inline camera opens on hot observing paths (same 2026-07-18
       evidence): `_build_deps` in `api/observing.py` calls
       `deps.get_camera_by_role("guide")` on **every** `/api/observing/state` poll
       (2.5 s) and on `POST /api/observing/intent` — that acquires
@@ -2076,6 +2086,18 @@ histogram ceiling until it ships upstream.
       - *Acceptance:* `/api/observing/state` and `/api/observing/intent` never
         acquire `_camera_open_lock`; the state poll stays < 100 ms while the FSM
         is opening cameras.
+      - *Done 2026-07-18:* `Depends(deps.get_camera)` removed from both
+        endpoints — replaced by a `_LazyCamera` proxy that resolves the main
+        camera only on first attribute access (snapshot and the early-phase
+        intents never touch it; phase actions that do run in background action
+        threads where briefly joining the M10-021 build is fine). The guide
+        lookup in `_build_deps` uses new `deps.peek_camera_by_role()` /
+        `runtime.peek_camera_by_role()` — returns the already-open handle or
+        None, never opens, never takes `_camera_open_lock` (guiding needs the
+        camera much later; the setup FSM has opened it by then). Guard tests
+        patch `get_camera`/`get_camera_by_role` to raise and assert both
+        endpoints still return 200. 7 new tests; runtime+API suites green
+        (1048).
 
 - [ ] M10-023 One serialization discipline for all ToupTek SDK entry points:
       readiness `EnumV2` (every 15 s via `CameraNameResolver._enumerate`), the

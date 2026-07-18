@@ -89,7 +89,8 @@ class TestConnectDevices:
     def test_mock_mode_builds_mock_adapters(self):
         ctx = RuntimeContext()
         ctx.connect_devices()
-        assert isinstance(ctx._camera,  MockCamera)
+        # M10-021: the camera builds in the background — get_camera() joins it.
+        assert isinstance(ctx.get_camera(), MockCamera)
         assert isinstance(ctx._mount,   MockMount)
         assert isinstance(ctx._focuser, MockFocuser)
         ctx.shutdown()
@@ -103,9 +104,9 @@ class TestConnectDevices:
     def test_connect_devices_is_idempotent(self):
         ctx = RuntimeContext()
         ctx.connect_devices()
-        cam1 = ctx._camera
+        cam1 = ctx.get_camera()
         ctx.connect_devices()  # second call must not rebuild
-        assert ctx._camera is cam1
+        assert ctx.get_camera() is cam1
         ctx.shutdown()
 
     def test_connect_devices_starts_device_state_polling(self):
@@ -125,7 +126,7 @@ class TestConnectDevices:
         monkeypatch.setenv("SIMULATOR_FITS_DIR", str(tmp_path))
         ctx = RuntimeContext()
         ctx.connect_devices()
-        assert isinstance(ctx._camera, SimulatorCamera)
+        assert isinstance(ctx.get_camera(), SimulatorCamera)
         assert isinstance(ctx._mount,  SimulatorMount)
         ctx.shutdown()
 
@@ -233,10 +234,10 @@ class TestResetForTests:
     def test_reset_allows_new_adapters_to_be_built(self):
         ctx = RuntimeContext()
         ctx.connect_devices()
-        cam1 = ctx._camera
+        cam1 = ctx.get_camera()
         ctx.reset_for_tests()
         ctx.connect_devices()
-        assert ctx._camera is not cam1
+        assert ctx.get_camera() is not cam1
         ctx.shutdown()
 
     def test_reset_installs_fresh_job_manager(self):
@@ -458,3 +459,75 @@ class TestCameraHandleOwnership:
         assert len(opens) == 1
         assert len(results) == 2
         assert results[0] is results[1]
+
+
+class TestNonBlockingBringup:
+    """M10-021/M10-022: camera bring-up must never block the mount flow."""
+
+    def test_connect_devices_returns_before_camera_built(self):
+        import smart_telescope.runtime as rt
+        release = threading.Event()
+
+        def slow_build(ctx):
+            release.wait(timeout=5.0)
+            return MockCamera()
+
+        ctx = RuntimeContext()
+        try:
+            with patch.object(rt, "_build_main_camera", side_effect=slow_build):
+                t0 = time.monotonic()
+                ctx.connect_devices()
+                elapsed = time.monotonic() - t0
+                assert elapsed < 1.0, "mount path waited for the camera build"
+                assert ctx._mount is not None
+                assert ctx._camera is None  # still building in the background
+                release.set()
+                assert isinstance(ctx.get_camera(), MockCamera)
+        finally:
+            release.set()
+            ctx.shutdown()
+
+    def test_get_camera_joins_background_build_synchronously(self):
+        import smart_telescope.runtime as rt
+        builds = []
+
+        def build(ctx):
+            builds.append(1)
+            return MockCamera()
+
+        ctx = RuntimeContext()
+        try:
+            with patch.object(rt, "_build_main_camera", side_effect=build):
+                ctx.connect_devices()
+                cam1 = ctx.get_camera()
+                cam2 = ctx.get_camera()
+            assert cam1 is cam2
+            assert len(builds) == 1  # background + foreground did not double-build
+        finally:
+            ctx.shutdown()
+
+    def test_get_camera_by_role_main_shares_the_main_handle(self):
+        import smart_telescope.config as cfg
+        from smart_telescope.config import CameraSpec
+        ctx = _make_ctx()
+        spec = {"main": CameraSpec(role="main", model="ATR585M")}
+        with patch.object(cfg, "CAMERA_SPECS", spec):
+            assert ctx.get_camera_by_role("main") is ctx._camera
+        assert "main" not in ctx._role_cameras  # no duplicate handle
+
+    def test_peek_camera_by_role_never_opens(self):
+        ctx = _make_ctx()
+        assert ctx.peek_camera_by_role("guide") is None
+        sentinel = MagicMock(name="guide-cam")
+        ctx._role_cameras["guide"] = sentinel
+        assert ctx.peek_camera_by_role("guide") is sentinel
+        assert ctx.peek_camera_by_role("main") is ctx._camera
+
+    def test_hardware_mode_ignores_camera_until_built(self):
+        ctx = RuntimeContext()
+        ctx._mnt_mode = "real"
+        ctx._update_hardware_mode()
+        assert ctx.hardware_mode == "real"  # no false "mock" while camera pending
+        ctx._cam_mode = "mock"
+        ctx._update_hardware_mode()
+        assert ctx.hardware_mode == "mock"

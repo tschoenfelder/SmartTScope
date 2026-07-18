@@ -8,11 +8,13 @@ covered by tests/unit/services/test_observing_service.py against mocked ports.
 from __future__ import annotations
 
 import time
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from smart_telescope.api import deps
 from smart_telescope.app import app
+from smart_telescope.runtime import RuntimeContext
 
 client = TestClient(app)
 
@@ -78,3 +80,31 @@ class TestObservingIntent:
         r = client.post("/api/observing/intent", json={"intent": "CONFIRM_HOME"})
         body = r.json()
         assert body["phase"] == "POLAR_ALIGN"
+
+
+class TestNoInlineCameraOpen:
+    """M10-022: the hot observing endpoints must never open (or wait for) a
+    camera — a stalled camera bring-up must not block confirm time/location."""
+
+    def _forbid_camera(self):
+        boom = AssertionError("camera opened on a hot observing path")
+        return (
+            patch.object(RuntimeContext, "get_camera", side_effect=boom),
+            patch.object(RuntimeContext, "get_camera_by_role", side_effect=boom),
+        )
+
+    def test_state_never_touches_a_camera(self) -> None:
+        _reset()
+        p1, p2 = self._forbid_camera()
+        with p1, p2:
+            r = client.get("/api/observing/state")
+        assert r.status_code == 200
+        assert r.json()["phase"] == "WAIT_CONTEXT_CONFIRMATION"
+
+    def test_confirm_context_never_touches_a_camera(self) -> None:
+        _reset()
+        p1, p2 = self._forbid_camera()
+        with p1, p2:
+            r = client.post("/api/observing/intent", json={"intent": "CONFIRM_CONTEXT"})
+        assert r.status_code == 200
+        assert r.json()["phase"] == "WAIT_HOME_CONFIRMATION"

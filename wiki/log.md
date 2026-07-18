@@ -4953,3 +4953,26 @@ targets. Task M10-025 filed in docs/todo.md: extend goto/slew with a
 keep-tracking-state option (same semantics as the M10-019 nudge flag), restore
 the pre-slew tracking state after slew completion, app-side only (OnStep
 adapter is external-owned; unsuppressible auto-track goes to SYNC.md).
+
+## 2026-07-18 - M10-021/M10-022: mount flow decoupled from camera bring-up
+
+Fix for the confirmed blocker (see previous entry): _build_adapters split into
+_build_mount_focuser (first, alone, under _adapters_lock) and
+_build_main_camera (background "main-camera-connect" thread spawned at the end
+of connect_devices, serialized on _camera_open_lock, now an RLock). Requests
+that genuinely need the main camera join the in-progress build via
+_main_camera(); get_camera_by_role("main") routes there too, so no duplicate
+main handle is possible. Hardware mode ignores the camera side until its build
+lands (no false "mock" banner while a real camera connects).
+
+API side: /api/observing/state and /api/observing/intent no longer Depends on
+get_camera - a _LazyCamera proxy resolves the main camera on first attribute
+access only (snapshot and early intents never touch it); the guide lookup in
+_build_deps uses new peek_camera_by_role() which returns the already-open
+handle or None and never takes _camera_open_lock. Guard tests patch
+get_camera/get_camera_by_role to raise and assert both endpoints still answer.
+
+M10-023 (SDK serialization discipline) and M10-024 (Pi lock-vs-GIL evidence)
+remain open. 7 new tests; runtime + full API + camera service suites green
+(1048). Pi acceptance pending: confirm time/location < 1 s while all three
+cameras connect/prime.

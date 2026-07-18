@@ -70,6 +70,12 @@ def get_camera_by_role(role: str) -> CameraPort:
     return get_runtime().get_camera_by_role(role)
 
 
+def peek_camera_by_role(role: str) -> CameraPort | None:
+    """M10-022: already-open camera for *role* or None — never opens a device
+    and never blocks on the camera-open lock (safe on hot request paths)."""
+    return get_runtime().peek_camera_by_role(role)
+
+
 def get_mount() -> MountPort:
     return get_runtime().get_mount()
 

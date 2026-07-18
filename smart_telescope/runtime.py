@@ -45,23 +45,21 @@ _log = logging.getLogger(__name__)
 _MODE_RANK: dict[str, int] = {"mock": 2, "simulator": 1, "real": 0}
 
 
-def _build_adapters(
-    ctx: RuntimeContext,
-) -> tuple[CameraPort, MountPort, FocuserPort]:
-    """Select and connect camera, mount, and focuser adapters.
+def _build_main_camera(ctx: RuntimeContext) -> CameraPort:
+    """Select and connect the main camera adapter.
 
     Selection priority follows the same rules as the old deps._build_adapters():
       Camera: TOUPTEK_INDEX → [cameras] main → SIMULATOR_FITS_DIR →
               REPLAY_FITS_DIR → MockCamera
-      Mount/Focuser: ONSTEP_PORT → SIMULATOR_FITS_DIR → MockMount/MockFocuser
+
+    M10-021: this can take many seconds on real hardware (SDK open, configure,
+    startup settle, priming first-frame captures) and therefore runs decoupled
+    from the mount build — never inside `_adapters_lock`.
     """
     from . import config
     from .adapters.mock.camera import MockCamera
-    from .adapters.mock.focuser import MockFocuser
-    from .adapters.mock.mount import MockMount
 
     main_index_str = os.environ.get("TOUPTEK_INDEX") or config.TOUPTEK_INDEX
-    onstep_port    = os.environ.get("ONSTEP_PORT") or config.ONSTEP_PORT
     sim_dir        = os.environ.get("SIMULATOR_FITS_DIR", "")
     replay_dir     = os.environ.get("REPLAY_FITS_DIR", "")
 
@@ -145,6 +143,26 @@ def _build_adapters(
         camera = MockCamera()
         cam_mode = "mock"
 
+    ctx._cam_mode = cam_mode
+    ctx._update_hardware_mode()
+    return camera
+
+
+def _build_mount_focuser(ctx: RuntimeContext) -> tuple[MountPort, FocuserPort]:
+    """Select and connect mount and focuser adapters.
+
+    Selection priority: ONSTEP_PORT → SIMULATOR_FITS_DIR → MockMount/MockFocuser.
+
+    M10-021: built before and independently of any camera — camera bring-up
+    must never delay mount/time/location availability.
+    """
+    from . import config
+    from .adapters.mock.focuser import MockFocuser
+    from .adapters.mock.mount import MockMount
+
+    onstep_port = os.environ.get("ONSTEP_PORT") or config.ONSTEP_PORT
+    sim_dir     = os.environ.get("SIMULATOR_FITS_DIR", "")
+
     mnt_mode: str
     if onstep_port:
         from . import config as _cfg
@@ -181,22 +199,24 @@ def _build_adapters(
             "REAL HARDWARE" if focuser.is_available else "focuser not available (check wiring)",
         )
         mnt_mode = "real"
-        ctx._hardware_mode = max([cam_mode, mnt_mode], key=lambda m: _MODE_RANK[m])
-        return camera, mount, focuser
+        ctx._mnt_mode = mnt_mode
+        ctx._update_hardware_mode()
+        return mount, focuser
 
     if sim_dir:
-        from pathlib import Path
         from .adapters.simulator.focuser import SimulatorFocuser
         from .adapters.simulator.mount import SimulatorMount
         _log.info("Adapter selected: SimulatorMount+SimulatorFocuser (SIMULATOR_FITS_DIR=%s)", sim_dir)
         mnt_mode = "simulator"
-        ctx._hardware_mode = max([cam_mode, mnt_mode], key=lambda m: _MODE_RANK[m])
-        return camera, SimulatorMount(), SimulatorFocuser()
+        ctx._mnt_mode = mnt_mode
+        ctx._update_hardware_mode()
+        return SimulatorMount(), SimulatorFocuser()
 
     _log.warning("Adapter selected: MockMount+MockFocuser — no ONSTEP_PORT or SIMULATOR_FITS_DIR set")
     mnt_mode = "mock"
-    ctx._hardware_mode = max([cam_mode, mnt_mode], key=lambda m: _MODE_RANK[m])
-    return camera, MockMount(), MockFocuser()
+    ctx._mnt_mode = mnt_mode
+    ctx._update_hardware_mode()
+    return MockMount(), MockFocuser()
 
 
 class RuntimeContext:
@@ -228,7 +248,14 @@ class RuntimeContext:
         # M10-018: the ToupTek SDK allows exactly one Open per physical device
         # (second open → 0x800700AA busy). Serialize all camera-open paths so
         # concurrent setup-FSM jobs / requests never race check-then-open.
-        self._camera_open_lock: threading.Lock = threading.Lock()
+        # RLock since M10-021: fallback paths inside a held section may route
+        # to _connect_main_camera(), which takes the lock again.
+        self._camera_open_lock: threading.RLock = threading.RLock()
+        # M10-021: per-side adapter modes; camera side is None until its
+        # (possibly background) build finishes so a real mount doesn't show a
+        # false "mock hardware" mode while the camera is still connecting.
+        self._cam_mode: str | None = None
+        self._mnt_mode: str = "mock"
         self._app_session_id: str = str(_uuid.uuid4())
         self.coordinator         = HardwareCommandCoordinator()
         self.cooling_service     = CoolingService()
@@ -303,6 +330,13 @@ class RuntimeContext:
         """Return the current hardware mode: 'real', 'simulator', or 'mock'."""
         return self._hardware_mode
 
+    def _update_hardware_mode(self) -> None:
+        """Recompute the combined mode (worst of camera/mount sides, R5-011)."""
+        modes = [m for m in (self._cam_mode, self._mnt_mode) if m]
+        self._hardware_mode = (
+            max(modes, key=lambda m: _MODE_RANK[m]) if modes else "mock"
+        )
+
     @property
     def guiding_service(self) -> GuidingService:
         """Return the lazily-created GuidingService (creates on first access)."""
@@ -366,9 +400,11 @@ class RuntimeContext:
         with self._adapters_lock:
             if not self._adapters_built:
                 self._validate_camera_role_ownership(_config.CAMERA_SPECS)
-                self._camera, self._mount, self._focuser = _build_adapters(self)
+                # M10-021: mount + focuser connect first and alone — camera
+                # bring-up (SDK open + prime frames, many seconds on real
+                # hardware) must never delay mount/time/location endpoints.
+                self._mount, self._focuser = _build_mount_focuser(self)
                 self._adapters_built = True
-                self._apply_camera_offsets()
                 assert self._mount is not None
                 self.device_state.start(self._mount)
                 self.device_state.poll_now()  # BUG-012: populate cache immediately at startup
@@ -385,6 +421,46 @@ class RuntimeContext:
                     _cfg.OBSERVER_LAT,
                     _cfg.OBSERVER_LON,
                 )
+                # M10-021: main camera connects in the background; requests
+                # that genuinely need it block in _main_camera() instead.
+                threading.Thread(
+                    target=self._connect_main_camera,
+                    daemon=True, name="main-camera-connect",
+                ).start()
+
+    def _connect_main_camera(self) -> None:
+        """Build + connect the main camera (idempotent, thread-safe, blocking).
+
+        M10-021: runs in a background thread from connect_devices(); a request
+        that genuinely needs the camera before that finishes calls it
+        synchronously via _main_camera() and joins the in-progress build on
+        _camera_open_lock.
+        """
+        if self._camera is not None:
+            return
+        with self._camera_open_lock:
+            if self._camera is not None or not self._adapters_built:
+                return
+            camera = _build_main_camera(self)
+            if not self._adapters_built:
+                # reset_for_tests()/disconnect ran while we were building —
+                # do not resurrect stale state.
+                with contextlib.suppress(Exception):
+                    camera.disconnect()
+                return
+            self._camera = camera
+            try:
+                self.camera_offset_service.apply(camera)
+            except Exception as exc:
+                _log.warning("Camera offset apply failed: %s", exc, exc_info=True)
+
+    def _main_camera(self) -> CameraPort:
+        """Return the main camera, connecting it now if the background build
+        has not finished yet (M10-021)."""
+        if self._camera is None:
+            self._connect_main_camera()
+        assert self._camera is not None
+        return self._camera
 
     def _validate_camera_role_ownership(self, specs: dict[str, object]) -> None:
         if not specs:
@@ -490,6 +566,8 @@ class RuntimeContext:
         self._solver = None
         self._adapters_built = False
         self._hardware_mode = "mock"
+        self._cam_mode = None
+        self._mnt_mode = "mock"
         self._preview_cameras = {}
         self._role_cameras = {}
         self._filter_wheel = None
@@ -562,8 +640,18 @@ class RuntimeContext:
 
     def get_camera(self) -> CameraPort:
         self.connect_devices()
-        assert self._camera is not None
-        return self._camera
+        return self._main_camera()
+
+    def peek_camera_by_role(self, role: str) -> CameraPort | None:
+        """M10-022: the already-open camera for *role*, or None.
+
+        Never connects a device and never takes _camera_open_lock — hot API
+        paths (observing state poll, intent post) must not queue behind an
+        in-progress camera open.
+        """
+        if role == "main":
+            return self._camera
+        return self._role_cameras.get(role)
 
     def get_preview_camera(self, index: int | str) -> CameraPort:
         from . import config
@@ -612,8 +700,7 @@ class RuntimeContext:
                     main_index = -1  # unresolvable; skip primary-camera match
             if index == main_index:
                 _log.info("get_preview_camera(%d): returning primary camera (%s)", index, type(self._camera).__name__)
-                assert self._camera is not None
-                return self._camera
+                return self._main_camera()
             with self._camera_open_lock:
                 if index not in self._preview_cameras:
                     _log.info("get_preview_camera(%d): opening secondary ToupcamCamera", index)
@@ -646,8 +733,9 @@ class RuntimeContext:
                 except (ImportError, RuntimeError) as exc:
                     _log.warning("get_preview_camera(%d): SDK unavailable (%s) — falling back to %s",
                                  index, exc, type(self._camera).__name__)
-                    assert self._camera is not None
-                    return self._camera
+                    # _camera_open_lock is an RLock — re-entering via
+                    # _main_camera() from inside this held section is safe.
+                    return self._main_camera()
         return self._preview_cameras[index]
 
     def get_camera_by_role(self, role: str) -> CameraPort:
@@ -656,8 +744,10 @@ class RuntimeContext:
 
         if role in config.CAMERA_SPECS and config.CAMERA_SPECS[role].enabled:
             self.connect_devices()
-            if role == "main" and self._camera is not None:
-                return self._camera
+            if role == "main":
+                # M10-021: main is built by _connect_main_camera (possibly in
+                # the background) — never open a second handle for it here.
+                return self._main_camera()
             with self._camera_open_lock:
                 if role not in self._role_cameras:
                     spec = config.CAMERA_SPECS[role]

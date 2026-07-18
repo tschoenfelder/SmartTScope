@@ -1,11 +1,12 @@
-"""Tests for CameraNameResolver integration in runtime._build_adapters().
+"""Tests for CameraNameResolver integration in runtime._build_main_camera().
 
-Task 3 of the Camera ID Mapping plan: verify that _build_adapters() passes
+Task 3 of the Camera ID Mapping plan: verify that the camera build passes
 TOUPTEK_INDEX (string or numeric) through CameraNameResolver instead of calling
-int() directly.
+int() directly. (M10-021 split _build_adapters into _build_main_camera +
+_build_mount_focuser; the resolver lives in the camera half.)
 """
 from unittest.mock import MagicMock, patch
-from smart_telescope.runtime import _build_adapters, RuntimeContext
+from smart_telescope.runtime import _build_main_camera, RuntimeContext
 
 
 def test_build_adapters_calls_resolver_for_named_camera(monkeypatch):
@@ -31,7 +32,7 @@ def test_build_adapters_calls_resolver_for_named_camera(monkeypatch):
 
     with patch("smart_telescope.adapters.touptek.camera.ToupcamCamera", mock_cam_cls):
         ctx = RuntimeContext()
-        _build_adapters(ctx)
+        _build_main_camera(ctx)
 
     mock_resolver_instance.resolve.assert_called_once_with(
         "G3M678M", {"G3M678M": "tp-4-2-11-0547-14bc"}
@@ -60,7 +61,7 @@ def test_build_adapters_integer_index_resolves_via_resolver(monkeypatch):
     mock_cam_cls = MagicMock()
     with patch("smart_telescope.adapters.touptek.camera.ToupcamCamera", mock_cam_cls):
         ctx = RuntimeContext()
-        _build_adapters(ctx)
+        _build_main_camera(ctx)
 
     mock_resolver_instance.resolve.assert_called_once_with("0", {})
     mock_cam_cls.assert_called_once_with(index=0)

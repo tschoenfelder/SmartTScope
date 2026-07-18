@@ -39,6 +39,25 @@ class IntentRequest(BaseModel):
     intent: str
 
 
+class _LazyCamera:
+    """Resolve the main camera on first use (M10-022).
+
+    The state poll and intent post must never wait for camera bring-up —
+    snapshot() and the early-phase intents (confirm context/home) don't touch
+    the camera at all. Phase actions that do (polar capture, observation
+    stages) run in background action threads, where resolving — and, if the
+    M10-021 background connect is still running, briefly blocking — is fine.
+    """
+
+    def __init__(self) -> None:
+        self._camera: CameraPort | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._camera is None:
+            self._camera = deps.get_camera()
+        return getattr(self._camera, name)
+
+
 def _camera_readiness_payload() -> dict[str, Any] | None:
     """M10-002/M10-008: parallel camera identification for the Observe screen.
 
@@ -76,8 +95,13 @@ def _build_deps(
     guide_role_cameras: dict[str, CameraPort] = {}
     guide_train = registry.guide() if registry is not None else None
     if guide_train is not None:
+        # M10-022: never open a camera in a request thread — use the handle
+        # only if something else (setup FSM, preview) already opened it.
+        # Guiding needs it much later in the flow; by then it is open.
         with contextlib.suppress(Exception):
-            guide_role_cameras["guide"] = deps.get_camera_by_role(guide_train.camera_role)
+            cam = deps.peek_camera_by_role(guide_train.camera_role)
+            if cam is not None:
+                guide_role_cameras["guide"] = cam
     return ObservingDeps(
         camera=camera,
         mount=mount,
@@ -101,7 +125,6 @@ def _build_deps(
 
 @router.get("/state")
 def observing_state(
-    camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
     solver: SolverPort = Depends(deps.get_solver),
@@ -115,7 +138,7 @@ def observing_state(
 ) -> dict[str, Any]:
     """Current phase, guard status, and the single suggested next action."""
     d = _build_deps(
-        camera, mount, focuser, solver, stacker, storage,
+        _LazyCamera(), mount, focuser, solver, stacker, storage,
         coordinator, device_state, guiding_service, registry,
     )
     snap = svc.snapshot(d)
@@ -126,7 +149,6 @@ def observing_state(
 @router.post("/intent")
 def observing_intent(
     body: IntentRequest,
-    camera: CameraPort = Depends(deps.get_camera),
     mount: MountPort = Depends(deps.get_mount),
     focuser: FocuserPort = Depends(deps.get_focuser),
     solver: SolverPort = Depends(deps.get_solver),
@@ -147,7 +169,7 @@ def observing_intent(
             status_code=422, detail=f"Unknown intent {body.intent!r}. Valid: {valid}",
         ) from None
     d = _build_deps(
-        camera, mount, focuser, solver, stacker, storage,
+        _LazyCamera(), mount, focuser, solver, stacker, storage,
         coordinator, device_state, guiding_service, registry,
     )
     snap = svc.handle_intent(intent, d)

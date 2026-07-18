@@ -209,19 +209,32 @@ class CameraSetupService:
         star_state: dict[str, Any] | None = None
         analysis: dict[str, Any] | None = None
 
-        # TUNING — capture frames and record the module's recommendations.
-        # Applying them (clamped) is M10-005; until then the recommendation is
-        # surfaced in the snapshot so the card can already show it.
+        # M10-005: auto-tune loop — apply the module's recommended
+        # exposure/gain/offset (clamped to config bounds) between TUNING
+        # frames, so STAR_CHECK starts from settled settings instead of the
+        # static config default.
+        exposure_s = settings.setup_exposure_s
+        gain = self._try_get(lambda: camera.get_gain(), default=settings.tuning_gain_min)
+        offset = self._try_get(lambda: camera.get_black_level(), default=settings.tuning_offset_min)
+
         self._set(role, CameraSetupPhase.TUNING, reason=None)
         for _ in range(max(1, settings.tuning_frames)):
             if cancel.is_set():
                 self._set(role, CameraSetupPhase.IDLE, reason="cancelled")
                 return
-            analysis, star_state = self._capture_and_analyze(
-                role, camera, settings.setup_exposure_s, star_state,
+            analysis, star_state, hist_p99_5 = self._capture_and_analyze(
+                role, camera, exposure_s, star_state,
             )
+            exposure_s, gain, offset = self._tune_next_settings(
+                analysis.get("recommendation") if analysis else None,
+                current_exposure_s=exposure_s, current_gain=gain, current_offset=offset,
+                histogram_p99_5=hist_p99_5, settings=settings,
+            )
+            self._try_apply(lambda: camera.set_gain(gain))
+            self._try_apply(lambda: camera.set_black_level(offset))
 
-        # STAR_CHECK — enough stars to attempt a plate solve later?
+        # STAR_CHECK — enough stars to attempt a plate solve later? Uses the
+        # settings TUNING settled on, not the static config default.
         self._set(role, CameraSetupPhase.STAR_CHECK)
         stars = self._stars_found(analysis)
         for _ in range(max(0, settings.star_check_frames)):
@@ -230,8 +243,8 @@ class CameraSetupService:
             if cancel.is_set():
                 self._set(role, CameraSetupPhase.IDLE, reason="cancelled")
                 return
-            analysis, star_state = self._capture_and_analyze(
-                role, camera, settings.setup_exposure_s, star_state,
+            analysis, star_state, _ = self._capture_and_analyze(
+                role, camera, exposure_s, star_state,
             )
             stars = self._stars_found(analysis)
         if stars < settings.star_count_min:
@@ -261,7 +274,7 @@ class CameraSetupService:
         camera: Any,
         exposure_s: float,
         star_state: dict[str, Any] | None,
-    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    ) -> tuple[dict[str, Any], dict[str, Any] | None, float | None]:
         frame = camera.capture(exposure_s)
         camera_info = self._camera_info_fn(camera, frame=frame)
         try:
@@ -278,7 +291,72 @@ class CameraSetupService:
             recommendation=result.get("recommendation"),
             frames_analyzed_inc=1,
         )
-        return result, result.get("state")
+        hist_p99_5 = self._frame_p99_5(frame, camera_info.get("bit_depth"))
+        return result, result.get("state"), hist_p99_5
+
+    @staticmethod
+    def _frame_p99_5(frame: Any, bit_depth: int | None) -> float | None:
+        """M10-005: 99.5th-percentile signal (fraction of full scale) for the
+        app-side histogram ceiling — best-effort, never raises."""
+        try:
+            from ..domain.histogram import analyze as hist_analyze
+            stats = hist_analyze(frame.pixels, bit_depth=int(bit_depth) if bit_depth else 16)
+            return stats.p99_5
+        except Exception:
+            return None
+
+    @staticmethod
+    def _try_get(fn: Callable[[], Any], *, default: Any) -> Any:
+        """Call a zero-arg getter, tolerating both a missing attribute (the
+        lookup happens inside this try block) and a raise from the call."""
+        try:
+            return fn()
+        except Exception:
+            return default
+
+    @staticmethod
+    def _try_apply(fn: Callable[[], Any]) -> None:
+        try:
+            fn()
+        except Exception as exc:
+            _log.debug("CameraSetupService: applying tuned setting failed: %s", exc)
+
+    @staticmethod
+    def _tune_next_settings(
+        recommendation: dict[str, Any] | None,
+        *,
+        current_exposure_s: float,
+        current_gain: int,
+        current_offset: int,
+        histogram_p99_5: float | None,
+        settings: Any,
+    ) -> tuple[float, int, int]:
+        """M10-005: clamp the module's recommendation to configured bounds,
+        then apply an app-side histogram ceiling on top — the module has no
+        histogram-ceiling parameter yet (LA-REQ-1, draft, see SYNC.md), so a
+        recommendation alone cannot be trusted not to clip. Exposure is
+        stepped down first; gain only once exposure is already at its floor
+        (mirrors the module's own "exposure before gain" preference).
+        """
+        exposure_s = current_exposure_s
+        gain = current_gain
+        offset = current_offset
+        if recommendation:
+            exposure_s = float(recommendation.get("recommended_exposure_s") or exposure_s)
+            gain = int(recommendation.get("recommended_gain") or gain)
+            offset = int(recommendation.get("recommended_offset") or offset)
+
+        exposure_s = min(settings.max_tuning_exposure_s, max(settings.min_tuning_exposure_s, exposure_s))
+        gain = min(settings.tuning_gain_max, max(settings.tuning_gain_min, gain))
+        offset = min(settings.tuning_offset_max, max(settings.tuning_offset_min, offset))
+
+        if histogram_p99_5 is not None and histogram_p99_5 > settings.histogram_ceiling_frac:
+            if exposure_s > settings.min_tuning_exposure_s:
+                exposure_s = max(settings.min_tuning_exposure_s, exposure_s * 0.5)
+            elif gain > settings.tuning_gain_min:
+                gain = max(settings.tuning_gain_min, int(gain * 0.7))
+
+        return exposure_s, gain, offset
 
     @staticmethod
     def _stars_found(analysis: dict[str, Any] | None) -> int:

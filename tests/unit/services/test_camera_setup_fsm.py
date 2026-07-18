@@ -70,9 +70,9 @@ def _wait_phase(svc, role, phases, timeout=3.0):
     pytest.fail(f"role {role!r} never reached {phases}; last={svc.snapshot().get(role)}")
 
 
-def _run(svc):
+def _run(svc, spec=_SPEC):
     import smart_telescope.config as cfg
-    with patch.object(cfg, "LIVE_ANALYSIS", _SPEC):
+    with patch.object(cfg, "LIVE_ANALYSIS", spec):
         svc.poll_once()
         return _wait_phase(svc, "main", {"READY", "DEGRADED", "IDLE"})
 
@@ -241,3 +241,147 @@ class TestConfigGates:
         with patch.object(cfg, "LIVE_ANALYSIS", _SPEC):
             svc.poll_once()
         assert svc.snapshot() == {}
+
+
+# ── M10-005: exposure/gain/offset auto-tune loop ─────────────────────────────
+
+_TUNE_SPEC = LiveAnalysisSpec(
+    enabled=True, setup_exposure_s=1.0,
+    tuning_frames=2, star_check_frames=1, star_count_min=1,
+    max_tuning_exposure_s=5.0, min_tuning_exposure_s=0.1,
+    tuning_gain_min=100, tuning_gain_max=3200,
+    tuning_offset_min=0, tuning_offset_max=200,
+    histogram_ceiling_frac=0.70,
+)
+
+
+class _FakeTunableCamera:
+    """Camera stub that actually tracks applied gain/offset (M10-005)."""
+
+    def __init__(self, pixels_factory=None):
+        self.captures = 0
+        self.gain = 100
+        self.offset = 0
+        self.gain_calls: list[int] = []
+        self.offset_calls: list[int] = []
+        self._pixels_factory = pixels_factory
+
+    def capture(self, exposure_s):
+        self.captures += 1
+        pixels = self._pixels_factory(self.captures) if self._pixels_factory else None
+        return SimpleNamespace(pixels=pixels, exposure_seconds=exposure_s, header={"BITDEPTH": 16})
+
+    def get_gain(self):
+        return self.gain
+
+    def set_gain(self, gain):
+        self.gain = gain
+        self.gain_calls.append(gain)
+
+    def get_black_level(self):
+        return self.offset
+
+    def set_black_level(self, offset):
+        self.offset = offset
+        self.offset_calls.append(offset)
+
+
+def _analyze_with_recommendation(recommendation, stars=5):
+    def fn(camera_info, frame, previous_star_state=None):
+        return {
+            "single_frame": {"stars_found": stars, "image_quality": "ok"},
+            "recommendation": recommendation,
+            "state": {"next_frame_index": 2},
+        }
+    return fn
+
+
+class TestAutoTune:
+    def test_recommendation_is_applied(self):
+        cam = _FakeTunableCamera()
+        rec = {"recommended_exposure_s": 2.0, "recommended_gain": 150, "recommended_offset": 20}
+        _run(_service(camera=cam, analyze_fn=_analyze_with_recommendation(rec)), spec=_TUNE_SPEC)
+        assert cam.gain_calls[-1] == 150
+        assert cam.offset_calls[-1] == 20
+
+    def test_recommendation_is_clamped_to_config_bounds(self):
+        cam = _FakeTunableCamera()
+        rec = {"recommended_exposure_s": 100.0, "recommended_gain": 9000, "recommended_offset": 500}
+        _run(_service(camera=cam, analyze_fn=_analyze_with_recommendation(rec)), spec=_TUNE_SPEC)
+        assert cam.gain_calls[-1] == _TUNE_SPEC.tuning_gain_max
+        assert cam.offset_calls[-1] == _TUNE_SPEC.tuning_offset_max
+
+    def test_recommendation_below_floor_is_clamped_up(self):
+        cam = _FakeTunableCamera()
+        rec = {"recommended_exposure_s": 0.001, "recommended_gain": 1, "recommended_offset": -50}
+        _run(_service(camera=cam, analyze_fn=_analyze_with_recommendation(rec)), spec=_TUNE_SPEC)
+        assert cam.gain_calls[-1] == _TUNE_SPEC.tuning_gain_min
+        assert cam.offset_calls[-1] == _TUNE_SPEC.tuning_offset_min
+
+    def test_star_check_uses_tuned_exposure_not_static_default(self):
+        # star_check_frames=1, star_count_min=1 in _TUNE_SPEC — one extra
+        # capture only if STAR_CHECK needs it; here TUNING already finds
+        # enough stars, so exercise via the recorded exposure_s field
+        # (camera_info_fn echoes back whatever was actually captured with).
+        captured_exposures: list[float] = []
+
+        def camera_info_fn(camera, frame=None, binning=1):
+            captured_exposures.append(frame.exposure_seconds)
+            return {"exposure_s": frame.exposure_seconds, "gain": camera.get_gain()}
+
+        cam = _FakeTunableCamera()
+        rec = {"recommended_exposure_s": 3.0, "recommended_gain": 150, "recommended_offset": 0}
+        svc = CameraSetupService(
+            job_manager=JobManager(),
+            camera_provider=lambda role: cam,
+            readiness_snapshot=_readiness(dict(_DETECTED_MAIN)),
+            analyze_fn=_analyze_with_recommendation(rec, stars=0),  # forces STAR_CHECK to keep capturing
+            camera_info_fn=camera_info_fn,
+        )
+        _run(svc, spec=_TUNE_SPEC)
+        # First capture at the static setup_exposure_s; every capture after
+        # the first TUNING frame's recommendation should use the tuned 3.0s,
+        # including the STAR_CHECK captures.
+        assert captured_exposures[0] == _TUNE_SPEC.setup_exposure_s
+        assert captured_exposures[-1] == pytest.approx(3.0)
+
+    def test_histogram_ceiling_forces_exposure_down_regardless_of_recommendation(self):
+        # Hardware evidence pattern: a near-saturated frame must be stepped
+        # down even if the module's own recommendation didn't request it —
+        # LA-REQ-1 (histogram-ceiling parameter) is still a draft upstream ask.
+        import numpy as np
+
+        def saturated_pixels(_n):
+            return np.full((8, 8), int(0.95 * 65535), dtype=np.uint16)
+
+        cam = _FakeTunableCamera(pixels_factory=saturated_pixels)
+        # Recommendation explicitly keeps exposure at the current value —
+        # only the app-side ceiling should force it down.
+        rec = {"recommended_exposure_s": 1.0, "recommended_gain": 100, "recommended_offset": 0}
+
+        captured_exposures: list[float] = []
+
+        def camera_info_fn(camera, frame=None, binning=1):
+            captured_exposures.append(frame.exposure_seconds)
+            return {"exposure_s": frame.exposure_seconds, "gain": camera.get_gain(), "bit_depth": 16}
+
+        svc = CameraSetupService(
+            job_manager=JobManager(),
+            camera_provider=lambda role: cam,
+            readiness_snapshot=_readiness(dict(_DETECTED_MAIN)),
+            analyze_fn=_analyze_with_recommendation(rec),
+            camera_info_fn=camera_info_fn,
+        )
+        _run(svc, spec=_TUNE_SPEC)
+        # Second capture must use a lower exposure than the first, forced by
+        # the histogram ceiling — not the (unchanged) module recommendation.
+        assert captured_exposures[1] < captured_exposures[0]
+
+    def test_no_recommendation_keeps_current_settings(self):
+        cam = _FakeTunableCamera()
+        _run(_service(camera=cam, analyze_fn=_analyze_with_stars(5)), spec=_TUNE_SPEC)
+        # _analyze_with_stars' recommendation ({"action": "keep"}) has none of
+        # the expected keys — settings must fall back to current, not crash
+        # or zero them out.
+        assert cam.gain_calls[-1] == _TUNE_SPEC.tuning_gain_min  # camera's own starting gain
+        assert cam.offset_calls[-1] == _TUNE_SPEC.tuning_offset_min

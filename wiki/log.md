@@ -5104,3 +5104,28 @@ per-query cost every tick. App-side only, SmartTScope's own service code.
 5 new tests; gpsd/location/master-source/raspberry-trust suites green (122);
 full API+services regression green (2248). Still needed: Pi re-run of
 check_connect_stall.sh to confirm /api/location/status latency drops.
+
+## 2026-07-18 - M10-005: exposure/gain/offset auto-tune loop
+
+LiveAnalysisSpec gained six clamp fields (max/min_tuning_exposure_s,
+tuning_gain_min/max, tuning_offset_min/max, histogram_ceiling_frac=0.70);
+templates/config.toml [live_analysis] documents all of them.
+
+camera_setup_fsm.py's TUNING loop now tracks exposure/gain/offset across
+frames: after each capture it takes the LiveAnalysis module's
+recommended_exposure_s/gain/offset (the module itself already prefers
+exposure over gain internally, per suggest_capture_adjustments()), clamps to
+the config bounds, then applies an app-side ceiling on top - if the frame's
+measured 99.5th-percentile signal (domain/histogram.py, same stats
+AutoGainController already uses) exceeds histogram_ceiling_frac, exposure is
+forced down first and gain only once exposure is already at its floor, since
+the module has no ceiling parameter of its own yet (LA-REQ-1, still a draft
+ask). Gain/offset are applied via set_gain/set_black_level between frames
+(best-effort); exposure is a plain per-capture argument, so the tuned value
+carries forward into STAR_CHECK too, which previously always used the
+static setup_exposure_s regardless of what TUNING found.
+
+9 new tests (6 auto-tune behavior, 3 config-parser); FSM + config + full
+unit suite green (4042 passed). One unrelated pre-existing flaky test in
+tests/unit/workflow/test_logging.py found during the full run - confirmed
+order-dependent (passes standalone) and untouched by this change.

@@ -307,10 +307,12 @@ max_frames_per_session   = 50
 # ---------------------------------------------------------------------------
 [live_analysis]
 # M10-003: per-camera setup FSM (runs while you confirm time/location).
-# Frames are analyzed by the external SmartTScopeLiveAnalysis module;
-# recommendations are recorded now and applied (clamped) with M10-005.
+# Frames are analyzed by the external SmartTScopeLiveAnalysis module, which
+# recommends the next exposure/gain/offset; M10-005 applies those
+# recommendations between TUNING frames, clamped to the bounds below.
 enabled           = true
-# Exposure used for setup frames (tuning / star check), seconds
+# Exposure used for the very first setup frame, seconds — the auto-tune loop
+# adjusts it (within max/min_tuning_exposure_s) from the second frame onward.
 setup_exposure_s  = 1.0
 # Frames captured during TUNING before the star check starts
 tuning_frames     = 3
@@ -318,6 +320,20 @@ tuning_frames     = 3
 star_check_frames = 5
 # Minimum detected stars for a camera to pass STAR_CHECK
 star_count_min    = 3
+
+# M10-005: clamp bounds for the auto-tune loop's applied exposure/gain/offset —
+# the module's recommendation is never applied outside these ranges.
+max_tuning_exposure_s   = 5.0     # seconds
+min_tuning_exposure_s   = 0.05    # seconds
+tuning_gain_min         = 100
+tuning_gain_max         = 3200
+tuning_offset_min       = 0
+tuning_offset_max       = 200
+# App-side safety ceiling: force a step-down when a frame's 99.5th-percentile
+# signal exceeds this fraction of full scale, regardless of what the module
+# recommended — until it ships its own histogram-ceiling parameter (LA-REQ-1
+# draft, see SYNC.md), this local ceiling is the only clip guard in place.
+histogram_ceiling_frac  = 0.70
 
 [guiding]
 # Primary guide source role: "guide" or "oag"

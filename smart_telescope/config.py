@@ -246,13 +246,27 @@ class FilterWheelSpec:
 
 @dataclass(frozen=True)
 class LiveAnalysisSpec:
-    """[live_analysis] — camera setup FSM (M10-003) and, later, the clamped
-    auto-tune loop (M10-005)."""
+    """[live_analysis] — camera setup FSM (M10-003) and the clamped
+    exposure/gain/offset auto-tune loop (M10-005)."""
     enabled: bool = True
     setup_exposure_s: float = 1.0
     tuning_frames: int = 3
     star_check_frames: int = 5
     star_count_min: int = 3
+    # M10-005: bounds the module's recommended_exposure_s/gain/offset are
+    # clamped to before being applied between TUNING frames.
+    max_tuning_exposure_s: float = 5.0
+    min_tuning_exposure_s: float = 0.05
+    tuning_gain_min: int = 100
+    tuning_gain_max: int = 3200
+    tuning_offset_min: int = 0
+    tuning_offset_max: int = 200
+    # App-side safety ceiling: force a step-down when a captured frame's
+    # 99.5th-percentile signal exceeds this fraction of full scale — until
+    # the module gains its own histogram-ceiling parameter (LA-REQ-1, draft,
+    # see SYNC.md), the module's recommendation alone cannot be trusted not
+    # to clip.
+    histogram_ceiling_frac: float = 0.70
 
 
 @dataclass(frozen=True)
@@ -293,6 +307,13 @@ def _parse_live_analysis_spec() -> LiveAnalysisSpec:
         tuning_frames=int(section.get("tuning_frames", 3)),
         star_check_frames=int(section.get("star_check_frames", 5)),
         star_count_min=int(section.get("star_count_min", 3)),
+        max_tuning_exposure_s=float(section.get("max_tuning_exposure_s", 5.0)),
+        min_tuning_exposure_s=float(section.get("min_tuning_exposure_s", 0.05)),
+        tuning_gain_min=int(section.get("tuning_gain_min", 100)),
+        tuning_gain_max=int(section.get("tuning_gain_max", 3200)),
+        tuning_offset_min=int(section.get("tuning_offset_min", 0)),
+        tuning_offset_max=int(section.get("tuning_offset_max", 200)),
+        histogram_ceiling_frac=float(section.get("histogram_ceiling_frac", 0.70)),
     )
 
 

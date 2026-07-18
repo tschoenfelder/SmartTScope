@@ -1805,12 +1805,37 @@ histogram ceiling until it ships upstream.
         `analyze()` passes `FitsFrame.pixels` untouched (adapters already
         right-shift to native ADC range), `live_analysis_available()`. 6 tests
         incl. a real round-trip against the pinned v0.1.0 package.
-- [ ] M10-005 Exposure/gain auto-tune loop: apply module recommendations clamped by
+- [x] M10-005 Exposure/gain auto-tune loop: apply module recommendations clamped by
       new `[live_analysis]` config (max setup exposure — proposal 5 s —, gain/offset
       ranges; **templates/config.toml updated in the same task**); app-side ceiling:
       step down when histogram 99.5th percentile > 70% full scale (until the upstream
       70% parameter ships, see M10-009); exposure adjusted first, gain only when the
       exposure limit is reached `[P1 · Runtime]`
+      - *Done 2026-07-18:* `LiveAnalysisSpec` gained six clamp fields
+        (`max_tuning_exposure_s=5.0`, `min_tuning_exposure_s=0.05`,
+        `tuning_gain_min/max=100/3200`, `tuning_offset_min/max=0/200`,
+        `histogram_ceiling_frac=0.70`) parsed in `_parse_live_analysis_spec()`;
+        `templates/config.toml` `[live_analysis]` documents all of them.
+        `camera_setup_fsm.py`'s TUNING loop now tracks
+        exposure/gain/offset across frames: after each capture it takes the
+        module's `recommended_exposure_s/gain/offset` (already itself
+        "exposure before gain" per the module's own
+        `suggest_capture_adjustments()`), clamps to the config bounds, then
+        applies an app-side ceiling on top — if the frame's measured
+        99.5th-percentile signal (`domain/histogram.py`, already used by
+        `AutoGainController`) exceeds `histogram_ceiling_frac`, exposure is
+        forced down first and gain only once exposure is already at its
+        floor — since the module has no ceiling parameter of its own yet
+        (LA-REQ-1, still draft, see M10-009/SYNC.md). Gain/offset are
+        applied to the camera via `set_gain`/`set_black_level` between
+        frames (best-effort, tolerates cameras without these calls);
+        exposure is a plain per-capture argument, so the tuned value simply
+        carries forward — including into STAR_CHECK, which previously
+        always used the static `setup_exposure_s` regardless of what TUNING
+        found. 9 new tests (6 auto-tune behavior + 3 config-parser); FSM +
+        config + full unit suite green (4042; one unrelated pre-existing
+        flaky test in `tests/unit/workflow/test_logging.py` confirmed
+        order-dependent and untouched by this change — passes standalone).
 - [ ] M10-006 Separate SCT-aware focus algorithm (`services/focus_algorithm.py`, own
       test suite with synthetic point-star AND donut fixtures): consumes LiveAnalysis
       detections/metrics, recognizes SCT donuts, drives the OnStep focuser within

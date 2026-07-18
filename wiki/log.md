@@ -4924,3 +4924,22 @@ a candidate upstream request, to be filed only with user approval.
 Tests: 13 new (filters parser 6, readiness merge 4, nudge flag 3); readiness +
 filters + nudge + observing + config suites green (57 targeted). node --check
 clean on multicam.js/app.js/observing.js.
+
+## 2026-07-18 - M10-021..024 filed: Confirm Time & Location blocked by camera bring-up
+
+Hardware observation: the Confirm Time & Location step stalls while cameras
+connect and take first frames - violating the M10 quality gate. Code trace
+(no fix yet, tasks filed): (1) connect_devices() holds _adapters_lock across
+_build_adapters(), which connects the main camera (SDK open + settle + priming
+captures) BEFORE the mount, so POST /api/location/confirm (Depends get_mount)
+queues behind the whole camera bring-up. (2) api/observing.py _build_deps opens
+the guide camera via get_camera_by_role on every 2.5 s state poll and on the
+confirm intent, contending on _camera_open_lock held by setup-FSM workers for
+each multi-second open. (3) Readiness EnumV2, the lazy filter-wheel open
+(M10-014), and legacy ToupcamCamera.connect are outside both locks - concurrent
+SDK/USB traffic during the connect storm. Open question (M10-024): whether the
+toupcam binding holds the GIL through Open/EnumV2 (would stall ALL endpoints,
+not just device ones). Fixes must stay app-side (managed.py external-owned).
+Tasks M10-021 (decouple mount from camera build, P1), M10-022 (no inline camera
+opens on hot observing paths, P1), M10-023 (one SDK serialization discipline,
+P2), M10-024 (Pi evidence: lock-wait vs GIL freeze, P2) in docs/todo.md.

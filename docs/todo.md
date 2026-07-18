@@ -2044,6 +2044,63 @@ histogram ceiling until it ships upstream.
       - *Acceptance:* radio button on the Cameras screen; sky mode draws solved
         footprints; terrestrial mode never calls the solver.
 
+- [ ] M10-021 Decouple mount availability from camera bring-up in
+      `connect_devices()` (hardware evidence 2026-07-18: "Confirm Time & Location"
+      stalls during camera connect/first frame — violates the M10 quality gate):
+      `runtime.py connect_devices()` holds `_adapters_lock` across the whole
+      `_build_adapters()`, which connects the **main camera first** (SDK open +
+      configure + startup settle + priming first-frame captures in the external
+      `managed.py`) and only then the mount — so `POST /api/location/confirm`
+      (depends on `deps.get_mount` → `connect_devices()`) queues behind the full
+      camera open+prime. Fix app-side only (managed.py is external-owned): connect
+      the mount before/independently of cameras and stop holding `_adapters_lock`
+      across camera open+prime (split mount-adapter vs. camera-adapter build with
+      separate locks, or push the camera connect into the existing background
+      machinery). `[P1 · Runtime]`
+      - *Acceptance:* with all three cameras connecting/priming,
+        `POST /api/location/confirm` and mount endpoints respond in < 1 s; the
+        Observe flow reaches WAIT_HOME_CONFIRMATION while cameras are still in
+        TUNING.
+
+- [ ] M10-022 No inline camera opens on hot observing paths (same 2026-07-18
+      evidence): `_build_deps` in `api/observing.py` calls
+      `deps.get_camera_by_role("guide")` on **every** `/api/observing/state` poll
+      (2.5 s) and on `POST /api/observing/intent` — that acquires
+      `_camera_open_lock`, which the setup-FSM workers hold for the entire
+      multi-second open of each role camera (`contextlib.suppress` swallows
+      errors but still blocks on the lock). The endpoints' `Depends(deps.
+      get_camera/get_focuser)` set additionally re-enters the M10-021 hazard.
+      Never open a camera in a request thread: use an already-open handle or None
+      (guiding deps are only needed much later in the flow) and slim the Depends
+      set so state poll + intent don't force a full device build. `[P1 · API]`
+      - *Acceptance:* `/api/observing/state` and `/api/observing/intent` never
+        acquire `_camera_open_lock`; the state poll stays < 100 ms while the FSM
+        is opening cameras.
+
+- [ ] M10-023 One serialization discipline for all ToupTek SDK entry points:
+      readiness `EnumV2` (every 15 s via `CameraNameResolver._enumerate`), the
+      lazy filter-wheel open in `runtime.get_filter_wheel()` (M10-014 addition —
+      currently the least-serialized path), and the legacy preview
+      `ToupcamCamera.connect` take **neither** `_camera_open_lock` **nor**
+      managed.py's `_sdk_lifecycle_lock`, so enumeration/opens run concurrently
+      with camera opens on the same USB bus during the connect storm. Route them
+      under the same app-side lock discipline (adapter files are external-owned).
+      `[P2 · Runtime]`
+      - *Acceptance:* no SDK enumerate/open runs concurrently with a camera open;
+        the readiness scan skips (not queues) when an open is in progress.
+
+- [ ] M10-024 Hardware evidence: lock-wait vs. GIL freeze during camera connect
+      (feeds M10-021/022 acceptance numbers): on the Pi during startup camera
+      connect, curl a static asset and `/api/location/status` in a loop — if those
+      stall too, the toupcam binding holds the GIL through Open/EnumV2 (then file
+      a SYNC.md external-requirement candidate); if only device endpoints stall,
+      the locks above are the whole story. Also record measured per-camera
+      connect+prime duration (startup_delay_s + prime attempts × timeout +
+      configure). `[P2 · Hardware evidence]`
+      - *Checked, not the cause:* readiness/setup `snapshot()` payloads,
+        JobManager resource bookkeeping, FSM capture loops on cached handles,
+        FastAPI threadpool exhaustion (captures run in dedicated daemon threads).
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

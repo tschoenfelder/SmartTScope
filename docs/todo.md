@@ -2138,6 +2138,24 @@ histogram ceiling until it ships upstream.
       - *Checked, not the cause:* readiness/setup `snapshot()` payloads,
         JobManager resource bookkeeping, FSM capture loops on cached handles,
         FastAPI threadpool exhaustion (captures run in dedicated daemon threads).
+      - *Tooling done 2026-07-18 (evidence itself still pending a Pi run):*
+        this is a hardware-evidence task, not a code fix — implemented the
+        means to gather it rather than guessing. `runtime.py` now logs
+        `"Camera connect+prime timing: role=<role> model=<model> elapsed=<s>"`
+        at INFO around both `camera.connect()` call sites (`_build_main_camera`,
+        `get_camera_by_role`) — a real measurement, replacing the
+        config-arithmetic estimate the task originally proposed. New
+        `scripts/check_connect_stall.sh <host> <duration_s>`: run in a second
+        session right after `astro_start.sh`, alternates
+        `curl /static/js/app.js` (no device dependency at all) against
+        `curl /api/location/status` (mount-only) every ~0.2 s and prints a
+        verdict — static-asset stalls implicate the SDK binding holding the
+        GIL through `Open()`/`EnumV2()`; status-only stalls would mean
+        M10-021/022's locks aren't the whole story after all; no stalls means
+        those fixes are sufficient. 2 new tests confirming the timing log
+        line fires for both camera-open paths; runtime + full API suites
+        green (1019). *Still needed:* run the script on the Pi during a real
+        camera connect and record the verdict + measured durations here.
 
 - [x] M10-025 Separate slewing (on way to target) from tracking (user request
       2026-07-18): slewing to a target and sidereal tracking are distinct mount

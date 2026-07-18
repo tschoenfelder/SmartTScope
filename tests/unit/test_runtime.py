@@ -611,3 +611,61 @@ class TestFilterWheelOpenSerialization:
             for t in threads:
                 t.join(timeout=5.0)
         assert max_concurrent[0] == 1
+
+
+class TestConnectTimingEvidence:
+    """M10-024: connect+prime duration must be measured (logged), not guessed,
+    so it can feed the acceptance numbers without hand-computing them from
+    config (startup_delay_s + prime_attempts × timeout + configure)."""
+
+    def test_main_camera_connect_logs_measured_duration(self, caplog):
+        import logging
+        import smart_telescope.config as cfg
+        from smart_telescope.config import CameraSpec
+
+        class StubCamera:
+            def __init__(self, **kwargs):
+                pass
+            def connect(self):
+                return True
+            def set_gain(self, gain):
+                pass
+
+        ctx = RuntimeContext()
+        spec = {"main": CameraSpec(role="main", model="ATR585M")}
+        with patch.object(cfg, "CAMERA_SPECS", spec), \
+             patch("smart_telescope.adapters.touptek.managed.SmartTouptekCamera", StubCamera), \
+             caplog.at_level(logging.INFO, logger="smart_telescope.runtime"):
+            ctx._camera = None
+            from smart_telescope import runtime as rt
+            rt._build_main_camera(ctx)
+        assert any(
+            "Camera connect+prime timing: role=main" in r.message
+            for r in caplog.records
+        )
+
+    def test_role_camera_connect_logs_measured_duration(self, caplog):
+        import logging
+        import smart_telescope.config as cfg
+        from smart_telescope.config import CameraSpec
+
+        class StubCamera:
+            def __init__(self, **kwargs):
+                pass
+            def connect(self):
+                return True
+            def set_gain(self, gain):
+                pass
+            def get_logical_name(self):
+                return "stub-cam"
+
+        ctx = _make_ctx()
+        spec = {"guide": CameraSpec(role="guide", model="GPCMOS02000KPA")}
+        with patch.object(cfg, "CAMERA_SPECS", spec), \
+             patch("smart_telescope.adapters.touptek.managed.SmartTouptekCamera", StubCamera), \
+             caplog.at_level(logging.INFO, logger="smart_telescope.runtime"):
+            ctx.get_camera_by_role("guide")
+        assert any(
+            "Camera connect+prime timing: role=guide" in r.message
+            for r in caplog.records
+        )

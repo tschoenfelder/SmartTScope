@@ -11,6 +11,7 @@ import contextlib
 import logging
 import os
 import threading
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -91,7 +92,17 @@ def _build_main_camera(ctx: RuntimeContext) -> CameraPort:
                     prime_exposure_s=main_spec.prime_exposure_s,
                     bit_depth=main_spec.bit_depth,
                 )
-                if not camera.connect():
+                # M10-024: measured (not estimated) connect+prime duration —
+                # evidence for whether camera bring-up alone explains any
+                # observed request stalls, vs. a GIL-held SDK call.
+                _t0 = time.monotonic()
+                connected = camera.connect()
+                _elapsed = time.monotonic() - _t0
+                _log.info(
+                    "Camera connect+prime timing: role=main model=%s elapsed=%.2fs",
+                    main_spec.model or "*", _elapsed,
+                )
+                if not connected:
                     raise RuntimeError(
                         f"Camera '{main_spec.model or main_spec.role}' failed to connect — no device found"
                     )
@@ -775,7 +786,15 @@ class RuntimeContext:
                         prime_exposure_s=spec.prime_exposure_s,
                         bit_depth=spec.bit_depth,
                     )
-                    if not cam.connect():
+                    # M10-024: measured connect+prime duration per role camera.
+                    _t0 = time.monotonic()
+                    connected = cam.connect()
+                    _elapsed = time.monotonic() - _t0
+                    _log.info(
+                        "Camera connect+prime timing: role=%s model=%s elapsed=%.2fs",
+                        role, spec.model or "*", _elapsed,
+                    )
+                    if not connected:
                         raise RuntimeError(f"Camera role {role!r} failed to connect — no device found")
                     cam.set_gain(spec.gain)
                     if spec.offset_hcg or spec.offset_lcg:

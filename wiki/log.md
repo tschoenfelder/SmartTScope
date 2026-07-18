@@ -5049,3 +5049,29 @@ gained keep_tracking_state; mount_goto_sky (elevation-based, always
 astronomical) stays on the default. App-side only, no adapter touch.
 
 10 new tests (7 service, 3 API); full mount/API suites green (1017).
+
+## 2026-07-18 - M10-024: tooling for the lock-vs-GIL hardware evidence
+
+M10-024 is a hardware-evidence task (does an in-progress camera SDK connect
+stall unrelated requests, or is it only the runtime.py locks?), not a code
+fix - implemented the means to gather that evidence on the Pi rather than
+guessing.
+
+runtime.py now logs "Camera connect+prime timing: role=<role> model=<model>
+elapsed=<s>" at INFO around both camera.connect() call sites
+(_build_main_camera for the main role, get_camera_by_role for guide/oag) -
+a real measurement instead of the config-arithmetic estimate the task
+originally proposed (startup_delay_s + prime_attempts x timeout + configure).
+
+New scripts/check_connect_stall.sh <host> <duration_s>: run from a second
+SSH session right after astro_start.sh, alternates curl against
+/static/js/app.js (zero device dependency) and /api/location/status
+(mount-only, no camera dependency post M10-021/022) every ~0.2s, prints
+per-request latency plus a verdict - stalls on the static asset would mean
+the toupcam binding holds the GIL through Open()/EnumV2() (file a SYNC.md
+candidate); stalls only on location/status would mean the M10-021/022 locks
+aren't the whole story; no stalls on either means those fixes are sufficient.
+
+2 new tests confirming the timing log fires for both camera-open paths;
+runtime + full API suites green (1019). Still needed: run the script on the
+Pi during a real camera connect and record the verdict here.

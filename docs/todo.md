@@ -2057,9 +2057,16 @@ histogram ceiling until it ships upstream.
       footprints incl. rotation) vs. **frame search** (terrestrial — locate the
       main/oag frame inside the guide frame by normalized cross-correlation,
       no solving). `[P3 · UI/Analysis]`
-      - *First approximation without solving:* centered FOV rectangles from the
-        M10-019 pixel-scale math (assumes co-alignment, no rotation) — cheap and
-        already useful for rough framing.
+      - [x] *First approximation without solving* (done 2026-07-19): lime-green
+        FOV rectangles + role labels drawn on the widest-FOV panel for every
+        narrower-FOV camera, from the M10-019 pixel-scale math (assumes
+        co-alignment, no rotation). Angular ("same sky scale") mode only — no
+        shared scale exists in fit mode. `_mcPaintFovOverlays()` in
+        `static/js/multicam.js`. Verified by direct in-browser execution against
+        synthetic panel data (pixel-checked rectangle position/color) — this
+        Windows dev box has no ToupTek SDK, so `CameraReadinessService` never
+        reports a real camera as DETECTED here and the live Cameras screen
+        itself can't be exercised end-to-end without hardware.
       - *Frame search:* candidate LiveAnalysis upstream request (LA-REQ-3,
         **file only with user approval**) or local scipy correlation; must
         handle scale difference (guide 3.32″/px vs main 0.29″/px ≈ 11×) by

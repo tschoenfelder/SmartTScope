@@ -274,7 +274,39 @@ function _mcPaint(p, sharedScale) {
       drawW = p.bitmap.width * fit;
       drawH = p.bitmap.height * fit;
     }
-    ctx.drawImage(p.bitmap, (bw - drawW) / 2, (bh - drawH) / 2, drawW, drawH);
+    const offsetX = (bw - drawW) / 2, offsetY = (bh - drawH) / 2;
+    ctx.drawImage(p.bitmap, offsetX, offsetY, drawW, drawH);
+    // M10-020 (cheap approximation): overlay where each narrower-FOV camera's
+    // frame falls within this (widest-FOV) panel. Only meaningful in angular
+    // mode, where every panel shares the same arcsec-per-pixel scale — fit
+    // mode scales each panel independently, so there is no common reference.
+    if (p.el.dataset.slot === 'top' && _mcScaleMode === 'angular' && sharedScale > 0) {
+      _mcPaintFovOverlays(ctx, sharedScale, dpr, offsetX, offsetY, drawW, drawH);
+    }
+}
+
+function _mcPaintFovOverlays(ctx, sharedScale, dpr, topOffsetX, topOffsetY, topDrawW, topDrawH) {
+    const centerX = topOffsetX + topDrawW / 2;
+    const centerY = topOffsetY + topDrawH / 2;
+    ctx.save();
+    ctx.strokeStyle = 'limegreen';
+    ctx.fillStyle = 'limegreen';
+    ctx.lineWidth = Math.max(1, Math.round(dpr));
+    ctx.font = `${Math.round(11 * dpr)}px sans-serif`;
+    for (const [role, other] of Object.entries(_mcPanels)) {
+      if (other.el.dataset.slot === 'top') continue;
+      const f = _mcFov(other);
+      if (!f) continue;
+      // Co-alignment assumption (no measured offset/rotation between optical
+      // trains exists in config) — center each smaller frame on the top
+      // panel's own image center.
+      const subW = f.wArcsec / sharedScale * dpr;
+      const subH = f.hArcsec / sharedScale * dpr;
+      const x = centerX - subW / 2, y = centerY - subH / 2;
+      ctx.strokeRect(x, y, subW, subH);
+      ctx.fillText(role, x + 3 * dpr, y + 12 * dpr);
+    }
+    ctx.restore();
 }
 
 function multicamToggleScale() {

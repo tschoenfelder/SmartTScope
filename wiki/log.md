@@ -5224,3 +5224,39 @@ back) options above 5000ms while tracking, so the UI reflects the server cap
 instead of surfacing a 422.
 
 5 new mount API tests; suite 154 passed. Pi verification pending.
+
+## 2026-07-19 — M10-020 (first approximation): FOV overlay on the Cameras screen
+
+User request: show where each narrower-FOV camera's frame falls inside the
+widest-FOV panel on the Cameras compare screen, as a lime-green rectangle.
+User chose (via AskUserQuestion) the cheap geometric approximation already
+scoped in M10-020's "first approximation" bullet over the harder plate-solve
+half of that item, and one labeled rectangle per detected narrower-FOV
+camera rather than just the single next-largest.
+
+`_mcPaintFovOverlays()` (new, multicam.js) draws into the top panel's own
+canvas right after its `ctx.drawImage(...)` call, only when
+`_mcScaleMode === 'angular'` (the "same sky scale" mode) — fit mode scales
+each panel independently, so there is no shared arcsec-per-pixel scale to
+compute a sub-rectangle from, and the overlay simply doesn't appear there.
+For every non-top panel it reuses `_mcPaint`'s own drawW/drawH formula
+(`f.wArcsec / sharedScale * dpr`) so the sub-rectangle is on the same pixel
+scale as the top image by construction, centers it on the top image's
+center (the co-alignment assumption — no offset/rotation data exists
+anywhere in the optical-train config model, confirmed by repo search), and
+strokes it `limegreen` with a small role-name label. No backend changes.
+
+No dirty-flag changes needed — the overlay is recomputed every top-panel
+repaint, and everything that should invalidate the top panel already marks
+it dirty (`_mcAssignSlots`, `multicamToggleScale`, canvas resize).
+
+Verification: `node --check` clean. This Windows dev box has no ToupTek SDK,
+so `CameraReadinessService` (real-hardware-only enumeration, no mock path)
+never reports a camera as DETECTED here and the live Cameras screen shows
+zero panels regardless of this change — not a regression, a pre-existing
+M10-019 environment limit. Verified instead by executing the real
+`_mcPaintFovOverlays()` in-browser against synthetic panel data shaped like
+`_mcBuildPanel`'s output: no error across 1x/2x dpr and multiple non-top
+panels, correctly skips the top panel, and the drawn rectangle's edge
+lands (pixel-checked via `getImageData`) exactly where the FOV math
+predicts. Pi/real-hardware verification pending.

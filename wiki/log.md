@@ -5225,6 +5225,56 @@ instead of surfacing a 422.
 
 5 new mount API tests; suite 154 passed. Pi verification pending.
 
+## 2026-07-20 — M10-032: hardware-session bug fixes (guide-cam black frames, unverified home-solve, opaque asserts)
+
+Hardware report 2026-07-19/20 bundled four symptoms: guide camera preview
+goes black after one frame (4s exposure, gain 400) despite pointing at
+bright sky; polar alignment's HOME solve failed via ASTAP; unclear which
+camera ran; an AssertionError appeared in the log. Real Pi log wasn't
+available yet, so three parallel Explore agents traced this from code
+inspection alone — all three turned out to be real, independent bugs.
+
+`adapters/touptek/managed.py`: `capture_mode="snap"` (only the guide camera
+model, GPCMOS02000KPA) configured `TOUPCAM_OPTION_TRIGGER=0` (free-run video
+mode, confirmed via resources/touptek/toupcam.py:125) and left it there
+permanently, while `_capture_raw()` kept calling `Snap(0xFFFFFFFF)` per
+capture as if it were a one-shot mode — the already-working main/oag path
+instead settles then switches to `TRIGGER=1` (software trigger) and calls
+`Trigger(1)`. Fixed by making "snap" mode follow the same
+settle-then-switch-to-TRIGGER=1 sequence and use `Trigger(1)`, unifying it
+with the proven main/oag flow. Cannot be verified from this Windows dev box
+(no ToupTek SDK/hardware) — needs a Pi session.
+
+Also replaced 4 bare `assert self._cam is not None and self._tc is not None`
+in managed.py with explicit checks raising a descriptive RuntimeError — bare
+asserts carry no message (`str(AssertionError())` is `""`), which is
+consistent with "an AssertionError appeared in the log" being uninformative;
+any of the four firing propagates through preview.py's generic exception
+handler and permanently kills the preview stream regardless of which one
+fired, so this is a real diagnostics improvement independent of the trigger
+fix above.
+
+`api/polar.py`: the safety checklist's `mount_at_home` field was a pure
+client-side checkbox (`mount.js` `paConfirmChecklist()` hardcodes `true`
+once every box is ticked) never cross-checked against real mount state —
+`polar_measure()` now hard-blocks unless `DeviceStateService.get_mount_state()`
+reports `MountState.AT_HOME`. Deliberately uses the device-state cache's
+sticky-AT_HOME promotion, not a raw `mount.get_state()` call — per
+`home_sequence()`'s own docstring, AT_HOME is a brief hardware flag that
+clears within seconds on real OnStep hardware, so a raw call here would
+almost always see it already cleared. `MeasureRequest`/`FallbackCameraRequest`
+gained an optional `camera_role` field resolved via the existing
+`deps.resolve_camera_index()` (same pattern as `api/solver.py`'s
+`SolveRequest`) instead of only accepting a raw `camera_index`; `PolarStatus`
+now reports `cam_index`/`cam_role` back (resolved via the optical-train
+registry even when only a raw index was given) so it's always clear which
+camera ran a solve.
+
+New `tests/unit/api/test_polar.py` (7 cases). Touptek adapter suite (59) +
+full unit suite (4068 passed, 24 skipped) green. Guide-cam trigger fix and
+the AT_HOME gate both need Pi hardware verification — noted as pending in
+`docs/todo.md` M10-032.
+
 ## 2026-07-19 — M10-020 (first approximation): FOV overlay on the Cameras screen
 
 User request: show where each narrower-FOV camera's frame falls inside the

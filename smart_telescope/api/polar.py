@@ -32,6 +32,7 @@ from ..domain.polar_workflow import (
 from ..domain.visibility import HorizonProfile, load_horizon
 from ..ports.mount import MountPort, MountState
 from ..ports.solver import SolverPort
+from ..services.device_state import DeviceStateService
 from . import deps
 
 router = APIRouter(prefix="/api/polar")
@@ -91,6 +92,7 @@ class _PolarState:
     p2: SkyPoint | None = None
     p3: SkyPoint | None = None
     cam_index: int = 0
+    cam_role: str | None = None
     exposure: float = 5.0
     gain: int = 100
     ra_step_h: float = 1.0
@@ -105,6 +107,22 @@ _checklist_confirmed: bool = False   # persists within server session
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def _resolve_cam_role(camera_index: int, camera_role: str | None) -> str | None:
+    """Report which optical-train role a resolved SDK index actually maps to.
+
+    Prefers the role the caller explicitly asked for; falls back to a
+    registry lookup by index so PolarStatus always shows which camera ran,
+    even when the caller only ever passed a raw camera_index.
+    """
+    if camera_role:
+        return camera_role
+    try:
+        train = deps.get_optical_train_registry().by_camera_index(camera_index)
+        return train.camera_role if train is not None else None
+    except Exception:
+        return None
+
 
 def _get_lst() -> float:
     loc = EarthLocation(lat=config.OBSERVER_LAT * u.deg, lon=config.OBSERVER_LON * u.deg)
@@ -317,6 +335,7 @@ class MeasureRequest(BaseModel):
     exposure:               float = Field(default=5.0,  gt=0.0,  le=60.0)
     gain:                   int   = Field(default=100,  ge=100,  le=3200)
     camera_index:           int   = Field(default=0,    ge=0,    le=7)
+    camera_role:            str | None = Field(default=None)
     target_precision_arcmin: float = Field(default=Precision.GOOD_IMAGING, gt=0.0, le=180.0)
 
 
@@ -328,6 +347,7 @@ class RefineRequest(BaseModel):
 
 class FallbackCameraRequest(BaseModel):
     camera_index:           int   = Field(default=1, ge=0, le=7)
+    camera_role:            str | None = Field(default=None)
     target_precision_arcmin: float | None = Field(default=None, gt=0.0, le=180.0)
 
 
@@ -351,6 +371,8 @@ class PolarStatus(BaseModel):
     warning_msg:            str   | None = None
     error_msg:              str   | None = None
     checklist_confirmed:    bool         = False
+    cam_index:              int   | None = None
+    cam_role:               str   | None = None
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -373,6 +395,7 @@ async def polar_measure(
     req:    MeasureRequest,
     mount:  MountPort  = Depends(deps.get_mount),
     solver: SolverPort = Depends(deps.get_solver),
+    device_state: DeviceStateService = Depends(deps.get_device_state),
 ) -> PolarStatus:
     """Start a 3-position plate-solve measurement of polar alignment error."""
     global _task, _state
@@ -382,12 +405,25 @@ async def polar_measure(
         _state.step = "error"
         _state.error_msg = "Safety checklist not confirmed — call POST /api/polar/checklist first"
         return _to_response()
+    # AT_HOME is a brief hardware flag that clears within a couple of seconds
+    # on real OnStep hardware (see home_sequence() docstring and
+    # DeviceStateService's sticky-AT_HOME promotion) — a raw mount.get_state()
+    # call here would almost always see it already cleared. Use the device
+    # state cache instead, which promotes UNPARKED back to AT_HOME until the
+    # mount actually moves/tracks/parks again.
+    observed = device_state.get_mount_state()
+    if observed is None or observed.state != MountState.AT_HOME:
+        _state.step = "error"
+        _state.error_msg = "Mount is not at HOME — home the mount before starting polar alignment"
+        return _to_response()
+    camera_index = deps.resolve_camera_index(req.camera_index, req.camera_role)
     _state = _PolarState(
         running=True,
         ra_step_h=req.ra_step_h,
         exposure=req.exposure,
         gain=req.gain,
-        cam_index=req.camera_index,
+        cam_index=camera_index,
+        cam_role=_resolve_cam_role(camera_index, req.camera_role),
         target_precision_arcmin=req.target_precision_arcmin,
     )
     workflow = PolarAlignmentWorkflow(
@@ -400,7 +436,7 @@ async def polar_measure(
         horizon=_HORIZON,
     )
     _task = asyncio.create_task(
-        _run_workflow_loop(workflow, mount, solver, req.camera_index, req.exposure, req.gain)
+        _run_workflow_loop(workflow, mount, solver, camera_index, req.exposure, req.gain)
     )
     return _to_response()
 
@@ -495,12 +531,14 @@ async def polar_use_fallback_camera(
     ra_step_h = _state.ra_step_h
     exposure  = _state.exposure
     gain      = _state.gain
+    camera_index = deps.resolve_camera_index(req.camera_index, req.camera_role)
     _state = _PolarState(
         running=True,
         ra_step_h=ra_step_h,
         exposure=exposure,
         gain=gain,
-        cam_index=req.camera_index,
+        cam_index=camera_index,
+        cam_role=_resolve_cam_role(camera_index, req.camera_role),
         target_precision_arcmin=precision,
     )
     workflow = PolarAlignmentWorkflow(
@@ -513,7 +551,7 @@ async def polar_use_fallback_camera(
         horizon=_HORIZON,
     )
     _task = asyncio.create_task(
-        _run_workflow_loop(workflow, mount, solver, req.camera_index, exposure, gain)
+        _run_workflow_loop(workflow, mount, solver, camera_index, exposure, gain)
     )
     return _to_response()
 
@@ -549,4 +587,6 @@ def _to_response() -> PolarStatus:
         warning_msg=_state.warning_msg,
         error_msg=_state.error_msg,
         checklist_confirmed=_checklist_confirmed,
+        cam_index=_state.cam_index,
+        cam_role=_state.cam_role,
     )

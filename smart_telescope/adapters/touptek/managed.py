@@ -407,7 +407,8 @@ class SmartTouptekCamera(CameraPort):
         return "indi-stream-trigger"
 
     def _basic_configure(self) -> None:
-        assert self._cam is not None and self._tc is not None
+        if self._cam is None or self._tc is None:
+            raise RuntimeError("_basic_configure: camera handle not open — camera closed or disconnected")
         self._try(lambda: self._cam.put_AutoExpoEnable(0))
         self._try(lambda: self._cam.put_Option(_opt(self._tc, "TOUPCAM_OPTION_AUTOEXPO_TRIGGER", _OPTION_AUTOEXPO_TRIGGER), 0))
         self._try(lambda: self._cam.put_Option(_opt(self._tc, "TOUPCAM_OPTION_RAW", _OPTION_RAW), 1))
@@ -429,14 +430,18 @@ class SmartTouptekCamera(CameraPort):
             self._try(lambda: self._cam.put_Option(framerate, 63))
 
     def _prepare_capture_mode(self) -> None:
-        assert self._cam is not None and self._tc is not None
+        if self._cam is None or self._tc is None:
+            raise RuntimeError("_prepare_capture_mode: camera handle not open — camera closed or disconnected")
         self._try(lambda: self._cam.Stop())
         self._drain_state()
         self._try(lambda: self._cam.put_Option(_opt(self._tc, "TOUPCAM_OPTION_FLUSH", _OPTION_FLUSH), 3))
-        if self._capture_mode == "snap":
-            self._try(lambda: self._cam.put_Option(_opt(self._tc, "TOUPCAM_OPTION_TRIGGER", _OPTION_TRIGGER), 0))
-            self._cam.StartPullModeWithCallback(_camera_event, self)
-            return
+        # Both "snap" and the default capture mode drive the camera the same
+        # way: start in video mode (required by StartPullModeWithCallback),
+        # settle briefly, then switch to software-trigger mode (TRIGGER=1) so
+        # every capture() call is a deterministic single exposure tied to the
+        # gain/exposure just set — not a frame from the camera's own
+        # free-running video cadence (M10 hardware bug: snap mode used to stay
+        # in TRIGGER=0 permanently, producing black frames after the first).
         self._try(lambda: self._cam.put_Option(_opt(self._tc, "TOUPCAM_OPTION_TRIGGER", _OPTION_TRIGGER), 0))
         self._cam.StartPullModeWithCallback(_camera_event, self)
         time.sleep(0.2)
@@ -470,13 +475,11 @@ class SmartTouptekCamera(CameraPort):
                 self._try(lambda: self._cam.put_ExpoTime(original_us))
 
     def _capture_raw(self, timeout_s: float) -> np.ndarray:
-        assert self._cam is not None and self._tc is not None
+        if self._cam is None or self._tc is None:
+            raise RuntimeError("_capture_raw: camera handle not open — camera closed or disconnected")
         self._drain_state()
         self._try(lambda: self._cam.put_Option(_opt(self._tc, "TOUPCAM_OPTION_FLUSH", _OPTION_FLUSH), 3))
-        if self._capture_mode == "snap":
-            self._cam.Snap(0xFFFFFFFF)
-        else:
-            self._cam.Trigger(1)
+        self._cam.Trigger(1)
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if self._frame_ready.wait(min(0.05, max(0.0, deadline - time.monotonic()))):
@@ -491,7 +494,8 @@ class SmartTouptekCamera(CameraPort):
         return self._pull_pixels(still=self._last_event == _EVENT_STILLIMAGE)
 
     def _pull_pixels(self, still: bool = False) -> np.ndarray:
-        assert self._cam is not None and self._tc is not None
+        if self._cam is None or self._tc is None:
+            raise RuntimeError("_pull_pixels: camera handle not open — camera closed or disconnected")
         bytes_per_pixel = 2 if self._bit_depth > 8 else 1
         buffer = ctypes.create_string_buffer(self._width * self._height * bytes_per_pixel)
         if self._capture_mode == "snap":

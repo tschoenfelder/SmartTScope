@@ -2370,6 +2370,32 @@ histogram ceiling until it ships upstream.
       - Pi verification pending (user): jog at confirmed HOME moves the mount;
         tracking enabled at home survives the next poll.
 
+- [x] M10-029 TEC cooling toggle on the Cameras screen (user request
+      2026-07-19: target −10 °C by config.toml, activatable by toggle in the
+      camera window title; only cooled cameras — ATR585M — get the toggle).
+      `[P2 · Camera]`
+      - *Done 2026-07-19:* readiness scan now reports `has_tec` per role from
+        the enumeration flag bits (`0x80 | 0x20000`, best-effort — devices
+        without `.model` default False) so the Cameras screen learns TEC
+        capability from the payload it already polls. `/api/cooling/status`
+        gained `default_target_c` from the new `[cooling] default_target_c`
+        config (template updated). `multicam.js`: panels with `has_tec` get a
+        ❄ toggle + status span in the header; toggle → existing
+        `POST /api/cooling/set_target` with the panel's `sdk_index` and the
+        config default; a 10 s status poll renders `−8.3° → −10° (45%)`,
+        marks the active panel, and re-derives an already-running session on
+        view enter. Cooling is deliberately NOT stopped on view leave
+        (hardware state, unlike the preview sockets). Stage-1 cooling card
+        target input now prefills from `default_target_c` (config is the
+        single source; untouched user edits win). Existing single-session
+        `CoolingService` reused unchanged (per user decision: only the
+        ATR585M has cooling, no multi-session refactor).
+      - Tests: readiness `has_tec` (3), cooling status `default_target_c`
+        (2); readiness + cooling suites 64 passed; `node --check` clean.
+      - Pi verification pending (user): ❄ toggle only on the ATR585M panel;
+        cooling toward config target with live temp/power; toggle state
+        survives leaving/re-entering the Cameras view.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

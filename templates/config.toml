@@ -303,6 +303,16 @@ enabled                  = false
 max_frames_per_session   = 50
 
 # ---------------------------------------------------------------------------
+# Camera TEC cooling (M10-029)
+# Cameras whose hardware reports a TEC (e.g. ATR585M) get a cooling toggle in
+# their Cameras-screen panel title; this is the target it cools toward.
+# The domain controller may temporarily relax the target under sustained
+# high TEC power (see services/cooling.py).
+# ---------------------------------------------------------------------------
+[cooling]
+default_target_c = -10.0
+
+# ---------------------------------------------------------------------------
 # Guiding
 # ---------------------------------------------------------------------------
 [live_analysis]

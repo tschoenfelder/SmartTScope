@@ -65,6 +65,22 @@ class TestStatusWhenIdle:
         assert d["action"] is None
 
 
+# ── GET /api/cooling/status — config-driven default target (M10-029) ─────────
+
+class TestDefaultTarget:
+    def test_status_includes_config_default_target(self) -> None:
+        from types import SimpleNamespace
+
+        from smart_telescope import config
+        with patch.object(config, "COOLING", SimpleNamespace(default_target_c=-7.5)):
+            d = client.get("/api/cooling/status").json()
+        assert d["default_target_c"] == pytest.approx(-7.5)
+
+    def test_default_target_present_when_idle(self) -> None:
+        d = client.get("/api/cooling/status").json()
+        assert isinstance(d["default_target_c"], float)
+
+
 # ── POST /api/cooling/set_target — no TEC camera ─────────────────────────────
 
 class TestSetTargetNoTec:

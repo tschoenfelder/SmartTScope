@@ -5183,3 +5183,25 @@ new refusal reason surfaces via the M10-027 409 path). test_jog_at_home.py
 rewritten (8 tests incl. mode selection + truthful preflight); one fake-serial
 test adapted to the v0.3.2 guard. onstep suite 157 passed; full unit suite
 green (known test_logging order flake only). Pi verification pending.
+
+## 2026-07-19 — M10-029: TEC cooling toggle on the Cameras screen
+
+Only cooled cameras get the control (user decision: only the ATR585M has a
+TEC). The readiness scan reports has_tec per role straight from the
+enumeration flag bits (0x80 | 0x20000); /api/cooling/status now carries
+default_target_c from the new [cooling] default_target_c config option
+(templates/config.toml updated, default -10).
+
+multicam.js: panels with has_tec get a snowflake toggle + status span in the
+panel header; toggling calls the existing POST /api/cooling/set_target with
+the panel's sdk_index and the config default target; a 10 s poll renders
+current -> target (power %) on the active panel and re-derives a running
+session on view enter. Cooling deliberately keeps running on view leave -
+hardware state like tracking, unlike the per-view preview sockets. The
+Stage-1 cooling card's target input prefills from default_target_c (config
+single source; user edits win). CoolingService itself unchanged
+(single-session stays sufficient).
+
+Tests: readiness has_tec (3) + cooling default_target_c (2); readiness +
+cooling suites 64 passed; node --check clean on multicam.js/setup.js.
+Pi verification pending.

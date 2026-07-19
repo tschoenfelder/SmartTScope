@@ -1047,6 +1047,13 @@ async function onCoolingCamChange(role) {
 async function coolingRefreshStatus() {
     try {
       const d = await (await fetch('/api/cooling/status')).json();
+      // M10-029: config ([cooling] default_target_c) is the single source
+      // for the default target — prefill the input unless the user edited it.
+      const tgtEl = document.getElementById('s1-cooling-target');
+      if (tgtEl && typeof d.default_target_c === 'number'
+          && document.activeElement !== tgtEl && tgtEl.value === tgtEl.defaultValue) {
+        tgtEl.value = d.default_target_c;
+      }
       _coolingRenderStatus(d);
     } catch (_) {}
 }

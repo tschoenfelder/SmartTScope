@@ -20,6 +20,8 @@ let _mcSockets    = {};           // role -> WebSocket
 let _mcPanels     = {};           // role -> panel state (see _mcBuildPanel)
 let _mcMountTimer = null;
 let _mcFilterName = null;         // current wheel filter (M10-014 payload)
+let _mcCoolingTimer   = null;     // TEC status poll (M10-029)
+let _mcCoolingDefault = -10.0;    // config default target (from /api/cooling/status)
 
 async function multicamEnter() {
     if (_mcActive) return;
@@ -54,6 +56,7 @@ async function multicamEnter() {
     detected.forEach(([role, cam], i) => _mcBuildPanel(grid, role, cam, slots[i] || 'b2'));
     detected.forEach(([role]) => _mcOpenSocket(role));
     _mcStartMountPoll();
+    _mcStartCoolingPoll();
     _mcScheduleRepaint();
 }
 
@@ -63,6 +66,9 @@ function multicamLeave() {
     for (const ws of Object.values(_mcSockets)) { try { ws.close(); } catch {} }
     _mcSockets = {};
     if (_mcMountTimer) { clearInterval(_mcMountTimer); _mcMountTimer = null; }
+    // Cooling itself deliberately keeps running on leave — it is hardware
+    // state like tracking, not a per-view resource like the preview sockets.
+    if (_mcCoolingTimer) { clearInterval(_mcCoolingTimer); _mcCoolingTimer = null; }
     for (const p of Object.values(_mcPanels)) {
       if (p.bitmap) { try { p.bitmap.close(); } catch {} p.bitmap = null; }
     }
@@ -87,6 +93,20 @@ function _mcBuildPanel(grid, role, cam, slot) {
     const infoEl = document.createElement('span');
     head.append(roleEl, nameEl, fovEl, infoEl);
 
+    // M10-029: TEC cooling toggle — only on cameras whose hardware reports a
+    // TEC (readiness `has_tec` from the enumeration flags; ATR585M here).
+    let tecBtn = null, tecEl = null;
+    if (cam.has_tec) {
+      tecBtn = document.createElement('button');
+      tecBtn.className = 'mc-tec-btn';
+      tecBtn.textContent = '❄';
+      tecBtn.title = `Cool to ${_mcCoolingDefault} °C`;
+      tecBtn.onclick = () => _mcToggleCooling(role);
+      tecEl = document.createElement('span');
+      tecEl.className = 'mc-tec-status';
+      head.append(tecBtn, tecEl);
+    }
+
     const wrap   = document.createElement('div');
     wrap.className = 'mc-canvas-wrap';
     const canvas = document.createElement('canvas');
@@ -105,6 +125,10 @@ function _mcBuildPanel(grid, role, cam, slot) {
       colorFactor: 1,
       scaleArcsec: +optical.pixel_scale_arcsec || 0,
       hasWheel: !!optical.filter_wheel,
+      sdkIndex: cam.sdk_index,
+      hasTec: !!cam.has_tec,
+      tecBtn, tecEl,
+      cooling: false,
       dirty: false,
     };
     if (_mcPanels[role].hasWheel && _mcFilterName) {
@@ -296,4 +320,55 @@ function _mcStartMountPoll() {
     };
     poll();
     _mcMountTimer = setInterval(poll, 5000);
+}
+
+/* ── TEC cooling (M10-029) ──────────────────────────────────────────────
+     One shared CoolingService session backend-side; the ❄ toggle appears
+     only on panels whose camera reports a TEC. The poll re-derives an
+     already-running session on view enter (cooling survives view leave). */
+
+async function _mcToggleCooling(role) {
+    const p = _mcPanels[role];
+    if (!p || !p.hasTec) return;
+    const enable = !p.cooling;
+    try {
+      await apiPost('/api/cooling/set_target', {
+        camera_index: p.sdkIndex, target_c: _mcCoolingDefault, enabled: enable,
+      });
+      p.infoEl.textContent = '';
+    } catch (e) {
+      p.infoEl.textContent = e.message || String(e);
+    }
+    _mcPollCooling();
+}
+
+async function _mcPollCooling() {
+    if (!Object.values(_mcPanels).some(p => p.hasTec)) return;
+    let d = null;
+    try { d = await (await fetch('/api/cooling/status')).json(); } catch { return; }
+    if (!_mcActive) return;
+    if (typeof d.default_target_c === 'number') _mcCoolingDefault = d.default_target_c;
+    for (const p of Object.values(_mcPanels)) {
+      if (!p.hasTec) continue;
+      const active = !!d.enabled && d.camera_index === p.sdkIndex;
+      p.cooling = active;
+      p.tecBtn.classList.toggle('active', active);
+      p.tecBtn.title = active
+        ? 'Cooling active — click to switch off'
+        : `Cool to ${_mcCoolingDefault} °C`;
+      if (active) {
+        const cur = d.current_temp_c != null ? `${d.current_temp_c.toFixed(1)}°` : '—';
+        const pow = d.power_pct != null ? ` (${d.power_pct.toFixed(0)}%)` : '';
+        p.tecEl.textContent = `${cur} → ${d.target_c}°${pow}`;
+      } else {
+        p.tecEl.textContent = '';
+      }
+    }
+}
+
+function _mcStartCoolingPoll() {
+    if (_mcCoolingTimer) return;
+    if (!Object.values(_mcPanels).some(p => p.hasTec)) return;
+    _mcPollCooling();
+    _mcCoolingTimer = setInterval(_mcPollCooling, 10_000);
 }

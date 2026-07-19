@@ -75,6 +75,31 @@ class TestIdentification:
         snap = _scan(devices=_ALL_DEVICES + [_dev("ToupTek MYSTERY123")])
         assert snap["unassigned"] == ["ToupTek MYSTERY123"]
 
+    def test_has_tec_from_device_model_flag(self):
+        # M10-029: TEC capability read from the enumeration flag bits
+        # (TOUPCAM_FLAG_TEC / TEC_ONOFF) — only the cooled camera gets True.
+        devices = [
+            SimpleNamespace(
+                displayname="ToupTek ATR585M", id="ATR585M",
+                model=SimpleNamespace(flag=0x00000080 | 0x00020000),
+            ),
+            _dev("ToupTek GPCMOS02000KPA"),
+            _dev("ToupTek G3M678M"),
+        ]
+        snap = _scan(devices=devices)
+        assert snap["roles"]["main"]["has_tec"] is True
+        assert snap["roles"]["guide"]["has_tec"] is False
+        assert snap["roles"]["oag"]["has_tec"] is False
+
+    def test_has_tec_defaults_false_without_model_attr(self):
+        # Bare SimpleNamespace devices (no .model) must not raise.
+        snap = _scan(devices=_ALL_DEVICES)
+        assert all(e["has_tec"] is False for e in snap["roles"].values())
+
+    def test_has_tec_false_for_missing_role(self):
+        snap = _scan(devices=_ALL_DEVICES[:2])  # no G3M678M
+        assert snap["roles"]["oag"]["has_tec"] is False
+
     def test_optical_configuration_joined_from_registry(self):
         train = SimpleNamespace(
             optical_configuration=lambda: {"telescope": "c8", "focal_mm": 2032.0},

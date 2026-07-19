@@ -44,6 +44,10 @@ class CoolingStatusResponse(BaseModel):
     action: str | None = None
     warning_msg: str | None = None
     seconds_remaining: float | None = None
+    # M10-029: the config-driven default ([cooling] default_target_c) so the
+    # UI toggles use config.toml as the single target source, not a
+    # hardcoded value.
+    default_target_c: float = -10.0
 
 
 # ── Validation helper ─────────────────────────────────────────────────────────
@@ -89,8 +93,10 @@ def set_target(req: SetTargetRequest) -> SetTargetResponse:
 @router.get("/status", response_model=CoolingStatusResponse)
 def get_status() -> CoolingStatusResponse:
     """Return the current cooling state.  Always 200; *enabled* is False when inactive."""
+    from .. import config
     status = deps.get_cooling_service().get_status()
     return CoolingStatusResponse(
+        default_target_c=config.COOLING.default_target_c,
         enabled=status.enabled,
         camera_index=status.camera_index,
         current_temp_c=status.current_temp_c,

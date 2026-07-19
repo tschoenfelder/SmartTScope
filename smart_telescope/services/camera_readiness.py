@@ -34,6 +34,20 @@ _POLL_INTERVAL_S = 15.0
 # as the configured wheel, not as an unconfigured camera.
 _FILTER_WHEEL_MARKERS = ("FILTERWHEEL", "FILTER WHEEL", "CFW")
 
+# M10-029: TEC capability straight from the enumeration flags (same bits the
+# /api/cameras scan uses) so the Cameras screen learns it from the one
+# readiness payload it already polls — no extra per-panel HTTP calls.
+_FLAG_TEC = 0x00000080
+_FLAG_TEC_ONOFF = 0x00020000
+
+
+def _device_has_tec(dev: Any) -> bool:
+    try:
+        flag = int(getattr(getattr(dev, "model", None), "flag", 0) or 0)
+    except Exception:
+        return False
+    return bool(flag & (_FLAG_TEC | _FLAG_TEC_ONOFF))
+
 
 def _is_filter_wheel(display_name: str) -> bool:
     upper = display_name.upper()
@@ -205,6 +219,7 @@ class CameraReadinessService:
                 "display_name": None,
                 "reason": None,
                 "optical": None,
+                "has_tec": False,
             }
             if registry is not None:
                 train = registry.by_camera_role(role)
@@ -233,6 +248,7 @@ class CameraReadinessService:
                         entry["status"] = "DETECTED"
                         entry["sdk_index"] = idx
                         entry["display_name"] = str(devices[idx].displayname)
+                        entry["has_tec"] = _device_has_tec(devices[idx])
                         matched_indices.add(idx)
                     except Exception as exc:
                         entry["reason"] = str(exc)

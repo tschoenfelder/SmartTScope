@@ -1,17 +1,16 @@
-"""SYNC-OVERRIDE REQ-ST-009 — manual jog at confirmed mechanical HOME (M10-028).
+"""Manual jog at confirmed mechanical HOME — upstream v0.3.3 (M10-030).
 
-Hardware evidence 2026-07-18/19: the Cameras-screen jog pad was refused with
-``axis_motion_refused_at_home`` whenever the mount sat at mechanical HOME —
-upstream ``_axis_motion()`` hardcodes that gate with no bypass parameter.
-User decision (2026-07-19): manual movement at confirmed home is legitimate
-(same spirit as the allowed home→park move). The shim's ``move()`` opens a
-narrow window during which the shim's ``motion_safety_preflight`` override
-reports ``at_home=False`` for exactly the two jog preflight commands; every
-other consumer keeps seeing the truth and all mechanical blockers stay live.
+History: the Cameras-screen jog pad was refused with
+``axis_motion_refused_at_home`` at mechanical HOME (M10-027/M10-028).
+Upstream shipped REQ-ST-009 in v0.3.3 (closes issue #5): ``move_ra_timed``/
+``move_dec_timed`` accept ``mode="manual"`` — allowed at home, skips
+projected-target validation, requires tracking OFF, keeps every mechanical
+blocker. The shim's M10-028 ``_jog_bypass_active`` window was deleted;
+``move()`` now selects center mode while tracking and manual mode otherwise.
 
 Unlike the other fake-serial suites, these tests deliberately use the REAL
 ``motion_safety_preflight`` — the stubbed one in ``test_with_fake_serial._mount``
-returns no ``at_home`` key and would bypass the very gate under test.
+returns no ``at_home`` key and would bypass the very gates under test.
 """
 
 from unittest.mock import patch
@@ -50,22 +49,22 @@ def _mount_real_preflight(state: str = "home") -> tuple[OnStepMount, FakeOnStepS
     return mount, fake
 
 
-class TestAtHomeRefusalWithoutBypass:
-    def test_direct_timed_move_still_refused_at_home(self):
-        # M10-027 regression guard: the upstream gate itself must still exist —
-        # only the shim's move() wrapper opens the bypass window.
+class TestAtHomeRefusalForAstronomicalModes:
+    def test_center_mode_still_refused_at_home(self):
+        # Regression guard: only manual mode may run at home — the upstream
+        # gate for guide/center corrections must still exist.
         mount, _ = _mount_real_preflight(state="home")
         with pytest.raises(OnStepSafetyError) as exc_info:
             mount.move_ra_timed("e", 50, mode="center")
         assert exc_info.value.violation.reason == "axis_motion_refused_at_home"
 
 
-class TestJogBypass:
+class TestManualJog:
     def test_move_succeeds_at_home(self):
         mount, fake = _mount_real_preflight(state="home")
         assert mount.move("n", 50) is True
         cmds = b"".join(fake.commands_received)
-        assert b":RC#" in cmds   # center rate selected
+        assert b":RC#" in cmds   # center rate selected (manual jogs at :RC#)
         assert b":Mn#" in cmds   # the actual axis motion was commanded
 
     def test_move_succeeds_at_home_ra_axis(self):
@@ -74,55 +73,56 @@ class TestJogBypass:
         cmds = b"".join(fake.commands_received)
         assert b":Me#" in cmds
 
-    def test_other_preflight_commands_still_see_at_home(self):
-        # Scoping: while the window is open, the poller/goto/tracking
-        # consumers (different command strings) keep the true at-home state.
-        mount, _ = _mount_real_preflight(state="home")
-        mount._jog_bypass_active = True
-        try:
-            result = mount.motion_safety_preflight(
-                command="current_tracking_safety", normal_motion=False,
-            )
-        finally:
-            mount._jog_bypass_active = False
-        assert result["at_home"] is True
+    def test_manual_mode_requires_tracking_off(self):
+        # Upstream v0.3.3 pairing gate: a manual jog with tracking active is
+        # refused. Sticky at-home keeps the pier/HA blockers suppressed so
+        # the pairing gate (not an unrelated blocker) is what fires.
+        mount, fake = _mount_real_preflight(state="home")
+        mount.get_state()  # observe the genuine H → mechanical authority trusted
+        fake._state = "tracking"  # tracking started while still at the home pose
+        mount._at_mechanical_home = True
+        mount._tracking_explicitly_requested = True  # keep the 0.3.2 guard quiet
+        with pytest.raises(OnStepSafetyError) as exc_info:
+            mount.move_dec_timed("n", 50, mode="manual")
+        assert exc_info.value.violation.reason == "manual_jog_requires_tracking_off"
 
-    def test_jog_preflight_command_reports_at_home_false_only_in_window(self):
-        mount, _ = _mount_real_preflight(state="home")
-        # Outside the window the jog command string sees the truth too.
-        result = mount.motion_safety_preflight(command="move_ra_center")
-        assert result["at_home"] is True
-        mount._jog_bypass_active = True
-        try:
-            result = mount.motion_safety_preflight(command="move_ra_center")
-        finally:
-            mount._jog_bypass_active = False
-        assert result["at_home"] is False
+    def test_move_picks_center_mode_while_tracking(self):
+        mount, _ = _mount_real_preflight(state="tracking")
+        mount._tracking_explicitly_requested = True
+        with patch.object(mount, "move_dec_timed") as timed:
+            timed.return_value.ok = True
+            assert mount.move("n", 50) is True
+        assert timed.call_args.kwargs["mode"] == "center"
 
-    def test_window_flag_cleared_after_move(self):
+    def test_move_picks_manual_mode_when_not_tracking(self):
         mount, _ = _mount_real_preflight(state="home")
-        mount.move("n", 50)
-        assert getattr(mount, "_jog_bypass_active", False) is False
+        with patch.object(mount, "move_ra_timed") as timed:
+            timed.return_value.ok = True
+            assert mount.move("w", 50) is True
+        assert timed.call_args.kwargs["mode"] == "manual"
 
-    def test_window_flag_cleared_when_move_raises(self):
-        mount, _ = _mount_real_preflight(state="home")
-        with patch.object(
-            mount, "move_dec_timed", side_effect=RuntimeError("boom"),
-        ), pytest.raises(RuntimeError):
-            mount.move("n", 50)
-        assert getattr(mount, "_jog_bypass_active", False) is False
-
-    def test_mechanical_blocker_still_refuses_under_bypass(self):
-        # The window only touches at_home — a real mechanical blocker
-        # (at-limit flag) must still refuse the jog, even at home.
+    def test_mechanical_blocker_still_refuses_manual_jog(self):
+        # Manual mode only bypasses the at-home gate — a real mechanical
+        # blocker (at-limit flag) must still refuse the jog, even at home.
         mount, _ = _mount_real_preflight(state="at_limit")
         mount._at_mechanical_home = True  # sticky at-home + limit condition
         with pytest.raises(OnStepSafetyError) as exc_info:
             mount.move("n", 50)
         # Refused with a mechanical motion_refused reason (at-limit state
         # both sets the at_limit blocker and untrusts position authority —
-        # blockers[0] wins), never waved through via the at_home bypass.
+        # blockers[0] wins), never waved through via the manual mode.
         assert exc_info.value.violation.reason != "axis_motion_refused_at_home"
         assert exc_info.value.violation.reason in (
             "mechanical_position_authority_untrusted", "onstep_at_limit",
         )
+
+
+class TestPreflightStaysTruthful:
+    def test_preflight_reports_true_at_home_for_every_command(self):
+        # The M10-028 shim post-process (at_home=False during a jog window)
+        # is gone — preflight reports the truth even for jog command strings;
+        # upstream skips the refusal via the mode check, not a lying preflight.
+        mount, _ = _mount_real_preflight(state="home")
+        for command in ("current_tracking_safety", "move_ra_center", "move_ra_manual"):
+            result = mount.motion_safety_preflight(command=command, normal_motion=False)
+            assert result["at_home"] is True, command

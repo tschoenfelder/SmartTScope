@@ -16,7 +16,6 @@ filed only with explicit user approval).
 from __future__ import annotations
 
 import logging
-import math
 import time
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -50,6 +49,7 @@ from onstep_adapter.mount import (  # noqa: F401
     _parse_ra,
     _stored_park_to_dict,
 )
+from onstep_adapter.location import haversine_distance_m, round_lx200_site_degrees
 from onstep_adapter.mount import OnStepMount as _BaseOnStepMount
 
 from ...ports.mount import MountPort, MountPosition, MountState  # noqa: F401
@@ -57,28 +57,16 @@ from ...ports.mount import MountPort, MountPosition, MountState  # noqa: F401
 _log = logging.getLogger(__name__)
 
 
-# ── REQ-ST-008 helpers (pending upstream adoption — stay local either way) ────
+# ── REQ-ST-008 helpers (upstream since v0.3.2 — thin aliases kept for callers) ─
 
 def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance in metres between two WGS-84 lat/lon coordinates."""
-    R = 6_371_000.0
-    lat1r, lat2r, lon1r, lon2r = map(math.radians, (lat1, lat2, lon1, lon2))
-    dlat = lat2r - lat1r
-    dlon = lon2r - lon1r
-    a = math.sin(dlat / 2) ** 2 + math.cos(lat1r) * math.cos(lat2r) * math.sin(dlon / 2) ** 2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return haversine_distance_m(lat1, lon1, lat2, lon2)
 
 
 def _lx200_round_degrees(value: float) -> float:
     """Round to arcminute precision — matches what LX200 ±DD*MM site format can store."""
-    sign = 1.0 if value >= 0 else -1.0
-    v = abs(value)
-    deg = int(v)
-    minutes = int(round((v - deg) * 60.0))
-    if minutes >= 60:
-        deg += 1
-        minutes -= 60
-    return sign * (deg + minutes / 60.0)
+    return round_lx200_site_degrees(value)
 
 
 class OnStepMount(_BaseOnStepMount, MountPort):
@@ -159,16 +147,18 @@ class OnStepMount(_BaseOnStepMount, MountPort):
             )
         return unparked
 
-    # ── SYNC-OVERRIDE REQ-ST-004 (not in upstream v0.3.1 wheel) ───────────────
+    # ── SYNC-OVERRIDE REQ-ST-004 (not in upstream v0.3.3 wheel) ───────────────
 
     def enable_tracking(self) -> bool:
         # SYNC-OVERRIDE REQ-ST-004: at-home bypass. At the mechanical home
         # position the RA/Dec readback is unreliable (stale park RA → LST − RA
         # can yield an HA far outside limits). Safety lock and astronomy
         # readiness still apply; positional checks (HA/alt/dec limits) do not —
-        # the home pose is mechanically safe. Verbatim copy of the local
-        # pre-migration method (minus the retired _explicit_tracking_started
-        # flag); delete once upstream ships REQ-ST-004.
+        # the home pose is mechanically safe. Method copy of upstream v0.3.3's
+        # enable_tracking() + the bypass; delete once upstream ships REQ-ST-004.
+        # Re-diffed 2026-07-19 against v0.3.3: MUST set
+        # _tracking_explicitly_requested on success — since v0.3.2 upstream
+        # get_state() auto-disables tracking that carries no explicit request.
         at_home = self._at_mechanical_home or bool(
             (self._last_decoded_status or {}).get("at_home")
         )
@@ -185,6 +175,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         ok = r == "1"
         if ok:
             self._at_mechanical_home = False
+            self._tracking_explicitly_requested = True
             if not self._meridian_flip_completed:
                 self.begin_meridian_tracking_session()
             self._persist_last_state(last_command="enable_tracking", force=True)
@@ -192,7 +183,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
             _log.warning("OnStepMount.enable_tracking(): OnStep rejected :Te# with reply %r", r)
         return ok
 
-    # ── SYNC-OVERRIDE REQ-ST-007 (not in upstream v0.3.1 wheel) ───────────────
+    # ── SYNC-OVERRIDE REQ-ST-007 (not in upstream v0.3.3 wheel) ───────────────
 
     def motion_safety_preflight(
         self,
@@ -204,11 +195,12 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         """Read one fresh logical/mechanical safety snapshot before motion.
 
         SYNC-OVERRIDE REQ-ST-007: verbatim copy of the local pre-migration
-        method. Differs from upstream v0.3.1 in exactly two pier-side guards:
+        method. Differs from upstream v0.3.3 in exactly two pier-side guards:
         (a) stale ``:Gm#`` suppression when home is confirmed and axis2 < 15°,
         (b) ``pier_side_axis_inconsistent`` blocker suppressed in terminal
         state (parked/at-home). Delete once upstream ships REQ-ST-007 —
-        re-diff on every upstream release.
+        re-diff on every upstream release (re-diffed 2026-07-19 against
+        v0.3.3: upstream body unchanged since v0.3.1, no copy drift).
         """
         sample_started = time.monotonic()
         sampled_at = datetime.now(timezone.utc)
@@ -358,24 +350,6 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         )
         sample_age_ms = round((time.monotonic() - sample_started) * 1000.0, 3)
         motion_refused = bool(blockers)
-        # SYNC-OVERRIDE REQ-ST-009: during a manual jog (see move()), report
-        # at_home=False for exactly the two jog preflight commands so
-        # upstream _axis_motion()'s hardcoded at-home refusal doesn't fire.
-        # Deliberately a post-process on the RETURNED value only: the local
-        # at_home/terminal_state above must stay truthful so the pier/HA
-        # blockers remain suppressed at home (flipping it earlier would
-        # re-add them and refuse the jog with a different reason). All
-        # mechanical blockers (motion_refused) are untouched. NOTE: safe
-        # today only because runtime.py constructs OnStepClient without
-        # motion_calibration — with calibration wired, upstream's projected-
-        # target validate_target gate re-activates and needs the upstream
-        # manual-jog mode instead (REQ-ST-009 issue).
-        report_at_home = at_home
-        if (
-            getattr(self, "_jog_bypass_active", False)
-            and command in ("move_ra_center", "move_dec_center")
-        ):
-            report_at_home = False
         return {
             "command": command,
             "sampled_at_utc": sampled_at.isoformat(),
@@ -384,7 +358,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
             "tracking": bool(decoded.get("tracking") or state == MountState.TRACKING),
             "slewing": bool(decoded.get("slewing") or state == MountState.SLEWING),
             "parked": parked,
-            "at_home": report_at_home,
+            "at_home": at_home,
             "mechanical_position_authority": authority,
             "mechanical_safe": mechanical_safe,
             "logical_position": position,
@@ -411,7 +385,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
             "context": context,
         }
 
-    # ── SYNC-OVERRIDE REQ-ST-002 residual (partial upstream in v0.3.1) ────────
+    # ── SYNC-OVERRIDE REQ-ST-002 residual (partial upstream in v0.3.3) ────────
 
     def sync_onstep_time_location(
         self,
@@ -422,7 +396,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         utc_datetime: datetime | None = None,
         confirmed_by_user: bool = False,
     ) -> dict[str, object]:
-        # Upstream v0.3.1 accepts confirmed_by_user but does not record the
+        # Upstream v0.3.3 accepts confirmed_by_user but does not record the
         # trust source; set it post-hoc so safety clock locks clear.
         result = super().sync_onstep_time_location(
             lat=lat,
@@ -534,31 +508,27 @@ class OnStepMount(_BaseOnStepMount, MountPort):
 
     def move(self, direction: str, move_ms: int) -> bool:
         # LOCAL-001 / REQ-1 (permanent local translation): MountPort.move()
-        # routed through the SDK's public timed-axis API at center rate.
-        #
-        # SYNC-OVERRIDE REQ-ST-009 (user approval 2026-07-19): a deliberate
-        # manual jog must work at confirmed mechanical HOME (terrestrial
-        # workflow, M10-019/M10-028) — upstream _axis_motion() unconditionally
-        # refuses on preflight["at_home"] with no bypass parameter. The window
-        # flag below makes our motion_safety_preflight override report
-        # at_home=False for exactly the two jog preflight commands while this
-        # call is on the stack; every other preflight consumer (poller, goto,
-        # tracking) keeps seeing the true at-home state, and all mechanical
-        # blockers (motion_refused) stay fully active. Delete the flag and the
-        # matching post-process in motion_safety_preflight() once upstream
-        # ships a manual-jog mode (REQ-ST-009 issue).
+        # routed through the SDK's public timed-axis API. Mode selection
+        # (REQ-ST-009, shipped upstream in v0.3.3): tracking on → "center"
+        # (astronomical centering, target-validated); tracking off → "manual"
+        # (deliberate terrestrial/at-home jog — works at confirmed mechanical
+        # HOME, skips projected-target validation, keeps every mechanical
+        # blocker). One fresh :GU# via get_state() decides; _axis_motion()'s
+        # own preflight still enforces the mode/tracking pairing if the state
+        # changes in between.
         d = direction.lower()
-        try:
-            self._jog_bypass_active = True
-            if d in ("e", "w", "east", "west"):
-                result = self.move_ra_timed(d, move_ms, mode="center")
-            elif d in ("n", "s", "north", "south"):
-                result = self.move_dec_timed(d, move_ms, mode="center")
-            else:
-                _log.warning("OnStepMount.move(): invalid direction %r", direction)
-                return False
-        finally:
-            self._jog_bypass_active = False
+        state = self.get_state()
+        tracking = state == MountState.TRACKING or bool(
+            (self._last_decoded_status or {}).get("tracking")
+        )
+        mode = "center" if tracking else "manual"
+        if d in ("e", "w", "east", "west"):
+            result = self.move_ra_timed(d, move_ms, mode=mode)
+        elif d in ("n", "s", "north", "south"):
+            result = self.move_dec_timed(d, move_ms, mode=mode)
+        else:
+            _log.warning("OnStepMount.move(): invalid direction %r", direction)
+            return False
         return bool(result.ok)
 
     def set_park_position(self) -> bool:

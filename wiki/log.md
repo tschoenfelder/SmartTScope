@@ -5154,3 +5154,32 @@ honoring every mechanical blocker). Delete the shim override when it ships.
 8 new tests (test_jog_at_home.py, REAL motion_safety_preflight against
 FakeOnStepSerial + new :GS# handler in the fake); onstep adapter suite green
 (157). Pi verification pending: arrow jog at confirmed HOME moves the mount.
+
+## 2026-07-19 — M10-030: onstep_adapter upgraded to v0.3.3, native manual jog at HOME
+
+Upstream released v0.3.3 closing issue #5 (REQ-ST-009): move_ra_timed/
+move_dec_timed accept mode="manual" - allowed at confirmed mechanical HOME,
+skips projected-target validation (resolves the M10-028 latent
+motion_calibration hazard), requires tracking OFF
+(manual_jog_requires_tracking_off), keeps every mechanical blocker and the
+motion lock.
+
+Upgrade: pyproject pin + local install 0.3.1 -> 0.3.3 (Pi follows via
+astro_start.sh version sync). Shim move() now selects the mode by tracking
+state (tracking -> center, off -> manual); the M10-028 _jog_bypass_active
+window and the preflight at_home post-process were deleted - preflight is
+truthful for every consumer again.
+
+Full override re-diff (SYNC.md updated): REQ-ST-003/005/006/008 shipped in
+v0.3.2 (issue #3), including a tracking-authorization guard - get_state()
+auto-disables tracking with no explicit request. The shim's REQ-ST-004
+enable_tracking() copy therefore now sets _tracking_explicitly_requested=True
+on success (otherwise the next poll would kill tracking enabled at home).
+REQ-ST-004/007/002-residual remain local (upstream bodies unchanged, no copy
+drift); _haversine_m/_lx200_round_degrees delegate to onstep_adapter.location.
+
+Cameras-screen jog pad unchanged (nudge -> move() picks manual mode natively;
+new refusal reason surfaces via the M10-027 409 path). test_jog_at_home.py
+rewritten (8 tests incl. mode selection + truthful preflight); one fake-serial
+test adapted to the v0.3.2 guard. onstep suite 157 passed; full unit suite
+green (known test_logging order flake only). Pi verification pending.

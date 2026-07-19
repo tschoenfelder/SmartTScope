@@ -1,8 +1,22 @@
 # OnStepAdapter Dependency
 
 `onstep_adapter` is a **pip-installed package**, not a synced source copy.
-Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.1/onstep_adapter-0.3.1-py3-none-any.whl`
-Last synced/audited: 2026-07-15 (full USB-connectivity replacement, ONS31-101..110)
+Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.3/onstep_adapter-0.3.3-py3-none-any.whl`
+Last synced/audited: 2026-07-19 (v0.3.3 upgrade + full override re-diff, M10-030)
+
+**v0.3.2/v0.3.3 upstream behavior changes (re-diffed 2026-07-19):**
+- v0.3.2 tracking authorization: `get_state()` now **auto-disables tracking** that
+  no caller explicitly requested (`_tracking_explicitly_requested`; firmware
+  auto-track after `:hR#`). `enable_tracking()` sets the flag,
+  `stop()/park()/unpark()/disable_tracking_verified()` clear it. The shim's
+  REQ-ST-004 `enable_tracking()` copy sets the flag too (mandatory — otherwise
+  the next poll would kill tracking enabled at home).
+- v0.3.2 location helpers: `onstep_adapter.location` exports
+  `haversine_distance_m` + `round_lx200_site_degrees` (REQ-ST-008 helpers shipped).
+- v0.3.3 manual jog: `move_ra_timed()`/`move_dec_timed()` accept `mode="manual"`
+  (closes issue #5 / REQ-ST-009) — allowed at confirmed mechanical HOME, skips
+  projected-target validation, requires tracking OFF
+  (`manual_jog_requires_tracking_off`), keeps every mechanical blocker.
 
 The directory `smart_telescope/adapters/onstep/` is **SmartTScope-owned** — do NOT sync
 files from the OnStepAdapter GitHub repo into it. It is a **thin shim layer** that
@@ -127,7 +141,7 @@ pattern. Mount-side consumer API unchanged (MountPort covers it).
 
 | ID | Method | Why |
 |----|--------|-----|
-| REQ-1 / LOCAL-001 | `move(direction, move_ms)` | Translation onto upstream's public `move_ra_timed()`/`move_dec_timed()` (`mode="center"`) — implemented 2026-07-15, `mechanical_manual_move()` interim retired. |
+| REQ-1 / LOCAL-001 | `move(direction, move_ms)` | Translation onto upstream's public `move_ra_timed()`/`move_dec_timed()`. Since v0.3.3 (M10-030) the mode is state-selected: tracking on → `mode="center"` (astronomical, target-validated); tracking off → `mode="manual"` (terrestrial/at-home jog). `mechanical_manual_move()` interim retired 2026-07-15. |
 | REQ-2 | `set_park_position() → bool`, `get_park_position() → MountPosition\|None` | `MountPort` ABC adapters over upstream `set_park_position_from_current()`/`get_park_position()` (+ conversion to the local `MountPosition` dataclass, also done by `get_position()`). |
 | REQ-ST-001 | `ensure_time_location_synced()` | Pure config-forwarding glue (SmartTScope `config.py` → upstream `sync_onstep_time_location()`). |
 | ONS31-101 | `get_state()` | FSM mapping: upstream 6-state + decoded `at_home` flag (+ sticky `_at_mechanical_home`, first-'H' `confirm_home_position()`) → SmartTScope's 7-state enum. **M9-036 ordering:** decoded H > SLEWING (M9-021) > sticky authority flag > upstream state — observed motion must never be masked by a stale/re-armed authority flag (park slew showed AT HOME throughout, hardware 2026-07-17). |
@@ -138,12 +152,12 @@ pattern. Mount-side consumer API unchanged (MountPort covers it).
 **SYNC-OVERRIDEs pending upstream delivery** (each tagged in the shim source; remove
 when upstream ships it — re-diff on every upgrade):
 
-| ID | Where | Gap in upstream v0.3.1 wheel |
+| ID | Where | Gap in upstream v0.3.3 wheel |
 |----|-------|------------------------------|
-| REQ-ST-004 | `mount.py enable_tracking()` (28-line method copy) | At-home bypass of positional checks missing. **2026-07-11 pre-check wrongly reported this as present in v0.3.1 — the installed wheel does NOT have it** (repo main ≠ tag). |
-| REQ-ST-007 | `mount.py motion_safety_preflight()` (190-line method copy) | Pier-side guards missing: (a) stale `:Gm#` suppression at confirmed home with axis2 < 15°, (b) `pier_side_axis_inconsistent` suppressed in terminal state. **Same wrong pre-check as REQ-ST-004 — NOT in the wheel.** |
-| REQ-ST-002 (residual) | `mount.py sync_onstep_time_location()` (post-process) | Upstream accepts `confirmed_by_user` but does not set `time_trust_source="user_confirmed"`; shim sets it post-hoc. |
-| REQ-ST-008 | `mount.py` `_haversine_m()`, `_lx200_round_degrees()`, `get_sync_status()` | Stays local either way; upstream adoption nice-to-have. |
+| REQ-ST-004 | `mount.py enable_tracking()` (method copy) | At-home bypass of positional checks still missing (re-diffed 2026-07-19 against v0.3.3). Copy updated for v0.3.2's tracking authorization: sets `_tracking_explicitly_requested = True` on success, like upstream. |
+| REQ-ST-007 | `mount.py motion_safety_preflight()` (method copy) | Pier-side guards still missing (re-diffed 2026-07-19; upstream body unchanged v0.3.1→v0.3.3, no copy drift): (a) stale `:Gm#` suppression at confirmed home with axis2 < 15°, (b) `pier_side_axis_inconsistent` suppressed in terminal state. The M10-028 REQ-ST-009 post-process was removed from the copy (shipped upstream). |
+| REQ-ST-002 (residual) | `mount.py sync_onstep_time_location()` (post-process) | Upstream accepts `confirmed_by_user` but does not set `time_trust_source="user_confirmed"`; shim sets it post-hoc. Unchanged in v0.3.3. |
+| REQ-ST-008 | `mount.py` `_haversine_m()`, `_lx200_round_degrees()` | **Helpers shipped in v0.3.2** (`onstep_adapter.location`); the shim functions are now thin aliases kept for callers. `get_sync_status()` comparison logic stays local (permanent wrapper). |
 | (new) tolerance fields | `safety.py OnStepSafetyConfig` subclass | `onstep_time_tolerance_s`/`onstep_location_tolerance_m` absent upstream. |
 | (new) client injection | `client.py` swap-after-construction | Upstream `OnStepClient.__init__` has no `mount_cls`/factory parameter. |
 | (new) stop() keeps home authority | not overridden locally (display-side fixed app-side, M9-032) | Upstream `OnStepMount.stop()` does not clear `_at_mechanical_home`, so mechanical-home authority survives a mid-slew STOP even though the position is no longer trustworthy (`enable_tracking()` at-home bypass and `motion_safety_preflight()` terminal-state both consume it). `note_external_motion()` is the existing public API for exactly this. Found 2026-07-17 during M9-032; **not filed — needs user approval**. |
@@ -165,18 +179,19 @@ These patches are currently in `mount.py`. They should be evaluated for adoption
 into `onstep_adapter`; raise with the package maintainer.
 
 **Filed 2026-07-11:** REQ-ST-003/005/006/008 raised as
-<https://github.com/tschoenfelder/OnStepAdapter/issues/3> (explicit user approval).
+<https://github.com/tschoenfelder/OnStepAdapter/issues/3> (explicit user approval) —
+**shipped in v0.3.2**. REQ-ST-009 raised as issue #5 (2026-07-19) — **shipped in v0.3.3**.
 
 | ID | Method | Reasoning for upstream adoption |
 |----|--------|----------------------------------|
 | REQ-ST-002 | `sync_onstep_time_location()` (confirmed_by_user extension) | Sets `time_trust_source="user_confirmed"`; base class leaves it unset. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
-| REQ-ST-003 | `get_state()` `_explicit_tracking_started` flag | **Reframed 2026-07-11.** Original ask only disambiguated *reporting* (relabel as AT_HOME instead of TRACKING). User direction: the actual fix should be behavioral — if firmware auto-starts tracking after `:hR#` that SmartTScope never requested, actively stop it (e.g. call the same verified-disable path REQ-ST-005 uses), not just reinterpret status while the mount keeps tracking underneath. This is a protocol-layer behavior change to `OnStepMount` — flagged per the never-edit-adapter-directly guardrail, awaiting user go-ahead before implementation. Still worth raising upstream too, since any GEM OnStep host hits the same firmware quirk. |
+| REQ-ST-003 | `get_state()` tracking authorization | **SHIPPED in v0.3.2** (issue #3): `get_state()` actively disables tracking with no explicit request via `disable_tracking_verified()` — exactly the reframed behavioral ask. |
 | REQ-ST-004 | `enable_tracking()` at-home bypass | Positional limits unsound at CWD home (stale RA); safety lock still applies. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
-| REQ-ST-005 | `disable_tracking_verified()` flag clear | Consistent flag lifecycle. Confirmed as scoped correctly (2026-07-11) — stays an upstream ask as-is; becomes the mechanism REQ-ST-003's active-stop behavior would call. |
-| REQ-ST-006 | `stop()` / `park()` / `unpark()` flag clear | **Reframed 2026-07-11.** User direction: `unpark()` in general should drive the mount to a genuine non-tracking mechanical state, not just clear SmartTScope's own bookkeeping flag. Same protocol-layer-behavior-change status as REQ-ST-003 — flagged, awaiting go-ahead. |
+| REQ-ST-005 | `disable_tracking_verified()` flag clear | **SHIPPED in v0.3.2** (issue #3): clears `_tracking_explicitly_requested` on verified disable. |
+| REQ-ST-006 | `stop()` / `park()` / `unpark()` flag clear | **SHIPPED in v0.3.2** (issue #3): all three clear `_tracking_explicitly_requested`; `unpark()` additionally verifies the post-unpark state is neither PARKED nor TRACKING. Shim keeps its ONS31-102 `unpark()` routing (drive to HOME) on top. |
 | REQ-ST-007 | `motion_safety_preflight()` pier-side guards | (a) terminal_state; (b) axis2 < 15° stale `:Gm#` suppression. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
-| REQ-ST-008 | `_haversine_m()` + `_lx200_round_degrees()` helpers, used by `get_sync_status()`'s meter-based location tolerance (M8-008) | Generic geo/LX200-format utilities any OnStep client doing location-sync checks would need; found via diff against the vendored copy 2026-07-09, never filed upstream when added. **Confirmed needed regardless of upstream outcome (2026-07-11) — stays local either way; upstream adoption is a nice-to-have, not a blocker.** |
-| REQ-ST-009 (**filed 2026-07-19** as <https://github.com/tschoenfelder/OnStepAdapter/issues/5>, explicit user approval; **shim override active**, M10-028) | `_axis_motion()` at-home refusal — no manual-jog bypass | Found 2026-07-18 (M10-027): `_axis_motion()` unconditionally raises `axis_motion_refused_at_home` at mechanical HOME — hardcoded, no bypass parameter, same family as REQ-ST-004's `enable_tracking()` at-home bypass. User decision 2026-07-19: manual movement at confirmed home is legitimate (like the allowed home→park move). **Shim override (SYNC-OVERRIDE REQ-ST-009 in `mount.py`):** `move()` sets a `_jog_bypass_active` window flag (try/finally) around the `move_*_timed` delegation; the REQ-ST-007 preflight override post-processes only the RETURNED `at_home` to False for exactly the commands `move_ra_center`/`move_dec_center` while the window is open. The internal `at_home`/`terminal_state` stay truthful (pier/HA blockers remain suppressed at home), `motion_refused`/mechanical blockers are untouched, and all other preflight consumers (poller `current_tracking_safety`, goto, live-poll) see the true state. **Latent hazard, documented on the issue:** works today only because `runtime.py` constructs `OnStepClient` without `motion_calibration` — with calibration wired, upstream's projected-target `validate_target` gate re-activates and needs the upstream manual-jog mode. Delete the shim window + post-process when issue #5 ships; upstream ask = `allow_at_home` kwarg (or `mode="manual"`) skipping both at-home gates while honoring all mechanical blockers + `_axis_motion_lock`. |
+| REQ-ST-008 | `_haversine_m()` + `_lx200_round_degrees()` helpers, used by `get_sync_status()`'s meter-based location tolerance (M8-008) | **SHIPPED in v0.3.2** (issue #3): `onstep_adapter.location.haversine_distance_m` + `round_lx200_site_degrees`; shim helpers are thin aliases since 2026-07-19. `get_sync_status()` itself stays a permanent local wrapper. |
+| REQ-ST-009 (filed 2026-07-19 as <https://github.com/tschoenfelder/OnStepAdapter/issues/5>) | `_axis_motion()` at-home refusal — no manual-jog bypass | **SHIPPED in v0.3.3** (closes issue #5): `mode="manual"` on `move_ra_timed()`/`move_dec_timed()` — allowed at confirmed mechanical HOME, skips projected-target validation (resolves the M10-028 latent `motion_calibration` hazard), requires tracking OFF, keeps every mechanical blocker + `_axis_motion_lock`. The M10-028 shim override (`_jog_bypass_active` window + preflight post-process) was **deleted 2026-07-19** (M10-030); `move()` now selects center/manual by tracking state. |
 
 ## Upgrading onstep_adapter
 

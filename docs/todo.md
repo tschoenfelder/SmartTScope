@@ -2336,6 +2336,39 @@ histogram ceiling until it ships upstream.
         8 new tests (`tests/unit/adapters/onstep/test_jog_at_home.py`, real
         preflight against `FakeOnStepSerial` + new `:GS#` handler); onstep
         adapter suite green (157).
+      - *Superseded by M10-030 (2026-07-19):* upstream shipped the manual-jog
+        mode in v0.3.3 — the shim bypass window described above was deleted.
+
+- [x] M10-030 Upgrade onstep_adapter to v0.3.3 — native manual jog at HOME
+      (upstream closed issue #5 / REQ-ST-009). `[P1 · Mount]`
+      - *Done 2026-07-19:* pyproject pin + local install bumped 0.3.1 → 0.3.3
+        (Pi follows via `astro_start.sh` version sync). The shim's `move()`
+        now selects the timed-axis mode by tracking state: tracking on →
+        `mode="center"` (astronomical centering, target-validated); tracking
+        off → `mode="manual"` (terrestrial/at-home jog — allowed at confirmed
+        mechanical HOME, skips projected-target validation, all mechanical
+        blockers live). The M10-028 `_jog_bypass_active` window + preflight
+        post-process were deleted; preflight reports `at_home` truthfully for
+        every consumer again, which also resolves the documented latent
+        `motion_calibration` hazard.
+      - Full 0.3.1→0.3.3 override re-diff (SYNC.md updated): REQ-ST-003/005/
+        006/008 shipped in v0.3.2 (issue #3) — including the new tracking-
+        authorization guard: upstream `get_state()` auto-disables tracking
+        with no explicit request, so the shim's REQ-ST-004 `enable_tracking()`
+        copy now sets `_tracking_explicitly_requested = True` on success
+        (without this, the next poll would kill tracking enabled at home).
+        REQ-ST-004/007/002-residual remain local (upstream bodies unchanged);
+        `_haversine_m`/`_lx200_round_degrees` now delegate to
+        `onstep_adapter.location`.
+      - Cameras-screen jog pad needs no JS change: `/api/mount/nudge` →
+        `move()` picks manual mode automatically; refusals (incl. the new
+        `manual_jog_requires_tracking_off`) surface via the M10-027 409 path.
+      - Tests: `test_jog_at_home.py` rewritten for the native mode (8 tests,
+        incl. mode-selection + truthful-preflight coverage); one fake-serial
+        test updated for the v0.3.2 guard. onstep suite 157 passed; full unit
+        suite green (only the known pre-existing `test_logging` order flake).
+      - Pi verification pending (user): jog at confirmed HOME moves the mount;
+        tracking enabled at home survives the next poll.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

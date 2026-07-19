@@ -170,6 +170,9 @@ class TestPositionAfterSettle:
 
     def test_state_is_tracking_after_settle(self):
         mount, fake = _mount(state="tracking")
+        # Since upstream v0.3.2, get_state() auto-disables tracking that no
+        # caller explicitly requested; this test intends tracking to persist.
+        mount._tracking_explicitly_requested = True
         mount.goto(ra=6.0, dec=0.0)
         fake.settle()
         assert mount.get_state() == MountState.TRACKING

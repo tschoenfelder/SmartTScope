@@ -2396,6 +2396,36 @@ histogram ceiling until it ships upstream.
         cooling toward config target with live temp/power; toggle state
         survives leaving/re-entering the Cameras view.
 
+- [x] M10-031 Larger jog step size while not tracking (hardware feedback
+      2026-07-19: "even with 2 secs the number of steps ... to move the
+      mount to a horizontal position pointing to the horizon would be too
+      large. If the mount is confirmed at home, the movement needs to be
+      larger when step arrow is pressed"). `[P1 · Mount]`
+      - *Done 2026-07-19:* `/api/mount/nudge` (`api/mount.py`) now applies
+        two duration ceilings mirroring the shim's own `move()` mode split
+        (M10-030): a tracking centering correction stays capped at 5000 ms
+        (`_NUDGE_TRACKING_MAX_MS`, unchanged from before); a not-tracking
+        jog (confirmed HOME, or any terrestrial jog with
+        `keep_tracking_state=True`) may run up to 60000 ms
+        (`_NUDGE_MANUAL_MAX_MS` — the schema's new `duration_ms` ceiling),
+        well under upstream's 120000 ms hard limit for center/manual mode.
+        The check uses the mount's actual tracking state *after* any
+        `enable_tracking()` side effect, so an auto-enabled tracking
+        correction is still capped tight — the larger ceiling only applies
+        when tracking stays off.
+      - `multicam.js`/`index.html`: `#mc-jog-dur` gained 5/10/20/40/60 s
+        options; the existing 5 s mount-status poll now also reads
+        `tracking_state` and disables (or clamps back) any option above
+        5000 ms while tracking, so the UI reflects the server cap instead of
+        the user hitting a 422.
+      - Tests: 5 new `TestMountNudge` cases (tracking cap enforced/allowed at
+        the boundary, not-tracking large duration allowed, schema rejects
+        >60 s, auto-enabled tracking still capped). Mount API suite 154
+        passed; `node --check` clean.
+      - Pi verification pending (user): at confirmed HOME, a 30–60 s step
+        actually covers a useful chunk of sky; a tracking centering
+        correction still rejects a >5 s step with a clear 422.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

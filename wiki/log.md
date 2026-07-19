@@ -5205,3 +5205,22 @@ single source; user edits win). CoolingService itself unchanged
 Tests: readiness has_tec (3) + cooling default_target_c (2); readiness +
 cooling suites 64 passed; node --check clean on multicam.js/setup.js.
 Pi verification pending.
+
+## 2026-07-19 — M10-031: larger jog step size while not tracking
+
+Hardware feedback: mount jog at confirmed HOME works (M10-030) but even the
+2s max step was far too small to walk the mount from home down to the
+horizon. /api/mount/nudge now applies two duration ceilings mirroring the
+shim's own move() mode split: a tracking centering correction stays capped
+at 5000ms (unchanged); a not-tracking jog (confirmed HOME, or any terrestrial
+jog with keep_tracking_state=True) may run up to 60000ms - well under
+upstream's 120000ms hard limit for center/manual mode. The check uses the
+mount's tracking state after any enable_tracking() side effect, so an
+auto-enabled tracking correction stays capped tight regardless.
+
+multicam.js: #mc-jog-dur gained 5/10/20/40/60s options; the existing 5s
+mount-status poll now also reads tracking_state and disables (or clamps
+back) options above 5000ms while tracking, so the UI reflects the server cap
+instead of surfacing a 422.
+
+5 new mount API tests; suite 154 passed. Pi verification pending.

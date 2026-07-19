@@ -1191,6 +1191,48 @@ class TestMountNudge:
         assert r.status_code == 409
         assert r.json()["detail"] == "axis_motion_refused_at_home"
 
+    # ── M10-031: larger step size while not tracking (e.g. confirmed HOME) ──
+
+    def test_tracking_duration_over_5s_returns_422(self) -> None:
+        # A tracking centering correction stays capped tight even though the
+        # schema now allows up to 60s (that ceiling is for manual jogs only).
+        self._inject_nudge_mount(state=MountState.TRACKING)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 6000})
+        assert r.status_code == 422
+        assert "5000" in r.json()["detail"]
+
+    def test_tracking_duration_at_5s_cap_allowed(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.TRACKING)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 5000})
+        assert r.status_code == 200
+        m.move.assert_called_once_with("n", 5000)
+
+    def test_at_home_large_duration_allowed_with_keep_tracking_state(self) -> None:
+        # Hardware evidence 2026-07-19: 2s steps are far too small to walk
+        # the mount from confirmed HOME down to the horizon.
+        m = self._inject_nudge_mount(state=MountState.AT_HOME)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 60000, "keep_tracking_state": True,
+        })
+        assert r.status_code == 200
+        m.move.assert_called_once_with("n", 60000)
+        m.enable_tracking.assert_not_called()
+
+    def test_duration_above_60s_rejected_by_schema(self) -> None:
+        self._inject_nudge_mount(state=MountState.AT_HOME)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 70000, "keep_tracking_state": True,
+        })
+        assert r.status_code == 422
+
+    def test_auto_enabled_tracking_still_caps_at_5s(self) -> None:
+        # If keep_tracking_state is left False and tracking gets enabled as a
+        # side effect, the resulting move is still a tracking correction —
+        # the large manual-jog ceiling must not leak in through this path.
+        self._inject_nudge_mount(state=MountState.UNPARKED, track_ok=True)
+        r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 6000})
+        assert r.status_code == 422
+
 
 # ── M8-005: Structured 409 gate responses ────────────────────────────────────
 

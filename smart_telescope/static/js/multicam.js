@@ -302,13 +302,22 @@ function multicamStop() {
     if (typeof mountEmergencyStop === 'function') mountEmergencyStop();
 }
 
+// M10-031: step sizes above this are a manual/terrestrial jog only (mirrors
+// the server's _NUDGE_TRACKING_MAX_MS in api/mount.py) — while the mount is
+// actively tracking, a centering correction stays capped tight so a step
+// can't drag a framed target far off target.
+const _MC_TRACKING_MAX_JOG_MS = 5000;
+
 function _mcStartMountPoll() {
     if (_mcMountTimer) return;
+    const durSel = document.getElementById('mc-jog-dur');
     const poll = async () => {
       let state = 'unknown';
+      let tracking = false;
       try {
         const data = await (await fetch('/api/mount/status')).json();
         state = data.state || 'unknown';
+        tracking = data.tracking_state === 'TRACKING';
       } catch {}
       const parked = state === 'parked';
       for (const btn of document.querySelectorAll('#mc-jog .mc-jog-btn')) {
@@ -316,6 +325,14 @@ function _mcStartMountPoll() {
       }
       if (parked) {
         document.getElementById('mc-jog-note').textContent = 'Mount is parked — unpark to jog.';
+      }
+      if (durSel) {
+        for (const opt of durSel.options) {
+          opt.disabled = tracking && parseInt(opt.value) > _MC_TRACKING_MAX_JOG_MS;
+        }
+        if (tracking && parseInt(durSel.value) > _MC_TRACKING_MAX_JOG_MS) {
+          durSel.value = String(_MC_TRACKING_MAX_JOG_MS);
+        }
       }
     };
     poll();

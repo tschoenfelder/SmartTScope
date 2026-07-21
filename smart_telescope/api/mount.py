@@ -617,6 +617,11 @@ class NudgeRequest(BaseModel):
     # M10-019: leave tracking as-is (terrestrial targets must not start
     # sidereal tracking just because the user jogs the mount).
     keep_tracking_state: bool = False
+    # M10-034 (REQ-ST-010, shipped in onstep_adapter v0.3.4): optional OnStep
+    # rate preset (0-9, sends :Rn# instead of the mode's default rate
+    # command). Only meaningful for a non-tracking jog — see mount_nudge()'s
+    # gating below.
+    rate_preset: int | None = Field(default=None, ge=0, le=9)
 
 
 @router.post("/nudge")
@@ -653,8 +658,19 @@ def mount_nudge(
                 "a longer terrestrial jog"
             ),
         )
+    # M10-034: a custom rate preset is only allowed for a non-tracking jog —
+    # a tracking centering correction must keep its existing fixed rate to
+    # avoid overshooting a framed target.
+    if will_track and body.rate_preset is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "rate_preset is only allowed for a non-tracking jog — stop "
+                "tracking first to use a custom rate"
+            ),
+        )
     try:
-        ok = mount.move(body.direction.lower(), body.duration_ms)
+        ok = mount.move(body.direction.lower(), body.duration_ms, rate_preset=body.rate_preset)
     except Exception as exc:
         # M10-027: axis motion at mechanical HOME is unconditionally refused
         # by onstep_adapter (no bypass for manual/terrestrial jogs) — surface

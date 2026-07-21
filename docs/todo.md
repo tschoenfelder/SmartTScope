@@ -2528,22 +2528,63 @@ histogram ceiling until it ships upstream.
         capture produces the expected number of FITS files with
         position-encoded filenames.
 
-- [ ] M10-034 Higher jog slew rate for the Cameras-screen jog pad (user
+- [x] M10-034 Higher jog slew rate for the Cameras-screen jog pad (user
       request 2026-07-20: default at least 16x sidereal, with 2x/4x/32x
       options — the current fixed `:RC#` center rate is too slow to
       usefully move the mount even at the 60 s max step duration from
-      M10-031). `[P2 · Mount, blocked]`
-      - **Blocked on `SYNC.md` REQ-ST-010** — filed 2026-07-20 as
-        <https://github.com/tschoenfelder/OnStepAdapter/issues/7> (explicit
-        user go-ahead): no rate selection exists anywhere in the stack —
-        not in SmartTScope, not in the pinned `onstep_adapter` package,
-        which hardcodes `:RG#`/`:RC#` only. Per this project's standing
-        rule (never patch OnStep protocol behavior locally — canonical
-        source is the published release only), asked upstream for a
-        rate-selectable jog/move API rather than working around it locally.
-      - No code changes attempted this session; `smart_telescope/adapters/
-        onstep/mount.py`, `api/mount.py`, and the jog-pad UI are untouched.
-        Awaiting upstream response before any implementation.
+      M10-031). `[P2 · Mount]`
+      - Was **blocked on `SYNC.md` REQ-ST-010** (filed 2026-07-20 as
+        <https://github.com/tschoenfelder/OnStepAdapter/issues/7>) — no rate
+        selection existed anywhere in the stack. **Unblocked 2026-07-21:**
+        upstream shipped `onstep_adapter` v0.3.4, closing issue #7 —
+        `move_ra_timed()`/`move_dec_timed()` now accept an optional
+        `rate_preset: int` (0–9), sending `:R<preset>#` instead of the
+        mode's default rate command.
+      - *Done 2026-07-21:* Package upgraded 0.3.3→0.3.4
+        (`pyproject.toml`); re-diffed `enable_tracking()` and
+        `motion_safety_preflight()` against the new release — both
+        byte-identical to v0.3.3 in the relevant sections, REQ-ST-004/007
+        overrides remain necessary, no drift. `MountPort.move()`
+        (`ports/mount.py`) and all three adapters (`adapters/onstep/
+        mount.py`, `adapters/mock/mount.py`, `adapters/simulator/mount.py`)
+        gained an optional `rate_preset: int | None = None` parameter, the
+        OnStep shim forwarding it straight into `move_ra_timed`/
+        `move_dec_timed`. `api/mount.py`'s `NudgeRequest` gained
+        `rate_preset` (schema-validated 0–9); `mount_nudge()` rejects
+        (422) a non-`None` `rate_preset` whenever the jog would be a
+        tracking correction (`will_track`, including the auto-enable path)
+        — a rate override is only accepted for a genuine non-tracking jog,
+        matching the prior "not-tracking jog only" decision.
+      - UI: `#mc-jog` (Cameras screen) gained a `#mc-jog-rate` select next
+        to the existing duration select. **Only the 6 presets this repo has
+        a documented multiplier for** (`wiki/onstep-protocol.md`: R0=0.25x,
+        R2=1x, R4=4x, R5=8x, R7=24x, R9=60x) are offered — R1/R3/R6/R8 have
+        no recorded value anywhere and were deliberately not exposed rather
+        than guessed at; default **R7 (24x)**, the closest confirmed preset
+        to the originally-requested "at least 16x". `multicam.js`'s
+        existing tracking-state poll (M10-031) extended with a parallel
+        clamp: while tracking, the rate select is forced back to "Mode
+        default" and every preset option disabled, mirroring the duration
+        select's existing behavior exactly.
+      - Tests: 3 new shim-level cases (`test_jog_at_home.py`) confirming
+        `rate_preset` forwards correctly to `move_ra_timed`/`move_dec_timed`
+        on both axes and defaults to `None`; 5 new `TestMountNudge` cases
+        (rejected while tracking, rejected when tracking auto-enables,
+        forwarded for a genuine non-tracking jog, defaults to `None` when
+        omitted, out-of-range rejected by schema) plus 4 existing
+        assertions updated for the new call signature. Full unit suite
+        4086 passed, 24 skipped.
+      - Verified end-to-end against the mock mount (no real OnStep on this
+        Windows dev box): `POST /api/mount/nudge` with `rate_preset` 200s
+        for a genuine non-tracking jog, 422s while tracking (including the
+        auto-enable-tracking path) and for an out-of-range value; the
+        Cameras-screen rate select renders all 6 options, defaults to R7,
+        and is correctly clamped/re-enabled by the real
+        `_mcStartMountPoll()` as the mount's reported tracking state
+        changes. Pi verification pending (user): confirm the real mount
+        actually moves faster at the higher presets and that OnStep accepts
+        `:R0#`/`:R2#`/`:R4#`/`:R5#`/`:R7#`/`:R9#` as expected on real
+        firmware.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

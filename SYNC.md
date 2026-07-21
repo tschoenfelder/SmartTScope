@@ -1,10 +1,10 @@
 # OnStepAdapter Dependency
 
 `onstep_adapter` is a **pip-installed package**, not a synced source copy.
-Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.3/onstep_adapter-0.3.3-py3-none-any.whl`
-Last synced/audited: 2026-07-19 (v0.3.3 upgrade + full override re-diff, M10-030)
+Install URL (pinned): `https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.4/onstep_adapter-0.3.4-py3-none-any.whl`
+Last synced/audited: 2026-07-21 (v0.3.4 upgrade + override re-diff, M10-034)
 
-**v0.3.2/v0.3.3 upstream behavior changes (re-diffed 2026-07-19):**
+**v0.3.2/v0.3.3/v0.3.4 upstream behavior changes (re-diffed 2026-07-21):**
 - v0.3.2 tracking authorization: `get_state()` now **auto-disables tracking** that
   no caller explicitly requested (`_tracking_explicitly_requested`; firmware
   auto-track after `:hR#`). `enable_tracking()` sets the flag,
@@ -17,6 +17,13 @@ Last synced/audited: 2026-07-19 (v0.3.3 upgrade + full override re-diff, M10-030
   (closes issue #5 / REQ-ST-009) — allowed at confirmed mechanical HOME, skips
   projected-target validation, requires tracking OFF
   (`manual_jog_requires_tracking_off`), keeps every mechanical blocker.
+- v0.3.4 rate-selectable timed moves: `move_ra_timed()`/`move_dec_timed()`
+  accept an optional `rate_preset: int` (0–9, closes issue #7 / REQ-ST-010) —
+  sends `:R<preset>#` instead of the mode's default rate command (`:RG#`
+  guide, `:RC#` center/manual). Safety gating unchanged. Re-diffed against
+  v0.3.4: `enable_tracking()` and `motion_safety_preflight()` are byte-identical
+  to v0.3.3 in the relevant sections — REQ-ST-004/REQ-ST-007 overrides remain
+  necessary, no drift.
 
 The directory `smart_telescope/adapters/onstep/` is **SmartTScope-owned** — do NOT sync
 files from the OnStepAdapter GitHub repo into it. It is a **thin shim layer** that
@@ -181,7 +188,7 @@ into `onstep_adapter`; raise with the package maintainer.
 **Filed 2026-07-11:** REQ-ST-003/005/006/008 raised as
 <https://github.com/tschoenfelder/OnStepAdapter/issues/3> (explicit user approval) —
 **shipped in v0.3.2**. REQ-ST-009 raised as issue #5 (2026-07-19) — **shipped in v0.3.3**.
-REQ-ST-010 raised as issue #7 (2026-07-20) — **open, awaiting upstream response**.
+REQ-ST-010 raised as issue #7 (2026-07-20) — **shipped in v0.3.4**.
 
 | ID | Method | Reasoning for upstream adoption |
 |----|--------|----------------------------------|
@@ -193,7 +200,7 @@ REQ-ST-010 raised as issue #7 (2026-07-20) — **open, awaiting upstream respons
 | REQ-ST-007 | `motion_safety_preflight()` pier-side guards | (a) terminal_state; (b) axis2 < 15° stale `:Gm#` suppression. **Confirmed present in v0.3.1 upstream (2026-07-11) — pending removal audit, see `docs/todo.md` ONS31-004.** |
 | REQ-ST-008 | `_haversine_m()` + `_lx200_round_degrees()` helpers, used by `get_sync_status()`'s meter-based location tolerance (M8-008) | **SHIPPED in v0.3.2** (issue #3): `onstep_adapter.location.haversine_distance_m` + `round_lx200_site_degrees`; shim helpers are thin aliases since 2026-07-19. `get_sync_status()` itself stays a permanent local wrapper. |
 | REQ-ST-009 (filed 2026-07-19 as <https://github.com/tschoenfelder/OnStepAdapter/issues/5>) | `_axis_motion()` at-home refusal — no manual-jog bypass | **SHIPPED in v0.3.3** (closes issue #5): `mode="manual"` on `move_ra_timed()`/`move_dec_timed()` — allowed at confirmed mechanical HOME, skips projected-target validation (resolves the M10-028 latent `motion_calibration` hazard), requires tracking OFF, keeps every mechanical blocker + `_axis_motion_lock`. The M10-028 shim override (`_jog_bypass_active` window + preflight post-process) was **deleted 2026-07-19** (M10-030); `move()` now selects center/manual by tracking state. |
-| REQ-ST-010 (filed 2026-07-20 as <https://github.com/tschoenfelder/OnStepAdapter/issues/7>) | Rate-selectable jog/move API | Hardware feedback: the Cameras-screen jog pad's fixed `:RC#` center rate is too slow to usefully move the mount even at the max 60 s step duration (M10-031). LX200/OnStep supports 10 rate presets (`:R0#`–`:R9#`) but `move_ra_timed()`/`move_dec_timed()` only ever dispatch `:RG#` ("guide" mode) or `:RC#` ("center"/"manual" mode) — confirmed by reading the installed v0.3.3 package directly; no method exists to request any other preset (2x/4x/16x/32x). Asked for a rate-selectable variant of `move_ra_timed()`/`move_dec_timed()` (or a new `set_jog_rate()`) accepting a `:Rn#` preset. `docs/todo.md` M10-034 tracks this as blocked pending upstream response; no local shim workaround was implemented (would duplicate protocol-level dispatch logic this file's own docstring says to keep upstream). |
+| REQ-ST-010 (filed 2026-07-20 as <https://github.com/tschoenfelder/OnStepAdapter/issues/7>) | Rate-selectable jog/move API | **SHIPPED in v0.3.4** (closes issue #7): `move_ra_timed()`/`move_dec_timed()` accept an optional `rate_preset: int` (0–9), sending `:R<preset>#` instead of the mode's default rate command. The shim's `move()` (`adapters/onstep/mount.py`) forwards it through; `api/mount.py`'s `/nudge` only allows a non-`None` `rate_preset` for a non-tracking jog (422 otherwise) — a tracking centering correction keeps its existing fixed rate. UI: Cameras-screen jog pad gained a rate selector limited to the 6 presets this repo has a documented multiplier for (`wiki/onstep-protocol.md`: R0=0.25x, R2=1x, R4=4x, R5=8x, R7=24x, R9=60x — R1/R3/R6/R8 remain unconfirmed, deliberately not offered). |
 
 ## Upgrading onstep_adapter
 

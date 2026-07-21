@@ -320,10 +320,12 @@ function multicamToggleScale() {
 
 async function multicamJog(dir) {
     const dur  = parseInt(document.getElementById('mc-jog-dur').value) || 500;
+    const rateVal = document.getElementById('mc-jog-rate')?.value;
+    const rate_preset = rateVal ? parseInt(rateVal, 10) : null;
     const note = document.getElementById('mc-jog-note');
     try {
       await apiPost('/api/mount/nudge',
-        { direction: dir, duration_ms: dur, keep_tracking_state: true });
+        { direction: dir, duration_ms: dur, keep_tracking_state: true, rate_preset });
       note.textContent = '';
     } catch (e) {
       note.textContent = e.message || String(e);
@@ -342,7 +344,8 @@ const _MC_TRACKING_MAX_JOG_MS = 5000;
 
 function _mcStartMountPoll() {
     if (_mcMountTimer) return;
-    const durSel = document.getElementById('mc-jog-dur');
+    const durSel  = document.getElementById('mc-jog-dur');
+    const rateSel = document.getElementById('mc-jog-rate');
     const poll = async () => {
       let state = 'unknown';
       let tracking = false;
@@ -364,6 +367,17 @@ function _mcStartMountPoll() {
         }
         if (tracking && parseInt(durSel.value) > _MC_TRACKING_MAX_JOG_MS) {
           durSel.value = String(_MC_TRACKING_MAX_JOG_MS);
+        }
+      }
+      // M10-034: rate_preset is only accepted by the server for a
+      // non-tracking jog (see api/mount.py's mount_nudge) — while tracking,
+      // force the select back to "Mode default" and disable every preset.
+      if (rateSel) {
+        for (const opt of rateSel.options) {
+          opt.disabled = tracking && opt.value !== '';
+        }
+        if (tracking && rateSel.value !== '') {
+          rateSel.value = '';
         }
       }
     };

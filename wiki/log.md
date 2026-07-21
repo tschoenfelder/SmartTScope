@@ -5381,3 +5381,70 @@ requesting a rate-selectable variant of `move_ra_timed()`/`move_dec_timed()`
 existing mode-based safety gating unchanged. `SYNC.md`/`docs/todo.md`
 updated to reference the open issue; M10-034 stays blocked pending upstream
 response — no local implementation until it ships.
+
+## 2026-07-21 — M10-034: OnStepAdapter 0.3.4 integrated — rate-selectable jog shipped
+
+Upstream shipped v0.3.4 the same day, closing issue #7 / REQ-ST-010:
+`move_ra_timed()`/`move_dec_timed()` now accept an optional
+`rate_preset: int` (0–9), sending `:R<preset>#` instead of the mode's
+default rate command (`:RG#` guide, `:RC#` center/manual). Confirmed by
+reading the released source directly (not just the changelog) — safety
+gating (tracking-off requirement for manual mode, mechanical blockers,
+duration bounds, motion lock) is unchanged.
+
+Upgrade: pin bumped 0.3.3→0.3.4 in `pyproject.toml`,
+`pip install -e ".[dev]"`. Re-diffed the two overrides most likely to
+interact with this change — `enable_tracking()` (REQ-ST-004) and
+`motion_safety_preflight()` (REQ-ST-007) — both byte-identical to v0.3.3 in
+the relevant sections; no drift, both overrides remain necessary.
+
+Plumbed `rate_preset` end to end: `MountPort.move()` (`ports/mount.py`) and
+all three adapters (`onstep`, `mock`, `simulator`) gained
+`rate_preset: int | None = None`; the OnStep shim's `move()` forwards it
+straight into `move_ra_timed`/`move_dec_timed`. `api/mount.py`'s
+`NudgeRequest` gained `rate_preset` (0–9, schema-validated);
+`mount_nudge()` rejects (422) any non-`None` `rate_preset` whenever the jog
+would be a tracking correction (`will_track`, including the path where
+tracking gets auto-enabled) — a custom rate is only accepted for a genuine
+non-tracking jog, per the user's original "not-tracking jog only" decision.
+
+UI: Cameras screen's `#mc-jog` gained a `#mc-jog-rate` select. Deliberately
+offers only the 6 presets this repo has a documented multiplier for
+(`wiki/onstep-protocol.md`: R0=0.25x, R2=1x, R4=4x, R5=8x, R7=24x, R9=60x) —
+R1/R3/R6/R8 have no recorded value anywhere (confirmed: `onstep_adapter`
+itself has no fixed multiplier table either — rate calibration is
+explicitly skipped for manual mode, since the real multiplier is
+OnStep-firmware-configurable, not a value this codebase can compute) and
+were deliberately not guessed at. Default is R7 (24x), the closest
+confirmed preset to the user's original "at least 16x" ask.
+`multicam.js`'s existing M10-031 tracking-state poll extended with a
+parallel clamp: while tracking, the rate select is forced back to "Mode
+default" and every preset disabled, mirroring the duration select exactly.
+
+Tests: 3 new shim-level cases (rate_preset forwards on both axes, defaults
+to None) + 5 new nudge-endpoint cases (rejected while tracking / while
+auto-enabling tracking / out-of-range; forwarded correctly for a genuine
+non-tracking jog; omission defaults to None) + 4 existing assertions
+updated for the new call signature. Full unit suite 4086 passed, 24
+skipped.
+
+Verified end-to-end against the mock mount + real browser (no OnStep
+hardware on this Windows dev box): confirmed via direct API calls that
+`/api/mount/nudge` 200s with `rate_preset` for a genuine non-tracking jog,
+422s while tracking (both already-tracking and auto-enabled-tracking
+paths) and for an out-of-range value; confirmed via the browser that the
+rate select renders all 6 options + defaults to R7, and that the real
+`_mcStartMountPoll()` function (not a hand-copied stand-in) correctly
+clamps/re-enables it as the mount's reported tracking state changes, and
+that `multicamJog()` sends the selected `rate_preset` in the nudge request
+body. Pi verification pending (user): real mount actually moves noticeably
+faster at the higher presets, and OnStep firmware accepts all 6 exposed
+`:Rn#` commands as expected.
+
+(Debugging note: initial browser/curl verification attempts silently hit a
+stale uvicorn process left over from an earlier `pkill` that didn't
+actually match the Windows python.exe command line — port 8123 had two
+processes both partially bound. Diagnosed via
+`Get-NetTCPConnection -LocalPort 8123`, force-killed both, restarted a
+single clean instance, and re-verified against that before trusting any
+result.)

@@ -506,7 +506,7 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         pos = super().get_park_position()
         return None if pos is None else MountPosition(ra=pos.ra, dec=pos.dec)
 
-    def move(self, direction: str, move_ms: int) -> bool:
+    def move(self, direction: str, move_ms: int, rate_preset: int | None = None) -> bool:
         # LOCAL-001 / REQ-1 (permanent local translation): MountPort.move()
         # routed through the SDK's public timed-axis API. Mode selection
         # (REQ-ST-009, shipped upstream in v0.3.3): tracking on → "center"
@@ -516,6 +516,11 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         # blocker). One fresh :GU# via get_state() decides; _axis_motion()'s
         # own preflight still enforces the mode/tracking pairing if the state
         # changes in between.
+        # rate_preset (REQ-ST-010, shipped upstream in v0.3.4): optional
+        # OnStep/LX200 rate preset (0-9, sends :Rn# instead of the mode's
+        # default :RG#/:RC#); caller (api/mount.py) only allows this for a
+        # non-tracking jog — a tracking centering correction must keep its
+        # existing fixed rate to avoid overshoot.
         d = direction.lower()
         state = self.get_state()
         tracking = state == MountState.TRACKING or bool(
@@ -523,9 +528,9 @@ class OnStepMount(_BaseOnStepMount, MountPort):
         )
         mode = "center" if tracking else "manual"
         if d in ("e", "w", "east", "west"):
-            result = self.move_ra_timed(d, move_ms, mode=mode)
+            result = self.move_ra_timed(d, move_ms, mode=mode, rate_preset=rate_preset)
         elif d in ("n", "s", "north", "south"):
-            result = self.move_dec_timed(d, move_ms, mode=mode)
+            result = self.move_dec_timed(d, move_ms, mode=mode, rate_preset=rate_preset)
         else:
             _log.warning("OnStepMount.move(): invalid direction %r", direction)
             return False

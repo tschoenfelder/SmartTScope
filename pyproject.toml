@@ -12,7 +12,7 @@ dependencies = [
     "astropy>=6.0",
     "numpy>=1.26",
     "pillow>=10.0",
-    "onstep-adapter @ https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.3/onstep_adapter-0.3.3-py3-none-any.whl",
+    "onstep-adapter @ https://github.com/tschoenfelder/OnStepAdapter/releases/download/v0.3.4/onstep_adapter-0.3.4-py3-none-any.whl",
     "smarttscope-live-analysis @ git+https://github.com/tschoenfelder/SmartTScopeLiveAnalysis.git@v0.1.0",
 ]
 

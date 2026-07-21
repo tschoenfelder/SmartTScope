@@ -1103,7 +1103,7 @@ class TestMountNudge:
         m = self._inject_nudge_mount(state=MountState.TRACKING)
         r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 500})
         assert r.status_code == 200
-        m.move.assert_called_once_with("n", 500)
+        m.move.assert_called_once_with("n", 500, rate_preset=None)
 
     def test_tracking_state_skips_enable_tracking(self) -> None:
         m = self._inject_nudge_mount(state=MountState.TRACKING)
@@ -1164,7 +1164,7 @@ class TestMountNudge:
         })
         assert r.status_code == 200
         m.enable_tracking.assert_not_called()
-        m.move.assert_called_once_with("n", 500)
+        m.move.assert_called_once_with("n", 500, rate_preset=None)
 
     def test_keep_tracking_state_still_blocked_when_parked(self) -> None:
         self._inject_nudge_mount(state=MountState.PARKED)
@@ -1205,7 +1205,7 @@ class TestMountNudge:
         m = self._inject_nudge_mount(state=MountState.TRACKING)
         r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 5000})
         assert r.status_code == 200
-        m.move.assert_called_once_with("n", 5000)
+        m.move.assert_called_once_with("n", 5000, rate_preset=None)
 
     def test_at_home_large_duration_allowed_with_keep_tracking_state(self) -> None:
         # Hardware evidence 2026-07-19: 2s steps are far too small to walk
@@ -1215,7 +1215,7 @@ class TestMountNudge:
             "direction": "n", "duration_ms": 60000, "keep_tracking_state": True,
         })
         assert r.status_code == 200
-        m.move.assert_called_once_with("n", 60000)
+        m.move.assert_called_once_with("n", 60000, rate_preset=None)
         m.enable_tracking.assert_not_called()
 
     def test_duration_above_60s_rejected_by_schema(self) -> None:
@@ -1231,6 +1231,52 @@ class TestMountNudge:
         # the large manual-jog ceiling must not leak in through this path.
         self._inject_nudge_mount(state=MountState.UNPARKED, track_ok=True)
         r = client.post("/api/mount/nudge", json={"direction": "n", "duration_ms": 6000})
+        assert r.status_code == 422
+
+    # ── M10-034: rate_preset (REQ-ST-010, onstep_adapter v0.3.4) — only ────
+    #    allowed for a non-tracking jog ─────────────────────────────────────
+
+    def test_rate_preset_rejected_while_tracking(self) -> None:
+        self._inject_nudge_mount(state=MountState.TRACKING)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 500, "rate_preset": 7,
+        })
+        assert r.status_code == 422
+        assert "rate_preset" in r.json()["detail"]
+
+    def test_rate_preset_rejected_when_tracking_auto_enabled(self) -> None:
+        # Same "still a tracking correction" concern as the duration ceiling
+        # above — an auto-enabled tracking move must not accept a rate override.
+        self._inject_nudge_mount(state=MountState.UNPARKED, track_ok=True)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 500, "rate_preset": 7,
+        })
+        assert r.status_code == 422
+        assert "rate_preset" in r.json()["detail"]
+
+    def test_rate_preset_forwarded_for_non_tracking_jog(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.AT_HOME)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 5000,
+            "keep_tracking_state": True, "rate_preset": 7,
+        })
+        assert r.status_code == 200
+        m.move.assert_called_once_with("n", 5000, rate_preset=7)
+
+    def test_rate_preset_omitted_defaults_to_none(self) -> None:
+        m = self._inject_nudge_mount(state=MountState.AT_HOME)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 5000, "keep_tracking_state": True,
+        })
+        assert r.status_code == 200
+        m.move.assert_called_once_with("n", 5000, rate_preset=None)
+
+    def test_rate_preset_out_of_range_returns_422(self) -> None:
+        self._inject_nudge_mount(state=MountState.AT_HOME)
+        r = client.post("/api/mount/nudge", json={
+            "direction": "n", "duration_ms": 5000,
+            "keep_tracking_state": True, "rate_preset": 10,
+        })
         assert r.status_code == 422
 
 

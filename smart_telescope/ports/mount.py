@@ -81,13 +81,17 @@ class MountPort(ABC):
         ...
 
     @abstractmethod
-    def move(self, direction: str, move_ms: int) -> bool:
+    def move(self, direction: str, move_ms: int, rate_preset: int | None = None) -> bool:
         """Move at center rate for move_ms milliseconds, then stop.
 
         Uses OnStep's manual centering rate (much faster than guide rate) so
         movement is visually observable. Blocks for the requested duration.
         direction: 'n' | 's' | 'e' | 'w'
         move_ms: duration in milliseconds (50–5000)
+        rate_preset: optional OnStep/LX200 rate preset (0-9, REQ-ST-010,
+            shipped in onstep_adapter v0.3.4) selecting :Rn# instead of the
+            mode's default rate command. Callers must only pass a non-None
+            value for a non-tracking jog — see api/mount.py's nudge gating.
         """
         ...
 

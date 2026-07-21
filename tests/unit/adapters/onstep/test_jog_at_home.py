@@ -101,6 +101,30 @@ class TestManualJog:
             assert mount.move("w", 50) is True
         assert timed.call_args.kwargs["mode"] == "manual"
 
+    def test_move_forwards_rate_preset_ra_axis(self):
+        # M10-034 (REQ-ST-010, shipped in onstep_adapter v0.3.4): move()
+        # passes rate_preset straight through to move_ra_timed/move_dec_timed.
+        mount, _ = _mount_real_preflight(state="home")
+        with patch.object(mount, "move_ra_timed") as timed:
+            timed.return_value.ok = True
+            assert mount.move("w", 50, rate_preset=7) is True
+        assert timed.call_args.kwargs["rate_preset"] == 7
+
+    def test_move_forwards_rate_preset_dec_axis(self):
+        mount, _ = _mount_real_preflight(state="tracking")
+        mount._tracking_explicitly_requested = True
+        with patch.object(mount, "move_dec_timed") as timed:
+            timed.return_value.ok = True
+            assert mount.move("n", 50, rate_preset=4) is True
+        assert timed.call_args.kwargs["rate_preset"] == 4
+
+    def test_move_defaults_rate_preset_to_none(self):
+        mount, _ = _mount_real_preflight(state="home")
+        with patch.object(mount, "move_ra_timed") as timed:
+            timed.return_value.ok = True
+            assert mount.move("w", 50) is True
+        assert timed.call_args.kwargs["rate_preset"] is None
+
     def test_mechanical_blocker_still_refuses_manual_jog(self):
         # Manual mode only bypasses the at-home gate — a real mechanical
         # blocker (at-limit flag) must still refuse the jog, even at home.

@@ -2604,6 +2604,23 @@
             <option value="60000">60 s</option>
           </select>
         </label>
+        <label style="font-size:0.78rem;color:var(--muted)">Rate
+          <!-- M10-034 (REQ-ST-010, onstep_adapter v0.3.4): only the 6
+               presets this repo has a documented multiplier for
+               (wiki/onstep-protocol.md) are offered — R1/R3/R6/R8 are
+               unconfirmed and deliberately not exposed. "Mode default"
+               (rate_preset=null) is the only option usable while tracking;
+               disabled/clamped by multicam.js otherwise. -->
+          <select id="mc-jog-rate">
+            <option value="">Mode default</option>
+            <option value="0">0.25x (R0)</option>
+            <option value="2">1x — guide (R2)</option>
+            <option value="4">4x — center (R4)</option>
+            <option value="5">8x — move (R5)</option>
+            <option value="7" selected>24x — slew (R7)</option>
+            <option value="9">60x (R9)</option>
+          </select>
+        </label>
         <span id="mc-jog-note" style="font-size:0.72rem;color:var(--muted);max-width:9rem;text-align:center"></span>
       </div>
     </div>

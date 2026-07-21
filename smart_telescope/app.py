@@ -48,6 +48,7 @@ from .api.version import router as version_router
 from .api.catalog import router as catalog_router
 from .api.emergency import router as emergency_router
 from .api.focuser import router as focuser_router
+from .api.autofocus_sequence import router as autofocus_sequence_router
 from .api.health import router as health_router
 from .api.mount import router as mount_router
 from .api.polar import router as polar_router
@@ -121,6 +122,7 @@ app.include_router(health_router)
 app.include_router(mount_router)
 app.include_router(polar_router)
 app.include_router(focuser_router)
+app.include_router(autofocus_sequence_router)
 app.include_router(preview_router)
 app.include_router(queue_router)
 app.include_router(session_router)

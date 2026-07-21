@@ -131,6 +131,17 @@ const _TOP_VIEWS = {
     observe:     'observing-view',
     maintenance: 'maintenance-view',
     cameras:     'cameras-view',
+    autofocus:   'autofocus-view',
+};
+
+// Views that stream live camera sockets while active — enter() when the view
+// is shown, leave() for every other view (mirrors the M10-019 Cameras
+// enter/leave lifecycle; M10-033 Autofocus gets its own single-camera socket).
+const _TOP_VIEW_STREAMS = {
+    cameras:   { enter: () => (typeof multicamEnter === 'function') && multicamEnter(),
+                 leave: () => (typeof multicamLeave === 'function') && multicamLeave() },
+    autofocus: { enter: () => (typeof afEnter === 'function') && afEnter(),
+                 leave: () => (typeof afLeave === 'function') && afLeave() },
 };
 
 function showTopView(view) {
@@ -142,9 +153,9 @@ function showTopView(view) {
       if (btn) btn.classList.toggle('active', active);
     }
     if (view === 'observe' && typeof refreshObservingState === 'function') refreshObservingState();
-    // Cameras view streams all cameras live — enter/leave manage the sockets.
-    if (view === 'cameras') { if (typeof multicamEnter === 'function') multicamEnter(); }
-    else if (typeof multicamLeave === 'function') multicamLeave();
+    for (const [name, hooks] of Object.entries(_TOP_VIEW_STREAMS)) {
+      if (name === view) hooks.enter(); else hooks.leave();
+    }
 }
 
 /* ══════════════════════════════════════════════════════════════════════

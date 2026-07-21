@@ -2481,6 +2481,68 @@ histogram ceiling until it ships upstream.
         refuses with a clear error when attempted while not actually at
         home, and proceeds normally once actually homed.
 
+- [x] M10-033 New Autofocus screen — main camera only (user request
+      2026-07-20). Guide camera has no focuser; OAG shares the main
+      focuser and is manually synced (out of scope, user confirmed).
+      `[P2 · UI/Focus]`
+      - *Done 2026-07-20:* New top-level "Autofocus" tab
+        (`static/js/autofocus.js`, `#autofocus-view` in `index.html`;
+        `app.js`'s `showTopView()` generalized from a cameras-only
+        enter/leave branch into a small per-view dispatch,
+        `_TOP_VIEW_STREAMS`). Arrow buttons `+5/+1/-1/-5` call the existing
+        `POST /api/focuser/nudge`, which already clamps to
+        `[0, max_position]` live from OnStep (`:FM#`, confirmed via the
+        upstream focuser adapter) — no new range-clamping logic needed.
+        Continuous live preview via a small self-contained websocket
+        client (same `ws/preview` wire protocol `preview.js` uses, but not
+        sharing its singleton connection/DOM ids — those are Stage 3/4-
+        specific and would couple this screen to whatever preview state is
+        active elsewhere). Terrestrial/sky toggle is a screen-local
+        checkbox (no such concept existed anywhere in the app); in sky
+        mode, a periodic readout shows HFD (`domain/focus_metric.py`,
+        the same metric `workflow/autofocus.py`'s existing best-focus
+        search already uses — there is no true numeric FWHM anywhere in
+        the repo, so this is shown honestly labeled as HFD, user-confirmed)
+        plus `stars_found` from the external LiveAnalysis module when
+        installed.
+      - New `POST /api/autofocus/sequence` +
+        `GET /api/autofocus/sequence/status/{job_id}`
+        (`api/autofocus_sequence.py`): captures a bracketed sequence of
+        individual (not stacked) raw FITS frames at different focuser
+        positions to support tuning autofocus later — distinct from the
+        existing `/api/focuser/autofocus`'s HFD-fit best-focus search,
+        which doesn't persist frames. Background job + status-polling
+        pattern mirrors `api/calibration.py`'s bias/dark/flat jobs;
+        range/step validated and clamped against the focuser's live
+        `max_position` before the sweep starts (422 if it doesn't fit).
+        Filenames encode the focuser position
+        (`af-seq_pos-<position>_<index>.fits`); a `FOCUSPOS` FITS header
+        key is also written.
+      - Full unit suite green after the change (see M10-032 entry above for
+        the last full-suite run count — no backend regressions expected
+        since only new files + an additive router were added).
+      - Pi verification pending (user): live preview streams for the main
+        camera; arrow nudges move the focuser and stay within OnStep's
+        reported range at both ends; HFD/star-count readout appears only
+        when the terrestrial checkbox is unchecked; a short sequence
+        capture produces the expected number of FITS files with
+        position-encoded filenames.
+
+- [ ] M10-034 Higher jog slew rate for the Cameras-screen jog pad (user
+      request 2026-07-20: default at least 16x sidereal, with 2x/4x/32x
+      options — the current fixed `:RC#` center rate is too slow to
+      usefully move the mount even at the 60 s max step duration from
+      M10-031). `[P2 · Mount, blocked]`
+      - **Blocked on `SYNC.md` REQ-ST-010** (drafted, not filed): no rate
+        selection exists anywhere in the stack — not in SmartTScope, not in
+        the pinned `onstep_adapter` package, which hardcodes `:RG#`/`:RC#`
+        only. Per this project's standing rule (never patch OnStep
+        protocol behavior locally — canonical source is the published
+        release only), this needs an upstream change request, filed only
+        with explicit user go-ahead (same pattern as REQ-ST-003/009).
+      - No code changes attempted this session; `smart_telescope/adapters/
+        onstep/mount.py`, `api/mount.py`, and the jog-pad UI are untouched.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

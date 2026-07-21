@@ -5310,3 +5310,66 @@ M10-019 environment limit. Verified instead by executing the real
 panels, correctly skips the top panel, and the drawn rectangle's edge
 lands (pixel-checked via `getImageData`) exactly where the FOV math
 predicts. Pi/real-hardware verification pending.
+
+## 2026-07-20 — M10-033: new Autofocus screen (main camera) + M10-034 jog-rate request drafted, not filed
+
+Two pieces of hardware feedback in one request. User was explicitly asked
+detailed clarifying questions before implementation ("grill me") given how
+much was genuinely ambiguous or blocked on a project-process rule.
+
+**M10-033 (done):** new top-level "Autofocus" tab, main camera only — guide
+has no focuser, OAG shares the main focuser and is manually synced (user
+confirmed out of scope). `app.js`'s `showTopView()` generalized from a
+cameras-only `if/else` into a small per-view `_TOP_VIEW_STREAMS` dispatch so
+Autofocus gets its own enter/leave lifecycle without disturbing Cameras'.
+New `static/js/autofocus.js`: arrow buttons `+5/+1/-1/-5` call the existing
+`POST /api/focuser/nudge`, which already clamps to `[0, max_position]` live
+from OnStep (`:FM#`) — confirmed via the upstream focuser adapter, so no new
+range-clamping logic was needed to satisfy "always stay in range... as
+stated by OnStep." Live preview is a small self-contained `ws/preview`
+client (same wire protocol `preview.js` uses) rather than reusing
+`preview.js`'s singleton connection, which is tied to Stage 3/4-specific DOM
+ids and would couple this screen's preview to whatever Stage 3/4 happens to
+be configured with elsewhere. Terrestrial/sky toggle is a screen-local
+checkbox — no such concept existed anywhere in the app; in sky mode a
+periodic readout shows HFD (`domain/focus_metric.py`, the same metric the
+existing best-focus search in `workflow/autofocus.py` already uses — there
+is no true numeric FWHM anywhere in the repo, so this is honestly labeled
+HFD, user-confirmed) plus `stars_found` from the external LiveAnalysis
+module when installed.
+
+New `api/autofocus_sequence.py`: `POST /api/autofocus/sequence` +
+`GET /api/autofocus/sequence/status/{job_id}` capture a bracketed sequence
+of individual (not stacked) raw FITS frames at different focuser positions
+to support tuning autofocus later — distinct from the existing
+`/api/focuser/autofocus`'s HFD-fit best-focus search, which doesn't persist
+frames. Background job + status-polling pattern mirrors
+`api/calibration.py`'s bias/dark/flat jobs; range/step validated against the
+focuser's live `max_position` before the sweep starts (422 if it doesn't
+fit). Filenames encode the position (`af-seq_pos-<position>_<index>.fits`),
+plus a `FOCUSPOS` FITS header key. Also added `POST /api/autofocus/frame_metrics`
+for the live HFD/star-count readout.
+
+Verified via browser: new tab wires up correctly, live preview connects and
+renders frames, arrow-nudge/sequence-capture calls surface server errors
+correctly (this dev box's mock focuser/camera report unavailable/slow —
+confirmed via direct curl calls that the endpoints themselves respond
+correctly, e.g. `frame_metrics` with `camera_index=0` returned a real HFD +
+LiveAnalysis result in ~4s; `sequence`/`nudge` correctly 503 when the mock
+focuser is unavailable, matching unit-tested behavior). 10 new tests
+(`tests/unit/api/test_autofocus_sequence.py`); full unit suite 4078 passed,
+24 skipped (one `test_logging.py` order-dependent flake reproduced and
+confirmed pre-existing/unrelated — passes in isolation). Pi verification
+pending: live preview + arrow-nudge clamping + HFD/star-count readout
+against real hardware.
+
+**M10-034 (blocked, not implemented):** higher jog slew rate (16x default,
+2x/4x/32x options) for the Cameras-screen jog pad. Investigation found no
+rate-selection plumbing exists anywhere — not in SmartTScope, not in the
+pinned `onstep_adapter` package, which hardcodes `:RG#`/`:RC#` only (LX200
+actually supports 10 presets, `:R0#`-`:R9#`). Per this project's standing
+rule (never patch OnStep protocol behavior locally — canonical source is
+the published release only), user decided to file an upstream request
+(`SYNC.md` REQ-ST-010, drafted — **not filed**, needs explicit go-ahead)
+and defer the feature (`docs/todo.md` M10-034) rather than adding a local
+protocol-level override. No code changed for this half of the request.

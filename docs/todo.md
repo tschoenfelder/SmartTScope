@@ -2533,15 +2533,17 @@ histogram ceiling until it ships upstream.
       options — the current fixed `:RC#` center rate is too slow to
       usefully move the mount even at the 60 s max step duration from
       M10-031). `[P2 · Mount, blocked]`
-      - **Blocked on `SYNC.md` REQ-ST-010** (drafted, not filed): no rate
-        selection exists anywhere in the stack — not in SmartTScope, not in
-        the pinned `onstep_adapter` package, which hardcodes `:RG#`/`:RC#`
-        only. Per this project's standing rule (never patch OnStep
-        protocol behavior locally — canonical source is the published
-        release only), this needs an upstream change request, filed only
-        with explicit user go-ahead (same pattern as REQ-ST-003/009).
+      - **Blocked on `SYNC.md` REQ-ST-010** — filed 2026-07-20 as
+        <https://github.com/tschoenfelder/OnStepAdapter/issues/7> (explicit
+        user go-ahead): no rate selection exists anywhere in the stack —
+        not in SmartTScope, not in the pinned `onstep_adapter` package,
+        which hardcodes `:RG#`/`:RC#` only. Per this project's standing
+        rule (never patch OnStep protocol behavior locally — canonical
+        source is the published release only), asked upstream for a
+        rate-selectable jog/move API rather than working around it locally.
       - No code changes attempted this session; `smart_telescope/adapters/
         onstep/mount.py`, `api/mount.py`, and the jog-pad UI are untouched.
+        Awaiting upstream response before any implementation.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

@@ -5370,6 +5370,14 @@ pinned `onstep_adapter` package, which hardcodes `:RG#`/`:RC#` only (LX200
 actually supports 10 presets, `:R0#`-`:R9#`). Per this project's standing
 rule (never patch OnStep protocol behavior locally — canonical source is
 the published release only), user decided to file an upstream request
-(`SYNC.md` REQ-ST-010, drafted — **not filed**, needs explicit go-ahead)
-and defer the feature (`docs/todo.md` M10-034) rather than adding a local
-protocol-level override. No code changed for this half of the request.
+rather than adding a local protocol-level override. No code changed for
+this half of the request.
+
+**Update 2026-07-20 (same day):** user confirmed go-ahead — REQ-ST-010
+filed as <https://github.com/tschoenfelder/OnStepAdapter/issues/7>
+("Rate-selectable jog/move API (2x/4x/16x/32x sidereal presets)"),
+requesting a rate-selectable variant of `move_ra_timed()`/`move_dec_timed()`
+(or a new `set_jog_rate()`) accepting one of OnStep's `:Rn#` presets, with
+existing mode-based safety gating unchanged. `SYNC.md`/`docs/todo.md`
+updated to reference the open issue; M10-034 stays blocked pending upstream
+response — no local implementation until it ships.

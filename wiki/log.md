@@ -5538,3 +5538,42 @@ User answered the three follow-up questions from the entry above:
   (expected ~41). Left open in `docs/todo.md` M10-035 — need the exact
   Start/End/Step values from a future run to tell a real off-by-N bug
   from a units mix-up (offset vs. absolute position).
+
+---
+
+## 2026-07-22 — M10-036: saturated multicam tile rendered black, not white
+
+User reported the bottom-right camera tile going solid black after the
+first frame, this time with a server log snippet attached — no guessing
+needed, the log itself was the evidence:
+`camera_index=3 ... mean_adu=4095 p99_adu=4095 sat=100.00%`, repeated
+across captures. That's a fully **saturated** frame (every pixel at the
+sensor's ADC max), not a dark one.
+
+Root cause: both `domain/stretch.py`'s `auto_stretch()` and
+`api/preview.py`'s `_auto_stretch_color()` (the Bayer/colour equivalent)
+compute a MAD-based sigma stretch, then fall back to solid black whenever
+the frame has no dynamic range (`hi <= lo` — true for both an all-zero
+frame *and* an all-max/saturated one). The docstring even said this
+fallback was written for "MockCamera, all-zero data" — the saturated case
+was never considered, so a 100%-saturated tile rendered pixel-identical to
+a dead/no-signal one.
+
+Fixed: both functions now accept `adc_max` and map a uniform frame to flat
+grey at its true `background / adc_max` brightness — 0 ADU still renders
+black, `adc_max` now renders white, anything uniform in between renders
+proportional grey. `api/preview.py`'s `_to_jpeg()` already computed the
+real per-frame `adc_scale` from the `BITDEPTH` header for its non-stretch
+path (confirmed this is why the log's `p99_adu=4095` exactly matched a
+12-bit sensor, not the function's old 16-bit-shaped default) — now threads
+that same value into both stretch calls.
+
+Tests: `tests/unit/domain/test_stretch.py`'s `test_uniform_array_returns_black`
+renamed to `test_uniform_low_array_returns_near_black` (a low uniform
+value still renders near-black, just not bit-exact zero) plus a new
+`test_uniform_saturated_array_returns_white`; `test_zero_array_returns_black`
+left unchanged. Full unit suite run to confirm nothing else assumed the
+old always-black uniform behavior.
+
+Pi verification pending (user): deliberately overexpose the affected
+camera and confirm the tile now shows white/bright instead of black.

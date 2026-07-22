@@ -7,7 +7,10 @@ from typing import Any
 import numpy as np
 
 
-def auto_stretch(pixels: np.ndarray[Any, np.dtype[Any]]) -> np.ndarray[Any, np.dtype[np.uint8]]:
+def auto_stretch(
+    pixels: np.ndarray[Any, np.dtype[Any]],
+    adc_max: float = 65535.0,
+) -> np.ndarray[Any, np.dtype[np.uint8]]:
     """Background-subtracted sigma stretch → [0, 255] uint8.
 
     Uses median + MAD-based sigma so the sky background maps to black and faint
@@ -25,7 +28,12 @@ def auto_stretch(pixels: np.ndarray[Any, np.dtype[Any]]) -> np.ndarray[Any, np.d
         lo = max(0.0, background - 1.5 * sigma)
         hi = background + 15.0 * sigma
     if hi <= lo:
-        return np.zeros(pixels.shape, dtype=np.uint8)
+        # Uniform frame — no dynamic range to stretch. Map it to flat grey at
+        # its true relative brightness rather than always black, so a fully
+        # saturated/overexposed capture (background == adc_max) renders white
+        # instead of looking identical to a dark/no-signal frame.
+        level = float(np.clip(background / adc_max, 0.0, 1.0) * 255.0)
+        return np.full(pixels.shape, level, dtype=np.uint8)
     stretch_range = hi - lo
     x = (pixels.astype(np.float64) - lo) / stretch_range
     scaled = np.arcsinh(x * 3.0) / np.arcsinh(3.0) * 255.0

@@ -2633,6 +2633,33 @@ histogram ceiling until it ships upstream.
         genuine off-by-N bug or a units misunderstanding (offsets vs.
         absolute positions).
 
+- [x] M10-036 Multicam tile goes solid black after the first frame (user
+      report 2026-07-22, server log attached: `camera_index=3` repeatedly
+      logging `mean_adu=4095 p99_adu=4095 sat=100.00%` — fully saturated,
+      not actually dark). `[P1 · Preview]`
+      - *Done 2026-07-22:* Root cause found directly from the log, no
+        guessing needed: `domain/stretch.py`'s `auto_stretch()` (and
+        `api/preview.py`'s `_auto_stretch_color()` for Bayer cameras) both
+        treat *any* uniform/no-dynamic-range frame — `hi <= lo` after the
+        MAD-sigma calc — as solid black. That's correct for a genuinely
+        dark/no-signal uniform frame, but wrong for a fully **saturated**
+        uniform frame (background at the sensor's ADC max), which should
+        render solid white. A 100%-saturated tile was rendering identically
+        to a dead-black one — exactly what the user saw. Fixed: both
+        functions now take an `adc_max` parameter and map a uniform frame
+        to flat grey at its true `background / adc_max` brightness instead
+        of always zero; `_to_jpeg()` (`api/preview.py`) already computed the
+        real per-frame `adc_scale` from the `BITDEPTH` header for the
+        non-stretch path — now threads it into both stretch functions too.
+      - Tests: `tests/unit/domain/test_stretch.py` — updated
+        `test_uniform_array_returns_black` → `test_uniform_low_array_returns_near_black`
+        (still near-black at a low uniform level) and added
+        `test_uniform_saturated_array_returns_white`. `test_zero_array_returns_black`
+        unchanged (0 ADU still renders black). Full unit suite verified green.
+      - Pi verification pending (user): confirm the bottom-right tile now
+        renders bright/white (not black) when overexposed, e.g. by
+        deliberately overexposing that camera.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

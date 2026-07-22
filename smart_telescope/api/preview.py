@@ -412,7 +412,7 @@ def _debayer(raw: np.ndarray, pattern: str) -> np.ndarray:
     return np.stack([r, g, b], axis=-1)
 
 
-def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
+def _auto_stretch_color(rgb: np.ndarray, adc_max: float = 65535.0) -> np.ndarray:
     """Per-channel sigma stretch (H, W, 3) float32 → uint8."""
     out = np.empty(rgb.shape, dtype=np.uint8)
     for c in range(3):
@@ -431,7 +431,12 @@ def _auto_stretch_color(rgb: np.ndarray) -> np.ndarray:
             x = (channel.astype(np.float64) - lo) / (hi - lo)
             scaled = np.arcsinh(x * 3.0) / np.arcsinh(3.0) * 255.0
         else:
-            scaled = np.zeros_like(channel, dtype=np.float64)
+            # Uniform channel — no dynamic range to stretch. Flat grey at its
+            # true relative brightness, so a saturated channel renders bright,
+            # not indistinguishable from a dark/no-signal one (see
+            # domain/stretch.py's auto_stretch for the mono equivalent).
+            level = np.clip(background / adc_max, 0.0, 1.0) * 255.0
+            scaled = np.full_like(channel, level, dtype=np.float64)
         out[:, :, c] = np.clip(scaled, 0.0, 255.0).astype(np.uint8)
     return out
 
@@ -443,7 +448,7 @@ def _to_jpeg(frame: FitsFrame, stretch: bool = True, bayer_pattern: str = "") ->
     if bayer_pattern:
         # Colour camera: demosaic then per-channel stretch
         rgb = _debayer(frame.pixels, bayer_pattern)
-        display = _auto_stretch_color(rgb) if stretch else np.clip(
+        display = _auto_stretch_color(rgb, adc_max=adc_scale) if stretch else np.clip(
             rgb / adc_scale * 255.0, 0.0, 255.0
         ).astype(np.uint8)
         buf = io.BytesIO()
@@ -451,7 +456,7 @@ def _to_jpeg(frame: FitsFrame, stretch: bool = True, bayer_pattern: str = "") ->
     else:
         # Monochrome camera: existing single-channel path
         if stretch:
-            display = auto_stretch(frame.pixels)
+            display = auto_stretch(frame.pixels, adc_max=adc_scale)
         else:
             display = np.clip(
                 frame.pixels.astype(np.float64) / adc_scale * 255.0, 0.0, 255.0

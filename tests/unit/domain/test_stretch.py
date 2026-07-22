@@ -21,15 +21,24 @@ class TestAutoStretch:
         result = auto_stretch(pixels)
         assert result.shape == (48, 64)
 
-    def test_uniform_array_returns_black(self) -> None:
+    def test_uniform_low_array_returns_near_black(self) -> None:
         pixels = np.full((10, 10), 1000.0, dtype=np.float32)
-        result = auto_stretch(pixels)
-        assert np.all(result == 0)
+        result = auto_stretch(pixels, adc_max=65535.0)
+        expected = int(1000.0 / 65535.0 * 255.0)
+        assert np.all(result == expected)
 
     def test_zero_array_returns_black(self) -> None:
         pixels = np.zeros((8, 8), dtype=np.float32)
         result = auto_stretch(pixels)
         assert np.all(result == 0)
+
+    def test_uniform_saturated_array_returns_white(self) -> None:
+        """A fully saturated/overexposed frame must render white, not black —
+        both used to collapse to the same all-zero output, making a blown-out
+        capture visually indistinguishable from a dark/no-signal one."""
+        pixels = np.full((10, 10), 4095.0, dtype=np.float32)
+        result = auto_stretch(pixels, adc_max=4095.0)
+        assert np.all(result == 255)
 
     def test_bright_peak_clips_to_255(self) -> None:
         rng = np.random.default_rng(1)

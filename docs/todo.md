@@ -2855,6 +2855,21 @@ histogram ceiling until it ships upstream.
         clamp + M10-040's absolute-range display; asked the user to confirm
         rather than re-investigating a bug already fixed and tested.
 
+- [x] M10-042 Autofocus sequence held the focuser lock for the entire
+      multi-position run, blocking jog/nudge requests elsewhere for the
+      sequence's full duration instead of just one move+settle cycle
+      (surfaced as "movement cursors not responding... delayed by several
+      seconds"). `[P2 · Autofocus/Coordinator]`
+      - *Done:* `api/autofocus_sequence.py`'s `start_sequence()` background
+        loop now acquires `coordinator.focuser_command()` only around each
+        position's `focuser.move()` + `_wait_stopped()`, released again
+        before that position's `camera.capture()` runs — not held for the
+        whole loop. Positions are absolute, so a manual nudge slipping in
+        between two sequence steps is harmless; the next step still moves
+        to its correct absolute target regardless.
+      - Tests: new `test_focuser_lock_released_during_capture` asserts the
+        lock is acquirable (non-blocking) during every capture call.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

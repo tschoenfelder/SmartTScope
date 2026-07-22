@@ -168,6 +168,37 @@ class TestStartSequence:
         _wait_for_job(r.json()["job_id"])
         assert not deps.get_job_manager().is_resource_held("camera:0")
 
+    def test_focuser_lock_released_during_capture(self, tmp_path: Path, monkeypatch) -> None:
+        """M10-042: the focuser lock must be held only around each
+        move+settle step, not the whole sequence — otherwise jog/nudge
+        requests elsewhere block for the sequence's entire (potentially
+        multi-minute) duration instead of one move+settle cycle, read by
+        the user as "movement cursors not responding... delayed by several
+        seconds"."""
+        f = _mock_focuser(position=1000, max_position=5000)
+        cam = _mock_camera()
+        coordinator = deps.get_coordinator()
+        lock_free_during_capture: list[bool] = []
+
+        def _capture(exposure: float) -> object:
+            acquired = coordinator._focuser_lock.acquire(blocking=False)
+            lock_free_during_capture.append(acquired)
+            if acquired:
+                coordinator._focuser_lock.release()
+            return cam.capture.return_value
+
+        cam.capture.side_effect = _capture
+        app.dependency_overrides[deps.get_focuser] = lambda: f
+        monkeypatch.setattr(config, "IMAGE_ROOT", str(tmp_path))
+        with patch.object(deps, "get_preview_camera", return_value=cam):
+            r = client.post("/api/autofocus/sequence", json={
+                "start_offset": -50, "end_offset": 50, "step": 50, "exposure": 1.0,
+            })
+        assert r.status_code == 202
+        _wait_for_job(r.json()["job_id"])
+        assert lock_free_during_capture
+        assert all(lock_free_during_capture)
+
     def test_job_fails_gracefully_on_capture_error(self, tmp_path: Path, monkeypatch) -> None:
         f = _mock_focuser(position=1000, max_position=5000)
         cam = _mock_camera()

@@ -154,20 +154,29 @@ def start_sequence(
 
     def _run() -> None:
         try:
-            with coordinator.focuser_command(timeout=0):
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                for idx, pos in enumerate(positions):
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for idx, pos in enumerate(positions):
+                # Hold the focuser lock only around this one move+settle, not
+                # the whole multi-position sequence (positions are absolute,
+                # so a manual nudge slipping in between steps is harmless —
+                # the next step still moves to the correct absolute target).
+                # Previously the lock was held for the entire run, so jog/
+                # nudge buttons elsewhere would block for the sequence's full
+                # duration (potentially minutes) before timing out with a
+                # 409 — read by the user as "movement cursors not responding
+                # ... delayed by several seconds."
+                with coordinator.focuser_command(timeout=0):
                     focuser.move(pos)
                     _wait_stopped(focuser)
-                    frame = camera.capture(req.exposure)
-                    hdr = frame.header.copy() if isinstance(frame.header, fits.Header) else fits.Header()
-                    hdr["FOCUSPOS"] = (pos, "Focuser position for this frame (steps)")
-                    hdu = fits.PrimaryHDU(data=frame.pixels, header=hdr)
-                    filename = f"af-seq_pos-{pos}_{idx:03d}.fits"
-                    hdu.writeto(str(dest_dir / filename), overwrite=True)
-                    with _jobs_lock:
-                        job.frames_done = idx + 1
-                        job.positions.append(pos)
+                frame = camera.capture(req.exposure)
+                hdr = frame.header.copy() if isinstance(frame.header, fits.Header) else fits.Header()
+                hdr["FOCUSPOS"] = (pos, "Focuser position for this frame (steps)")
+                hdu = fits.PrimaryHDU(data=frame.pixels, header=hdr)
+                filename = f"af-seq_pos-{pos}_{idx:03d}.fits"
+                hdu.writeto(str(dest_dir / filename), overwrite=True)
+                with _jobs_lock:
+                    job.frames_done = idx + 1
+                    job.positions.append(pos)
             with _jobs_lock:
                 job.status = "done"
                 job.result_dir = str(dest_dir)

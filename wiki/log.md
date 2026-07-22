@@ -5770,3 +5770,20 @@ the original M10-038 report several turns ago, and M10-040 (the guide fix)
 was only pushed this same session — asked the user to confirm the Pi has
 actually been restarted with the latest pull before investigating either
 further, rather than re-chasing already-fixed, already-tested code.
+
+---
+
+## 2026-07-22 — M10-042: focuser lock held for the whole sequence, blocking jog/nudge
+
+`api/autofocus_sequence.py`'s `start_sequence()` background loop held
+`coordinator.focuser_command()` around the *entire* multi-position run
+instead of just each position's move+settle step — any jog/nudge request
+elsewhere blocked for the sequence's full duration (potentially minutes)
+before eventually 409ing, surfacing as unresponsive movement controls.
+Fixed: the lock is now acquired and released per position, around
+`focuser.move()` + `_wait_stopped()` only; `camera.capture()` runs with it
+released. Positions are absolute, so a manual nudge landing between two
+sequence steps doesn't corrupt anything — the next step still targets its
+correct absolute position regardless of where the focuser sits when it
+starts. New `test_focuser_lock_released_during_capture` asserts the lock
+is acquirable (non-blocking) during every capture call in the sequence.

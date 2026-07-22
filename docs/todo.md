@@ -2896,8 +2896,39 @@ histogram ceiling until it ships upstream.
       - Tests: `tests/unit/api/test_preview.py` (13, unaffected — no test
         asserts this log line's format). Full unit suite: 4098 passed, 0
         failed, 24 skipped.
-      - **Not yet fixed — next step is re-reading the log after this
-        instrumentation ships**, not guessing at a cause further.
+      - *Update 2026-07-22 (bit_depth confirmed, mystery deepens):*
+        `bit_depth=16`, `mean_adu=4094 p99_adu=4094 p99_9_adu=4094` — so the
+        controller's math is correct given a genuinely-16-bit reading
+        (4094/65535≈6%, below `_GUIDE_LO`, correctly brightening). But the
+        value is **bit-for-bit identical** across `exp=2.0s/gain=100`
+        through `exp=4.0s/gain=400` — an 8× combined signal-amplification
+        range producing *zero* change is not plausible for real sensor
+        data (dark current + read noise always vary at least slightly with
+        exposure/gain). This points away from an autogain logic bug
+        entirely and toward the capture path itself not actually reflecting
+        the requested exposure/gain — ruled out one specific hypothesis
+        (the "snap"-mode `still` pull flag; `wiki/touptek-sdk.md` confirms
+        `TOUPCAM_EVENT_IMAGE → PullImageV4` is the documented normal path,
+        not a bug) before considering it further.
+      - Found a real, separate risk while investigating: `managed.py`'s
+        `_try()` — wrapping *every* SDK call in this adapter (`set_gain`,
+        `put_AutoExpoEnable`, RAW-mode setup, ...) — silently discarded any
+        exception with no logging at all. If `put_AutoExpoEnable(0)` were
+        silently rejected for this camera, the sensor's own auto-exposure
+        would keep overriding every manual command and could converge on a
+        fixed reading regardless of requested settings — indistinguishable
+        from a healthy capture without comparing requested vs. actual.
+      - Added more diagnostics (still no behavior change): `_try()` now
+        logs a warning with the failing call's source location and
+        exception on any failure; `api/preview.py`'s `Preview frame:` log
+        line now also reports `actual_exp_ms=`/`actual_gain=` read back
+        directly from the camera, alongside the requested `exp=`/`gain=`.
+        Tests: `test_preview.py` + full touptek adapter suite (72) green;
+        full unit suite 4098 passed, 0 failed, 24 skipped (same one known
+        flake).
+      - **Still not fixed — waiting on the next log capture** with this
+        instrumentation to show whether any SDK call is failing and
+        whether actual vs. requested exposure/gain diverge.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

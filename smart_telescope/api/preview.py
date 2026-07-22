@@ -333,12 +333,25 @@ async def ws_preview(
             except Exception:
                 pass  # histogram failure must never block frame delivery
 
+            # Read back what the hardware actually reports, separately from
+            # what we requested (cur_exposure/cur_gain) — a silently-failed
+            # SDK call (see SmartTouptekCamera._try's new warning log) or an
+            # auto-exposure override would otherwise be invisible: capture
+            # would keep "succeeding" while the sensor ignores our settings.
+            _actual_exp_ms = None
+            _actual_gain = None
+            try:
+                _actual_exp_ms = camera.get_exposure_ms()
+                _actual_gain = camera.get_gain()
+            except Exception:
+                pass
+
             _log.info(
                 "Preview frame: camera_index=%d adapter=%s capture=%.3fs "
-                "exp=%.4fs gain=%d offset=%d bit_depth=%d mean_adu=%.0f p99_adu=%.0f "
-                "p99_9_adu=%.0f sat=%.2f%%",
+                "exp=%.4fs gain=%d actual_exp_ms=%s actual_gain=%s offset=%d "
+                "bit_depth=%d mean_adu=%.0f p99_adu=%.0f p99_9_adu=%.0f sat=%.2f%%",
                 camera_index, type(camera).__name__, _dt,
-                cur_exposure, cur_gain, eff_offset, cur_bit_depth,
+                cur_exposure, cur_gain, _actual_exp_ms, _actual_gain, eff_offset, cur_bit_depth,
                 (stats.mean_frac * stats.adc_max) if stats else 0.0,
                 (stats.p99 * stats.adc_max) if stats else 0.0,
                 (stats.p99_9 * stats.adc_max) if stats else 0.0,

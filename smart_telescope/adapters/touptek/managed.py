@@ -523,7 +523,20 @@ class SmartTouptekCamera(CameraPort):
     def _try(self, fn: Any) -> Any:
         try:
             return fn()
-        except Exception:
+        except Exception as exc:
+            # Every SDK call in this adapter (set_gain, auto-exposure disable,
+            # RAW-mode setup, ...) goes through here, and failures were
+            # previously invisible — a silently-rejected put_AutoExpoEnable(0)
+            # would leave the camera's own auto-exposure overriding every
+            # manual exposure/gain command with no error anywhere, which is
+            # indistinguishable from a healthy capture except by comparing
+            # requested vs. actual settings over time (M10-043 investigation).
+            try:
+                loc = f"{fn.__code__.co_filename}:{fn.__code__.co_firstlineno}"
+            except Exception:
+                loc = "?"
+            _log.warning("SmartTouptekCamera(%s): SDK call failed at %s: %s",
+                         self._logical_name, loc, exc)
             return None
 
     @staticmethod

@@ -5500,3 +5500,41 @@ from the user before a fix can be attempted (asked, not guessed).
    claim (star *detection* success doesn't imply plate-*solve* success) and
    needs the actual `error_msg`/step shown by the UI to root-cause — asked
    the user rather than guessing.
+
+---
+
+## 2026-07-22 — Follow-up: root cause found for polar-solve failure; other two confirmed/still open
+
+User answered the three follow-up questions from the entry above:
+
+- **Narrow field (#3):** confirmed as the Capture-focus-sequence
+  Start/End/Step fields — no further action needed, the width fix already
+  applied stands.
+- **Polar failure (#4a):** confirmed as the "plate solve failed twice,
+  guide-camera fallback offered" path — ruling out the AT_HOME gate or a
+  coarse-alignment card. This let root-cause investigation actually
+  finish: `api/polar.py`'s `_run_workflow_loop` `FAILED` handler, when
+  `act.camera_fallback_suggested` is true, discarded `act.message` (the
+  real per-attempt solver error assembled in `domain/polar_workflow.py`,
+  e.g. `f"Solve 2 failed (with retry): {sr.error}"`) and replaced it with
+  a hardcoded generic string — so the actual reason the solver couldn't
+  match a 20+-star field was never visible anywhere, not even in
+  `error_msg`. Fixed: the real message is now preserved in
+  `_state.error_msg`; `static/js/mount.js` and a new
+  `#pa-fallback-reason` element in `index.html` display it on the
+  fallback-offered card. Tests: `tests/unit/api/test_polar.py` (7) +
+  domain polar tests (52 total with `-k polar`) still green — nothing
+  asserted the old generic string. Next Pi run will surface the actual
+  solver error for the first time; that's the real next diagnostic step,
+  not guessed at here.
+- **Capture-sequence frame count (#2):** user clarified they never
+  actually ran the ~1129-frame sequence — cancelled once the estimate
+  appeared, because it would have taken too long. So this was never a
+  wrong *completed* result, just a surprisingly large `n_frames` estimate
+  from inputs described as "400 / 600 / step 5". The position math in
+  `api/autofocus_sequence.py` (`range(current+start_offset,
+  current+end_offset+1, step)`) doesn't reproduce ~1129 from those values
+  under the documented "offsets relative to current position" semantics
+  (expected ~41). Left open in `docs/todo.md` M10-035 — need the exact
+  Start/End/Step values from a future run to tell a real off-by-N bug
+  from a units mix-up (offset vs. absolute position).

@@ -2604,22 +2604,34 @@ histogram ceiling until it ships upstream.
         ran") — `static/js/mount.js`'s `_paRender()` simply never read
         either field. Added a `#pa-cam-label` span next to the step label
         in `index.html`, populated from `d.cam_role`/`d.cam_index`.
-      - *Partial 2026-07-22:* Widened `af-seq-start`/`af-seq-end` (7ch→9ch)
-        and `af-seq-step` (6ch→7ch) on the "Capture focus sequence" card
-        as the most likely candidate for "number fields too narrow for 6
-        digits" — not confirmed against the field the user actually meant.
-      - *Open — needs user input, not guessed at:* (a) exact values/status
-        text for the capture-sequence run that reportedly captured 1121
-        frames ending at position 1608 from a 400/600/step-5 input — the
-        position math checks out for a current position of ~1008, but
-        nothing found in `api/autofocus_sequence.py` or `autofocus.js`
-        explains a ~27x frame-count blowup; (b) the exact `error_msg`/step
-        shown when polar alignment "fails" with 20+ stars detected — star
-        *detection* succeeding doesn't imply plate-*solve* succeeding, and
-        the failure could equally be the M10-032 AT_HOME hard gate
-        (awaiting its own first real Pi verification) rejecting the
-        attempt for an unrelated reason. Confirming the field meant in the
-        prior bullet would also help.
+      - *Done 2026-07-22, confirmed by user:* the narrow field was indeed
+        the "Capture focus sequence" card's Start/End/Step — widening to
+        9ch/9ch/7ch resolves it.
+      - *Done 2026-07-22, root cause confirmed:* the polar-align failure
+        was the "plate solve failed twice, guide camera fallback offered"
+        path (user confirmed, not the AT_HOME gate or a coarse-alignment
+        card) — 20+ stars detected doesn't imply the solver could match
+        them. Root cause found in `api/polar.py`'s `FAILED` handler: when
+        `camera_fallback_suggested` is true it discarded `act.message`
+        (the real solver error from `domain/polar_workflow.py`, e.g.
+        `"Solve 2 failed (with retry): <solver's actual error>"`) and
+        replaced it with a hardcoded generic string — so neither the user
+        nor the log ever saw *why* the solve failed. Fixed: `_state.error_msg`
+        now includes `act.message`; `static/js/mount.js`'s `_paRender()` and
+        a new `#pa-fallback-reason` element in `index.html` display it on
+        the fallback-offered card. Next Pi run will show the real solver
+        error text — re-diagnose from that once seen.
+      - *Open — needs user input, not guessed at:* exact values/status text
+        for the capture-sequence run that reportedly estimated ~1129
+        frames from a 400/600/step-5 input (user confirmed they cancelled
+        before it ran, due to the long ETA — so this was never a
+        completed/wrong result, just a surprisingly large `n_frames`
+        estimate). The position math in `api/autofocus_sequence.py` doesn't
+        reproduce ~1129 frames from those inputs under the documented
+        "offsets relative to current position" semantics — need the exact
+        Start/End/Step values next time to pin down whether this is a
+        genuine off-by-N bug or a units misunderstanding (offsets vs.
+        absolute positions).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

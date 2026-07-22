@@ -733,6 +733,9 @@ function _paRender(d) {
     // camera fallback
     document.getElementById('pa-fallback-card').style.display =
       d.step === 'camera_fallback_offered' ? '' : 'none';
+    if (d.step === 'camera_fallback_offered') {
+      document.getElementById('pa-fallback-reason').textContent = d.error_msg || '';
+    }
 
     // results / live
     if ((d.step === 'done' || d.step === 'live') && d.alt_error_arcmin != null) {

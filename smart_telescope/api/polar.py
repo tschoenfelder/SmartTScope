@@ -253,7 +253,7 @@ async def _run_workflow_loop(
                     _state.fallback_available = True
                     _state.step      = "camera_fallback_offered"
                     _state.error_msg = (
-                        "Plate solve failed twice — guide camera fallback available. "
+                        f"{act.message} — guide camera fallback available. "
                         "Call POST /api/polar/use_fallback_camera with a camera_index."
                     )
                 else:

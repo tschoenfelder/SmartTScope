@@ -2687,13 +2687,14 @@
       </p>
       <div class="input-row">
         <label>Start</label>
-        <input type="number" id="af-seq-start" value="-500" step="10" style="width:9ch">
+        <input type="number" id="af-seq-start" value="-500" step="10" style="width:9ch" oninput="_afUpdateSeqRange()">
         <label>End</label>
-        <input type="number" id="af-seq-end" value="500" step="10" style="width:9ch">
+        <input type="number" id="af-seq-end" value="500" step="10" style="width:9ch" oninput="_afUpdateSeqRange()">
         <label>Step</label>
         <input type="number" id="af-seq-step" value="50" min="1" step="10" style="width:7ch">
         <button id="af-seq-btn" onclick="afStartSequence()">Capture sequence</button>
       </div>
+      <div id="af-seq-range" style="font-size:0.75rem;color:var(--muted);margin-top:0.25rem"></div>
       <div id="af-seq-status" style="font-size:0.8rem;color:var(--muted);margin-top:0.5rem"></div>
     </div>
   </div>

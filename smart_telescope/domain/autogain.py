@@ -39,6 +39,17 @@ _EXP_MAX   = 4.0    # seconds
 _EXP_MIN   = 0.001  # 1 ms
 _SPARSE_P99_9_THR = 0.10  # p99_9 above this → stars present; halt brightening for sparse fields
 
+# Guiding-mode tuning — signal metric is p99_9 (guide-star peak), not mean_frac.
+# A guide camera stares at a mostly-dark sparse field; the mean stays near zero
+# regardless of how well-exposed the one guide star is, so a mean-based target
+# (as used for DSO) never reaches band and drives exposure/gain to their
+# ceiling forever. Mirrors AutoGainService.run_one_shot()'s GUIDING band
+# (domain/autogain_service.py) — kept in sync manually since the one-shot
+# service imports its DSO constants from this module already.
+_GUIDE_LO     = 0.20   # guide-star peak lower bound
+_GUIDE_HI     = 0.80   # guide-star peak upper bound (saturation risk)
+_GUIDE_TARGET = 0.45   # midpoint
+
 
 # ── Conversion-gain mode ──────────────────────────────────────────────────────
 
@@ -154,6 +165,7 @@ class AutoGainController:
         self._exp_max   = exp_max
         self._offset_adu = int(max(0, offset_adu))
         self._bit_depth  = int(bit_depth)
+        self._is_guiding = (mode == AutoGainMode.GUIDING)
 
         self.exposure = float(max(exp_min, min(exp_max, exposure)))
         self.gain     = int(max(gain_min, min(gain_max, gain)))
@@ -180,21 +192,32 @@ class AutoGainController:
         if bit_depth is not None:
             self._bit_depth = int(bit_depth)
         stats = _hist_analyze(pixels, bit_depth=self._bit_depth)
-        adc_max = float((1 << self._bit_depth) - 1)
-        offset_frac = self._offset_adu / adc_max
-        mean_frac = max(0.0, stats.mean_frac - offset_frac)
 
-        if _LO <= mean_frac <= _HI:
+        if self._is_guiding:
+            # Guide-star peak, not mean — a guide camera stares at a mostly
+            # dark sparse field, so mean_frac stays near zero regardless of
+            # how well-exposed the one guide star is (see _GUIDE_LO comment).
+            signal = stats.p99_9
+            band_lo, band_hi, band_tgt = _GUIDE_LO, _GUIDE_HI, _GUIDE_TARGET
+        else:
+            adc_max = float((1 << self._bit_depth) - 1)
+            offset_frac = self._offset_adu / adc_max
+            signal = max(0.0, stats.mean_frac - offset_frac)
+            band_lo, band_hi, band_tgt = _LO, _HI, _TARGET
+
+        if band_lo <= signal <= band_hi:
             return  # already in target band — no change
 
-        # Sparse star field: if top 0.1% of pixels show star signal, don't over-brighten.
-        if mean_frac < _LO and stats.p99_9 >= _SPARSE_P99_9_THR and stats.saturation_pct < 1.0:
+        # Sparse star field (DSO only — GUIDING already targets the star peak
+        # directly): if top 0.1% of pixels show star signal, don't over-brighten.
+        if (not self._is_guiding and signal < band_lo
+                and stats.p99_9 >= _SPARSE_P99_9_THR and stats.saturation_pct < 1.0):
             return
 
-        safe_mean = max(mean_frac, 1e-4)
-        ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, _TARGET / safe_mean))
+        safe_signal = max(signal, 1e-4)
+        ratio = min(_MAX_RATIO, max(1.0 / _MAX_RATIO, band_tgt / safe_signal))
 
-        if mean_frac < _LO:
+        if signal < band_lo:
             # too dark — brighten exposure first, then gain
             new_exp = min(self._exp_max, self.exposure * ratio)
             if new_exp > self.exposure:

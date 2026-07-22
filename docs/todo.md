@@ -2785,6 +2785,56 @@ histogram ceiling until it ships upstream.
         instead), and that starting a sequence while the camera is already
         busy now returns a clear error instead of silently misbehaving.
 
+- [x] M10-040 Live-preview autogain works for main/OAG but not guide (user
+      report 2026-07-22, after M10-037 shipped: "two cameras adjust
+      exposure, one doesn't: guide ... 4.00 s · gain 400"). `[P1 · Preview/Autogain]`
+      - *Done 2026-07-22:* Root cause: `AutoGainController.update()`
+        (`domain/autogain.py`) always used `mean_frac` as its signal metric
+        regardless of `mode` — the `mode` constructor argument only ever
+        selected conversion gain, never the brightness signal. A guide
+        camera stares at a mostly-dark sparse field (background + one guide
+        star); its mean stays near zero no matter how well-exposed the star
+        actually is, so the controller perpetually read it as "too dark" and
+        drove exposure/gain to their ceiling (4.0s/400, the same hardcoded
+        defaults as M10-037, since no `CameraProfile` is passed at this call
+        site) — and, unlike M10-037, this wasn't a bit-depth bug, so it
+        wasn't fixed by that commit. `api/preview.py` also never selected
+        `AutoGainMode.GUIDING` for the guide role in the first place — every
+        camera's controller was constructed with the default `DSO` mode.
+      - Fixed: `AutoGainController` now stores `self._is_guiding` at
+        construction and `update()` branches its signal metric — `p99_9`
+        (guide-star peak) against a new `_GUIDE_LO/_HI/_TARGET` band
+        (0.20/0.80/0.45, mirroring `AutoGainService.run_one_shot()`'s
+        existing one-shot GUIDING band) instead of `mean_frac` against the
+        DSO band, and skips the DSO-only sparse-field early-exit (not
+        applicable — GUIDING already targets the star peak directly).
+        `api/preview.py` now resolves `mode=AutoGainMode.GUIDING` whenever
+        `camera_role == "guide"` at both `AutoGainController` construction
+        sites (initial connect + `set_params` re-enable).
+      - Also fixed (same report, smaller): the Autofocus screen's
+        capture-sequence Start/End fields still showed `-15` at focuser
+        position 15 and the user flagged it again — that value is actually
+        correct (M10-038: it brings the sweep's lower bound to exactly `0`,
+        the focuser's minimum), but the UI never made the *absolute*
+        position obvious. Added a live `#af-seq-range` line under the
+        Start/End/Step row showing "Absolute positions: X → Y (focuser
+        range 0 – max)", updating on every position poll and on every edit
+        to Start/End, so the offset math is self-evident instead of
+        needing an explanation.
+      - Tests: `tests/unit/domain/test_autogain.py` — new
+        `TestGuidingModeSignalMetric` (5 cases: DSO still uses mean;
+        in-band guide star → no change; too-faint → brightens; too-bright →
+        dims; genuinely no star → still correctly hits the ceiling, same
+        terminal behavior as before — this controller has no NO_SIGNAL
+        status, that's the one-shot service's job). 95 tests green across
+        `test_autogain.py` (domain + api), `test_preview.py`,
+        `test_replay_camera_dir.py`.
+      - Pi verification pending (user): confirm the guide camera's live
+        preview now actually reaches a stable, well-exposed setting instead
+        of sitting at 4.0s/400 regardless of the actual guide-star
+        brightness; confirm the Autofocus screen's new absolute-range line
+        displays and updates correctly.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

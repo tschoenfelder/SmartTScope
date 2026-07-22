@@ -13,7 +13,7 @@ import numpy as np
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from ..domain.autogain import AutoGainController
+from ..domain.autogain import AutoGainController, AutoGainMode
 from ..domain.frame import FitsFrame
 from ..domain.histogram import analyze as _hist_analyze
 from ..domain.histogram import histogram_bins_focused as _hist_bins
@@ -83,6 +83,12 @@ async def ws_preview(
                     )
         except Exception:
             pass
+
+    # Guide cameras stare at a mostly-dark sparse field — the DSO mean-based
+    # autogain target never reaches band there (see AutoGainController's
+    # guiding-mode signal metric), so select the guide-star-peak metric
+    # whenever this connection is for the guide role.
+    _ag_mode = AutoGainMode.GUIDING if camera_role == "guide" else AutoGainMode.DSO
 
     _log.info(
         "Preview WS accepted: camera_index=%d camera_role=%r exposure=%.3f gain=%d autogain=%s",
@@ -176,7 +182,7 @@ async def ws_preview(
         pass
 
     if autogain:
-        ctrl = AutoGainController(exposure, gain, bit_depth=cur_bit_depth)
+        ctrl = AutoGainController(exposure, gain, mode=_ag_mode, bit_depth=cur_bit_depth)
 
     # Detect colour sensor once; derive Bayer pattern for all frames.
     bayer_pattern = ""
@@ -242,7 +248,9 @@ async def ws_preview(
                         stretch = bool(msg["stretch"])
                     if "autogain" in msg:
                         if msg["autogain"] and ctrl is None:
-                            ctrl = AutoGainController(cur_exposure, cur_gain, bit_depth=cur_bit_depth)
+                            ctrl = AutoGainController(
+                                cur_exposure, cur_gain, mode=_ag_mode, bit_depth=cur_bit_depth,
+                            )
                             _log.info("Autogain enabled via set_params (exp=%.4fs gain=%d)", cur_exposure, cur_gain)
                         elif not msg["autogain"] and ctrl is not None:
                             ctrl = None

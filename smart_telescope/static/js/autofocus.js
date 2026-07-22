@@ -121,6 +121,8 @@ function afRestartPreview() {
 /* ── focuser position + arrow nudge ─────────────────────────────────────── */
 
 let _afSeqDefaultsClamped = false;
+let _afLastPosition = null;
+let _afLastMaxPosition = null;
 
 function _afStartPositionPoll() {
     if (_afPosTimer) clearInterval(_afPosTimer);
@@ -134,6 +136,10 @@ function _afStartPositionPoll() {
             ? `${st.position}${st.max_position != null ? ' / ' + st.max_position : ''}`
             : 'not available';
         }
+        if (st.available) {
+          _afLastPosition    = st.position;
+          _afLastMaxPosition = st.max_position;
+        }
         // Capture-sequence Start/End are offsets from the current position —
         // the static -500/+500 HTML defaults are physically impossible near
         // either end of a real focuser's range (e.g. position=15 of 50000).
@@ -146,10 +152,25 @@ function _afStartPositionPoll() {
           if (startEl) startEl.value = Math.max(-500, -st.position);
           if (endEl)   endEl.value   = Math.min(500, st.max_position - st.position);
         }
+        _afUpdateSeqRange();
       } catch (_) {}
     };
     poll();
     _afPosTimer = setInterval(poll, 1000);
+}
+
+function _afUpdateSeqRange() {
+    const rangeEl = document.getElementById('af-seq-range');
+    if (!rangeEl) return;
+    if (_afLastPosition == null) { rangeEl.textContent = ''; return; }
+    const startOffset = parseInt(document.getElementById('af-seq-start')?.value, 10);
+    const endOffset    = parseInt(document.getElementById('af-seq-end')?.value, 10);
+    if (Number.isNaN(startOffset) || Number.isNaN(endOffset)) { rangeEl.textContent = ''; return; }
+    const absStart = _afLastPosition + startOffset;
+    const absEnd   = _afLastPosition + endOffset;
+    const maxTxt   = _afLastMaxPosition != null ? _afLastMaxPosition : '?';
+    rangeEl.textContent =
+      `Absolute positions: ${absStart} → ${absEnd} (focuser range 0 – ${maxTxt})`;
 }
 
 async function afNudge(delta) {

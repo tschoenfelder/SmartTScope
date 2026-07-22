@@ -2736,6 +2736,55 @@ histogram ceiling until it ships upstream.
         sensible in-range values on page load at a real (non-mid-range)
         focuser position, and that manually-entered values still stick.
 
+- [x] M10-039 Live preview appears to hang while a capture sequence runs;
+      only recovers after navigating away and back (user report 2026-07-22,
+      right after testing the M10-038-fixed capture-sequence feature).
+      `[P1 · Preview/Autofocus]`
+      - *Done 2026-07-22:* Root cause: `api/autofocus_sequence.py`'s
+        `start_sequence()` started its background capture loop via a raw
+        `threading.Thread(...).start()`, completely bypassing the shared
+        `JobManager` — the same registry `api/preview.py`'s live-preview
+        websocket already checks before every capture ("yield while a
+        background job owns the camera", sending a `camera_busy` message
+        and backing off gracefully). Because the sequence job never claimed
+        `camera:{index}`, the preview had no way to know the camera was
+        busy — both sides ended up fighting over the ToupTek adapter's own
+        low-level per-camera `_capture_lock` instead, and the preview simply
+        blocked silently on each `capture()` call for as long as the
+        sequence kept re-acquiring that lock (its entire multi-position
+        run — potentially minutes), which reads to the user as a hang with
+        no error and no automatic recovery — only reconnecting the
+        websocket (e.g. by navigating away and back) resets it.
+      - Fixed: `start_sequence()` now submits its capture loop via
+        `JobManager.submit("autofocus_sequence", {"camera:{index}"}, ...)`
+        (same pattern as `api/autogain.py`'s one-shot job) instead of a raw
+        thread, with a generous `timeout_s` sized to the requested position
+        count. A `ResourceConflictError` (camera already claimed by another
+        job) now returns 409 instead of silently starting anyway and
+        contending for the hardware lock.
+      - This is very likely also the explanation for two other symptoms in
+        the same report: a live-preview tile showing a stale bright/white
+        frame while an independent metrics poll correctly reported
+        "too_dark" (the metrics poll isn't gated by the same lock and kept
+        working; the frozen preview just never got a fresh frame to
+        replace the last one on screen), and "Cameras" screen tiles
+        appearing stuck at extreme exposure/gain values — needs
+        confirmation on a fresh Pi test now that this is fixed.
+      - Tests: `tests/unit/api/test_autofocus_sequence.py` — new
+        `test_returns_409_when_camera_resource_already_held` and
+        `test_camera_resource_released_after_job_completes`. All 12 cases
+        in that file, plus `tests/unit/services/test_job_manager.py`,
+        green (52 total).
+      - **Known pre-existing gap, not fixed here** (found while
+        investigating — same pattern, out of scope for this bug): `api/
+        calibration.py`'s equivalent background capture job has the exact
+        same raw-`threading.Thread` bypass of `JobManager`. Flagged for a
+        future pass, not touched now to keep this fix targeted.
+      - Pi verification pending (user): confirm the live preview no longer
+        freezes while a capture sequence runs (should show "camera busy"
+        instead), and that starting a sequence while the camera is already
+        busy now returns a clear error instead of silently misbehaving.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

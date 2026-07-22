@@ -5629,3 +5629,66 @@ suite run to confirm nothing else broke.
 Pi verification pending (user): confirm the OAG's live preview now actually
 dims — exposure/gain visibly decrease and `Autogain update:` lines resume —
 instead of sitting stuck at max once saturated.
+
+(Also in this commit — M10-038: the Capture-focus-sequence card's Start/End
+defaults, -500/+500, are offsets from the current focuser position but never
+accounted for where that position actually is; near either end of a real
+focuser's range (screenshot: position 15/50000) they're guaranteed
+out-of-range. Fixed in `autofocus.js`'s existing position poll: clamps
+Start/End to `[0, max_position]` the first time a real position is known,
+then leaves user edits alone.)
+
+---
+
+## 2026-07-22 — M10-039: live preview hang during capture sequence + missing exp/gain feedback
+
+Same user report as above, three more items. Two were root-caused and
+fixed; one turned out not to be a bug.
+
+**The hang** (multicam preview seems to freeze, only recovers after
+navigating to Autofocus and back): traced to `api/autofocus_sequence.py`'s
+`start_sequence()` starting its background capture loop via a raw
+`threading.Thread(...).start()`, completely bypassing the shared
+`JobManager` that `api/preview.py`'s live-preview websocket already checks
+before every capture ("yield while a background job owns the camera",
+sending `camera_busy` and backing off gracefully). Since the sequence job
+never claimed `camera:{index}`, the preview had no way to know the camera
+was busy — both sides fought over the ToupTek adapter's own low-level
+per-camera `_capture_lock` instead, and the preview blocked silently for the
+sequence's entire (potentially minutes-long, multi-position) run — reading
+as a hang with no error and no automatic recovery. Fixed: `start_sequence()`
+now submits via `JobManager.submit("autofocus_sequence", {"camera:{index}"},
+...)`, mirroring `api/autogain.py`'s existing one-shot-job pattern, with a
+generous `timeout_s` sized to the requested position count; a
+`ResourceConflictError` now returns 409 instead of silently contending for
+the hardware lock. Same-pattern gap also found in `api/calibration.py`'s
+equivalent job — flagged but deliberately not touched here to keep this fix
+targeted. This almost certainly also explains two more symptoms in the same
+report (a stale white/bright preview frame sitting next to a correctly
+"too_dark" metrics readout; Cameras-screen tiles looking stuck at extreme
+exposure/gain) since the independent metrics poll isn't gated by the same
+lock and kept reporting real data while the frozen preview just never got a
+fresh frame — needs confirmation on the next Pi test now that this is
+fixed, not assumed.
+
+Tests: `tests/unit/api/test_autofocus_sequence.py` gained
+`test_returns_409_when_camera_resource_already_held` and
+`test_camera_resource_released_after_job_completes`; all 12 cases in that
+file plus `tests/unit/services/test_job_manager.py` green (52 total).
+
+**Missing exp/gain feedback on the Autofocus screen**: `api/preview.py`
+already sends a `camera_info` message on every preview connection carrying
+`effective_exposure`/`effective_gain`, but `autofocus.js`'s websocket
+handler explicitly discarded every JSON message (`if
+(!ev.data.startsWith('{')) ...; return;` before ever parsing it) — showing
+nothing but raw error strings. Fixed: parses `camera_info` and displays it
+in a new `#af-eff-settings` span next to the status text.
+
+**Not a bug — clarified, not fixed**: capture-sequence Start defaulting to
+`-15` at focuser position 15 is exactly correct, not a mistake — `-15` is
+the offset that brings the sweep's lower bound to exactly `0` (the
+focuser's minimum), per M10-038's own clamp (`max(-500, -position)`). The
+field holds a relative offset, not an absolute position, so a negative
+value near the current position is expected, not a red flag.
+
+Full unit suite: 4092 passed, 0 failed, 24 skipped.

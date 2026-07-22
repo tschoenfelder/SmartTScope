@@ -134,6 +134,40 @@ class TestStartSequence:
         with fits.open(first_frame) as hdul:
             assert hdul[0].header["FOCUSPOS"] == 950
 
+    def test_returns_409_when_camera_resource_already_held(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        """The sequence job must claim camera:{index} in the shared JobManager
+        (M10-039) so the live-preview websocket's existing "camera busy" yield
+        engages instead of both sides silently fighting over the adapter's
+        low-level capture lock, which previously made the preview hang for the
+        sequence's entire duration."""
+        f = _mock_focuser(position=1000, max_position=5000)
+        cam = _mock_camera()
+        app.dependency_overrides[deps.get_focuser] = lambda: f
+        monkeypatch.setattr(config, "IMAGE_ROOT", str(tmp_path))
+        deps.get_job_manager().claim("other-job", {"camera:0"})
+        with patch.object(deps, "get_preview_camera", return_value=cam):
+            r = client.post("/api/autofocus/sequence", json={
+                "start_offset": -50, "end_offset": 50, "step": 50, "exposure": 1.0,
+            })
+        assert r.status_code == 409
+
+    def test_camera_resource_released_after_job_completes(
+        self, tmp_path: Path, monkeypatch,
+    ) -> None:
+        f = _mock_focuser(position=1000, max_position=5000)
+        cam = _mock_camera()
+        app.dependency_overrides[deps.get_focuser] = lambda: f
+        monkeypatch.setattr(config, "IMAGE_ROOT", str(tmp_path))
+        with patch.object(deps, "get_preview_camera", return_value=cam):
+            r = client.post("/api/autofocus/sequence", json={
+                "start_offset": -50, "end_offset": 50, "step": 50, "exposure": 1.0,
+            })
+        assert r.status_code == 202
+        _wait_for_job(r.json()["job_id"])
+        assert not deps.get_job_manager().is_resource_held("camera:0")
+
     def test_job_fails_gracefully_on_capture_error(self, tmp_path: Path, monkeypatch) -> None:
         f = _mock_focuser(position=1000, max_position=5000)
         cam = _mock_camera()

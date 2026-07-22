@@ -31,6 +31,7 @@ from ..domain.focus_metric import half_flux_diameter
 from ..ports.focuser import FocuserPort
 from ..services import live_analysis_shim
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
+from ..services.job_manager import ResourceConflictError
 from . import deps
 
 _log = logging.getLogger(__name__)
@@ -182,7 +183,21 @@ def start_sequence(
                 job.error = f"Unexpected error: {exc}"
             _log.exception("Autofocus sequence job %s failed", job.job_id)
 
-    threading.Thread(target=_run, daemon=True, name=f"af-seq-{job.job_id[:8]}").start()
+    # Claim the camera resource in the shared JobManager so the live-preview
+    # websocket's existing "camera busy" yield (api/preview.py) engages
+    # instead of both sides silently fighting over the adapter's low-level
+    # capture lock — which previously made the preview appear to hang for
+    # the sequence's entire (potentially long, multi-position) duration.
+    timeout_s = len(positions) * (_SETTLE_TIMEOUT_S + req.exposure + 5.0)
+    try:
+        deps.get_job_manager().submit(
+            "autofocus_sequence", {f"camera:{camera_index}"}, _run, timeout_s=timeout_s,
+        )
+    except ResourceConflictError as exc:
+        with _jobs_lock:
+            job.status = "failed"
+            job.error = f"Camera busy: {exc}"
+        raise HTTPException(status_code=409, detail=str(exc))
     return SequenceStartedResponse(job_id=job.job_id, n_frames=len(positions))
 
 

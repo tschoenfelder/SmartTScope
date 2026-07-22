@@ -74,8 +74,24 @@ function _afConnectWs() {
 
     _afWs.onmessage = (ev) => {
       if (typeof ev.data === 'string') {
-        // camera_error / camera_info text — surface errors, ignore the rest.
-        if (!ev.data.startsWith('{') && statusEl) statusEl.textContent = ev.data;
+        if (!ev.data.startsWith('{')) {
+          // plain-text capture_error / camera_busy — surface as status.
+          if (statusEl) statusEl.textContent = ev.data;
+          return;
+        }
+        // JSON messages: camera_info carries the currently-effective
+        // exposure/gain (there is no other feedback on this screen for
+        // what the camera is actually capturing at).
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'camera_info') {
+            const effEl = document.getElementById('af-eff-settings');
+            if (effEl) {
+              effEl.textContent =
+                `Exp: ${msg.effective_exposure}s · Gain: ${msg.effective_gain}`;
+            }
+          }
+        } catch (_) {}
         return;
       }
       const img = document.getElementById('af-preview-img');

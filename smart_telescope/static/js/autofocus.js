@@ -104,8 +104,11 @@ function afRestartPreview() {
 
 /* ── focuser position + arrow nudge ─────────────────────────────────────── */
 
+let _afSeqDefaultsClamped = false;
+
 function _afStartPositionPoll() {
     if (_afPosTimer) clearInterval(_afPosTimer);
+    _afSeqDefaultsClamped = false;
     const poll = async () => {
       try {
         const st = await (await fetch('/api/focuser/status')).json();
@@ -114,6 +117,18 @@ function _afStartPositionPoll() {
           posEl.textContent = st.available
             ? `${st.position}${st.max_position != null ? ' / ' + st.max_position : ''}`
             : 'not available';
+        }
+        // Capture-sequence Start/End are offsets from the current position —
+        // the static -500/+500 HTML defaults are physically impossible near
+        // either end of a real focuser's range (e.g. position=15 of 50000).
+        // Clamp them once, the first time a real position/max is known, so
+        // the suggested defaults are always within [0, max_position].
+        if (!_afSeqDefaultsClamped && st.available && st.max_position != null) {
+          _afSeqDefaultsClamped = true;
+          const startEl = document.getElementById('af-seq-start');
+          const endEl   = document.getElementById('af-seq-end');
+          if (startEl) startEl.value = Math.max(-500, -st.position);
+          if (endEl)   endEl.value   = Math.min(500, st.max_position - st.position);
         }
       } catch (_) {}
     };

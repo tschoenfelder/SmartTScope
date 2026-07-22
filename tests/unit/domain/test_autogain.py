@@ -228,3 +228,42 @@ class TestBitDepthNormalisation:
         pix = _uniform(0.0, bit_depth=12)
         ctrl.update(pix)
         assert ctrl.exposure > 2.0
+
+
+# ── Per-frame bit-depth override (M10-037) ────────────────────────────────────
+#
+# CameraPort.get_bit_depth() documents returning a stale default (16) until the
+# first frame is captured, for adapters that lazily detect the sensor's true
+# native depth (see adapters/touptek/camera.py / managed.py). A controller
+# constructed with that stale value before the first capture would otherwise
+# stay wrong for the entire session, since __init__ never runs again.
+
+class TestPerFrameBitDepthOverride:
+    def test_update_bit_depth_overrides_constructor_value(self) -> None:
+        # Constructed as if get_bit_depth() returned the stale pre-capture
+        # default (16) for a sensor that is actually 12-bit.
+        ctrl = AutoGainController(exposure=2.0, gain=100, bit_depth=16)
+        # A fully saturated 12-bit frame (4095 max) — without the override this
+        # would be read against adc_max=65535 (~6% → looks dark, not saturated).
+        pix = _uniform(4095.0, bit_depth=12)
+        ctrl.update(pix, bit_depth=12)
+        assert ctrl.exposure < 2.0  # correctly recognised as too bright, dimmed
+        assert ctrl._bit_depth == 12
+
+    def test_update_without_bit_depth_keeps_constructor_value(self) -> None:
+        ctrl = AutoGainController(exposure=1.0, gain=100, bit_depth=12)
+        pix = _uniform(1800.0, bit_depth=12)
+        ctrl.update(pix)  # no override — backward compatible
+        assert ctrl._bit_depth == 12
+        assert ctrl.exposure == pytest.approx(1.0)
+
+    def test_stale_construction_bit_depth_gets_stuck_without_override(self) -> None:
+        # Reproduces the actual bug (M10-037): constructed with the wrong
+        # pre-capture default, then updated WITHOUT passing the real per-frame
+        # bit_depth — the controller misreads real saturation as ~6% signal,
+        # drives to max exposure/gain trying to "brighten", and gets stuck.
+        ctrl = AutoGainController(exposure=4.0, gain=400, bit_depth=16)
+        pix = _uniform(4095.0, bit_depth=12)  # genuinely saturated 12-bit frame
+        ctrl.update(pix)  # bug reproduction: no bit_depth kwarg
+        assert ctrl.exposure == pytest.approx(4.0)  # stuck at max — the bug
+        assert ctrl.gain == 400  # stuck at max — the bug

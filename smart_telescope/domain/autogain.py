@@ -159,13 +159,26 @@ class AutoGainController:
         self.gain     = int(max(gain_min, min(gain_max, gain)))
         self.conversion_gain: ConversionGain = _select_conversion_gain(profile, mode)
 
-    def update(self, pixels: np.ndarray[Any, np.dtype[Any]]) -> None:  # type: ignore[type-arg]
+    def update(
+        self,
+        pixels: np.ndarray[Any, np.dtype[Any]],  # type: ignore[type-arg]
+        bit_depth: int | None = None,
+    ) -> None:
         """Inspect *pixels* and adjust (exposure, gain) for the next capture.
 
         Uses HistogramStats with the declared bit depth for correct normalisation,
         then subtracts the offset_adu pedestal from the measured mean before
         comparing to the target band.
+
+        bit_depth: per-frame ADC depth (e.g. read fresh from the FITS header),
+        overriding the value fixed at construction. Needed because callers may
+        have to construct the controller before the first frame is captured —
+        CameraPort.get_bit_depth() documents returning a default (16) until
+        then for adapters that lazily detect the sensor's true native depth —
+        so a value fixed at construction can stay wrong for the whole session.
         """
+        if bit_depth is not None:
+            self._bit_depth = int(bit_depth)
         stats = _hist_analyze(pixels, bit_depth=self._bit_depth)
         adc_max = float((1 << self._bit_depth) - 1)
         offset_frac = self._offset_adu / adc_max

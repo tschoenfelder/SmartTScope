@@ -2659,6 +2659,82 @@ histogram ceiling until it ships upstream.
       - Pi verification pending (user): confirm the bottom-right tile now
         renders bright/white (not black) when overexposed, e.g. by
         deliberately overexposing that camera.
+      - *Investigated further 2026-07-22:* user pushed back — the OAG stayed
+        saturated even when covered, with `autogain=True` on the connection.
+        Confirmed via log correlation (gain 100→400 tracking real signal
+        1381→4095, i.e. genuine ADC saturation, not a stuck buffer) that
+        M10-036's fix was correct — the underlying bug was elsewhere. See
+        M10-037.
+
+- [x] M10-037 Live-preview autogain permanently stuck at max exposure/gain
+      for ToupTek cameras with a lazily-detected bit depth (found while
+      investigating M10-036's "still saturated after covering" follow-up,
+      confirmed via `Autogain update:` log correlation — no `Autogain
+      update:` line ever appeared again after gain hit 400, on two separate
+      connections). `[P1 · Preview/Autogain]`
+      - *Done 2026-07-22:* Root cause: `api/preview.py`'s live-preview
+        websocket calls `camera.get_bit_depth()` and constructs
+        `AutoGainController(exposure, gain, bit_depth=cur_bit_depth)`
+        **before the capture loop starts** — but `adapters/touptek/camera.py`
+        (`get_bit_depth()`, lines 398-400) explicitly documents returning the
+        default (16) "until the first capture completes" for sensors whose
+        true native depth is only known after lazy pixel-shift detection on
+        frame 1 (`_detect_pixel_shift`, M10-032-era). `AutoGainController`
+        fixes `self._bit_depth` at construction and never refreshes it, so
+        for a real 12-bit sensor (G3M678M/OAG) it stayed wrongly locked to
+        16 for the entire session. A genuinely saturated 12-bit frame
+        (4095/4095) was read against `adc_max=65535` → `mean_frac≈6%` →
+        looks *dark*, not saturated — so the controller kept "brightening"
+        (driving exposure to 4.0s and gain to 400, both hardcoded ceilings
+        since no `CameraProfile` is passed at this call site) and then went
+        silent forever once both hit their ceiling, masking real 100%
+        saturation from the auto-gain loop the whole time. The separate,
+        correctly-per-frame-refreshed logging path (`cur_bit_depth` in the
+        same file) showed the true saturation the whole time — which is
+        exactly why the log evidence looked contradictory until this was
+        found.
+      - Fixed: `domain/autogain.py`'s `AutoGainController.update()` gains an
+        optional `bit_depth` parameter that overrides `self._bit_depth` for
+        that call (backward compatible — omitted keeps old behavior);
+        `api/preview.py`'s autogain-update block now passes the already
+        correctly-refreshed `cur_bit_depth` into every `ctrl.update()` call.
+      - Tests: `tests/unit/domain/test_autogain.py` — new
+        `TestPerFrameBitDepthOverride` (3 cases): override corrects a
+        would-be-stuck saturated frame; omitting the override preserves the
+        constructor's value (back-compat); a characterization test
+        reproducing the exact bug (no override → stuck at max exposure/gain
+        on a genuinely saturated 12-bit frame). Full unit suite green.
+      - Pi verification pending (user): confirm the OAG's live preview now
+        actually dims (exposure/gain visibly decrease, `Autogain update:`
+        lines resume) instead of sitting stuck at max once saturated.
+
+- [x] M10-038 Capture-sequence Start/End defaults are physically impossible
+      near the focuser's limits (user report 2026-07-22, screenshot: position
+      15/50000, Start defaulted to -500 → 15-500 = -485, below the focuser's
+      minimum of 0). `[P2 · Autofocus UI]`
+      - *Done 2026-07-22:* The static HTML defaults (`-500`/`+500`) are offsets
+        relative to the current focuser position, but never accounted for
+        where that position actually is — near either end of a real
+        focuser's range, the defaults are guaranteed to produce a request
+        `api/autofocus_sequence.py` already correctly rejects with a 422
+        ("exceeds the focuser's reported range"), but only *after* the user
+        clicks "Capture sequence", with no indication beforehand that the
+        defaults were unusable.
+      - Fixed in `static/js/autofocus.js`'s existing `_afStartPositionPoll()`
+        (already polls `/api/focuser/status` every 1s for the position
+        readout): the first time a real position/`max_position` is known,
+        clamps `#af-seq-start`/`#af-seq-end` to
+        `max(-500, -position)`/`min(500, max_position - position)` — always
+        within `[0, max_position]` — then leaves the fields alone (a
+        `_afSeqDefaultsClamped` one-shot flag) so it never overwrites a value
+        the user has since typed in. Re-arms on next screen entry via
+        `afEnter()` → `_afStartPositionPoll()`.
+      - Verification: `node --check` on the edited file. No JS test harness
+        exists in this repo for `static/js/*` beyond syntax checks (matches
+        how the M10-035/036/037 JS-only edits were verified this session).
+      - Pi verification pending (user): confirm the Start/End fields land on
+        sensible in-range values on page load at a real (non-mid-range)
+        focuser position, and that manually-entered values still stick.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

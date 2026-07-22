@@ -5577,3 +5577,55 @@ old always-black uniform behavior.
 
 Pi verification pending (user): deliberately overexpose the affected
 camera and confirm the tile now shows white/bright instead of black.
+
+---
+
+## 2026-07-22 — M10-037: live-preview autogain permanently stuck at max exposure/gain
+
+Follow-up to M10-036 above. User pushed back hard on the "just gain=400 too
+high, nothing to fix" conclusion by pointing out `autogain=True` was on for
+the OAG connection the whole time — if autogain were working, it shouldn't
+sit saturated indefinitely. That was the right instinct; log correlation
+(`grep -nE "Preview WS accepted: camera_index=3|Autogain (enabled|disabled|
+update): camera_index=3"`) confirmed it: on both connections captured in the
+log, exactly two `Autogain update:` lines fired (exposure 2.0→4.0, then gain
+100→400) and then **nothing ever again**, even though many more saturated
+frames were captured afterward.
+
+Root cause: `api/preview.py` calls `camera.get_bit_depth()` and constructs
+`AutoGainController(exposure, gain, bit_depth=cur_bit_depth)` *before* the
+capture loop starts. `adapters/touptek/camera.py`'s `get_bit_depth()`
+(lines 398-400) explicitly documents returning the stale default (16) until
+the first capture completes, for sensors whose true native depth is only
+known after lazy pixel-shift detection on frame 1. `AutoGainController`
+fixes `self._bit_depth` at construction and never refreshes it — so for the
+OAG (a real 12-bit sensor, G3M678M), it stayed wrongly locked to 16 for the
+whole session. A genuinely saturated 12-bit frame (4095/4095) read against
+the wrong `adc_max=65535` computes `mean_frac≈6%` — looks *dark*, not
+saturated — so the controller kept "brightening" until exposure and gain
+both hit their hardcoded ceilings (4.0s / 400 — no `CameraProfile` is passed
+at this call site), then had nowhere left to go and went silent forever,
+masking the real 100% saturation from the auto-gain loop the entire time.
+The separately-tracked, correctly-per-frame-refreshed `cur_bit_depth` used
+for the log's own `mean_adu`/`sat=` stats showed the true saturation the
+whole time — which is exactly why the evidence looked self-contradictory
+(real saturation stats + supposedly-active autogain) until this was traced.
+
+Fixed: `domain/autogain.py`'s `AutoGainController.update()` gains an
+optional `bit_depth` parameter that overrides `self._bit_depth` for that
+call only (omitting it preserves the old behavior — fully backward
+compatible for the one other test-only caller pattern); `api/preview.py`'s
+autogain-update block now passes the already-correctly-refreshed
+`cur_bit_depth` into every `ctrl.update()` call.
+
+Tests: `tests/unit/domain/test_autogain.py`'s new
+`TestPerFrameBitDepthOverride` — one case proving the override corrects a
+would-be-stuck saturated frame, one proving omitting it preserves the
+constructor's value, and one characterization test reproducing the exact
+bug (no override → stuck at max exposure/gain on a genuinely saturated
+12-bit frame) so a future refactor can't silently reintroduce it. Full unit
+suite run to confirm nothing else broke.
+
+Pi verification pending (user): confirm the OAG's live preview now actually
+dims — exposure/gain visibly decrease and `Autogain update:` lines resume —
+instead of sitting stuck at max once saturated.

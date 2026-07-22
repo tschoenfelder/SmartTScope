@@ -350,7 +350,7 @@ async def ws_preview(
             # --- autogain update ---
             if ctrl is not None:
                 prev_exp, prev_gain = ctrl.exposure, ctrl.gain
-                ctrl.update(frame.pixels)
+                ctrl.update(frame.pixels, bit_depth=cur_bit_depth)
                 changed = ctrl.exposure != prev_exp or ctrl.gain != prev_gain
                 if ctrl.gain != cur_gain:
                     cur_gain = ctrl.gain

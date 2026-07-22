@@ -2870,6 +2870,35 @@ histogram ceiling until it ships upstream.
       - Tests: new `test_focuser_lock_released_during_capture` asserts the
         lock is acquirable (non-blocking) during every capture call.
 
+- [ ] M10-043 Guide-camera autogain still stuck at 4.0s/gain 400 after
+      M10-040's guiding-mode fix, confirmed deployed (v0.1.0 `2957aca`).
+      `[P1 · Preview/Autogain]`
+      - *Investigating 2026-07-22:* log evidence is genuinely contradictory
+        and needs one more data point before a fix can be attempted.
+        `Preview frame: camera_index=0 ... mean_adu=4094 p99_adu=4094
+        sat=0.00%` — mean equals p99 (a perfectly uniform frame, same
+        signature as the M10-036 OAG bug), but whether 4094 means "nearly
+        black" (if guide's true bit depth is 16, matching config) or
+        "nearly fully saturated" (if it's actually 12-bit like the OAG,
+        4094/4095 ≈ 99.98%) flips what the *correct* autogain response
+        should be — and the bit depth actually used per frame was never
+        logged anywhere, so this couldn't be resolved from existing data.
+      - Added diagnostic logging (no behavior change): `api/preview.py`'s
+        `Preview frame:` log line now includes `bit_depth=` (the per-frame
+        value threaded into both stats and `AutoGainController.update()`)
+        and `p99_9_adu=` (the exact signal the guiding-mode fix uses).
+        Next log capture will directly show which case this is — if
+        `bit_depth=12` and `p99_9_adu≈4094`, the frame is really saturated
+        and stuck-at-max would be a genuine remaining bug (autogain should
+        be dimming, not brightening); if `bit_depth=16`, 4094/65535≈6% is
+        genuinely dark and stuck-at-max is correct given no guide star is
+        currently visible, not a bug.
+      - Tests: `tests/unit/api/test_preview.py` (13, unaffected — no test
+        asserts this log line's format). Full unit suite: 4098 passed, 0
+        failed, 24 skipped.
+      - **Not yet fixed — next step is re-reading the log after this
+        instrumentation ships**, not guessing at a cause further.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

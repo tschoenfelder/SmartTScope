@@ -335,11 +335,13 @@ async def ws_preview(
 
             _log.info(
                 "Preview frame: camera_index=%d adapter=%s capture=%.3fs "
-                "exp=%.4fs gain=%d offset=%d mean_adu=%.0f p99_adu=%.0f sat=%.2f%%",
+                "exp=%.4fs gain=%d offset=%d bit_depth=%d mean_adu=%.0f p99_adu=%.0f "
+                "p99_9_adu=%.0f sat=%.2f%%",
                 camera_index, type(camera).__name__, _dt,
-                cur_exposure, cur_gain, eff_offset,
+                cur_exposure, cur_gain, eff_offset, cur_bit_depth,
                 (stats.mean_frac * stats.adc_max) if stats else 0.0,
                 (stats.p99 * stats.adc_max) if stats else 0.0,
+                (stats.p99_9 * stats.adc_max) if stats else 0.0,
                 stats.saturation_pct if stats else 0.0,
             )
 

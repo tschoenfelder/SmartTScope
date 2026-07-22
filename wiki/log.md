@@ -5787,3 +5787,32 @@ sequence steps doesn't corrupt anything — the next step still targets its
 correct absolute position regardless of where the focuser sits when it
 starts. New `test_focuser_lock_released_during_capture` asserts the lock
 is acquirable (non-blocking) during every capture call in the sequence.
+
+---
+
+## 2026-07-22 — M10-043 (in progress): guide autogain still stuck — added instrumentation, not fixed yet
+
+Confirmed the Pi is running v0.1.0 `2957aca` (includes M10-040's guiding-
+mode fix), so "no change on guide" isn't a stale-deployment artifact —
+worth investigating for real. `Autogain update: camera_index=0` showed the
+same ramp-then-stuck pattern as before (2.0→4.0s, 100→400 gain, then
+silence) — but this pattern alone can't distinguish "the fix isn't
+engaging" from "genuinely no guide star in view" (a totally dark frame
+drives *any* signal metric to the ceiling identically).
+
+Asked for `Preview frame: camera_index=0` lines to break the tie:
+`mean_adu=4094 p99_adu=4094 sat=0.00%` — mean exactly equals p99 (a
+perfectly uniform frame, same signature as the M10-036 OAG bug), which is
+genuinely ambiguous: whether 4094 means "nearly black" or "nearly fully
+saturated" depends entirely on the per-frame bit depth actually used for
+this camera, which was never logged anywhere. Rather than guess, added
+`bit_depth=` and `p99_9_adu=` (the guiding-mode signal's exact value) to
+the existing `Preview frame:` log line in `api/preview.py` — a pure
+diagnostic addition, no behavior change. Full unit suite green (4098
+passed); no test asserts this log line's format.
+
+Left open in `docs/todo.md` as M10-043 — the next log capture with this
+instrumentation will show conclusively whether guide's true bit depth
+matches config (16, dark frame, correct behavior) or not (12 like the OAG,
+genuinely saturated, real remaining bug). Not fixing anything further
+until that data is in hand.

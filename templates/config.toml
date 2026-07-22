@@ -205,6 +205,7 @@ ha_west_limit_h = 0.333   # ~20 min past meridian
 
 [session]
 storage_dir          = ""      # where captured frames are saved; empty = system temp
+image_root           = ""      # root dir for autofocus-sequence/calibration FITS frames; empty = 503 until set (or set IMAGE_ROOT env var)
 command_history_dir  = ""      # JSONL command audit log dir; empty = ~/.SmartTScope/commands
 log_dir              = ""      # per-section log files root; empty = ~/.SmartTScope/logs
 stars_cfg            = ""      # path to custom target list; empty = ~/.SmartTScope/stars.cfg

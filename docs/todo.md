@@ -2586,6 +2586,41 @@ histogram ceiling until it ships upstream.
         `:R0#`/`:R2#`/`:R4#`/`:R5#`/`:R7#`/`:R9#` as expected on real
         firmware.
 
+- [ ] M10-035 Hardware-session bug reports 2026-07-22: `IMAGE_ROOT`
+      unconfigurable, capture-sequence frame-count mismatch, narrow number
+      fields, polar-align failure with no camera shown. `[P1 · Config/Autofocus/Polar]`
+      - *Done 2026-07-22:* `templates/config.toml` was missing the
+        `[session].image_root` key entirely (env var only, and fragile
+        across shell/service restarts) — violated this project's own
+        "templates always in sync" rule since `IMAGE_ROOT` support was
+        added to `config.py` per `docs/autogain-tasks.md`. Added the key
+        with an explanatory comment. **User action still needed**: add
+        the same line to the real `~/.SmartTScope/config.toml` on the Pi
+        (outside git, not touched by this fix).
+      - *Done 2026-07-22:* Polar-alignment status never showed which
+        camera ran, even though `api/polar.py`'s `PolarStatus` has carried
+        `cam_index`/`cam_role` since M10-032 (`_resolve_cam_role()` was
+        added specifically so "PolarStatus always shows which camera
+        ran") — `static/js/mount.js`'s `_paRender()` simply never read
+        either field. Added a `#pa-cam-label` span next to the step label
+        in `index.html`, populated from `d.cam_role`/`d.cam_index`.
+      - *Partial 2026-07-22:* Widened `af-seq-start`/`af-seq-end` (7ch→9ch)
+        and `af-seq-step` (6ch→7ch) on the "Capture focus sequence" card
+        as the most likely candidate for "number fields too narrow for 6
+        digits" — not confirmed against the field the user actually meant.
+      - *Open — needs user input, not guessed at:* (a) exact values/status
+        text for the capture-sequence run that reportedly captured 1121
+        frames ending at position 1608 from a 400/600/step-5 input — the
+        position math checks out for a current position of ~1008, but
+        nothing found in `api/autofocus_sequence.py` or `autofocus.js`
+        explains a ~27x frame-count blowup; (b) the exact `error_msg`/step
+        shown when polar alignment "fails" with 20+ stars detected — star
+        *detection* succeeding doesn't imply plate-*solve* succeeding, and
+        the failure could equally be the M10-032 AT_HOME hard gate
+        (awaiting its own first real Pi verification) rejecting the
+        attempt for an unrelated reason. Confirming the field meant in the
+        prior bullet would also help.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

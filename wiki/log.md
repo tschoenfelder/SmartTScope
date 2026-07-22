@@ -5448,3 +5448,55 @@ processes both partially bound. Diagnosed via
 `Get-NetTCPConnection -LocalPort 8123`, force-killed both, restarted a
 single clean instance, and re-verified against that before trusting any
 result.)
+
+---
+
+## 2026-07-22 — Four bugs reported from a real Pi hardware test session
+
+User ran an actual test session on the Pi and reported four issues in one
+message. Root-caused via `systematic-debugging` before touching code;
+two had a clear root cause and were fixed, two need more repro detail
+from the user before a fix can be attempted (asked, not guessed).
+
+1. **`IMAGE_ROOT is not configured`, `export IMAGE_ROOT='~'` didn't help.**
+   Root cause: `config.py` has supported `IMAGE_ROOT` (env var or
+   `[session].image_root` TOML key) since `docs/autogain-tasks.md`'s
+   autogain work, but `templates/config.toml` was never updated with the
+   key — violates this project's own "templates always in sync" rule. A
+   shell-exported env var is also fragile across restarts/sessions
+   compared to the persisted TOML file. Fixed: added
+   `image_root = ""` to `templates/config.toml`'s `[session]` block with
+   an explanatory comment. **User action still needed**: add the matching
+   line to the actual `~/.SmartTScope/config.toml` on the Pi (that file
+   lives outside git per this repo's Pi-deployment rule, so this fix alone
+   doesn't reach it).
+
+2. **Capture focus sequence: default start field looked off, and a
+   400–600 step-5 sweep reportedly captured 1121 frames ending at position
+   1608.** Investigated `api/autofocus_sequence.py`'s position math
+   (`range(current+start_offset, current+end_offset+1, step)`) and
+   `static/js/autofocus.js`'s `afStartSequence()`/`_afPollSequence()` —
+   found nothing that reproduces a ~27x frame-count blowup from those
+   inputs; the last-position math does check out if current position was
+   ~1008. Not fixed — asked the user for the exact values/status text
+   next time, since the numbers as reported don't match any bug found by
+   inspection.
+
+3. **Number input fields too narrow for 6-digit values.** No single field
+   confirmed as the culprit, but the same "Capture focus sequence" card's
+   start/end offset fields (`af-seq-start`/`af-seq-end`, 7ch) were the most
+   likely candidate given a wide focuser sweep — widened to 9ch/7ch
+   (`af-seq-step`). Flagged to the user in case a different field was
+   meant.
+
+4. **Polar alignment fails despite 20+ stars detected; UI doesn't show
+   which camera is used.** The camera-identity gap was a confirmed, clear
+   bug: `api/polar.py`'s `PolarStatus` has carried `cam_index`/`cam_role`
+   since `_resolve_cam_role()` was added specifically so "PolarStatus
+   always shows which camera ran" — but `static/js/mount.js`'s `_paRender()`
+   never read either field. Fixed: added a `#pa-cam-label` span next to the
+   step label in `index.html`, populated from `d.cam_role`/`d.cam_index` in
+   `_paRender()`. The "fails despite stars detected" half is a different
+   claim (star *detection* success doesn't imply plate-*solve* success) and
+   needs the actual `error_msg`/step shown by the UI to root-cause — asked
+   the user rather than guessing.

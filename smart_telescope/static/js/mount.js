@@ -683,6 +683,12 @@ const _PA_STEP_LABELS = {
 function _paRender(d) {
     _paSetProgress(d.progress, _PA_STEP_LABELS[d.step] || d.step, d.step === 'error');
 
+    const camEl = document.getElementById('pa-cam-label');
+    if (camEl) {
+      camEl.textContent = d.cam_role ? `Camera: ${d.cam_role}` :
+        (d.cam_index != null ? `Camera: #${d.cam_index}` : '');
+    }
+
     const dot = document.getElementById('pa-dot');
     if (dot) dot.className = 'dot ' + (
       d.step === 'done' ? 'dot-green' : d.step === 'error' ? 'dot-red' :

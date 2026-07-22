@@ -5750,3 +5750,23 @@ Pi verification pending (user): confirm the guide camera's live preview
 now actually reaches a stable, well-exposed setting instead of sitting at
 4.0s/400 regardless of the real guide-star brightness; confirm the new
 absolute-range line displays/updates correctly.
+
+---
+
+## 2026-07-22 — M10-041: exposure readout rounds to "0.00 s" at short exposures
+
+User's very next report: guide still shows "4.00 s · gain 400" (no
+apparent change) and OAG now shows "0.00 s · gain 100" — the latter a
+genuine, separate, confirmed bug: `static/js/multicam.js`'s autogain-message
+handler used a fixed `.toFixed(2)`, so any exposure below 5ms (the
+controller's floor is 1ms) displays as indistinguishable-from-zero. Fixed
+with a small `_mcFormatExposure()` helper scaling decimal precision to
+magnitude.
+
+The guide "no change" report and a re-submitted "sequence minimum-focus
+bug" screenshot are more likely stale-deployment artifacts than new bugs:
+the screenshot's filename/timestamp is identical to the one attached to
+the original M10-038 report several turns ago, and M10-040 (the guide fix)
+was only pushed this same session — asked the user to confirm the Pi has
+actually been restarted with the latest pull before investigating either
+further, rather than re-chasing already-fixed, already-tested code.

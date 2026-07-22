@@ -160,7 +160,7 @@ function _mcOpenSocket(role) {
           p.colorFactor = msg.is_color ? 2 : 1;
           if (msg.name && !p.nameEl.textContent) p.nameEl.textContent = msg.name;
         } else if (msg.type === 'autogain') {
-          p.infoEl.textContent = `${(+msg.exposure).toFixed(2)} s · gain ${msg.gain}`;
+          p.infoEl.textContent = `${_mcFormatExposure(+msg.exposure)} s · gain ${msg.gain}`;
         } else if (msg.type === 'camera_busy') {
           p.infoEl.textContent = 'camera busy (background job)…';
         }
@@ -204,6 +204,15 @@ function _mcFmtAngle(arcsec) {
     if (arcsec >= 3600) return (arcsec / 3600).toFixed(2) + '°';
     if (arcsec >= 60)   return (arcsec / 60).toFixed(1) + '′';
     return arcsec.toFixed(0) + '″';
+}
+
+function _mcFormatExposure(exp) {
+    // Fixed 2-decimal formatting shows "0.00 s" for any autogain-selected
+    // exposure below 5ms (the floor is 1ms) — indistinguishable from no
+    // exposure at all. Scale precision to the magnitude instead.
+    if (exp >= 1)    return exp.toFixed(2);
+    if (exp >= 0.01) return exp.toFixed(3);
+    return exp.toFixed(4);
 }
 
 function _mcUpdateFovLabels() {

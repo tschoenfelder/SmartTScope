@@ -2835,6 +2835,26 @@ histogram ceiling until it ships upstream.
         brightness; confirm the Autofocus screen's new absolute-range line
         displays and updates correctly.
 
+- [x] M10-041 Cameras-screen exposure readout shows "0.00 s" for very short
+      autogain-selected exposures (user report 2026-07-22, OAG showing
+      "0.00 s · gain 100" — indistinguishable from no exposure at all).
+      `[P2 · Preview UI]`
+      - *Done 2026-07-22:* `static/js/multicam.js`'s autogain-message
+        handler formatted exposure with a fixed `.toFixed(2)` — any value
+        below 5ms (the controller's floor is 1ms) rounds to "0.00". Fixed
+        with a `_mcFormatExposure()` helper that scales precision to
+        magnitude (2 decimals ≥1s, 3 decimals ≥10ms, 4 decimals below).
+      - Verification: `node --check`.
+      - **Still needs confirmation, not yet verified**: whether the guide
+        camera's "no change" report (same message) reflects the Pi actually
+        running M10-040's fix yet, or a pre-restart retest — flagged back
+        to the user rather than assumed either way. Similarly, the reported
+        "sequence minimum-focus bug still not fixed" reused the identical
+        screenshot file from the M10-038 report several turns earlier (same
+        filename/timestamp) — likely not yet a fresh retest of M10-038's
+        clamp + M10-040's absolute-range display; asked the user to confirm
+        rather than re-investigating a bug already fixed and tested.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

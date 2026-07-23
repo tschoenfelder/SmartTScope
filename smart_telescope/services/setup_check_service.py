@@ -427,17 +427,25 @@ def run_camera_diagnostic(
 def _analyse_frame(data: "np.ndarray") -> tuple[int, float | None, float]:
     """Estimate star count, median FWHM, and background ADU from a 2-D array.
 
-    Uses a simple threshold approach (background + 5σ) and basic connected
+    Uses a threshold approach (background + 5σ) and basic connected
     components to count star-like blobs.  Returns (count, fwhm_or_None, bg).
     FWHM is estimated as √area of detected blobs (rough approximation).
+
+    Noise (σ) is estimated via MAD (median absolute deviation) rather than
+    raw np.std: a whole-frame std is inflated by the very star pixels it's
+    meant to help detect (M10-048 — at higher gain this combines with an
+    already-elevated noise floor to push the threshold above real,
+    well-above-background stars). MAD is robust to that handful of bright
+    outliers, so the threshold tracks the true background noise instead.
     """
     arr = np.asarray(data, dtype=np.float32)
     if arr.ndim == 3:
         arr = arr.mean(axis=2)
 
     background = float(np.median(arr))
-    stddev = float(np.std(arr))
-    threshold = background + 5.0 * stddev
+    mad = float(np.median(np.abs(arr - background)))
+    noise_sigma = 1.4826 * mad  # MAD→sigma conversion factor for Gaussian noise
+    threshold = background + 5.0 * noise_sigma
 
     binary = (arr > threshold).astype(np.uint8)
 

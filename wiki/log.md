@@ -5859,3 +5859,108 @@ silently failing. Tests: `test_preview.py` + full touptek adapter suite
 (72) green; full unit suite 4098 passed, 0 failed, 24 skipped (same one
 known flake, confirmed passing in isolation previously). Still not fixed —
 waiting on the next log capture.
+
+---
+
+## 2026-07-23 — M10-043 continued: new capture points to "not a bug"
+
+The next capture, with both diagnostics deployed, tells a different story
+than the one that opened this investigation: `actual_exp_ms=`/
+`actual_gain=` match the requested `exp=`/`gain=` exactly on every line
+(2000.0/100, 4000.0/100, 4000.0/400), and zero `SDK call failed` warnings
+appear — ruling out the silently-failing-`put_AutoExpoEnable` hypothesis
+outright. The frame data isn't frozen either: `mean_adu=1` (a dark-current/
+read-noise floor, not the earlier constant `4094`), with `p99_9_adu` going
+3 → 4 → 14 as gain steps 100 → 100 → 400 — roughly the 4× scaling a 4× gain
+bump should produce on a noise floor. Taken together this looks like a
+genuinely dark FOV (no guide star in view) with autogain correctly
+climbing to its ceiling looking for signal, not a capture-path bug. Sent
+the open question back to the user — was a guide star actually visible
+during this capture? — before closing M10-043 as "not a bug."
+
+## 2026-07-23 — Five new bug reports logged (M10-044..048), no fixes yet
+
+User ran a live hardware session (autofocus sequence, camera display,
+polar-align) and reported five distinct symptoms in one message. Per
+explicit instruction, this pass only records findings in `docs/todo.md` —
+no code changes. Two research agents plus direct code reading pinned down
+root causes for four of the five; one (frame-count mismatch) still needs
+one more piece of evidence from the user.
+
+- **M10-044** — a sequence run (start=-15, end=5500, step=50) reported
+  "101 frames" but the code's own formula (and the naive hand calculation)
+  both give 111. No clamping path in `start_sequence()` can silently drop
+  10 positions from a successful run — formula and code agree with each
+  other, just not with what was reported. Left open pending the user
+  checking the actual file count in that run's output directory and the
+  job's final status/error.
+- **M10-045** — live frame display freezes for the whole duration of a
+  running autofocus sequence (and by extension, nudge buttons feel
+  unresponsive). Root cause: the sequence claims the camera resource via
+  `JobManager` for the entire job (unlike the focuser lock, scoped
+  per-position since M10-042), so the preview websocket just polls
+  "camera busy" the whole time and the frontend silently drops that
+  message instead of surfacing it.
+- **M10-046** — the Autofocus screen's manual gain field is read for
+  single-shot captures but never sent in the `/api/autofocus/sequence`
+  request body, even though the backend already accepts and applies
+  `gain`. A precisely located, small fix.
+- **M10-047** — OAG/main's field-of-view overlay boxes sometimes render on
+  the guide camera's tile instead of their own. Not a star-detection bug —
+  it's the multicam FOV-box slot assignment (`_mcAssignSlots`)
+  re-ranking panels by a computed sky area that depends on
+  `pixel_scale_arcsec`, which defaults to 0.0 when an optical train isn't
+  fully configured, making the ranking (and therefore which tile is
+  "top") unstable.
+- **M10-048** — polar-align's star-count gate (`setup_check_service.py`,
+  `MIN_STARS_BEFORE_SOLVE=15`) uses a raw full-frame standard deviation
+  for its brightness threshold, which rises with gain-dependent sensor
+  noise — so at higher gain, real stars that are visible in the
+  aggressively-stretched live JPEG fall below the raw-ADU threshold and
+  never get counted, reporting 0 stars across all three cameras despite
+  visible stars on screen.
+
+Full details, file/line references, and recommended fix directions for
+each are in `docs/todo.md`.
+
+---
+
+## 2026-07-24 — M10-045/046/047/048 implemented (M10-044 still open)
+
+Implemented four of the five bugs logged the day before; M10-044 (frame-
+count mismatch) still needs the user's file-count/log check before a fix
+can even be attempted, so it's untouched.
+
+- **M10-046** (gain ignored) — one-line fix: `afStartSequence()` in
+  `static/js/autofocus.js` now reads `#af-gain` and includes it in the
+  `/api/autofocus/sequence` request body.
+- **M10-045** (frozen live frame) — `onmessage` now renders the previously
+  silently-dropped `camera_busy` message as "Sequence running — live view
+  paused"; nudge buttons (`.nudge`) are disabled for a sequence's duration,
+  and `afNudge()` also no-ops defensively while a sequence job is running.
+  Chose the smaller status-message fix over streaming real per-frame
+  previews — nudging during an automated sequence doesn't make sense
+  anyway, so the frozen-image confusion was the actual problem to solve.
+- **M10-047** (FOV overlay on wrong tile) — `_mcAssignSlots()` in
+  `static/js/multicam.js` now assigns tile slots by a fixed role order
+  (`main` → `guide` → `oag`) instead of dynamically re-sorting by computed
+  FOV area, so the overlay's reference tile (`'top'`) no longer depends on
+  `pixel_scale_arcsec` being configured correctly. `pixel_scale_arcsec`
+  itself still needs verifying in the Pi's config for the FOV boxes to be
+  meaningful — this fix only stops the *slot* from moving.
+- **M10-048** (polar-align 0 stars) — `_analyse_frame()` in
+  `services/setup_check_service.py` now estimates noise via MAD (median
+  absolute deviation × 1.4826) instead of raw `np.std()`. Full TDD cycle:
+  wrote `test_analyse_frame_star_not_masked_by_its_own_outlier_inflation`
+  (a synthetic 40×50 frame, background sigma=5, 30-pixel 6σ star blob),
+  confirmed it failed against the pre-fix code for the right reason (the
+  star was genuinely missed — a raw whole-frame std is inflated by the
+  very star pixels it's supposed to help detect, pushing the naive
+  threshold above the star's own peak even though it's unambiguously
+  above the true background noise), then implemented MAD and confirmed
+  green (18/18 in `test_camera_diagnostic.py`).
+
+The two multicam/autofocus JS fixes have no JS test harness in this repo
+(none exists anywhere in the project) — verified with `node --check` on
+both files per established convention, Pi verification pending. Full
+Python unit suite run after all four changes.

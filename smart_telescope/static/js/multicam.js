@@ -224,14 +224,26 @@ function _mcUpdateFovLabels() {
     }
 }
 
+// M10-047: slot assignment used to re-sort panels by computed FOV area
+// (widest on 'top') every time any panel's resolution arrived. That area
+// depends on pixel_scale_arcsec, which is 0 for any optical train that
+// isn't fully configured — making the ranking, and therefore which
+// camera's tile the other two cameras' FOV-box overlays land on
+// (_mcPaintFovOverlays always draws onto whichever panel holds 'top'),
+// unstable and config/timing-dependent instead of tied to the camera's
+// role. Fixed by role instead: 'main' is always the reference frame.
+const _MC_SLOT_ROLE_ORDER = ['main', 'guide', 'oag'];
+
 function _mcAssignSlots() {
-    const entries = Object.values(_mcPanels);
-    entries.sort((a, b) => {
-      const fa = _mcFov(a), fb = _mcFov(b);
-      return (fb ? fb.wArcsec * fb.hArcsec : 0) - (fa ? fa.wArcsec * fa.hArcsec : 0);
-    });
     const slots = ['top', 'b1', 'b2'];
-    entries.forEach((p, i) => {
+    const roles = Object.keys(_mcPanels).sort((a, b) => {
+      const ia = _MC_SLOT_ROLE_ORDER.indexOf(a);
+      const ib = _MC_SLOT_ROLE_ORDER.indexOf(b);
+      return (ia === -1 ? _MC_SLOT_ROLE_ORDER.length : ia)
+           - (ib === -1 ? _MC_SLOT_ROLE_ORDER.length : ib);
+    });
+    roles.forEach((role, i) => {
+      const p = _mcPanels[role];
       p.el.dataset.slot = slots[i] || 'b2';
       p.dirty = true;
     });

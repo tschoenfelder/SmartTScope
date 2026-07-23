@@ -27,6 +27,7 @@ let _afReconnectTimer  = null;
 let _afPosTimer        = null;
 let _afMetricsTimer    = null;
 let _afSeqPollTimer    = null;
+let _afSeqRunning      = false;
 
 function afEnter() {
     if (_afActive) return;
@@ -90,6 +91,11 @@ function _afConnectWs() {
               effEl.textContent =
                 `Exp: ${msg.effective_exposure}s · Gain: ${msg.effective_gain}`;
             }
+          } else if (msg.type === 'camera_busy') {
+            // M10-045: the running capture sequence owns the camera for its
+            // whole duration, so the live frame below is stale, not broken —
+            // say so instead of leaving a frozen image with no explanation.
+            if (statusEl) statusEl.textContent = 'Sequence running — live view paused';
           }
         } catch (_) {}
         return;
@@ -174,6 +180,7 @@ function _afUpdateSeqRange() {
 }
 
 async function afNudge(delta) {
+    if (_afSeqRunning) return;   // sequence job owns the focuser positions
     const statusEl = document.getElementById('af-status');
     try {
       await apiPost('/api/focuser/nudge', { delta });
@@ -215,17 +222,26 @@ async function afStartSequence() {
     const end_offset   = parseInt(document.getElementById('af-seq-end').value, 10);
     const step         = parseInt(document.getElementById('af-seq-step').value, 10);
     const exposure      = parseFloat(document.getElementById('af-exposure')?.value) || 2.0;
+    const gain          = parseInt(document.getElementById('af-gain')?.value, 10) || undefined;
     btn.disabled = true;
     statusEl.textContent = 'Starting…';
+    _afSeqRunning = true;
+    document.querySelectorAll('.nudge').forEach((b) => { b.disabled = true; });
     try {
       const r = await apiPost('/api/autofocus/sequence', {
-        start_offset, end_offset, step, exposure, camera_role: 'main',
+        start_offset, end_offset, step, exposure, gain, camera_role: 'main',
       });
       _afPollSequence(r.job_id, r.n_frames);
     } catch (err) {
       statusEl.textContent = String(err.message || err);
       btn.disabled = false;
+      _afSeqEnded();
     }
+}
+
+function _afSeqEnded() {
+    _afSeqRunning = false;
+    document.querySelectorAll('.nudge').forEach((b) => { b.disabled = false; });
 }
 
 function _afPollSequence(jobId, nFrames) {
@@ -241,10 +257,12 @@ function _afPollSequence(jobId, nFrames) {
           clearInterval(_afSeqPollTimer);
           statusEl.textContent = `Done — ${st.frames_done} frames saved to ${st.result_dir}`;
           btn.disabled = false;
+          _afSeqEnded();
         } else {
           clearInterval(_afSeqPollTimer);
           statusEl.textContent = `Failed: ${st.error}`;
           btn.disabled = false;
+          _afSeqEnded();
         }
       } catch (_) {}
     }, 1000);

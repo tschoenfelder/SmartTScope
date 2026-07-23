@@ -2929,6 +2929,166 @@ histogram ceiling until it ships upstream.
       - **Still not fixed — waiting on the next log capture** with this
         instrumentation to show whether any SDK call is failing and
         whether actual vs. requested exposure/gain diverge.
+      - *Update 2026-07-23 (new capture, likely not a bug):* fresh log with
+        the instrumentation deployed shows `actual_exp_ms=`/`actual_gain=`
+        matching the requested `exp=`/`gain=` exactly on every line
+        (2000.0/100, 4000.0/100, 4000.0/400), and zero `SDK call failed`
+        warnings — ruling out the silent-`put_AutoExpoEnable`-failure
+        hypothesis entirely. The frame data is also *not* frozen: this
+        capture shows `mean_adu=1` (dark-current/read-noise floor, not the
+        earlier constant `4094`), with `p99_9_adu` scaling from 3→4→14 as
+        gain goes 100→100→400 — roughly the 4× increase expected from a 4×
+        gain bump on a noise floor. This is consistent with "no guide star
+        currently in the FOV" — autogain correctly climbs to the exposure/
+        gain ceiling looking for signal and has nowhere further to go.
+        **Open question sent to user:** was a guide star actually visible
+        in the OAG/guide camera's FOV during this capture? If not, this is
+        expected behavior and M10-043 can close as "not a bug." If yes,
+        this is a different (and more serious) problem than the one
+        originally chased. Awaiting confirmation before closing.
+
+- [ ] M10-044 Autofocus sequence frame-count mismatch (101 reported vs 111
+      expected). `[P2 · Autofocus]`
+      - Run: start_offset=-15, end_offset=5500, step=50, reported "101
+        frames", saved to
+        `/home/astro/astro/Pictures/SmartTScope/autofocus_sequence/5721e35e`.
+      - `api/autofocus_sequence.py`'s `start_sequence()` (lines 126-141)
+        computes `positions = range(current+start_offset,
+        current+end_offset+1, step)`. Hand-computed length:
+        `ceil((5500-(-15)+1)/50) = 111` — matches the naive formula, not
+        101. No clamping path can silently truncate the list (lines
+        134-141 only reject the *whole* request with a 422 if any position
+        falls outside `[0, max_position]`). Formula and code agree with
+        each other, just not with the reported "101" — not a formula bug
+        given current evidence.
+      - Leading hypotheses (not yet distinguished): (a) "101" was a
+        mid-run `frames_done` progress reading (`_afPollSequence`,
+        `static/js/autofocus.js:239`, `"Capturing ${frames_done}/${nFrames}…"`)
+        misread as the final count; (b) the job failed partway
+        (`job.status = "failed"`, `autofocus_sequence.py:189-193`) after
+        writing 101 of 111 frames.
+      - **Next step:** ask the user to run
+        `ls .../autofocus_sequence/5721e35e/ | wc -l` (actual FITS files
+        written) and check the job's final `error` field / server log
+        around that run before attempting any fix.
+
+- [x] M10-045 Live frame display frozen during a running autofocus
+      sequence, which also makes the -5/-1/+1/+5 nudge buttons feel
+      unresponsive (no visual feedback). `[P2 · Autofocus/Preview]`
+      - Root cause confirmed: `start_sequence()` claims the camera
+        resource for the **entire** job via
+        `deps.get_job_manager().submit("autofocus_sequence",
+        {f"camera:{camera_index}"}, _run, ...)` (`autofocus_sequence.py`
+        ~202-204) — not scoped per-frame the way the focuser lock was
+        fixed in M10-042. While held, `api/preview.py`'s `/ws/preview` loop
+        (~261-270) just polls `is_resource_held()` and sends
+        `{"type": "camera_busy"}` every 250ms without capturing.
+        `static/js/autofocus.js`'s `onmessage` (~75-96) silently drops
+        `camera_busy` messages — `img.src` is only reassigned in the
+        binary-frame branch — so `#af-preview-img` stays frozen on the
+        last pre-sequence frame for the whole run.
+      - *Fixed:* `onmessage` now renders `camera_busy` as an explicit
+        "Sequence running — live view paused" status instead of dropping
+        it silently. Nudge buttons (`.nudge`) are disabled for the
+        duration of a sequence job (`afStartSequence()` → `_afSeqEnded()`
+        on both the `done` and `failed` poll outcomes, plus the request
+        rejection path), and `afNudge()` also no-ops defensively while
+        `_afSeqRunning` is true. Real per-frame preview streaming (option
+        (a), forwarding each captured frame to the socket) was not
+        pursued — the status message is enough to stop the frozen image
+        from being misread as a bug, and nudging during a sequence
+        doesn't make sense anyway since the sequence drives its own
+        positions.
+      - JS-only change; no JS test harness exists in this repo — verified
+        with `node --check static/js/autofocus.js`. Pi verification
+        pending.
+
+- [x] M10-046 Autofocus sequence silently ignores the manual gain field.
+      `[P2 · Autofocus]`
+      - Confirmed directly: `static/js/autofocus.js`'s `afStartSequence()`
+        (~211-223) reads `#af-exposure` but never reads `#af-gain`, and the
+        POST body to `/api/autofocus/sequence` omits `gain` entirely. The
+        backend already supports it — `SequenceRequest.gain: int | None`
+        (`autofocus_sequence.py:93`) is applied via `camera.set_gain(req.gain)`
+        at lines 149-150 whenever provided. Whatever gain the user sets on
+        screen currently has zero effect on a sequence run.
+      - *Fixed:* `afStartSequence()` now reads `#af-gain` and includes
+        `gain` in the `/api/autofocus/sequence` request body, matching how
+        `_afConnectWs()` already reads it for live preview.
+      - JS-only change; verified with `node --check static/js/autofocus.js`.
+        Pi verification pending.
+
+- [x] M10-047 Multicam FOV-overlay mislabeling — "star fields of OAG/main
+      shown in guide tile". `[P2 · Multicam]`
+      - There is no per-camera star-centroid overlay in the multicam view —
+        the reported effect is the FOV-box overlay (`_mcPaintFovOverlays`,
+        `static/js/multicam.js:297-319`), which draws each *other*
+        camera's labeled field-of-view rectangle onto whichever tile
+        currently holds the `'top'` slot.
+      - Root cause: slot assignment (`_mcAssignSlots`, `multicam.js:227-238`)
+        re-sorts panels by computed sky area every time any panel's first
+        frame/resolution arrives, ranking by `_mcFov()` (`multicam.js:192-201`),
+        which depends on `p.scaleArcsec` = `optical.pixel_scale_arcsec`.
+        That field defaults to `0.0` (`config.py:536`) when not explicitly
+        set per optical train (`services/optical_train_registry.py`
+        ~200-243) — an unset/zero pixel scale on any train makes the
+        "widest FOV" ranking unstable and timing/config-dependent, so
+        `'top'` can land on the wrong role (e.g. guide instead of main),
+        making OAG's and main's rectangles/labels appear on the guide
+        tile. `_mcPanels` itself is correctly keyed by role — no
+        array-index bug.
+      - *Fixed:* `_mcAssignSlots()` now assigns slots by a fixed
+        `_MC_SLOT_ROLE_ORDER = ['main', 'guide', 'oag']` instead of
+        dynamically re-sorting by computed FOV area — `main` is always
+        `'top'` (the reference frame the other two cameras' FOV boxes are
+        drawn onto), regardless of `pixel_scale_arcsec` config state.
+        Unknown roles (not in the priority list) sort last.
+      - Separately, `pixel_scale_arcsec` should still be verified/set for
+        all three optical trains in `~/.SmartTScope/config.toml` — the FOV
+        overlay boxes themselves are only meaningful with a real scale;
+        this fix only stops the *slot* from moving, not from computing a
+        zero-sized box for a misconfigured train.
+      - Also flag `services/image_analysis.py:137-140`
+        (`stars_found = int((flat > threshold).sum() > 0)`, a boolean cast
+        that can only ever yield 0 or 1) as dead code (no current
+        importers) worth deleting or fixing so a future refactor doesn't
+        accidentally wire it in broken. Not touched this pass.
+      - JS-only change; verified with `node --check static/js/multicam.js`.
+        Pi verification pending.
+
+- [x] M10-048 Polar-align reports 0 stars on all three cameras despite
+      visible stars. `[P2 · Polar-align/Setup]`
+      - Polar-align itself does only plate-solving (`api/polar.py`,
+        `domain/polar_alignment.py` — no star counting there). The
+        star-count gate lives in
+        `services/setup_check_service.py::_analyse_frame()` (~427-465):
+        `threshold = median(arr) + 5*std(arr)` using the **raw
+        full-frame** standard deviation (not a background-region-robust/
+        sigma-clipped estimate), gated by `MIN_STARS_BEFORE_SOLVE = 15`
+        (line 290).
+      - This threshold scales directly with gain-dependent sensor noise —
+        at higher gain, `std(arr)` rises, pushing the threshold above
+        stars that are only visible in the live JPEG because `preview.py`
+        applies aggressive percentile-based `auto_stretch`. Real stars sit
+        above the *visual* stretch but below the *raw-ADU* gate, so the
+        count comes back 0 for all cameras even when the operator can see
+        stars on screen.
+      - *Fixed:* `_analyse_frame()` now estimates noise via MAD (median
+        absolute deviation, ×1.4826 for the Gaussian-equivalent sigma)
+        instead of raw `np.std()`. A whole-frame std is inflated by the
+        very star pixels it's trying to help detect — with a small number
+        of bright outlier pixels in the frame, `np.std` can rise enough to
+        push `background + 5σ` above the star's own peak even when the
+        star is genuinely, unambiguously above the true background noise.
+        MAD is robust to that handful of outliers, so the threshold tracks
+        the real background noise instead.
+      - Tests (TDD): new
+        `test_analyse_frame_star_not_masked_by_its_own_outlier_inflation`
+        in `tests/unit/services/test_camera_diagnostic.py` — a synthetic
+        40×50 frame with background sigma=5 and a 30-pixel, 6σ star blob.
+        Confirmed RED against the pre-fix code (`count >= 1` failed — the
+        star was genuinely missed), confirmed GREEN after the fix. Full
+        `test_camera_diagnostic.py`: 18 passed, 0 failed.
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

@@ -99,6 +99,30 @@ def test_analyse_frame_3d_rgb_reduced_to_2d():
     assert isinstance(count, int)
 
 
+def test_analyse_frame_star_not_masked_by_its_own_outlier_inflation():
+    """M10-048: a real, well-above-background star must not be missed
+    because the star's own bright pixels inflate a whole-frame stddev.
+
+    A frame with realistic background noise (sigma=5) plus one 30-pixel
+    star blob 30 ADU above background (6 sigma — a clear, real detection)
+    demonstrates the bug: the star's own outlier pixels are a large enough
+    fraction of this frame that they visibly inflate a raw np.std computed
+    over the whole array, pushing the naive "background + 5*std" threshold
+    (~1031, verified numerically) above the star's own peak (1030) even
+    though the star is genuinely, unambiguously above the true background
+    noise floor. A MAD-based sigma stays close to the true background
+    noise (~1025 threshold), correctly leaving the star above it.
+    """
+    rng = np.random.default_rng(42)
+    frame = rng.normal(1000.0, 5.0, size=(40, 50)).astype(np.float32)
+    frame[10:16, 10:15] = 1030.0  # 6x5 = 30-pixel blob, 30 ADU above background
+
+    count, _, bg = _analyse_frame(frame)
+
+    assert count >= 1, "Expected the 6-sigma star blob to be detected"
+    assert abs(bg - 1000.0) < 2.0
+
+
 # ── run_camera_diagnostic() ───────────────────────────────────────────────────
 
 class _MockTrain:

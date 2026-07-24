@@ -56,7 +56,9 @@ _SPARSE_P99_9_THR      = 0.10     # p99_9 above this → stars present; stop ear
 _OFFSET_STEP_ADU       = 100      # ADU increment when zero clipping detected
 _OFFSET_MAX_ADU        = 2_000    # hard cap on offset
 
-# Guiding-mode tuning — signal metric is p99_9 (guide-star peak)
+# Guiding-mode tuning — signal metric is max_frac (guide-star peak, M10-049:
+# p99_9 is a whole-frame percentile that can't see a sparse guide star at
+# real sensor resolution — mirrors domain/autogain.py's M10-043 fix)
 _GUIDE_LO              = 0.20     # guide-star peak lower bound (FR-GUIDE-001)
 _GUIDE_HI              = 0.80     # guide-star peak upper bound (saturation risk)
 _GUIDE_TARGET          = 0.45     # midpoint
@@ -452,11 +454,12 @@ class AutoGainService:
                 _prev_elongation = elong
 
             # Signal metric depends on mode:
-            # - GUIDING: p99_9 (guide-star peak in dark field)
+            # - GUIDING: max_frac (guide-star peak in dark field; M10-049 — see
+            #   the tuning-constants comment above for why p99_9 doesn't work)
             # - PLANETARY / PLANET / MOON: detected planet peak_frac (FR-PLANET-001)
             # - DSO / PLATE_SOLVE / COLLIMATION / AUTOFOCUS: effective mean
             if is_guiding:
-                signal = stats.p99_9
+                signal = stats.max_frac
             elif is_planetary:  # PLANET / MOON / PLANETARY / LUNAR
                 last_detected = detect_planet(frame.pixels, bit_depth=bit_depth)
                 signal = last_detected.peak_frac if last_detected is not None else eff_mean
@@ -634,7 +637,7 @@ class AutoGainService:
         if last_stats is not None:
             eff_mean_final = _effective_mean(last_stats, cur_offset, adc_max)
             if is_guiding:
-                signal_final = last_stats.p99_9
+                signal_final = last_stats.max_frac
             elif is_planetary and last_detected is not None:  # PLANET/MOON/PLANETARY/LUNAR
                 signal_final = last_detected.peak_frac
             else:

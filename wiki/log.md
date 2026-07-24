@@ -6053,3 +6053,28 @@ deserve their own review rather than a silently bundled change. Also
 flagged, not confirmed: `AutoGainController`'s own DSO-mode sparse-field
 early exit relies on the same `p99_9`-sees-sparse-stars assumption and
 may have an equivalent gap for DSO frames.
+
+2026-07-24 — M10-049 fixed: `AutoGainService` guiding-mode blind spot
+
+`domain/autogain_service.py`'s one-shot `run_one_shot()` had the identical
+`signal = stats.p99_9` guiding-mode bug just fixed in `AutoGainController`
+(M10-043) — same whole-frame-percentile blind spot to a sparse guide star
+at real sensor resolution, at both the main-loop signal and the
+loop-exhausted `signal_final`. Both switched to `stats.max_frac`.
+`_GUIDE_LO/_HI/_TARGET/_GUIDE_NO_SIGNAL_THR` left unchanged (still valid
+thresholds for either metric). Added
+`TestGuidingModeRealisticResolution` to `test_autogain_service.py`
+mirroring the M10-043 regression test (1080×1920 frame, 10-pixel star);
+confirmed RED against pre-fix code (`EXPOSURE_LIMIT_REACHED` instead of
+`OK`), GREEN after. Full `test_autogain_service.py`: 61 passed, no
+regressions — existing GUIDING tests use 64×64 frames where 12 star
+pixels (~0.29%) already exceed the 0.1% p99_9 needs, so their assertions
+were numerically unaffected by the metric swap.
+
+Found a third sibling while fixing this, not yet fixed — flagged as
+**M10-050**: `domain/guide_monitor.py`'s `_check_once()` (the
+FR-GUIDE-002 periodic guide monitor that runs continuously during a live
+guiding session) has the exact same `signal = stats.p99_9` pattern. Not
+fixed here because it also surfaces `p99_9` directly on an external API
+response (`api/guide_monitor.py`), so the fix isn't just an internal
+metric swap — needs its own confirmation before changing.

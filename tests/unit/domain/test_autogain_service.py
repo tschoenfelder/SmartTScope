@@ -466,16 +466,21 @@ class TestOffsetRaise:
 
 # ── Guiding mode (AGT-7-1) ────────────────────────────────────────────────────
 
-def _guide_frame(star_peak_frac: float) -> FitsFrame:
-    """Frame with a simulated guide star: 12 bright pixels (> 0.1% of 64×64) + dim background.
+def _guide_frame(
+    star_peak_frac: float,
+    shape: tuple[int, int] = (64, 64),
+    n_star_px: int = 12,
+) -> FitsFrame:
+    """Frame with a simulated guide star: a handful of bright pixels + dim background.
 
-    p99_9 of the resulting frame ≈ star_peak_frac.
+    At the default 64×64 shape, 12 bright pixels is > 0.1% of all pixels, so
+    p99_9 of the resulting frame ≈ star_peak_frac same as max_frac would be.
     Background is set to 0.001 (not zero) so zero_clipped_pct stays near 0.
     """
-    total = 64 * 64  # 4096 pixels
+    total = shape[0] * shape[1]
     pix = np.full(total, 0.001 * ADC_MAX, dtype=np.float32)  # dim sky, not zero
-    pix[:12] = float(star_peak_frac * ADC_MAX)
-    pix = pix.reshape((64, 64))
+    pix[:n_star_px] = float(star_peak_frac * ADC_MAX)
+    pix = pix.reshape(shape)
     m = MagicMock(spec=FitsFrame)
     m.pixels = pix
     return m
@@ -603,6 +608,25 @@ class TestGuidingModeConvergence:
         )
         # offset should remain 0 — guide mode doesn't apply zero-clip correction
         assert result.offset == 0
+
+
+class TestGuidingModeRealisticResolution:
+    def test_detects_star_at_realistic_sensor_resolution(self) -> None:
+        """M10-049: on a real ~2-megapixel guide sensor (1080x1920), a
+        well-exposed guide star occupying only ~10 pixels is nowhere near
+        the >=0.1% of all pixels (~2074 of 2,073,600) a whole-frame
+        percentile needs to notice it. p99_9 misses it entirely and the
+        service climbs to the exposure/gain ceiling forever even with a
+        bright, correctly-exposed star in frame — this is exactly why the
+        64x64 frames used elsewhere in this file (where 12 pixels is
+        ~0.29%, comfortably above the 0.1% threshold) didn't catch this
+        (see domain/autogain.py's identical M10-043 fix). The signal must
+        still recognize the star is in-band regardless of sensor resolution."""
+        cam = _SeqCamera([_guide_frame(0.45, shape=(1080, 1920), n_star_px=10)])
+        result = AutoGainService.run_one_shot(
+            cam, _GUIDE_PROFILE, mode=AutoGainMode.GUIDING, max_iterations=1,
+        )
+        assert result.status == AutoGainStatus.OK
 
 
 class TestGuidingConversionGain:

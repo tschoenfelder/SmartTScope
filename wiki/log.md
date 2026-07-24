@@ -5964,3 +5964,32 @@ The two multicam/autofocus JS fixes have no JS test harness in this repo
 (none exists anywhere in the project) — verified with `node --check` on
 both files per established convention, Pi verification pending. Full
 Python unit suite run after all four changes.
+
+---
+
+## 2026-07-24 — M10-044 resolved: not a bug
+
+Two more data points closed this out. `ls .../autofocus_sequences/5721e35e/
+| wc -l` confirmed 101 real FITS files (not a misread progress number),
+and `grep "5721e35e" server.log` showed the job actually completed cleanly
+(`status = "done"`, no exception) — ruling out a partial failure, since
+the loop only reaches that log line after iterating every element of the
+precomputed `positions` list with no early exits. That meant `positions`
+genuinely had 101 elements at request time, contradicting the 111 the
+formula gives for the reported start/end/step.
+
+The filenames resolved the contradiction directly — they encode the exact
+per-frame focuser position (`af-seq_pos-{pos}_{idx:03d}.fits`). idx
+`000`→`001` (pos 485→535) and idx `099`→`100` (pos 5435→5485) both confirm
+step=50, and 101 frames for idx 0-100. Working backward: first position
+485 = `current + start_offset` with the reported `start_offset=-15` means
+`current` was actually 500 at request time (not 15 — that number was from
+an earlier, unrelated screenshot; the focuser had moved since). Last
+position 5485 means the real `end_offset` this job ran with was ≈4985,
+not 5500 — exactly accounting for the missing 10 frames (10 × step 50 =
+500).
+
+Conclusion: the code's frame-count formula was correct the whole time.
+The gap was between the End value actually submitted for job `5721e35e`
+and what was recalled when describing the run afterward, not a bug. No
+code change made.

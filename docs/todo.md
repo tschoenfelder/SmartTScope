@@ -2947,30 +2947,34 @@ histogram ceiling until it ships upstream.
         this is a different (and more serious) problem than the one
         originally chased. Awaiting confirmation before closing.
 
-- [ ] M10-044 Autofocus sequence frame-count mismatch (101 reported vs 111
-      expected). `[P2 · Autofocus]`
-      - Run: start_offset=-15, end_offset=5500, step=50, reported "101
-        frames", saved to
-        `/home/astro/astro/Pictures/SmartTScope/autofocus_sequence/5721e35e`.
+- [x] M10-044 Autofocus sequence frame-count mismatch (101 reported vs 111
+      expected) — **resolved: not a bug.** `[P2 · Autofocus]`
+      - Run: start_offset=-15, end_offset=5500, step=50 (as reported),
+        "101 frames", saved to
+        `/home/astro/astro/Pictures/SmartTScope/autofocus_sequences/5721e35e`.
       - `api/autofocus_sequence.py`'s `start_sequence()` (lines 126-141)
         computes `positions = range(current+start_offset,
-        current+end_offset+1, step)`. Hand-computed length:
-        `ceil((5500-(-15)+1)/50) = 111` — matches the naive formula, not
-        101. No clamping path can silently truncate the list (lines
-        134-141 only reject the *whole* request with a 422 if any position
-        falls outside `[0, max_position]`). Formula and code agree with
-        each other, just not with the reported "101" — not a formula bug
-        given current evidence.
-      - Leading hypotheses (not yet distinguished): (a) "101" was a
-        mid-run `frames_done` progress reading (`_afPollSequence`,
-        `static/js/autofocus.js:239`, `"Capturing ${frames_done}/${nFrames}…"`)
-        misread as the final count; (b) the job failed partway
-        (`job.status = "failed"`, `autofocus_sequence.py:189-193`) after
-        writing 101 of 111 frames.
-      - **Next step:** ask the user to run
-        `ls .../autofocus_sequence/5721e35e/ | wc -l` (actual FITS files
-        written) and check the job's final `error` field / server log
-        around that run before attempting any fix.
+        current+end_offset+1, step)`. Hand-computed length with the
+        *reported* values: `ceil((5500-(-15)+1)/50) = 111` — didn't match
+        the observed 101, so this looked like a bug.
+      - Server log confirmed the job actually completed cleanly (`status =
+        "done"`, no exception) — the loop only reaches that line after
+        iterating every element of the precomputed list with no early
+        exits, so `positions` genuinely had 101 elements at request time,
+        not 111. Not a partial-failure.
+      - Filenames encode the real per-frame position
+        (`af-seq_pos-{pos}_{idx:03d}.fits`), which resolved it directly:
+        idx `000`→`001` is pos 485→535 (step=50 confirmed) and idx
+        `099`→`100` is pos 5435→5485 (step=50 confirmed, 101 frames for
+        idx 0-100). First position 485 = `current + start_offset` ⇒
+        `current` was **500** at request time (not 15 — that was a stale
+        reading from an earlier, unrelated screenshot; the focuser had
+        moved since). Last position 5485 means the actual `end_offset`
+        this job ran with was ≈4985, not 5500 — accounting for exactly
+        the missing 10 frames (10 × step 50 = 500).
+      - **Conclusion:** the formula and code are correct; the request that
+        actually produced job `5721e35e` differed from what was recalled
+        afterward (End ≈4985, not 5500). No code change needed.
 
 - [x] M10-045 Live frame display frozen during a running autofocus
       sequence, which also makes the -5/-1/+1/+5 nudge buttons feel

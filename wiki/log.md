@@ -6108,3 +6108,41 @@ remaining `p99_9` references in the codebase (`histogram.py`,
 as a raw diagnostic stat, not a guiding decision, so they're unaffected.
 `AutoGainController`'s own DSO-mode `_SPARSE_P99_9_THR` sparse-field
 early-exit remains unconfirmed/untouched, as previously flagged.
+
+2026-07-24 — M10-051 found: autofocus HFD metric never isolates a star, doesn't converge on real data
+
+Checked the autofocus sweep algorithm (`workflow/autofocus.py::run_autofocus()`)
+against the real M10-044 hardware sequence (101 FITS frames,
+`E:\Bilder\Astro\SmartTScope\autofocus_sequences\5721e35e`, ATR585M,
+3840×2160, FOCUSPOS 485→5485) using the exact production
+`half_flux_diameter()` call. Root cause confirmed with real data, not
+hypothesis: the metric runs on the whole raw sensor frame with no star
+isolation, so on a real multi-star field it just tracks frame-wide flux
+spread — `corr(HFD, focuser position)=0.99`, `corr(HFD, background
+median)=-0.99`, `corr(HFD, bright-pixel count)=0.87` — never forming a
+V-curve. `_find_valley()` correctly reports `fitted=False` and falls back
+to argmin, landing on the second sample of the whole 5000-step sweep —
+not a real focus point.
+
+Checked the SCT-donut concern specifically with a synthetic annular PSF
+(34% obstruction, single isolated star): `half_flux_diameter` produced a
+clean monotonic V-curve, parabola fit exact (error=0). So donuts are NOT
+the problem — the metric itself is fine; it was just never validated
+against a real multi-star, real-resolution frame, only against
+`test_autofocus.py`'s single-star synthetic 64×64 Gaussian blobs. Same
+"unrealistic synthetic test frame masks the bug" pattern as
+M10-043/M10-049/M10-050, different mechanism (no star isolation, not a
+sparse-source blind spot).
+
+Found while investigating: `domain/collimation/processing/star_detection.py`'s
+`detect_star()` already does proper single-star isolation (peak-search,
+ROI crop, centroid, radial FWHM) but is only wired into collimation, not
+autofocus. Also found `services/autofocus_service.py`'s `AutofocusService`
+is entirely dangling — not referenced anywhere outside its own file — and
+has the identical whole-frame-HFD issue plus an unpopulated
+`number_of_stars_detected` field, but wasn't in the real-data analysis
+since it's not on the active path.
+
+Logged as **M10-051**, not fixed — needs a design decision (auto-detect
+brightest star vs. reuse click-to-center position vs. require the user
+to pre-centre the target) before implementing.

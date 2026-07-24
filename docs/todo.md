@@ -3210,6 +3210,72 @@ histogram ceiling until it ships upstream.
         (existing tests' 64×64 frames already had enough star pixels to
         keep p99_9 and max_frac numerically identical).
 
+- [ ] M10-051 Autofocus sweep (`workflow/autofocus.py`) does not isolate a
+      star — `half_flux_diameter()` runs on the whole raw sensor frame,
+      and on a real multi-star sequence it never forms a valid V-curve.
+      `[P1 · Autofocus]`
+      - **Confirmed root cause using real hardware data**, not a
+        hypothesis: analysed all 101 real FITS frames from the M10-044
+        sequence (`E:\Bilder\Astro\SmartTScope\autofocus_sequences\5721e35e`,
+        ATR585M, 3840×2160, FOCUSPOS 485→5485) with the exact production
+        `half_flux_diameter()` call used by `run_autofocus()`. Result:
+        `corr(HFD, focuser position) = 0.99`, `corr(HFD, frame background
+        median) = -0.99`, `corr(HFD, bright-pixel count) = 0.87`. The
+        "HFD" values (2102–2199 px on a frame whose half-diagonal is
+        ~2203 px) are not measuring any star's blur at all — they're
+        measuring how far the whole-frame flux-weighted centroid sits
+        from the point half the image's total light has accumulated,
+        which is dominated by how many stars are scattered across the
+        frame (28 → 294 detected bright pixels over the sequence, i.e.
+        clearly a multi-star field, not one isolated star) and by the
+        background level drifting (median 68 → 21 ADU, consistent with
+        the sky darkening over the course of the sweep). The curve never
+        forms a V-shape; `_find_valley()` correctly reports
+        `fitted=False` and falls back to argmin, which lands on
+        `pos=535` — the second sample of the entire 5000-step sweep —
+        clearly not a real optical focus point.
+      - **The SCT-donut concern specifically is NOT the problem** —
+        checked separately with a synthetic annular (donut) PSF model
+        (34% central obstruction, ring radius scaling with defocus,
+        single isolated star, no other sources) and `half_flux_diameter`
+        produced a clean, symmetric, monotonic V-curve with the parabola
+        fit converging to the true focus position exactly (error = 0
+        steps). `focus_metric.py`'s docstring claim ("safe for SCTs") is
+        correct for the metric itself in isolation — it was just never
+        tested against a real, multi-star, real-resolution frame, only
+        against single-star synthetic 64×64 Gaussian-blob frames
+        (`tests/unit/workflow/test_autofocus.py`'s `_gaussian_frame()`),
+        which is exactly why this went unnoticed — same class of "tiny
+        unrealistic synthetic test frame masks the bug" pattern as
+        M10-043/M10-049/M10-050, but the mechanism here is "no star
+        isolation" rather than "whole-frame percentile blind to sparse
+        sources."
+      - The codebase already has a proper single-star isolation routine
+        that could be reused/adapted:
+        `domain/collimation/processing/star_detection.py::detect_star()`
+        (peak-search → local ROI extraction → background-subtracted
+        centroid → radial-profile FWHM, with hot-pixel/nebula rejection),
+        currently only wired into the collimation assistant, not
+        autofocus. There's also `domain/click_refinement.py::refine_click()`
+        (crop-window + bright centroid around a user-clicked point) used
+        by the click-to-center feature, which could supply a
+        user-selected ROI instead of auto-detecting the brightest star.
+      - Also dangling/unused, found while investigating: the whole other
+        `services/autofocus_service.py` (`AutofocusService`,
+        frame-by-frame AF-001..AF-005 design with
+        `AutofocusDiagnostics.number_of_stars_detected` /
+        `median_fwhm_px` fields) is not referenced anywhere outside its
+        own file — not wired into any API endpoint or workflow. Its
+        `_measure_hfd()` has the identical whole-frame-HFD issue and
+        never populates `number_of_stars_detected` either, but since it's
+        not on the active path it wasn't included in the real-data
+        analysis above.
+      - Not fixed yet — needs a design decision on how to isolate the
+        star (auto-detect brightest via `detect_star()`, reuse the last
+        click-to-center position, or require the user to centre the
+        target star before starting the sweep) before implementing,
+        rather than picking an approach unilaterally.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

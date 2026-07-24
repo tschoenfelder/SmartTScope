@@ -39,7 +39,15 @@ def _mock_focuser(
 def _mock_camera() -> MagicMock:
     c = MagicMock(spec=CameraPort)
     rng = np.random.default_rng(0)
-    pixels = rng.random((16, 16)).astype(np.float32)
+    # Background noise plus one real synthetic star (not just noise), so
+    # multi_star_hfd() has something legitimate to detect — pure noise
+    # correctly returns None now (M10-051), which the sequence-job tests
+    # below don't care about, but the frame_metrics tests need a real star.
+    size = 64
+    y, x = np.mgrid[:size, :size].astype(np.float64)
+    pixels = 50.0 + rng.normal(0.0, 5.0, size=(size, size))
+    pixels += 8000.0 * np.exp(-((x - 32) ** 2 + (y - 32) ** 2) / (2.0 * 3.0 ** 2))
+    pixels = pixels.astype(np.float32)
     hdr = fits.Header()
     hdr["EXPTIME"] = 1.0
     c.capture.return_value = FitsFrame(pixels=pixels, header=hdr, exposure_seconds=1.0)

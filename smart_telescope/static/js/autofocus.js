@@ -206,7 +206,7 @@ function _afStartMetricsPoll() {
         const m = await apiPost('/api/autofocus/frame_metrics', {
           exposure, camera_role: 'main',
         });
-        el.textContent = `HFD: ${m.hfd.toFixed(2)} px`
+        el.textContent = (m.hfd != null ? `HFD: ${m.hfd.toFixed(2)} px` : 'HFD: no star detected')
           + (m.stars_found != null ? ` · ${m.stars_found} star${m.stars_found === 1 ? '' : 's'} found` : '')
           + (m.image_quality ? ` · ${m.image_quality}` : '');
       } catch (_) {}

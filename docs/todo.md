@@ -3210,9 +3210,9 @@ histogram ceiling until it ships upstream.
         (existing tests' 64×64 frames already had enough star pixels to
         keep p99_9 and max_frac numerically identical).
 
-- [ ] M10-051 Autofocus sweep (`workflow/autofocus.py`) does not isolate a
-      star — `half_flux_diameter()` runs on the whole raw sensor frame,
-      and on a real multi-star sequence it never forms a valid V-curve.
+- [x] M10-051 Autofocus sweep (`workflow/autofocus.py`) did not isolate a
+      star — `half_flux_diameter()` ran on the whole raw sensor frame,
+      and on a real multi-star sequence it never formed a valid V-curve.
       `[P1 · Autofocus]`
       - **Confirmed root cause using real hardware data**, not a
         hypothesis: analysed all 101 real FITS frames from the M10-044
@@ -3270,11 +3270,97 @@ histogram ceiling until it ships upstream.
         never populates `number_of_stars_detected` either, but since it's
         not on the active path it wasn't included in the real-data
         analysis above.
-      - Not fixed yet — needs a design decision on how to isolate the
-        star (auto-detect brightest via `detect_star()`, reuse the last
-        click-to-center position, or require the user to centre the
-        target star before starting the sweep) before implementing,
-        rather than picking an approach unilaterally.
+      - **Fixed:** user chose "work on several stars that have been
+        identified" over the single-star options (auto-detect brightest /
+        reuse click-to-center / require pre-centering). Added
+        `domain/focus_metric.py::multi_star_hfd()`: repeatedly finds the
+        brightest remaining peak above a MAD background threshold,
+        isolates it in a 65×65 local crop, measures that crop's HFD, masks
+        it out, repeats (up to 20 candidates), returns the **median** HFD
+        across all accepted stars. Wired into `run_autofocus()` (replacing
+        the whole-frame `half_flux_diameter()` call) and into the live
+        single-frame readout endpoint (`/api/autofocus/frame_metrics`,
+        `api/autofocus_sequence.py`).
+      - **Bug found and fixed during implementation:** the first version's
+        "reject oversized blob" check compared an ROI-local pixel count
+        against a *whole-frame*-relative limit (`_MAX_STAR_BLOB_FRACTION`,
+        copied from `star_detection.py`'s convention) — for any
+        realistically-sized sensor frame this limit is far larger than the
+        ROI itself, so on real data it silently never rejected anything,
+        while on the small 64×64 synthetic test frames it inverted and
+        rejected *legitimate* moderately-defocused stars as "too large."
+        Fixed by making the limit relative to the ROI's own pixel count
+        (`_MAX_STAR_BLOB_ROI_FRAC = 0.9`) instead of the frame's.
+      - **Contract change:** `multi_star_hfd()` returns `float | None` —
+        `None` when no candidate blob passes the star/hot-pixel/nebula
+        shape checks, rather than falling back to a whole-frame
+        measurement. Confirmed on real hardware data that an isolated hot
+        pixel routinely outranks a heavily defocused real star (whose
+        per-pixel signal drops below any reasonable threshold once spread
+        thin enough), so silently returning *some* number for such a frame
+        is actively misleading, not just imprecise — matches the
+        pre-existing AF-003 "focus quality UNKNOWN" contract used
+        elsewhere in the codebase. `run_autofocus()` now skips (`continue`)
+        samples where the metric is `None` instead of fitting a curve
+        through them; `FrameMetricsResponse.hfd` became `float | None` and
+        `static/js/autofocus.js`'s live readout shows "HFD: no star
+        detected" instead of crashing on `null.toFixed()`.
+      - **Real-hardware re-validation:** re-ran all 101 real M10-044 FITS
+        frames through the fixed `multi_star_hfd()`. Before:
+        `corr(hfd, position) = 0.99`, best-focus fell on the 2nd sample of
+        the whole sweep. After: the algorithm now correctly refuses to
+        guess on most frames — only **5 of 101** (positions 785, 1485,
+        1635, 2385, 3735; HFD 28.85–52.10) have a star surviving a
+        conservative, false-positive-safe 6σ per-pixel threshold; the rest
+        return `None`. Checked directly (not assumed) whether a lower
+        threshold would recover more: even at 3–4σ, no genuinely
+        contiguous star-like blob exists in the "skipped" frames — the
+        elevated pixels there are statistically indistinguishable from
+        noise. This looks like a genuine data-quality/SNR limit of that
+        *specific* diagnostic capture (2 s exposure swept across the
+        *entire* mechanical range, -15 to +5500 steps, rather than a
+        normal narrow operational bracket) — not a residual code bug.
+        **Follow-up verification still needed on the Pi**, ideally with a
+        brighter focus star and a normal (narrower) sweep range, to
+        confirm end-to-end convergence under realistic operating
+        conditions — the M10-044 sequence was captured as a wide
+        characterization sweep, not a typical autofocus run.
+      - TDD: `tests/unit/domain/test_focus_metric.py` gained
+        `TestMultiStarHfd` (isolation vs. whole-frame inflation,
+        background-drift robustness, oversized-blob rejection, None
+        fallback). `tests/unit/workflow/test_autofocus.py` gained
+        `TestRealisticMultiStarField` (5 scattered stars + a background
+        level drifting with capture order, unrelated to focus — mirrors
+        the real failure mode) confirmed RED (`best_position` off by the
+        full 600-step sweep range) against pre-fix code, GREEN after.
+      - **Found the same "unrealistic synthetic test frame" trap in four
+        more places while fixing this** (same pattern as
+        M10-043/M10-049/M10-050, now recurring in test fixtures rather
+        than production code): `test_autofocus.py`'s `_gaussian_frame()`
+        was a noiseless single star on an exact-zero 64×64 background
+        (MAD-based thresholding is degenerate on a perfectly noiseless
+        signal, and 64×64 is too small once the star is even moderately
+        defocused) — widened to 300×300 with real background+noise.
+        `test_autofocus_sequence.py`'s and `test_focuser.py`'s
+        `_mock_camera()` helpers, and the *shared* `tests/conftest.py::
+        make_frame()` fixture (used by many service/observing tests via
+        the `camera_mock` fixture), all returned pure-noise or all-zero
+        frames with no real star — all four updated to include an actual
+        synthetic star.
+      - **Also found and fixed a pre-existing, unrelated test bug** while
+        chasing `test_focuser.py`'s failures: `TestFocuserAutofocus`'s
+        `_inject()` helper set `app.dependency_overrides[deps.get_camera]`,
+        but `/api/focuser/autofocus` resolves its camera via a plain
+        `deps.get_preview_camera(cam_idx)` **function call**, not a
+        FastAPI `Depends()` — so the override never reached the endpoint,
+        and these tests were unknowingly running against the real default
+        `MockCamera` (also an all-zero frame) the whole time. Fixed by
+        using `patch.object(deps, "get_preview_camera", return_value=...)`
+        instead, matching the pattern already used correctly in
+        `test_autofocus_sequence.py`.
+      - Full unit suite green after all fixes (one known pre-existing
+        order-dependent flake in `test_logging.py`, confirmed passing in
+        isolation, unrelated).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

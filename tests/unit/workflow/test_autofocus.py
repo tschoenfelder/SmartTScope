@@ -12,12 +12,24 @@ from smart_telescope.workflow.autofocus import _find_valley, run_autofocus
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-def _gaussian_frame(sigma: float, size: int = 64) -> FitsFrame:
-    """Return a frame with a synthetic Gaussian star — smaller sigma = tighter = better focus."""
+def _gaussian_frame(sigma: float, size: int = 300) -> FitsFrame:
+    """Return a frame with a synthetic Gaussian star — smaller sigma = tighter = better focus.
+
+    Real-sized (not a tiny 64x64 canvas) with a nonzero background and a
+    little read noise, matching an actual camera frame: multi_star_hfd()
+    detects stars via a MAD-based background threshold, which is degenerate
+    on a perfectly uniform-zero, noiseless background (no real sensor
+    produces one) and also mis-rejects a wide (defocused) star as "too
+    large" when the frame itself is too small relative to the blur — the
+    same "unrealistic synthetic test frame masks the real behaviour" trap
+    as M10-043/M10-049/M10-050 (see M10-051's real-hardware findings).
+    """
+    rng = np.random.default_rng(0)
     cy, cx = size / 2.0, size / 2.0
     y, x = np.mgrid[:size, :size].astype(np.float64)
-    pixels = (10000.0 * np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2.0 * sigma ** 2))).astype(np.float32)
-    return FitsFrame(pixels=pixels, header={}, exposure_seconds=1.0)
+    pixels = 50.0 + 10000.0 * np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2.0 * sigma ** 2))
+    pixels += rng.normal(0.0, 5.0, size=pixels.shape)
+    return FitsFrame(pixels=pixels.astype(np.float32), header={}, exposure_seconds=1.0)
 
 
 class _MockFocuser:
@@ -62,6 +74,47 @@ class _MockCamera:
         distance = abs(self._focuser._pos - self._peak)
         sigma = 2.0 + distance / 50.0  # tight at focus, wide away
         return _gaussian_frame(sigma)
+
+
+# Several stars scattered across a real-sized-ish field, well separated so each
+# one is isolated by its own local crop. Amplitudes vary so the brightest-first
+# peak search visits them in a different order than their pixel positions.
+_STAR_CENTERS = [(80, 80), (80, 420), (300, 250), (500, 100), (500, 420)]
+_STAR_AMPLITUDES = [6000.0, 9000.0, 4000.0, 8000.0, 5000.0]
+
+
+def _multi_star_frame(sigma: float, background: float, size: int = 600) -> FitsFrame:
+    """Several independent Gaussian stars on a uniform background — mirrors a
+    real starfield, unlike _gaussian_frame's single star on a black frame."""
+    y, x = np.mgrid[:size, :size].astype(np.float64)
+    pixels = np.full((size, size), background, dtype=np.float64)
+    for (cy, cx), amp in zip(_STAR_CENTERS, _STAR_AMPLITUDES):
+        pixels += amp * np.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2.0 * sigma ** 2))
+    return FitsFrame(pixels=pixels.astype(np.float32), header={}, exposure_seconds=1.0)
+
+
+class _MultiStarDriftingCamera:
+    """Several stars (tightest at peak_pos) PLUS a background level that drifts
+    with capture order, unrelated to focus — mirrors the real M10-051 sequence
+    where sky background drifted over the course of the sweep."""
+
+    def __init__(self, peak_pos: int, focuser: _MockFocuser) -> None:
+        self._peak = peak_pos
+        self._focuser = focuser
+        self._call_count = 0
+
+    def connect(self) -> bool:
+        return True
+
+    def disconnect(self) -> None:
+        pass
+
+    def capture(self, exposure_seconds: float) -> FitsFrame:
+        distance = abs(self._focuser._pos - self._peak)
+        sigma = 2.0 + distance / 50.0  # tight at focus, wide away
+        background = 50.0 + 3.0 * self._call_count  # drifts with time, not focus
+        self._call_count += 1
+        return _multi_star_frame(sigma, background)
 
 
 # ── AutofocusParams ───────────────────────────────────────────────────────────
@@ -171,6 +224,22 @@ class TestRunAutofocus:
         params = AutofocusParams(range_steps=1000, step_size=100, exposure=0.01)
         result = run_autofocus(focuser, camera, params)
         assert result.metrics[result.positions.index(result.best_position)] <= result.metrics[0]
+
+
+class TestRealisticMultiStarField:
+    def test_converges_despite_multiple_stars_and_background_drift(self) -> None:
+        """M10-051: on a real sky frame with several stars scattered across it
+        plus a background level that drifts over the course of the sweep
+        (e.g. dusk → dark sky), the metric must still track actual star blur,
+        not the whole frame's flux spread. Confirmed on real hardware data
+        that the pre-fix whole-frame half_flux_diameter() call has
+        corr(HFD, focuser position) = 0.99 and corr(HFD, background) = -0.99
+        — i.e. it isn't measuring focus at all — and never converges."""
+        focuser = _MockFocuser(start=4700)
+        camera = _MultiStarDriftingCamera(peak_pos=5000, focuser=focuser)
+        params = AutofocusParams(range_steps=600, step_size=50, exposure=0.01)
+        result = run_autofocus(focuser, camera, params)
+        assert abs(result.best_position - 5000) <= 100
 
 
 # ── Backlash compensation ─────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 """Autofocus sweep — moves the focuser across a range, measures sharpness at each
-position via Laplacian variance, fits a parabola, and returns the best position.
+position via multi-star Half-Flux Diameter, fits a parabola, and returns the
+best position.
 
 The caller is responsible for connecting the focuser and camera before calling
 run_autofocus(), and for restoring the original position on failure if desired.
@@ -13,7 +14,7 @@ from collections.abc import Callable
 import numpy as np
 
 from ..domain.autofocus import AutofocusParams, AutofocusResult
-from ..domain.focus_metric import half_flux_diameter
+from ..domain.focus_metric import multi_star_hfd
 from ..ports.camera import CameraPort
 from ..ports.focuser import FocuserPort
 
@@ -60,7 +61,9 @@ def run_autofocus(
         _wait_stopped(focuser)
 
         frame = camera.capture(params.exposure)
-        metric = half_flux_diameter(frame.pixels)
+        metric = multi_star_hfd(frame.pixels)
+        if metric is None:
+            continue  # too out-of-focus for a reliable star measurement — skip this sample
 
         sampled_pos.append(pos)
         sampled_metrics.append(metric)

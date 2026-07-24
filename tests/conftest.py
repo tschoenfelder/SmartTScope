@@ -36,8 +36,21 @@ from smart_telescope.workflow.stages import StageContext
 
 
 def make_frame(exposure: float = 5.0) -> FitsFrame:
-    pixels: np.ndarray[Any, np.dtype[Any]] = np.zeros((2080, 3096), dtype=np.float32)
-    return FitsFrame(pixels=pixels, header={}, exposure_seconds=exposure, data=b"FAKE_FITS")
+    """Background noise plus one real synthetic star (not a blank frame).
+
+    workflow/autofocus.py's multi_star_hfd() correctly returns None for a
+    genuinely blank/all-zero frame (M10-051) — a real camera never produces
+    one — so any test exercising the real autofocus path needs an actual
+    detectable star here, not just noise-free zeros.
+    """
+    rng = np.random.default_rng(0)
+    size = (2080, 3096)
+    y, x = np.mgrid[: size[0], : size[1]].astype(np.float64)
+    pixels = 50.0 + rng.normal(0.0, 5.0, size=size)
+    pixels += 8000.0 * np.exp(-((x - size[1] / 2) ** 2 + (y - size[0] / 2) ** 2) / (2.0 * 3.0 ** 2))
+    return FitsFrame(
+        pixels=pixels.astype(np.float32), header={}, exposure_seconds=exposure, data=b"FAKE_FITS",
+    )
 
 
 def make_stacked(n: int = 1) -> StackedImage:

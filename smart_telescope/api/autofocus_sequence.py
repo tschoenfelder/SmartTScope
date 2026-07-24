@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from .. import config
-from ..domain.focus_metric import half_flux_diameter
+from ..domain.focus_metric import multi_star_hfd
 from ..ports.focuser import FocuserPort
 from ..services import live_analysis_shim
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
@@ -238,7 +238,7 @@ class FrameMetricsRequest(BaseModel):
 
 
 class FrameMetricsResponse(BaseModel):
-    hfd: float
+    hfd: float | None = None  # None when no reliable star blob was detected (too far out of focus)
     stars_found: int | None = None
     image_quality: str | None = None
 
@@ -250,7 +250,7 @@ def frame_metrics(req: FrameMetricsRequest) -> FrameMetricsResponse:
     camera_index = deps.resolve_camera_index(req.camera_index, req.camera_role)
     camera = deps.get_preview_camera(camera_index)
     frame = camera.capture(req.exposure)
-    hfd = half_flux_diameter(frame.pixels)
+    hfd = multi_star_hfd(frame.pixels)
 
     stars_found: int | None = None
     image_quality: str | None = None

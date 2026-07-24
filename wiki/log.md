@@ -6146,3 +6146,57 @@ since it's not on the active path.
 Logged as **M10-051**, not fixed — needs a design decision (auto-detect
 brightest star vs. reuse click-to-center position vs. require the user
 to pre-centre the target) before implementing.
+
+2026-07-24 — M10-051 fixed: multi-star HFD autofocus, plus fixture-realism sweep
+
+Implemented multi_star_hfd() in domain/focus_metric.py per user direction
+("algorithm should work on several stars that have been identified"):
+repeatedly finds the brightest remaining peak above a MAD background
+threshold, isolates it in a 65x65 local crop, measures that crop's HFD,
+masks it out, repeats (up to 20 candidates), returns the median across
+accepted stars. Wired into run_autofocus() and the live single-frame
+readout endpoint (/api/autofocus/frame_metrics).
+
+Found and fixed a real bug during implementation: the "reject oversized
+blob" check compared an ROI-local pixel count against a whole-frame-relative
+limit (copied from star_detection.py's convention) — wrong scale for any
+real sensor frame (never binds) and wrong for small synthetic test frames
+(over-rejects legitimate defocused stars). Fixed to be ROI-relative.
+
+Contract change: multi_star_hfd() returns float | None — None when no
+candidate survives the star-shape checks, rather than falling back to a
+whole-frame measurement. Confirmed on real hardware that an isolated hot
+pixel routinely outranks a heavily defocused real star, so a fallback
+number would be actively misleading. run_autofocus() now skips None
+samples instead of fitting a curve through them.
+
+Real-hardware re-validation on the same 101 M10-044 frames: before,
+corr(hfd, position)=0.99 with best-focus landing on the sweep's 2nd
+sample; after, the algorithm correctly detects a star in only 5/101
+frames (785, 1485, 1635, 2385, 3735) and returns None for the rest —
+checked directly that lowering the threshold to 3-4 sigma doesn't recover
+more (no genuinely contiguous blob exists in the skipped frames, just
+noise). This looks like a real data-quality/SNR limit of that specific
+diagnostic sweep (2s exposure across the *entire* -15..+5500 mechanical
+range) rather than a residual bug. Pi verification with a brighter star
+and a normal (narrower) sweep range is still an open follow-up.
+
+Found the same "unrealistic synthetic test frame" trap in four more
+places while fixing this (same pattern as M10-043/M10-049/M10-050, now in
+test fixtures): test_autofocus.py's noiseless single-star 64x64 frame,
+test_autofocus_sequence.py's and test_focuser.py's pure-noise mock
+cameras, and the *shared* tests/conftest.py::make_frame() (used across
+many service/observing tests via the camera_mock fixture) — all four
+were blank/starless and are now fixed with a real synthetic star.
+
+Also found and fixed a pre-existing, unrelated test bug: test_focuser.py's
+TestFocuserAutofocus overrode app.dependency_overrides[deps.get_camera],
+but the endpoint resolves its camera via a plain deps.get_preview_camera()
+function call, not Depends() — the override never took effect, so these
+tests were unknowingly running against the real default MockCamera
+(also all-zero) the whole time. Fixed with patch.object(deps,
+"get_preview_camera", ...), matching the working pattern already used in
+test_autofocus_sequence.py.
+
+Full unit suite green after all fixes (one known pre-existing
+order-dependent flake in test_logging.py, confirmed passing in isolation).

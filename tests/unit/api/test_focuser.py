@@ -1,6 +1,6 @@
 """Unit tests for focuser API endpoints — no hardware required."""
 
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
 import pytest
@@ -45,7 +45,15 @@ def _mock_focuser(
 def _mock_camera() -> MagicMock:
     c = MagicMock(spec=CameraPort)
     rng = np.random.default_rng(0)
-    pixels = rng.random((32, 32)).astype(np.float32)
+    # Background noise plus one real synthetic star (not just noise), so
+    # run_autofocus()'s multi_star_hfd() has something legitimate to detect —
+    # pure noise correctly returns None now (M10-051) and run_autofocus()
+    # raises RuntimeError when too few samples find a star.
+    size = 64
+    y, x = np.mgrid[:size, :size].astype(np.float64)
+    pixels = 50.0 + rng.normal(0.0, 5.0, size=(size, size))
+    pixels += 8000.0 * np.exp(-((x - 32) ** 2 + (y - 32) ** 2) / (2.0 * 3.0 ** 2))
+    pixels = pixels.astype(np.float32)
     hdr = fits.Header()
     hdr["EXPTIME"] = 1.0
     c.capture.return_value = FitsFrame(pixels=pixels, header=hdr, exposure_seconds=1.0)
@@ -241,32 +249,46 @@ class TestFocuserStop:
 
 
 class TestFocuserAutofocus:
+    # NOTE: /api/focuser/autofocus resolves its camera via a plain
+    # deps.get_preview_camera(...) call, not a FastAPI Depends() — so
+    # _inject()'s app.dependency_overrides[deps.get_camera] never reaches
+    # it. patch.object(deps, "get_preview_camera", ...) is the mechanism
+    # that actually works here (matches api/autofocus_sequence.py's tests).
+    # This also means these tests were previously running run_autofocus()
+    # against the real default MockCamera (an all-zero frame), which only
+    # "worked" because the old whole-frame half_flux_diameter() returns a
+    # (meaningless) number even for a blank frame; multi_star_hfd()
+    # correctly returns None for a blank frame, so a real synthetic star
+    # is now required for these success-path tests (M10-051).
     def test_returns_200_with_valid_params(self) -> None:
         f = _mock_focuser(position=5000)
         c = _mock_camera()
-        _inject(f, c)
-        resp = client.post(
-            "/api/focuser/autofocus",
-            json={"range_steps": 400, "step_size": 100, "exposure": 0.01},
-        )
+        _inject(f)
+        with patch.object(deps, "get_preview_camera", return_value=c):
+            resp = client.post(
+                "/api/focuser/autofocus",
+                json={"range_steps": 400, "step_size": 100, "exposure": 0.01},
+            )
         assert resp.status_code == 200
 
     def test_response_has_required_keys(self) -> None:
         f = _mock_focuser(position=5000)
         c = _mock_camera()
-        _inject(f, c)
-        data = client.post(
-            "/api/focuser/autofocus",
-            json={"range_steps": 400, "step_size": 100, "exposure": 0.01},
-        ).json()
+        _inject(f)
+        with patch.object(deps, "get_preview_camera", return_value=c):
+            data = client.post(
+                "/api/focuser/autofocus",
+                json={"range_steps": 400, "step_size": 100, "exposure": 0.01},
+            ).json()
         for key in ("best_position", "start_position", "positions", "metrics", "fitted", "metric_gain"):
             assert key in data
 
     def test_uses_defaults_when_body_is_empty(self) -> None:
         f = _mock_focuser(position=5000)
         c = _mock_camera()
-        _inject(f, c)
-        resp = client.post("/api/focuser/autofocus", json={})
+        _inject(f)
+        with patch.object(deps, "get_preview_camera", return_value=c):
+            resp = client.post("/api/focuser/autofocus", json={})
         assert resp.status_code == 200
 
     def test_returns_422_on_zero_step(self) -> None:

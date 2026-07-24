@@ -408,6 +408,7 @@ class TestCalibrationStats:
             p99=black_level_frac,
             p99_5=black_level_frac,
             p99_9=black_level_frac,
+            max_frac=black_level_frac,
             mean_frac=black_level_frac,
             saturation_pct=0.0,
             zero_clipped_pct=0.0,

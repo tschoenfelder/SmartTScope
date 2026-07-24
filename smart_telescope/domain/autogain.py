@@ -197,7 +197,16 @@ class AutoGainController:
             # Guide-star peak, not mean — a guide camera stares at a mostly
             # dark sparse field, so mean_frac stays near zero regardless of
             # how well-exposed the one guide star is (see _GUIDE_LO comment).
-            signal = stats.p99_9
+            #
+            # M10-043: this used to be stats.p99_9, which is a whole-frame
+            # percentile — on a real ~2-megapixel guide sensor a star needs
+            # to occupy >0.1% of all pixels (thousands of pixels) before
+            # p99_9 notices it at all. A real guide star's PSF is nowhere
+            # near that large, so p99_9 silently measured background noise
+            # instead and autogain climbed to its ceiling forever, even with
+            # a bright, correctly-exposed star in frame. max_frac (the raw
+            # frame maximum) sees a sparse point source at any resolution.
+            signal = stats.max_frac
             band_lo, band_hi, band_tgt = _GUIDE_LO, _GUIDE_HI, _GUIDE_TARGET
         else:
             adc_max = float((1 << self._bit_depth) - 1)

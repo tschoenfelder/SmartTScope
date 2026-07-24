@@ -37,8 +37,7 @@ def _sparse_star_frame(
 ) -> np.ndarray:
     """A mostly-dark frame with a small bright patch — mimics a guide-star
     field where mean_frac stays near zero regardless of the star's
-    brightness. Needs >= ~0.1% of pixels at peak_adu for the 99.9th
-    percentile to actually reflect it (4096 px → at least 5 pixels)."""
+    brightness."""
     arr = np.full(shape, background_adu, dtype=np.float32)
     arr.flat[:10] = peak_adu
     return arr
@@ -296,6 +295,23 @@ class TestGuidingModeSignalMetric:
             ctrl.update(pix)
         assert ctrl.exposure == pytest.approx(_EXP_MAX)
         assert ctrl.gain == _GAIN_MAX
+
+    def test_guiding_mode_detects_star_at_realistic_sensor_resolution(self) -> None:
+        """M10-043: on a real ~2-megapixel guide sensor (1080x1920), a
+        well-exposed guide star occupying only ~10 pixels is nowhere near
+        the >=0.1% of all pixels (~2074 of 2,073,600) a whole-frame
+        percentile needs to notice it. The older p99_9-based signal missed
+        it entirely and kept climbing to the exposure/gain ceiling forever
+        even with a bright, correctly-exposed star in frame — this is
+        exactly why the smaller 64x64 synthetic frames used elsewhere in
+        this file (where 10 pixels is ~0.24%, comfortably above the 0.1%
+        threshold) didn't catch the bug. max_frac must still recognize the
+        star is in-band regardless of sensor resolution."""
+        ctrl = AutoGainController(exposure=2.0, gain=100, mode=AutoGainMode.GUIDING, bit_depth=16)
+        pix = _sparse_star_frame(peak_adu=0.45 * 65535, shape=(1080, 1920))
+        ctrl.update(pix)
+        assert ctrl.exposure == pytest.approx(2.0)
+        assert ctrl.gain == 100
 
 
 # ── Per-frame bit-depth override (M10-037) ────────────────────────────────────

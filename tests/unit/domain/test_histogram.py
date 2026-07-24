@@ -98,6 +98,27 @@ class TestAnalyze:
         assert s16.saturation_pct == 0.0
         assert s16.p50 < 0.1
 
+    def test_max_frac_field_present(self) -> None:
+        adc_max = (1 << 12) - 1
+        arr = _uniform(1000.0, shape=(100, 100))
+        arr[0, 0] = adc_max
+        s = analyze(arr, bit_depth=12)
+        assert s.max_frac == pytest.approx(1.0)
+
+    def test_max_frac_sees_sparse_star_that_p99_9_misses(self) -> None:
+        """A single bright pixel in a 10,000-pixel frame is far too sparse
+        to register at the 99.9th percentile (that needs >=10 pixels out
+        of 10,000 to move at all) — max_frac must still see it regardless
+        of frame size (M10-043: this is exactly why the guiding-mode
+        autogain signal broke on real ~2-megapixel sensor frames despite
+        passing unit tests written against much smaller synthetic frames)."""
+        adc_max = (1 << 12) - 1
+        arr = _uniform(100.0, shape=(100, 100))
+        arr[50, 50] = adc_max
+        s = analyze(arr, bit_depth=12)
+        assert s.max_frac == pytest.approx(1.0)
+        assert s.p99_9 < 0.5
+
     def test_noisy_starfield_positive_mean(self) -> None:
         rng = np.random.default_rng(42)
         arr = rng.normal(loc=500, scale=50, size=(256, 256)).clip(0).astype(np.float32)

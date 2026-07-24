@@ -26,6 +26,10 @@ class HistogramStats:
     p99: float
     p99_5: float
     p99_9: float
+    max_frac: float     # frame maximum, normalised [0, 1] — sees sparse point
+                         # sources (e.g. a guide star) that whole-frame
+                         # percentiles miss when they occupy far less than
+                         # 0.1% of the sensor's pixels (M10-043)
     mean_frac: float    # mean signal, normalised [0, 1]
     saturation_pct: float   # fraction of pixels >= 99.9 % of adc_max
     zero_clipped_pct: float # fraction of pixels == 0 (after normalisation)
@@ -54,6 +58,7 @@ def analyze(
     p50, p95, p99, p99_5, p99_9 = np.percentile(normed, [50, 95, 99, 99.5, 99.9])
     black = float(np.percentile(normed, 0.5))
     mean_frac = float(np.mean(normed))
+    max_frac = float(np.max(normed))
 
     saturation_pct = float(np.mean(normed >= 0.999) * 100.0)
     zero_clipped_pct = float(np.mean(normed == 0.0) * 100.0)
@@ -64,6 +69,7 @@ def analyze(
         p99=float(p99),
         p99_5=float(p99_5),
         p99_9=float(p99_9),
+        max_frac=max_frac,
         mean_frac=mean_frac,
         saturation_pct=saturation_pct,
         zero_clipped_pct=zero_clipped_pct,

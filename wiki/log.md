@@ -5993,3 +5993,63 @@ Conclusion: the code's frame-count formula was correct the whole time.
 The gap was between the End value actually submitted for job `5721e35e`
 and what was recalled when describing the run afterward, not a bug. No
 code change made.
+
+---
+
+## 2026-07-24 — M10-043 real root cause found and fixed
+
+The "not a bug" conclusion from the day before didn't survive contact with
+the user's confirmation: guide stars were genuinely visible on the guide
+camera's own live tile during that capture — not covered, not an empty
+FOV. That reopened this as a real bug (consistent with this session's
+recurring pattern — the user's skepticism of a quick "not a bug" call has
+repeatedly uncovered a real, deeper issue underneath).
+
+Root cause, found by reading `domain/histogram.py::analyze()`: `p99_9 =
+np.percentile(normed, 99.9)` is computed over **every pixel in the whole
+frame**. For the guide sensor's real resolution (1920×1080 =
+2,073,600 px), the 99.9th percentile is roughly the 2,074th-brightest
+pixel — a realistic guide star's PSF (tens of pixels, rarely a few
+hundred even across several stars) is nowhere near sparse enough to move
+that percentile at all. `p99_9` was silently reading background noise
+this whole time, exactly matching the observed pattern (scaling with gain
+like noise, 3→4→14 as gain rose 100→100→400) while the rendered JPEG (a
+different, aggressive auto-stretch) showed the star fine. M10-040's
+guiding-mode fix had picked a statistic that structurally cannot see a
+sparse point source.
+
+Strikingly, this was invisible to the existing unit tests: the
+`_sparse_star_frame()` helper's synthetic frame is 64×64 = 4096 px, where
+a 10-pixel star is ~0.24% of the frame — comfortably above the 0.1%
+`p99_9` needs. The tests passed correctly at that scale while the real
+sensor, over 500× larger, silently broke. A good reminder that a
+synthetic test frame's *size* can itself hide a real scaling bug.
+
+Confirmed with the user before implementing, since this changes real
+guiding behavior on hardware: added `max_frac` (raw frame maximum,
+normalised) to `HistogramStats`, sees a sparse point source at any
+resolution. Switched `AutoGainController`'s guiding-mode signal from
+`stats.p99_9` to `stats.max_frac`; existing `_GUIDE_LO/_HI/_TARGET`
+thresholds stay valid since max is also normalised to [0,1].
+
+TDD: `test_histogram.py` gained two cases proving `max_frac` sees what
+`p99_9` misses (confirmed RED — `AttributeError` — before adding the
+field). `test_autogain.py` gained
+`test_guiding_mode_detects_star_at_realistic_sensor_resolution` using an
+actual 1080×1920 synthetic frame; confirmed RED against the pre-fix code
+(exposure changed instead of staying in-band, matching the real bug
+exactly), confirmed GREEN after. `test_autogain_service.py`'s
+`HistogramStats(...)` test helper updated for the new required field
+(no behavior change). Full suite: 133 passed across the three affected
+test files.
+
+Not touched, flagged as **M10-049**: the sibling one-shot
+`AutoGainService` (`domain/autogain_service.py`) has the identical
+`p99_9`-for-guiding signal, explicitly documented as "kept in sync
+manually" with the module just fixed — almost certainly has the same
+blind spot, but has more call sites depending on `p99_9`'s exact
+semantics (no-signal classification, final-signal reporting) that
+deserve their own review rather than a silently bundled change. Also
+flagged, not confirmed: `AutoGainController`'s own DSO-mode sparse-field
+early exit relies on the same `p99_9`-sees-sparse-stars assumption and
+may have an equivalent gap for DSO frames.

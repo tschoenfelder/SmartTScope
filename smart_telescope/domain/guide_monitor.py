@@ -58,7 +58,7 @@ class GuideMonitorResult:
     status: GuideMonitorStatus
     exposure_ms: float
     gain: int
-    p99_9: float
+    max_frac: float
     checked_at: str                  # ISO-8601 UTC
     warning_msg: str | None = None
     dawn_warning: bool = False
@@ -139,11 +139,11 @@ class GuideMonitor:
             with self._lock:
                 self._result = result
             _log.info(
-                "GuideMonitor check: status=%s exp=%.0f ms gain=%d p99_9=%.3f%s",
+                "GuideMonitor check: status=%s exp=%.0f ms gain=%d max_frac=%.3f%s",
                 result.status,
                 result.exposure_ms,
                 result.gain,
-                result.p99_9,
+                result.max_frac,
                 " [DAWN]" if result.dawn_warning else "",
             )
             self._stop.wait(timeout=self._config.check_interval_s)
@@ -160,7 +160,7 @@ class GuideMonitor:
                 status=GuideMonitorStatus.STAR_WEAK,
                 exposure_ms=self._cur_exp_ms,
                 gain=self._cur_gain,
-                p99_9=0.0,
+                max_frac=0.0,
                 checked_at=_utc_now(),
                 warning_msg=str(exc),
             )
@@ -172,7 +172,10 @@ class GuideMonitor:
             pass
 
         stats = _analyze(frame.pixels, bit_depth=bit_depth)
-        signal = stats.p99_9
+        # max_frac (frame maximum), not p99_9 — a whole-frame percentile can't
+        # see a sparse guide star at real sensor resolution (M10-050, same
+        # root cause as M10-043/M10-049).
+        signal = stats.max_frac
 
         # Dawn detection: persistent rise in sky background (p50)
         dawn_warning = False
@@ -191,7 +194,7 @@ class GuideMonitor:
                        else GuideMonitorStatus.DAWN_WARNING,
                 exposure_ms=self._cur_exp_ms,
                 gain=self._cur_gain,
-                p99_9=signal,
+                max_frac=signal,
                 checked_at=_utc_now(),
                 dawn_warning=dawn_warning,
                 warning_msg="Sky brightening — consider ending session" if dawn_warning else None,
@@ -219,7 +222,7 @@ class GuideMonitor:
                     status=GuideMonitorStatus.STAR_WEAK,
                     exposure_ms=self._cur_exp_ms,
                     gain=self._cur_gain,
-                    p99_9=signal,
+                    max_frac=signal,
                     checked_at=_utc_now(),
                     dawn_warning=dawn_warning,
                     warning_msg="Guide star too faint; gain and exposure at maximum",
@@ -241,7 +244,7 @@ class GuideMonitor:
                     status=GuideMonitorStatus.STAR_SATURATED,
                     exposure_ms=self._cur_exp_ms,
                     gain=self._cur_gain,
-                    p99_9=signal,
+                    max_frac=signal,
                     checked_at=_utc_now(),
                     dawn_warning=dawn_warning,
                     warning_msg="Guide star too bright; gain and exposure at minimum",
@@ -252,7 +255,7 @@ class GuideMonitor:
             status=status,
             exposure_ms=self._cur_exp_ms,
             gain=self._cur_gain,
-            p99_9=signal,
+            max_frac=signal,
             checked_at=_utc_now(),
             dawn_warning=dawn_warning,
             warning_msg="Sky brightening — consider ending session" if dawn_warning else None,

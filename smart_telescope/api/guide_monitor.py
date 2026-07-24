@@ -34,7 +34,7 @@ class GuideMonitorStatusResponse(BaseModel):
     status: str | None = None
     exposure_ms: float | None = None
     gain: int | None = None
-    p99_9: float | None = None
+    max_frac: float | None = None
     checked_at: str | None = None
     dawn_warning: bool = False
     warning_msg: str | None = None
@@ -105,7 +105,7 @@ def get_status() -> GuideMonitorStatusResponse:
         status=r.status.value,
         exposure_ms=round(r.exposure_ms, 3),
         gain=r.gain,
-        p99_9=round(r.p99_9, 4),
+        max_frac=round(r.max_frac, 4),
         checked_at=r.checked_at,
         dawn_warning=r.dawn_warning,
         warning_msg=r.warning_msg,

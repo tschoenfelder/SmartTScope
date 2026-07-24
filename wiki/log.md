@@ -6078,3 +6078,33 @@ guiding session) has the exact same `signal = stats.p99_9` pattern. Not
 fixed here because it also surfaces `p99_9` directly on an external API
 response (`api/guide_monitor.py`), so the fix isn't just an internal
 metric swap — needs its own confirmation before changing.
+
+2026-07-24 — M10-050 fixed: `GuideMonitor` guiding-mode blind spot (third sibling)
+
+`domain/guide_monitor.py`'s `_check_once()` — the FR-GUIDE-002 periodic
+monitor that runs continuously during a live guiding session — had the
+identical `signal = stats.p99_9` bug already fixed in `AutoGainController`
+(M10-043) and `AutoGainService` (M10-049). Switched to `stats.max_frac`.
+Since this field was also exposed externally, renamed
+`GuideMonitorResult.p99_9` → `max_frac` and
+`GuideMonitorStatusResponse.p99_9` → `max_frac` (`api/guide_monitor.py`)
+rather than silently repurposing a misleadingly-named field — confirmed
+first that `static/js/session.js`'s `_gmUpdateUI` never reads that field,
+so the rename has no frontend impact.
+
+Added `test_detects_star_at_realistic_sensor_resolution` to
+`test_guide_monitor.py` (1080×1920 frame, 10-pixel star), mirroring the
+M10-043/M10-049 regression tests; confirmed RED against pre-fix code
+(`ADJUSTED` instead of `GUIDE_GAIN_OK`), GREEN after. Renamed
+`test_p99_9_in_result` → `test_max_frac_in_result`. Updated
+`test_guide_monitor_api.py`'s `GuideMonitorResult(...)` kwarg. Full
+`test_guide_monitor.py` + `test_guide_monitor_api.py`: 44 passed, no
+regressions.
+
+This closes the third and (as far as repo-wide `grep p99_9` shows) last
+sibling of the M10-043 bug class used as a guiding-decision signal. The
+remaining `p99_9` references in the codebase (`histogram.py`,
+`api/preview.py`, `static/js/preview.js`, `api/histogram.py`) expose it
+as a raw diagnostic stat, not a guiding decision, so they're unaffected.
+`AutoGainController`'s own DSO-mode `_SPARSE_P99_9_THR` sparse-field
+early-exit remains unconfirmed/untouched, as previously flagged.

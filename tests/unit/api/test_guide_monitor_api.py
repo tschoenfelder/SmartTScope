@@ -112,7 +112,7 @@ class TestGuideMonitorStatus:
             status=GuideMonitorStatus.GUIDE_GAIN_OK,
             exposure_ms=2000.0,
             gain=200,
-            p99_9=0.45,
+            max_frac=0.45,
             checked_at="12:00:00Z",
             dawn_warning=False,
             warning_msg=None,

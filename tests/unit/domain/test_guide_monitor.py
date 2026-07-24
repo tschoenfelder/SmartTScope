@@ -23,16 +23,23 @@ ADC_MAX   = float((1 << BIT_DEPTH) - 1)
 
 # ── Frame helpers ─────────────────────────────────────────────────────────────
 
-def _guide_frame(star_peak_frac: float, background_frac: float = 0.001) -> FitsFrame:
-    """Guide frame: 12 bright star pixels + uniform dim background.
+def _guide_frame(
+    star_peak_frac: float,
+    background_frac: float = 0.001,
+    shape: tuple[int, int] = (64, 64),
+    n_star_px: int = 12,
+) -> FitsFrame:
+    """Guide frame: a handful of bright star pixels + uniform dim background.
 
-    p99_9 ≈ star_peak_frac, p50 ≈ background_frac.
+    At the default 64×64 shape, 12 bright pixels is > 0.1% of all pixels, so
+    p99_9 of the resulting frame ≈ star_peak_frac same as max_frac would be.
+    p50 ≈ background_frac.
     """
-    total = 64 * 64
+    total = shape[0] * shape[1]
     pix   = np.full(total, background_frac * ADC_MAX, dtype=np.float32)
-    pix[:12] = float(star_peak_frac * ADC_MAX)
+    pix[:n_star_px] = float(star_peak_frac * ADC_MAX)
     m = MagicMock(spec=FitsFrame)
-    m.pixels = pix.reshape((64, 64))
+    m.pixels = pix.reshape(shape)
     return m
 
 
@@ -116,11 +123,24 @@ class TestGuideGainOK:
         r = _check(mon)
         assert r.status == GuideMonitorStatus.GUIDE_GAIN_OK
 
-    def test_p99_9_in_result(self) -> None:
+    def test_max_frac_in_result(self) -> None:
         cam = _FakeCamera([_guide_frame(0.45)])
         mon = GuideMonitor(cam, GPCMOS02000KPA)
         r = _check(mon)
-        assert r.p99_9 == pytest.approx(0.45, abs=0.01)
+        assert r.max_frac == pytest.approx(0.45, abs=0.01)
+
+    def test_detects_star_at_realistic_sensor_resolution(self) -> None:
+        """M10-050: on a real ~2-megapixel guide sensor (1080x1920), a
+        well-exposed guide star occupying only ~10 pixels is nowhere near
+        the >=0.1% of all pixels (~2074 of 2,073,600) a whole-frame
+        percentile needs to notice it. The old p99_9-based signal missed
+        it entirely (same class of bug as M10-043/M10-049) — the signal
+        must still recognize the star is in-band regardless of sensor
+        resolution."""
+        cam = _FakeCamera([_guide_frame(0.45, shape=(1080, 1920), n_star_px=10)])
+        mon = GuideMonitor(cam, GPCMOS02000KPA)
+        r = _check(mon)
+        assert r.status == GuideMonitorStatus.GUIDE_GAIN_OK
 
     def test_checked_at_is_set(self) -> None:
         cam = _FakeCamera([_guide_frame(0.45)])

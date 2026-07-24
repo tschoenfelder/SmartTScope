@@ -3180,24 +3180,35 @@ histogram ceiling until it ships upstream.
         *during* an active guiding session (not just at setup), so it's
         arguably the most operationally relevant instance.
 
-- [ ] M10-050 `GuideMonitor._check_once()` likely has the same
-      real-resolution blind spot as M10-043/M10-049. `[P2 · Autogain]`
-      - `domain/guide_monitor.py:175` sets `signal = stats.p99_9` and
-        compares it against a `±hysteresis_pct` band around `_GUIDE_TARGET`
-        (0.45) to decide `GUIDE_GAIN_OK` / `STAR_WEAK` / `STAR_SATURATED` /
-        `ADJUSTED` every `check_interval_s` (default 300 s) during a live
-        guiding session. Same whole-frame-percentile blind spot as
-        M10-043/M10-049: at real sensor resolution p99_9 can't see a
-        sparse guide star, so this monitor could report `STAR_WEAK` and
-        keep escalating gain/exposure on a perfectly fine, correctly
-        exposed guide star.
-      - Not fixed yet — found during the M10-049 pass but out of its
-        confirmed scope; needs its own look since it also uses `stats.p50`
-        for dawn detection (unaffected) and reports `p99_9` directly on
-        `GuideMonitorResult`/the `/api/guide_monitor` response
-        (`api/guide_monitor.py`), so a metric swap changes an
-        externally-visible API field name/meaning, not just internal
-        logic — worth confirming with the user before changing.
+- [x] M10-050 `GuideMonitor._check_once()` had the same real-resolution
+      blind spot as M10-043/M10-049. `[P2 · Autogain]`
+      - *Fixed:* `domain/guide_monitor.py`'s `_check_once()` used
+        `signal = stats.p99_9`, compared against a `±hysteresis_pct` band
+        around `_GUIDE_TARGET` (0.45) to decide `GUIDE_GAIN_OK` /
+        `STAR_WEAK` / `STAR_SATURATED` / `ADJUSTED` every
+        `check_interval_s` (default 300 s) during a live guiding session
+        — same whole-frame-percentile blind spot as M10-043/M10-049.
+        Switched to `stats.max_frac`. `stats.p50`-based dawn detection is
+        unaffected (untouched).
+      - API surface change: `GuideMonitorResult.p99_9` and
+        `GuideMonitorStatusResponse.p99_9` (`api/guide_monitor.py`) were
+        both renamed to `max_frac` rather than silently repurposing a
+        field still named `p99_9` — confirmed the frontend
+        (`static/js/session.js`'s `_gmUpdateUI`) never reads that field,
+        so the rename has no UI impact.
+      - TDD: `tests/unit/domain/test_guide_monitor.py` — renamed
+        `test_p99_9_in_result` to `test_max_frac_in_result`
+        (`r.p99_9` → `r.max_frac`), added
+        `test_detects_star_at_realistic_sensor_resolution` (1080×1920
+        frame, 10-pixel star, mirroring the M10-043/M10-049 regression
+        tests). Confirmed RED against pre-fix code (`AttributeError` for
+        the rename, `ADJUSTED` instead of `GUIDE_GAIN_OK` for the
+        resolution test — proving p99_9 missed the star), GREEN after.
+        `tests/unit/api/test_guide_monitor_api.py` updated for the
+        renamed kwarg. Full `test_guide_monitor.py` +
+        `test_guide_monitor_api.py`: 44 passed, 0 failed, no regressions
+        (existing tests' 64×64 frames already had enough star pixels to
+        keep p99_9 and max_frac numerically identical).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

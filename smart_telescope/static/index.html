@@ -2630,12 +2630,18 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════ -->
-<!-- AUTOFOCUS — main-camera focus screen (M10-033). Guide has no focuser; -->
-<!-- OAG shares the main focuser and is synced manually (out of scope).    -->
+<!-- AUTOFOCUS (M10-033). Works on either the main or OAG optical train — -->
+<!-- both share the same OnStep focuser. Guide has no focuser and is not  -->
+<!-- selectable here.                                                     -->
 <!-- ════════════════════════════════════════════════════════════════════ -->
 <div id="autofocus-view" class="top-view">
   <div id="af-root" style="max-width:640px;margin:0 auto">
     <div id="af-toolbar" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+      <span id="af-cam-row" style="display:flex;align-items:center;gap:0.3rem">
+        <label style="font-size:0.78rem;color:var(--muted)">Cam</label>
+        <select id="af-cam-select" style="font-size:0.78rem;max-width:16ch"
+                title="Autofocus camera" onchange="afOnCamChange(this.value)"></select>
+      </span>
       <span id="af-status" style="font-size:0.78rem;color:var(--muted)"></span>
       <span id="af-eff-settings" style="font-size:0.78rem;color:var(--muted)"></span>
       <span style="flex:1"></span>

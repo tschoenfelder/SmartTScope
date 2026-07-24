@@ -6200,3 +6200,32 @@ test_autofocus_sequence.py.
 
 Full unit suite green after all fixes (one known pre-existing
 order-dependent flake in test_logging.py, confirmed passing in isolation).
+
+2026-07-24 — Autofocus screen: added a working camera selector (main / OAG)
+
+The dedicated Autofocus screen (autofocus.js/index.html's autofocus-view)
+hardcoded camera_role: 'main' in all three of its API calls (live preview
+websocket, HFD/star-count readout, sequence capture) and had zero UI
+indication of which camera was in use. OAG was completely unreachable from
+this screen even though this telescope's config gives both main and oag
+optical trains their own OnStep focuser entry (they share the physical
+focuser). User asked for the screen to be clear about which camera is
+used; confirmed via AskUserQuestion this should be a real, working
+selector rather than a static label.
+
+Added a "Cam" dropdown to the toolbar, reusing the exact pattern already
+used by the Setup/Preview/Polar-Align screens' own camera pickers
+(_loadSelectFromTrains() in focuser.js, unchanged). Kept the new _afCamRole
+state independent of Stage-1's _focusCamRole global so picking OAG here
+can't affect the Setup screen's own autofocus button. Threaded the
+selected role into all three previously-hardcoded call sites; switching
+the dropdown now reconnects the live preview websocket immediately with
+the new role.
+
+Manually verified in a browser (dev server, mock hardware, a temporary
+local config with both main/oag optical trains — reverted after testing,
+not part of the checked-in config): dropdown renders both options,
+defaults to main, switching to oag reconnects the preview websocket with
+camera_role=oag (confirmed in server logs), frame_metrics continues to
+succeed (200 OK), no console errors. Backend already fully supported
+arbitrary camera_role for these endpoints — this was a frontend-only gap.

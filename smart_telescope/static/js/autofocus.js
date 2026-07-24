@@ -1,12 +1,13 @@
 /* ══════════════════════════════════════════════════════════════════════
-     Autofocus screen (M10-033) — main-camera focus only.
+     Autofocus screen (M10-033) — works on either the main or OAG optical
+     train (selectable via the "Cam" dropdown); both share the same OnStep
+     focuser. Guide has no focuser and is not selectable here.
 
-     Guide camera has no focuser; OAG shares the main focuser and is synced
-     manually (out of scope here). Arrow buttons step the focuser in fine
+     Arrow buttons step the focuser in fine
      increments — POST /api/focuser/nudge already clamps to OnStep's live-
      reported focuser range (GET /api/focuser/status max_position), so no
      client-side range logic is needed here. A continuous live preview
-     streams the main camera; in sky mode (terrestrial checkbox unchecked)
+     streams the selected camera; in sky mode (terrestrial checkbox unchecked)
      a periodic HFD/star-count readout is polled via
      POST /api/autofocus/frame_metrics. A separate button captures a
      bracketed FITS sequence at different focus positions
@@ -28,14 +29,37 @@ let _afPosTimer        = null;
 let _afMetricsTimer    = null;
 let _afSeqPollTimer    = null;
 let _afSeqRunning      = false;
+let _afCamRole         = 'main';   // optical train used by this screen's autofocus calls
 
 function afEnter() {
     if (_afActive) return;
     _afActive = true;
     _afReconnect = true;
+    _afLoadCameras();
     _afConnectWs();
     _afStartPositionPoll();
     _afStartMetricsPoll();
+}
+
+/* ── camera selection (main / OAG — both share the OnStep focuser) ──────── */
+
+async function _afLoadCameras() {
+    const sel = await _loadSelectFromTrains('af-cam-select', t => t.has_focuser);
+    if (!sel) return;
+    const mainOpt = sel.querySelector('option[value="main"]');
+    if (mainOpt) sel.value = 'main';
+    _afCamRole = sel.value || 'main';
+    const row = document.getElementById('af-cam-row');
+    if (row) row.style.display = sel.options.length <= 1 ? 'none' : '';
+    // The fetch above is async and may resolve after afEnter()'s initial
+    // (synchronous) _afConnectWs() call — reconnect so the preview socket
+    // picks up the resolved role rather than staying on the default.
+    afRestartPreview();
+}
+
+function afOnCamChange(role) {
+    _afCamRole = role || 'main';
+    afRestartPreview();
 }
 
 function afLeave() {
@@ -63,7 +87,7 @@ function _afConnectWs() {
     const exposure = parseFloat(document.getElementById('af-exposure')?.value) || 2.0;
     const gain     = parseInt(document.getElementById('af-gain')?.value, 10) || 100;
     const proto    = location.protocol === 'https:' ? 'wss' : 'ws';
-    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_role=main`;
+    const url      = `${proto}://${location.host}/ws/preview?exposure=${exposure}&gain=${gain}&camera_role=${_afCamRole}`;
 
     const statusEl = document.getElementById('af-status');
     if (statusEl) statusEl.textContent = 'Connecting…';
@@ -204,7 +228,7 @@ function _afStartMetricsPoll() {
       const exposure = parseFloat(document.getElementById('af-exposure')?.value) || 2.0;
       try {
         const m = await apiPost('/api/autofocus/frame_metrics', {
-          exposure, camera_role: 'main',
+          exposure, camera_role: _afCamRole,
         });
         el.textContent = (m.hfd != null ? `HFD: ${m.hfd.toFixed(2)} px` : 'HFD: no star detected')
           + (m.stars_found != null ? ` · ${m.stars_found} star${m.stars_found === 1 ? '' : 's'} found` : '')
@@ -229,7 +253,7 @@ async function afStartSequence() {
     document.querySelectorAll('.nudge').forEach((b) => { b.disabled = true; });
     try {
       const r = await apiPost('/api/autofocus/sequence', {
-        start_offset, end_offset, step, exposure, gain, camera_role: 'main',
+        start_offset, end_offset, step, exposure, gain, camera_role: _afCamRole,
       });
       _afPollSequence(r.job_id, r.n_frames);
     } catch (err) {

@@ -6229,3 +6229,68 @@ defaults to main, switching to oag reconnects the preview websocket with
 camera_role=oag (confirmed in server logs), frame_metrics continues to
 succeed (200 OK), no console errors. Backend already fully supported
 arbitrary camera_role for these endpoints — this was a frontend-only gap.
+
+2026-07-28 — M10-052: Compare screen autogain crash + frozen display, two bugs
+
+User reported "auto gain failed again" on the Compare (multicam) screen:
+exposure/gain values were visibly climbing per the server log, but one
+camera's live image froze and looked wrong. Root-caused from a real Pi
+server.log excerpt the user pasted, plus direct reads of the relevant
+server and client code — two independent bugs, not one.
+
+Bug 1 (the crash): three concurrent /ws/preview sockets (main/guide/oag,
+all autogain=true — the Compare screen always opens all three at once)
+climbed exposure toward 4s, then one connection died with
+"AssertionError: assert waiter is None or waiter.cancelled()"
+("keepalive ping failed" / "data transfer failed" in the log). Traced into
+uvicorn/protocols/websockets/auto.py: uvicorn's default ws="auto" picks the
+deprecated legacy websockets ASGI implementation whenever the websockets
+package is importable, which it always is. That implementation's
+background keepalive-ping task and the app's in-flight frame write race on
+the same connection with no shared lock; three simultaneous long-exposure
+streams made the race far more likely to hit. Uvicorn's own docs confirm
+the legacy implementation is deprecated specifically in favour of
+websockets-sansio for this reason.
+
+Fixed with a new _select_ws_protocol() in smart_telescope/__main__.py that
+prefers "websockets-sansio" and falls back to "auto" (today's behavior)
+when the installed uvicorn predates it (< 0.35, confirmed via web search
+as the version that introduced this implementation) — defensive so it can
+never break server startup regardless of what uvicorn version is on the
+Pi. pyproject.toml's uvicorn[standard] floor bumped 0.29 → 0.35 to document
+the real requirement for a fresh install_pi.sh run (astro_start.sh's fast
+redeploy path uses --no-deps and won't pick this up on its own — fine,
+the fallback covers that case).
+
+Bug 2 (why it never recovered): multicam.js's _mcOpenSocket() onclose
+handler only set an info label to "stream closed" — unlike every other
+live-preview screen (autofocus.js), it had no reconnect timer at all, so
+once bug 1 (or any transient disconnect) killed a socket, that panel froze
+on its last frame forever. This is what looked like "auto gain changed but
+the display stayed identical" — the still-alive cameras kept updating; the
+dead one just stopped, whatever it last happened to capture (plausibly a
+too-bright frame mid-ramp, matching the "white screen" description). Fixed
+by adding the same reconnect-on-close pattern already used in
+autofocus.js: a _mcReconnectTimers map, 3s retry, cleared on
+multicamLeave() alongside the existing socket cleanup.
+
+New tests/unit/test_main.py covers _select_ws_protocol()'s two branches.
+The multicam.js fix is frontend-only — verified manually in a live browser
+session instead: built a real panel + opened a real /ws/preview socket via
+the console, force-closed it mid-stream, confirmed the panel showed
+"disconnected — reconnecting…" and a new socket resumed live frames
+(fresh bitmap updates) within the 3s window, with no console errors, and
+that multicamLeave() correctly clears any pending reconnect timer. Camera
+detection reports MISSING on this Windows dev box (no ToupTek SDK/hardware
+to enumerate), so the Compare screen's own DETECTED-gated auto-open
+couldn't be exercised end-to-end — the direct-socket test above exercises
+the exact same _mcOpenSocket()/onclose code path regardless.
+
+Full unit suite green (the one known pre-existing order-dependent flake in
+test_logging.py already documented under M10-051 above, confirmed passing
+in isolation, unrelated to this change).
+
+The actual websockets keepalive race can only be triggered under real
+concurrent 3-camera hardware load — flagged for Pi verification: run the
+Compare screen with all three cameras + autogain for several minutes and
+confirm no more AssertionError/frozen panels in server.log.

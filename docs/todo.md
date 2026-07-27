@@ -3362,6 +3362,54 @@ histogram ceiling until it ships upstream.
         order-dependent flake in `test_logging.py`, confirmed passing in
         isolation, unrelated).
 
+- [x] M10-052 Compare (multicam) screen: one camera's autogain preview froze
+      mid-session and never recovered — two independent bugs found from a
+      real Pi `server.log` excerpt. `[P1 · Cameras]`
+      - **Root cause 1 (the crash)**: uvicorn's default `ws="auto"` selects
+        the deprecated legacy `websockets` ASGI protocol implementation
+        whenever the `websockets` package is importable (confirmed by
+        reading `uvicorn/protocols/websockets/auto.py`) — always true here.
+        That implementation's background keepalive-ping task and the app's
+        in-flight frame write race on the same connection with no shared
+        lock; under three simultaneous long-exposure autogain streams
+        (`main`/`guide`/`oag`, all opened at once by the Compare screen) this
+        hit reliably, killing one connection with
+        `AssertionError: assert waiter is None or waiter.cancelled()`
+        (`keepalive ping failed` / `data transfer failed` in the log).
+        Uvicorn's own docs confirm the legacy implementation is deprecated
+        specifically in favour of `websockets-sansio` for this reason.
+        Fixed via a new `_select_ws_protocol()` in `smart_telescope/__main__.py`
+        that prefers `"websockets-sansio"` and falls back to `"auto"` (today's
+        behaviour) when the installed uvicorn predates it (< 0.35), so this
+        can never break server startup regardless of what's on the Pi.
+        `pyproject.toml`'s `uvicorn[standard]` floor bumped 0.29 → 0.35 to
+        document the real requirement for a fresh `install_pi.sh` run (the
+        fast redeploy path `astro_start.sh` uses `--no-deps` and won't pick
+        this up on its own — fine, since the fallback covers that case).
+      - **Root cause 2 (why it never recovered)**: `multicam.js`'s
+        `_mcOpenSocket()` `onclose` handler only set an info label to
+        "stream closed" — unlike every other live-preview screen
+        (`autofocus.js`), it had **no reconnect timer at all**, so once bug 1
+        (or any transient disconnect) killed a socket, that panel froze on
+        its last frame forever. This is what looked like "auto gain changed
+        but the display stayed identical" — the still-alive cameras kept
+        updating; the dead one just stopped. Fixed by adding the same
+        reconnect-on-close pattern already used in `autofocus.js`
+        (`_mcReconnectTimers` map, 3 s retry, cleared on `multicamLeave()`).
+      - TDD: new `tests/unit/test_main.py` covers `_select_ws_protocol()`'s
+        two branches (sansio preferred when available; falls back to `auto`
+        otherwise). The `multicam.js` reconnect fix is frontend-only, no
+        Python test surface — verified manually in a live browser session
+        instead.
+      - Full unit suite green (same pre-existing order-dependent
+        `test_logging.py` flake as M10-051 above, confirmed passing in
+        isolation, unrelated to this change).
+      - **The actual `websockets` keepalive race can only be triggered under
+        real concurrent 3-camera hardware load** — flagged for Pi
+        verification: run the Compare screen with all three cameras +
+        autogain for several minutes and confirm no more
+        `AssertionError`/frozen panels in `server.log`.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

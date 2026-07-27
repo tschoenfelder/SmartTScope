@@ -17,6 +17,7 @@
 let _mcActive     = false;
 let _mcScaleMode  = 'fit';        // 'fit' | 'angular'
 let _mcSockets    = {};           // role -> WebSocket
+let _mcReconnectTimers = {};      // role -> setTimeout id, pending reconnect
 let _mcPanels     = {};           // role -> panel state (see _mcBuildPanel)
 let _mcMountTimer = null;
 let _mcFilterName = null;         // current wheel filter (M10-014 payload)
@@ -65,6 +66,8 @@ function multicamLeave() {
     _mcActive = false;
     for (const ws of Object.values(_mcSockets)) { try { ws.close(); } catch {} }
     _mcSockets = {};
+    for (const t of Object.values(_mcReconnectTimers)) clearTimeout(t);
+    _mcReconnectTimers = {};
     if (_mcMountTimer) { clearInterval(_mcMountTimer); _mcMountTimer = null; }
     // Cooling itself deliberately keeps running on leave — it is hardware
     // state like tracking, not a per-view resource like the preview sockets.
@@ -180,10 +183,16 @@ function _mcOpenSocket(role) {
         p.dirty = true;
       } catch {}
     };
-    ws.onclose = () => {
-      if (_mcActive && _mcSockets[role] === ws && !p.infoEl.textContent) {
-        p.infoEl.textContent = 'stream closed';
-      }
+    ws.onclose = (ev) => {
+      // M10-05x: without this, a socket killed mid-session (e.g. the legacy
+      // websockets keepalive-ping race under concurrent multi-camera
+      // autogain streaming) left this panel frozen on its last frame forever
+      // — every other live-preview screen (autofocus.js) already reconnects.
+      if (_mcSockets[role] !== ws) return;   // superseded by a newer connection
+      _mcSockets[role] = null;
+      if (!_mcActive) return;
+      p.infoEl.textContent = `disconnected (${ev.code}) — reconnecting…`;
+      _mcReconnectTimers[role] = setTimeout(() => _mcOpenSocket(role), 3000);
     };
 }
 

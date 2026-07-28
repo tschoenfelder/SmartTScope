@@ -6461,3 +6461,49 @@ event, unchanged event-driven behavior for non-snap modes. Full unit
 suite green. Still needs Pi verification: run Compare/Autofocus against
 the real guide camera with autogain and confirm mean_adu actually changes
 between frames now.
+
+2026-07-28 — M10-057: M10-056 disproven and reverted. Pi verification came
+back fast and bad: the user reported the Compare screen's guide panel
+stuck on "disconnected (1006) — reconnecting..." and pasted a fresh
+server.log. Every single guide-camera capture failed with "Preview:
+capture failed on camera_index=0 adapter=SmartTouptekCamera: -2147483638
+(0x8000000A)" -- a 100% failure rate, strictly worse than the original
+frozen-frame bug (which at least produced a displayable, if stale, image).
+main and oag captured and converged normally throughout the same log
+window, confirming the failure was specific to forcing still=True, not a
+broader regression from anything else shipped today.
+
+Root cause of the wrong hypothesis: PullImageV4's bStill flag requires the
+camera to have actually gone through a real Snap()-family still-image
+trigger. This camera is driven purely via Trigger(1) -- a
+software-triggered streaming capture per _prepare_capture_mode()'s own
+design -- which never populates an SDK-side still buffer. Forcing the flag
+doesn't change how the capture was actually triggered; it just makes the
+SDK correctly reject a request for a still buffer that was never going to
+exist. M10-056's theory (that still=True would make the guide camera pull
+from the correct/fresh buffer instead of a stale one) was reasonable given
+the diagnostic evidence available at the time, but wrong -- the real
+mechanism turned out to be different from what the still-flag logic could
+fix at all.
+
+Reverted _capture_raw() to depend purely on which event fired (still =
+self._last_event == _EVENT_STILLIMAGE), the exact pre-M10-056 behavior.
+Updated test_managed_capture.py to pin this reverted, hardware-confirmed
+behavior down so the disproven fix can't be silently reintroduced later.
+
+The original guide-camera frozen-frame bug is open again. What's now
+ruled out for certain: a hardware AGC fight (M10-053 already ruled this
+out via _try()'s SDK-call-failure logging), and still=True (this session,
+categorically). _EVENT_STILLIMAGE genuinely never fires for this camera
+under Trigger()-based capture, confirmed twice now -- that's real,
+established fact, just not something fixable at the still-flag layer.
+Next investigation should look elsewhere in the pipeline: AutoGainController's
+GUIDING-mode metric calculation, or whether _pixel_shift caching (set once
+per connection, never re-detected) could produce a misleadingly-constant
+statistic even from genuinely fresh frames.
+
+Full unit suite green (same pre-existing test_logging.py flake,
+unrelated). This is now the second disproven guide-camera "snap"-mode fix
+attempt (after M10-032's untested trigger-mode change) -- worth treating
+any future guide-camera hypothesis as needing real-hardware confirmation
+before considering it done, not just a clean local test run.

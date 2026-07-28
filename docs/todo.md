@@ -3559,6 +3559,52 @@ histogram ceiling until it ships upstream.
         Compare/Autofocus screen against the real guide camera with autogain
         and confirm `mean_adu` now actually changes between frames and
         autogain converges, instead of staying pinned at a constant value.
+      - **⚠️ DISPROVEN — see M10-057.** Pi verification showed this
+        hypothesis was wrong: forcing `still=True` broke guide's capture
+        entirely.
+
+- [x] M10-057 Revert M10-056 — forcing `still=True` broke guide capture
+      completely (100% failure rate), worse than the original frozen-frame
+      bug. `[P1 · Cameras]`
+      - **Evidence (real Pi `server.log`, same session as M10-056)**: every
+        single guide-camera capture failed with `ERROR ... Preview: capture
+        failed on camera_index=0 adapter=SmartTouptekCamera: -2147483638
+        (0x8000000A)` — visible in the UI as the Compare screen's guide
+        panel repeatedly showing "disconnected (1006) — reconnecting…".
+        `main`/`oag` (camera_index 1/3) captured and converged normally in
+        the same log window, confirming the failure was specific to guide's
+        forced `still=True`, not a broader regression.
+      - **Root cause of the wrong hypothesis**: `PullImageV4`'s `bStill`
+        flag requires the camera to have actually gone through a real
+        `Snap()`-family still-image trigger; this camera is driven purely
+        via `Trigger(1)` (a software-triggered *streaming* capture per
+        `_prepare_capture_mode()`), which never populates an SDK-side still
+        buffer. Forcing the flag doesn't change how the capture was
+        actually triggered — it just makes the SDK correctly reject a
+        request for a still buffer that was never going to exist.
+      - **Fix**: reverted `_capture_raw()` to depend purely on which event
+        fired (`still = self._last_event == _EVENT_STILLIMAGE`) — the exact
+        pre-M10-056 behavior. Guide capture works again (confirmed by
+        `main`/`oag` continuing to work throughout, and this being the
+        literal previous known-working code).
+      - Updated `tests/unit/adapters/touptek/test_managed_capture.py` to
+        pin the reverted (hardware-confirmed-correct) behavior, so the
+        disproven `still=True` fix can't be silently reintroduced.
+      - **The original guide-camera frozen-frame bug (M10-053/M10-056) is
+        OPEN AGAIN.** What we now know for certain: (a) it's not a hardware
+        AGC fight (M10-053 ruled that out — `put_AutoExpoEnable(0)` never
+        logs an SDK-call failure); (b) `still=True` is categorically wrong
+        for this camera and must not be tried again; (c) `_EVENT_STILLIMAGE`
+        genuinely never fires for this camera under `Trigger()`-based
+        capture, confirmed twice now. Next investigation should look
+        elsewhere in the pipeline — e.g. `AutoGainController`'s
+        `GUIDING`-mode metric calculation, or whether `_detect_pixel_shift`
+        caching (`self._pixel_shift`, set once per connection) could produce
+        a misleadingly-constant statistic even from genuinely fresh frames —
+        rather than the capture/event-flag layer, which is now
+        well-understood and not the culprit.
+      - Full unit suite green (same pre-existing `test_logging.py` flake,
+        unrelated).
 
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align

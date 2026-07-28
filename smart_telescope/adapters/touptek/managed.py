@@ -211,6 +211,18 @@ class SmartTouptekCamera(CameraPort):
         try:
             self._cam.put_ExpoTime(max(1, int(exposure_seconds * 1_000_000)))
             raw_u16 = self._capture_raw(exposure_seconds + self._timeout_extra_s)
+            if self._capture_mode == "snap":
+                # M10-05x diagnostic: a frozen-buffer symptom was seen on the
+                # only camera using this mode (GPCMOS02000KPA) — mean/percentile
+                # ADU identical across many frames despite exposure/gain
+                # changes reaching the hardware. This checks whether the SDK
+                # ever actually fires STILLIMAGE for snap-triggered captures,
+                # since PullImageV4's `still` flag depends on it.
+                _log.info(
+                    "SmartTouptekCamera(%s): snap-mode capture event=0x%04X still=%s",
+                    self._logical_name, self._last_event or 0,
+                    self._last_event == _EVENT_STILLIMAGE,
+                )
             if self._pixel_shift < 0:
                 self._pixel_shift = _detect_pixel_shift(raw_u16)
             shift = max(0, self._pixel_shift)

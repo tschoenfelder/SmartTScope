@@ -129,3 +129,49 @@ class TestWsPreviewParams:
         with pytest.raises(WebSocketDisconnect), \
                 preview_client.websocket_connect("/ws/preview?exposure=3601") as ws:
             ws.receive_bytes()
+
+
+# ── concurrent-connection race (M10-05x) ───────────────────────────────────────
+
+
+class TestWsPreviewSingleOwner:
+    def test_second_connection_aborts_the_first(self) -> None:
+        cam = _make_cam()
+        with patch("smart_telescope.api.deps.get_preview_camera", return_value=cam):
+            client = TestClient(app)
+            with client.websocket_connect("/ws/preview?camera_index=0") as ws1:
+                ws1.receive_bytes()  # first connection is up and streaming
+                cam.abort_capture.assert_not_called()
+
+                with client.websocket_connect("/ws/preview?camera_index=0") as ws2:
+                    ws2.receive_bytes()
+                    # the new connection for the same camera_index must have
+                    # signaled the old one to stop instead of racing it
+                    cam.abort_capture.assert_called()
+
+    def test_different_camera_indexes_do_not_interact(self) -> None:
+        cam = _make_cam()
+        with patch("smart_telescope.api.deps.get_preview_camera", return_value=cam):
+            client = TestClient(app)
+            with client.websocket_connect("/ws/preview?camera_index=0") as ws1:
+                ws1.receive_bytes()
+                with client.websocket_connect("/ws/preview?camera_index=1") as ws2:
+                    ws2.receive_bytes()
+                    cam.abort_capture.assert_not_called()
+                    # both connections keep receiving frames independently
+                    ws1.receive_bytes()
+                    ws2.receive_bytes()
+
+    def test_registry_entry_cleared_after_normal_close(self) -> None:
+        from smart_telescope.api import preview as preview_module
+
+        cam = _make_cam()
+        with patch("smart_telescope.api.deps.get_preview_camera", return_value=cam):
+            client = TestClient(app)
+            with client.websocket_connect("/ws/preview?camera_index=0") as ws:
+                ws.receive_bytes()
+            # connection closed cleanly — a fresh one must not be treated as
+            # superseding a stale entry that was never cleaned up
+            with client.websocket_connect("/ws/preview?camera_index=0") as ws2:
+                ws2.receive_bytes()
+                assert preview_module._active_preview_owner[0]["superseded"] is False

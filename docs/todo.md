@@ -3410,6 +3410,58 @@ histogram ceiling until it ships upstream.
         autogain for several minutes and confirm no more
         `AssertionError`/frozen panels in `server.log`.
 
+- [x] M10-053 Concurrent preview connections raced the same physical camera
+      (main disconnecting continuously, saturated "white" frames despite a
+      short exposure being shown, autofocus never adopting autogain); guide
+      camera's autogain froze on an unchanging frame. `[P1 · Cameras]`
+      - **Root cause (confirmed)**: a fresh Pi `server.log` (pasted by the
+        user, after M10-052 shipped) showed two `main`-camera `/ws/preview`
+        connections opened back-to-back at session start (Setup screen's
+        Stage-3 preview, `autogain=false`, likely two browser tabs/reloads),
+        neither ever closing. When the Compare screen later opened its own
+        `main` preview, every session kept independently calling
+        `set_exposure_ms()`/`capture()` on the *same shared camera object*
+        with zero coordination — proven by readbacks ping-ponging between
+        sessions' settings frame to frame (`exp=2.0000s
+        actual_exp_ms=570.089` immediately followed by `exp=0.5701s
+        actual_exp_ms=2000.0`, over and over). This produced genuinely
+        saturated frames (`sat=99.41%` — not a display bug; the UI showed
+        what *that* connection asked for, while the sensor sat at whatever
+        the other connection last set) and eventually lost the SDK
+        capture-lock race, disconnecting — which M10-052's reconnect fix then
+        dutifully reopened, restarting the same race ("disconnects
+        continuously").
+      - **Fix**: `smart_telescope/api/preview.py` now enforces single
+        ownership per `camera_index` via a module-level
+        `_active_preview_owner` registry. A new connection marks any prior
+        owner for that camera_index as superseded and calls the existing
+        `camera.abort_capture()` (already used the same way in
+        `services/managed_camera.py`'s `stop_stream()`) to unblock the old
+        connection's in-flight capture immediately instead of waiting out a
+        multi-second exposure. The superseded connection notices on its next
+        loop iteration and closes quietly (no misleading "capture failed"
+        log/message) — mirrors the "supersede" pattern already used
+        client-side in `multicam.js`'s M10-052 reconnect fix.
+      - TDD: new tests in `tests/unit/api/test_preview.py`
+        (`TestWsPreviewSingleOwner`) cover supersession, non-interference
+        across different `camera_index` values, and registry cleanup on
+        normal close.
+      - **Guide camera freeze — not yet fixed, diagnostic-only**: guide's
+        `mean_adu`/`p99`/`p99_9` were bit-for-bit identical (4094) across 30+
+        frames despite exposure/gain climbing 2.0s→4.0s, 100→400 — settings
+        reached the hardware (readback confirms it) but the captured buffer
+        never changed. Guide is the only camera using `"snap"` capture mode
+        (`GPCMOS02000KPA`), and `_pull_pixels`'s `still` flag depends on
+        whether the SDK ever fires `_EVENT_STILLIMAGE` for triggered snap
+        captures — unconfirmed. Added a one-line diagnostic log in
+        `managed.py`'s `capture()` (snap-mode only, so it never fires for
+        `main`/`oag`) reporting the actual event code and still-flag per
+        frame. **Needs a fresh Pi `server.log` capture to confirm or rule out
+        this theory before attempting a real fix.**
+      - Full unit suite green (same pre-existing order-dependent
+        `test_logging.py` flake as M10-051/M10-052, confirmed passing in
+        isolation, unrelated).
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

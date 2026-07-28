@@ -28,6 +28,16 @@ router = APIRouter()
 # Used by click-to-center refinement (M8-026).
 _last_preview_pixels: dict[int, "np.ndarray"] = {}
 
+# M10-05x: exactly one preview connection may drive a given physical camera
+# at a time. Without this, two overlapping sessions (e.g. a Setup-screen
+# preview left open in another tab plus the Compare screen's own connection)
+# independently call set_exposure_ms()/capture() on the same shared camera
+# object with no coordination, stomping each other's exposure/gain between
+# frames (confirmed via a real Pi server.log showing readbacks ping-ponging
+# between two sessions' settings) and eventually racing the SDK capture lock
+# into a disconnect. Maps camera_index -> {"superseded": bool}.
+_active_preview_owner: dict[int, dict] = {}
+
 
 def get_last_preview_pixels(camera_index: int) -> "np.ndarray | None":
     """Return the most recent preview frame pixels for the given camera index, or None."""
@@ -110,6 +120,24 @@ async def ws_preview(
             pass
         await websocket.close(code=1011, reason=str(exc)[:123])
         return
+
+    # M10-05x: this connection now owns camera_index — supersede any prior
+    # owner so the two never drive the hardware concurrently (see
+    # _active_preview_owner docstring above).
+    _prior_owner = _active_preview_owner.get(camera_index)
+    if _prior_owner is not None:
+        _prior_owner["superseded"] = True
+        _log.warning(
+            "Preview: camera_index=%d already has an active preview connection "
+            "— signaling it to stop before this one proceeds (M10-05x)",
+            camera_index,
+        )
+        try:
+            camera.abort_capture()
+        except Exception:
+            pass
+    _my_owner = {"superseded": False}
+    _active_preview_owner[camera_index] = _my_owner
 
     ctrl: AutoGainController | None = None  # created after bit_depth is known
     cur_exposure = exposure
@@ -230,6 +258,14 @@ async def ws_preview(
 
     try:
         while True:
+            # M10-05x: a newer connection has taken over this camera_index.
+            if _my_owner["superseded"]:
+                _log.info(
+                    "Preview: camera_index=%d superseded by a newer connection — closing",
+                    camera_index,
+                )
+                break
+
             # --- apply any pending settings from the client ---
             while not _params_q.empty():
                 try:
@@ -275,6 +311,11 @@ async def ws_preview(
                 frame: FitsFrame = await asyncio.to_thread(camera.capture, cur_exposure)
             except Exception as exc:
                 exc_str = str(exc)
+                # M10-05x: this capture was aborted because a newer connection
+                # superseded us (see the top-of-loop check) — not a real
+                # failure, so exit quietly instead of logging/reporting it.
+                if _my_owner["superseded"]:
+                    break
                 # Capture was preempted by a background job (abort_capture fired or
                 # camera-busy timeout).  Loop back to the yield check so the preview
                 # resumes automatically once the job releases the camera.
@@ -401,6 +442,11 @@ async def ws_preview(
         pass
     finally:
         _listener.cancel()
+        # M10-05x: only clear the registry if we're still the current owner —
+        # a connection that was itself superseded must not delete the newer
+        # owner's entry that replaced it.
+        if _active_preview_owner.get(camera_index) is _my_owner:
+            del _active_preview_owner[camera_index]
 
 
 def _debayer(raw: np.ndarray, pattern: str) -> np.ndarray:

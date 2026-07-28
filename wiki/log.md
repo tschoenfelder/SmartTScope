@@ -6294,3 +6294,69 @@ The actual websockets keepalive race can only be triggered under real
 concurrent 3-camera hardware load — flagged for Pi verification: run the
 Compare screen with all three cameras + autogain for several minutes and
 confirm no more AssertionError/frozen panels in server.log.
+
+2026-07-28 — M10-053: concurrent preview connections racing one camera,
+plus a guide-camera freeze, both found from a fresh Pi server.log the user
+pasted after M10-052 shipped. The user reported: Autofocus white at
+exp=2/gain=100 without adopting; Compare screen's OAG exposure reduces but
+guide doesn't; main takes very long to reduce exposure then disconnects
+continuously, showing a white frame even when a short exposure/gain is
+displayed.
+
+Root cause 1 (confirmed): the log showed two main-camera /ws/preview
+connections opened back-to-back right at session start (Setup screen's
+Stage-3 preview, autogain=false, most likely two browser tabs/reloads),
+neither ever closing. When the Compare screen later opened its own main
+preview, every session kept independently calling
+set_exposure_ms()/capture() on the same shared camera object with zero
+coordination. The readbacks prove it — they ping-pong between sessions'
+settings frame to frame:
+
+  exp=2.0000s  actual_exp_ms=570.089   (asked 2.0s, HW shows the other session's 0.57s)
+  exp=0.5701s  actual_exp_ms=2000.0    (asked 0.57s, HW shows the other session's 2.0s)
+
+This produced genuinely saturated frames (sat=99.41% — not a display bug;
+the UI showed what that connection asked for, while the sensor sat at
+whatever the other connection last set), and eventually one side lost the
+SDK capture-lock race and disconnected, which M10-052's reconnect fix then
+dutifully reopened — restarting the same race ("disconnects
+continuously"). There was no server-side rule preventing two preview
+sessions from driving one physical camera at once.
+
+Fixed by adding single-owner-per-camera enforcement in
+smart_telescope/api/preview.py: a module-level _active_preview_owner
+registry maps camera_index -> {"superseded": bool}. A new connection marks
+any prior owner for that camera_index superseded and calls the existing
+camera.abort_capture() (already used the same way in
+services/managed_camera.py's stop_stream()) to unblock the old
+connection's in-flight capture immediately. The superseded connection
+notices on its next loop iteration (and in its capture-exception handler,
+so an aborted capture isn't misreported as a real failure) and closes
+quietly. This mirrors the "supersede" pattern already used client-side in
+multicam.js's M10-052 reconnect fix, just applied server-side.
+
+Root cause 2 (guide freeze, not yet confirmed): guide's mean_adu/p99/p99_9
+were bit-for-bit identical (4094) across 30+ frames despite exposure/gain
+climbing 2.0s to 4.0s and 100 to 400 — settings reached the hardware
+(readback confirms it) but the captured buffer never changed. Guide is the
+only camera using "snap" capture mode (GPCMOS02000KPA); _pull_pixels'
+still flag depends on whether the SDK ever fires _EVENT_STILLIMAGE for
+triggered snap captures, which is unconfirmed from static analysis alone.
+Rather than guess, added a one-line diagnostic log in managed.py's
+capture() (snap-mode only, so main/oag are unaffected) reporting the
+actual event code and still-flag per frame. This needs a fresh Pi
+server.log capture to confirm or rule out the theory before attempting a
+real fix.
+
+TDD: new tests/unit/api/test_preview.py::TestWsPreviewSingleOwner covers
+supersession (second connection to the same camera_index aborts the
+first), non-interference (different camera_index values never touch each
+other), and registry cleanup after a normal close. Full unit suite green
+(same pre-existing order-dependent test_logging.py flake as M10-051/052,
+confirmed passing in isolation, unrelated). Verified server boots cleanly
+locally with the change.
+
+Next Pi verification should watch for: (a) no more oscillating
+exposure/actual-exposure mismatches or saturated frames on main, and (b)
+the new "snap-mode capture event=..." log lines for guide, which will
+directly confirm or rule out the _EVENT_STILLIMAGE theory.

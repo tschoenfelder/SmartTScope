@@ -6360,3 +6360,38 @@ Next Pi verification should watch for: (a) no more oscillating
 exposure/actual-exposure mismatches or saturated frames on main, and (b)
 the new "snap-mode capture event=..." log lines for guide, which will
 directly confirm or rule out the _EVENT_STILLIMAGE theory.
+
+2026-07-28 — M10-054: M10-053's own fix caused a reconnect-flapping loop.
+User report right after M10-053 shipped: "after cameras move to autofocus
+shows reconnect issue again — it's your UI causing this."
+
+Root cause, confirmed empirically rather than guessed: wrote a small
+websockets-client probe script, ran it against the local dev server,
+opened two /ws/preview connections to the same camera_index, and measured
+the close code the first connection actually received when the second
+superseded it. It was code 1006 (abnormal closure) — M10-053's superseded
+path only breaks out of its loop and lets the handler return; Starlette/
+uvicorn's ASGI layer drops the socket with 1006 rather than a clean 1000
+when that happens. Every client-side reconnect guard in this codebase
+(autofocus.js, preview.js) only skips reconnecting on exactly code 1000 —
+anything else is treated as an unexpected disconnect worth retrying. So the
+loser of M10-053's camera handoff immediately reconnected, re-superseding
+whichever connection had just won, which (if that screen also reconnects)
+re-superseded back — a continuous flapping loop between two screens
+fighting over one camera. This is exactly what M10-053 was supposed to
+prevent, just moved one level up: the race over hardware settings was
+fixed, but the handoff itself wasn't clean, so it became a race over the
+connection itself.
+
+Fixed with a new _close_superseded() helper in
+smart_telescope/api/preview.py: explicitly calls websocket.close(code=1000,
+reason="superseded by a newer preview connection") at both points where a
+connection detects it has been superseded, before breaking. Re-ran the same
+probe script after the fix and confirmed the first connection now receives
+code 1000 with the reason string intact — this is a case where an actual
+before/after measurement, not code reading alone, caught the real
+mechanism.
+
+TDD: new test_superseded_connection_closes_with_clean_code asserts
+WebSocketDisconnect.code == 1000 for the superseded side. Full unit suite
+green (same pre-existing test_logging.py flake, unrelated).

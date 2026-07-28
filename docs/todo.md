@@ -3462,6 +3462,40 @@ histogram ceiling until it ships upstream.
         `test_logging.py` flake as M10-051/M10-052, confirmed passing in
         isolation, unrelated).
 
+- [x] M10-054 M10-053's own supersession fix caused a reconnect-flapping loop
+      (user report: "after cameras move to autofocus shows reconnect issue
+      again — it's your UI causing this"). `[P1 · Cameras]`
+      - **Root cause (confirmed empirically, not guessed)**: wrote a small
+        `websockets`-client probe script that opened two `/ws/preview`
+        connections to the same `camera_index` against the locally running
+        dev server and inspected the close event the first connection
+        actually received. It measured **code 1006** ("abnormal closure") —
+        M10-053's superseded-connection path only `break`s out of the loop
+        and lets the handler return, and Starlette/uvicorn's ASGI layer
+        drops the socket with 1006 rather than a clean 1000 when that
+        happens. Every client-side reconnect guard in this codebase
+        (`autofocus.js`, `preview.js`) only skips reconnecting on exactly
+        code 1000 — anything else is treated as an unexpected disconnect
+        worth retrying. So the *loser* of M10-053's camera handoff
+        immediately reconnected, re-superseding whichever connection had
+        just won, which (if that screen also reconnects) re-supersedes back
+        — a continuous flapping loop between two screens fighting over one
+        camera, visible to the user as "reconnect issue" right after
+        M10-053 shipped.
+      - **Fix**: new `_close_superseded()` helper in
+        `smart_telescope/api/preview.py` explicitly calls
+        `websocket.close(code=1000, reason="superseded by a newer preview
+        connection")` at both points where a connection detects it has been
+        superseded (top-of-loop check and the capture-exception handler),
+        before breaking. Re-ran the same probe script after the fix and
+        confirmed the first connection now receives code 1000 with the
+        reason string intact.
+      - TDD: new
+        `tests/unit/api/test_preview.py::TestWsPreviewSingleOwner::test_superseded_connection_closes_with_clean_code`
+        asserts the superseded connection's `WebSocketDisconnect.code == 1000`.
+      - Full unit suite green (same pre-existing `test_logging.py` flake,
+        unrelated).
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

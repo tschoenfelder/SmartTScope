@@ -162,6 +162,26 @@ class TestWsPreviewSingleOwner:
                     ws1.receive_bytes()
                     ws2.receive_bytes()
 
+    def test_superseded_connection_closes_with_clean_code(self) -> None:
+        # M10-05x follow-up: a superseded connection must close with code
+        # 1000 ("normal closure"). Every client-side reconnect guard in this
+        # codebase (autofocus.js, preview.js) only skips reconnecting on
+        # exactly this code — anything else (e.g. the 1006 the ASGI layer
+        # sends by default when a handler just returns) makes the loser
+        # immediately reconnect and re-supersede the winner, producing a
+        # continuous reconnect loop between two screens instead of one clean
+        # handoff.
+        cam = _make_cam()
+        with patch("smart_telescope.api.deps.get_preview_camera", return_value=cam):
+            client = TestClient(app)
+            with client.websocket_connect("/ws/preview?camera_index=0") as ws1:
+                ws1.receive_bytes()
+                with client.websocket_connect("/ws/preview?camera_index=0"):
+                    with pytest.raises(WebSocketDisconnect) as exc_info:
+                        while True:
+                            ws1.receive_bytes()
+                    assert exc_info.value.code == 1000
+
     def test_registry_entry_cleared_after_normal_close(self) -> None:
         from smart_telescope.api import preview as preview_module
 

@@ -44,6 +44,24 @@ def get_last_preview_pixels(camera_index: int) -> "np.ndarray | None":
     return _last_preview_pixels.get(camera_index)
 
 
+async def _close_superseded(websocket: WebSocket) -> None:
+    """Close a superseded connection with a clean 1000 code.
+
+    Every client-side reconnect guard in this codebase (autofocus.js,
+    preview.js) only skips reconnecting on close code 1000 — anything else is
+    treated as an unexpected disconnect worth retrying. Simply returning from
+    this handler without an explicit close leaves the ASGI layer to drop the
+    socket with code 1006 (confirmed empirically), which made every
+    reconnect-capable screen immediately fight to reopen a connection and
+    re-supersede whichever screen "won" — a continuous reconnect loop between
+    two screens instead of one clean handoff.
+    """
+    try:
+        await websocket.close(code=1000, reason="superseded by a newer preview connection")
+    except Exception:
+        pass
+
+
 @router.websocket("/ws/preview")
 async def ws_preview(
     websocket: WebSocket,
@@ -264,6 +282,7 @@ async def ws_preview(
                     "Preview: camera_index=%d superseded by a newer connection — closing",
                     camera_index,
                 )
+                await _close_superseded(websocket)
                 break
 
             # --- apply any pending settings from the client ---
@@ -315,6 +334,7 @@ async def ws_preview(
                 # superseded us (see the top-of-loop check) — not a real
                 # failure, so exit quietly instead of logging/reporting it.
                 if _my_owner["superseded"]:
+                    await _close_superseded(websocket)
                     break
                 # Capture was preempted by a background job (abort_capture fired or
                 # camera-busy timeout).  Loop back to the yield check so the preview

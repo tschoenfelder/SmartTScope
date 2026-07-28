@@ -503,7 +503,18 @@ class SmartTouptekCamera(CameraPort):
             raise TimeoutError(f"No frame received within {timeout_s:.1f}s")
         if self._capture_error is not None:
             raise self._capture_error
-        return self._pull_pixels(still=self._last_event == _EVENT_STILLIMAGE)
+        # M10-056: "snap" mode always drives a deliberate software-triggered
+        # single exposure via Trigger(1) above — never a live-view frame — so
+        # PullImageV4's still-image flag should always be True here. It used
+        # to depend on the SDK actually firing _EVENT_STILLIMAGE, but the
+        # M10-053 diagnostic log confirmed this camera (GPCMOS02000KPA, the
+        # only one using "snap" mode) only ever fires _EVENT_IMAGE for
+        # triggered captures — `still` was therefore always False, which
+        # left every capture pulling from the wrong (stale/video) buffer:
+        # mean/percentile ADU were bit-for-bit identical across 30+ frames
+        # despite exposure/gain climbing, i.e. autogain never converged.
+        still = self._last_event == _EVENT_STILLIMAGE or self._capture_mode == "snap"
+        return self._pull_pixels(still=still)
 
     def _pull_pixels(self, still: bool = False) -> np.ndarray:
         if self._cam is None or self._tc is None:

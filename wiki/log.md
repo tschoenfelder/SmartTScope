@@ -6432,3 +6432,32 @@ test_second_connection_never_aborts_the_shared_camera with its assertion
 inverted, plus a new test_aborted_capture_returns_503_not_500 in
 test_autofocus_sequence.py. Full unit suite green (same pre-existing
 test_logging.py flake, unrelated).
+
+2026-07-28 — M10-056: guide camera's frozen-frame autogain bug, fixed.
+The M10-053 diagnostic log line paid off: the same server.log that
+surfaced M10-055 also showed "snap-mode capture event=0x0004 still=False"
+for the guide camera on every frame -- 0x0004 is _EVENT_IMAGE, never
+_EVENT_STILLIMAGE (0x0005). This confirmed the theory from M10-053/054:
+guide (GPCMOS02000KPA) is the only camera using "snap" capture mode, and
+_capture_raw() computed the still flag passed to PullImageV4 purely from
+which event fired -- always False here, since this camera's SDK never
+fires _EVENT_STILLIMAGE for triggered snap captures. That pulled every
+frame from the wrong (stale/video) buffer: mean_adu/p99/p99_9 were
+bit-for-bit identical across 30+ frames despite exposure/gain climbing
+2.0s to 4.0s and 100 to 400 -- autogain kept adjusting settings that never
+changed what was actually captured.
+
+Fixed in smart_telescope/adapters/touptek/managed.py: _capture_raw() now
+forces still=True whenever capture_mode == "snap", regardless of which
+event fired. Every snap-mode capture is always a deliberate
+Trigger()-driven single exposure, never a live-view frame (see
+_prepare_capture_mode()'s own docstring) -- the still flag should never
+have depended on a specific event for this mode in the first place.
+
+TDD: new tests/unit/adapters/touptek/test_managed_capture.py
+(TestCaptureRawStillFlag) covers all four capture_mode x fired-event
+combinations -- still=True for every snap-mode capture regardless of
+event, unchanged event-driven behavior for non-snap modes. Full unit
+suite green. Still needs Pi verification: run Compare/Autofocus against
+the real guide camera with autogain and confirm mean_adu actually changes
+between frames now.

@@ -3530,6 +3530,36 @@ histogram ceiling until it ships upstream.
       - Full unit suite green (same pre-existing `test_logging.py` flake,
         unrelated).
 
+- [x] M10-056 Guide camera (GPCMOS02000KPA) autogain never converged — frame
+      buffer effectively frozen. `[P1 · Cameras]`
+      - **Root cause (confirmed from a real Pi log)**: M10-053's diagnostic
+        log (`snap-mode capture event=0x0004 still=False`) proved the SDK
+        only ever fires `_EVENT_IMAGE` (0x0004) for this camera's
+        software-triggered `"snap"`-mode captures, never `_EVENT_STILLIMAGE`
+        (0x0005) — guide is the only camera using this mode. `_capture_raw()`
+        computed `still` (passed to `PullImageV4`) purely from which event
+        fired, so it was always `False`, which pulled from the wrong
+        (stale/video) buffer: `mean_adu`/`p99`/`p99_9` were bit-for-bit
+        identical across 30+ frames despite exposure/gain climbing
+        2.0s→4.0s, 100→400 — autogain kept adjusting settings that never
+        changed what was actually captured.
+      - **Fix**: `smart_telescope/adapters/touptek/managed.py`'s
+        `_capture_raw()` now forces `still=True` whenever `capture_mode ==
+        "snap"`, regardless of which event actually fired — matching that
+        every snap-mode capture is always a deliberate single trigger-driven
+        exposure (`_prepare_capture_mode()`'s own docstring), never a
+        live-view frame, so the still flag should never have depended on a
+        specific event in the first place.
+      - TDD: new `tests/unit/adapters/touptek/test_managed_capture.py`
+        (`TestCaptureRawStillFlag`) covers all four combinations of
+        capture_mode × fired-event, confirming `still=True` for every
+        snap-mode capture and unchanged event-driven behavior for the other
+        (non-snap) capture modes.
+      - Full unit suite green. **Still needs Pi verification**: run the
+        Compare/Autofocus screen against the real guide camera with autogain
+        and confirm `mean_adu` now actually changes between frames and
+        autogain converges, instead of staying pinned at a constant value.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

@@ -191,6 +191,20 @@ function _mcOpenSocket(role) {
       if (_mcSockets[role] !== ws) return;   // superseded by a newer connection
       _mcSockets[role] = null;
       if (!_mcActive) return;
+      // M10-059: code 1000 on this stack only ever means the server's
+      // single-owner-per-camera registry (M10-053) deliberately closed this
+      // connection because another screen (e.g. Autofocus) opened its own
+      // preview on the same physical camera — a real, permanent handoff, not
+      // a transient drop. Reconnecting here would just steal the camera back
+      // and fight the other screen for it forever (both panels showing
+      // mismatched, ping-ponging exposure/gain for the same physical
+      // camera). autofocus.js/preview.js already skip reconnecting on
+      // exactly this code; this panel must match instead of blindly
+      // retrying regardless of close code.
+      if (ev.code === 1000) {
+        p.infoEl.textContent = ev.reason || 'in use on another screen';
+        return;
+      }
       p.infoEl.textContent = `disconnected (${ev.code}) — reconnecting…`;
       _mcReconnectTimers[role] = setTimeout(() => _mcOpenSocket(role), 3000);
     };

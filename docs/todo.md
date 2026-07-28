@@ -3656,6 +3656,37 @@ histogram ceiling until it ships upstream.
         with all three cameras configured and confirm no `AttributeError:
         _fields_ is final` / segfault appears in `server.log`.
 
+- [x] M10-059 Compare (multicam) screen fought Autofocus for the main
+      camera forever — mismatched exposure/gain shown on the two screens
+      for the same physical camera. `[P1 · Cameras]`
+      - **Root cause**: `multicam.js`'s `ws.onclose` reconnects on *any*
+        close code, unlike `autofocus.js`/`preview.js`, which both skip
+        reconnecting on code 1000. Since M10-054, code 1000 on this stack
+        means exactly one thing: the server's single-owner-per-camera
+        registry (M10-053) deliberately closed this connection because
+        another screen (e.g. Autofocus) opened its own preview on the same
+        physical camera — a real, permanent handoff, not a transient drop.
+        Reconnecting anyway made the Cameras screen's panel steal the
+        camera back from Autofocus every ~3 s, which then reopened its own
+        connection and re-superseded Cameras right back — a continuous
+        ping-pong, visible as the two screens showing different, stale,
+        or mismatched exposure/gain for what is physically one camera
+        (user report: main showed "4.00 s · gain 400 ❄" on Cameras while
+        Autofocus showed "Exp: 2s · Gain: 100" for the same frame).
+      - **Fix**: `multicam.js`'s `ws.onclose` now skips reconnecting on
+        code 1000, matching `autofocus.js`/`preview.js` exactly, and shows
+        the server's close reason (`"superseded by a newer preview
+        connection"`, from M10-054's `_close_superseded()`) instead of a
+        misleading "reconnecting…" label.
+      - No JS test framework exists in this project — verified manually via
+        a live browser session (no automated test to add): built a real
+        multicam panel via `multicamEnter()`/`_mcBuildPanel()`, opened its
+        socket, then opened a second competing `/ws/preview` connection to
+        the same camera_index and confirmed the first panel's label settled
+        on `"superseded by a newer preview connection"` and stayed there
+        (no reconnect attempt, no camera stolen back) at least 4 s past the
+        old 3 s reconnect delay, with zero console errors.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

@@ -6554,3 +6554,39 @@ Full unit suite green (same pre-existing test_logging.py flake,
 unrelated). Cannot be verified locally -- no real ToupTek SDK on the
 Windows dev box. Needs Pi verification: restart normally with all three
 cameras configured and confirm no AttributeError/segfault in server.log.
+
+2026-07-28 — M10-059: Compare screen fought Autofocus for the main camera
+forever. User report: the Cameras (Compare) screen showed main at
+"4.00 s · gain 400 (cooling on)" while the Autofocus screen showed
+"Exp: 2s · Gain: 100" for what should be the same physical camera and
+frame brightness -- clearly inconsistent, described as "looks corrupted."
+
+Root cause: multicam.js's ws.onclose reconnects on any close code, unlike
+autofocus.js/preview.js, which both skip reconnecting on code 1000. Since
+M10-054, code 1000 on this stack means exactly one thing: the server's
+single-owner-per-camera registry (M10-053) deliberately closed this
+connection because another screen opened its own preview on the same
+physical camera -- a real, permanent handoff, not a transient drop.
+Reconnecting anyway made the Cameras screen's panel steal the camera back
+from Autofocus every ~3s, which then reopened its own connection and
+re-superseded Cameras right back -- a continuous ping-pong between the
+two screens, each showing whatever stale or freshly-reset exposure/gain
+it happened to have at that moment.
+
+Fixed by making multicam.js's ws.onclose skip reconnecting on code 1000,
+matching autofocus.js/preview.js exactly, and showing the server's actual
+close reason ("superseded by a newer preview connection", from M10-054's
+_close_superseded()) instead of a misleading "reconnecting..." label.
+
+No JS test framework exists in this project, so verified manually via a
+live browser session instead: called the real multicamEnter() and
+_mcBuildPanel() to build an actual panel (not a hand-faked one -- an
+earlier attempt to inject a panel object via window._mcPanels failed
+silently, since multicam.js's top-level let/const bindings are lexically
+scoped to the script and invisible from window, unlike its function
+declarations), opened its /ws/preview socket, then opened a second
+competing connection to the same camera_index from the console. Confirmed
+the first panel's label settled on "superseded by a newer preview
+connection" and stayed there -- no reconnect attempt, camera not stolen
+back -- for at least 4s past the old 3s reconnect delay, with zero
+console errors.

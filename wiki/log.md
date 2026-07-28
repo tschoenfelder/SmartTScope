@@ -6507,3 +6507,50 @@ unrelated). This is now the second disproven guide-camera "snap"-mode fix
 attempt (after M10-032's untested trigger-mode change) -- worth treating
 any future guide-camera hypothesis as needing real-hardware confirmation
 before considering it done, not just a clean local test run.
+
+2026-07-28 — M10-058: Pi restart segfaulted the whole server process. The
+very next restart after M10-057 shipped crashed the whole app -- worse
+than any bug fixed today. User pasted the crash log: an
+"AttributeError: _fields_ is final" inside the vendor SDK wrapper's
+toupcam.py:__initlib() (called from EnumV2()), immediately followed by a
+real segmentation fault that killed the process outright
+(astro_start.sh logged "Segmentation fault ... python -m smart_telescope").
+
+Root cause: Python 3.13 hardened ctypes.Structure so _fields_ can only be
+assigned once; __initlib() reassigns it unconditionally every call, so
+it's not idempotent. managed.py had two independent call sites invoking
+tc.Toupcam.EnumV2() fresh with no caching -- connect() (once per camera
+instance: main/guide/oag) and enumerate_devices() (once at startup for
+role-uniqueness validation) -- four total EnumV2() calls in a normal
+boot. The existing _sdk_lifecycle_lock serializes these calls but does
+nothing to stop a second one from crashing. The log's timeline matched
+exactly: the crash followed "get_preview_camera(0): device owned by role
+'guide'" -- guide's connect() firing the call that broke the
+already-exhausted __initlib(), with the corrupted ctypes state then
+segfaulting on the next real native SDK call. Confirmed toupcam.py here
+is an ordinary pip vendor dependency, not resources/camera_adapter/ (the
+externally-synced module under the do-not-edit rule) -- the fix belongs
+entirely in our own code.
+
+Fixed with a new _enum_devices(tc) helper in managed.py that caches
+EnumV2()'s result at module level after the first call; both connect()
+and enumerate_devices() now go through it instead of calling
+tc.Toupcam.EnumV2() directly. No change to device selection logic, just
+avoids redundant SDK calls -- matches the existing precedent of caching
+hardware-descriptor state for the process lifetime elsewhere in
+runtime.py.
+
+Also fixed the testing-quality gap the user explicitly asked about: the
+full suite was green through M10-053..057 and never caught this, because
+every test mocks toupcam at the Python boundary and a MagicMock tolerates
+unlimited calls -- nothing asserted how many times EnumV2() was invoked.
+New test_managed_enum_cache.py pins the actual fixable contract instead:
+EnumV2() must be called at most once per process regardless of how many
+cameras/roles/enumeration calls happen. Confirmed all 4 new tests fail
+(call_count == 2) against the pre-fix code before implementing the cache,
+proving they catch the exact gap that let this ship.
+
+Full unit suite green (same pre-existing test_logging.py flake,
+unrelated). Cannot be verified locally -- no real ToupTek SDK on the
+Windows dev box. Needs Pi verification: restart normally with all three
+cameras configured and confirm no AttributeError/segfault in server.log.

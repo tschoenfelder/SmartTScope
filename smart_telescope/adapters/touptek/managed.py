@@ -84,6 +84,27 @@ _OPTION_AUTOEXPO_TRIGGER = 0x5A
 
 _sdk_lifecycle_lock = threading.RLock()
 
+# M10-058: EnumV2() must be called at most once per process. A real Pi
+# crash traced to toupcam.py's EnumV2()->__initlib() setting ctypes
+# _fields_ unconditionally on every call; under Python 3.13 a second call
+# raises "AttributeError: _fields_ is final", and the very next native SDK
+# call after that segfaulted the whole process. With 3 role-owned camera
+# instances (main/guide/oag) each calling connect() plus a startup
+# role-uniqueness validation pass calling enumerate_devices(), EnumV2() was
+# being invoked 4 times with no caching. _sdk_lifecycle_lock (below)
+# already serializes these calls but does nothing to stop a second one.
+_enum_devices_cache: list[Any] | None = None
+
+
+def _enum_devices(tc: Any) -> list[Any]:
+    """Return ToupTek device enumeration, calling EnumV2() at most once per
+    process (see module-level comment above _enum_devices_cache). Callers
+    must go through this instead of calling tc.Toupcam.EnumV2() directly."""
+    global _enum_devices_cache
+    if _enum_devices_cache is None:
+        _enum_devices_cache = tc.Toupcam.EnumV2()
+    return _enum_devices_cache
+
 
 class CameraRoleConflictError(RuntimeError):
     """Raised when multiple SmartTScope roles resolve to one physical camera."""
@@ -151,7 +172,7 @@ class SmartTouptekCamera(CameraPort):
         except ImportError:
             return False
         with _sdk_lifecycle_lock:
-            devices = tc.Toupcam.EnumV2()
+            devices = _enum_devices(tc)
             self._tc = tc
             self._index, device = self._select_device(devices)
             if device is None:
@@ -571,7 +592,7 @@ class SmartTouptekCamera(CameraPort):
         except ImportError:
             return []
         with _sdk_lifecycle_lock:
-            devices = tc.Toupcam.EnumV2()
+            devices = _enum_devices(tc)
         result: list[dict[str, Any]] = []
         for idx, dev in enumerate(devices):
             model = getattr(dev, "model", None)

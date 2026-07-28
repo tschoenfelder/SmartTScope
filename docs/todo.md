@@ -3606,6 +3606,56 @@ histogram ceiling until it ships upstream.
       - Full unit suite green (same pre-existing `test_logging.py` flake,
         unrelated).
 
+- [x] M10-058 Pi restart segfaulted the whole server process — worse than
+      any bug fixed so far this session. `[P0 · Cameras]`
+      - **Root cause (confirmed from a real Pi `server.log`)**: the very
+        next restart after M10-057 shipped crashed with `AttributeError:
+        _fields_ is final` inside the vendor SDK wrapper's
+        `toupcam.py:__initlib()` (invoked from `EnumV2()`), immediately
+        followed by a real **segmentation fault** that killed the whole
+        process (`astro_start.sh` logged `Segmentation fault
+        "$VENV_DIR/bin/python" -m smart_telescope`). Python 3.13 hardened
+        `ctypes.Structure`: `_fields_` may only be assigned once, and
+        `__initlib()` reassigns it unconditionally every call — it is not
+        idempotent. `smart_telescope/adapters/touptek/managed.py` had
+        **two independent call sites** invoking `tc.Toupcam.EnumV2()` fresh
+        with no caching: `connect()` (once per camera instance —
+        main/guide/oag) and `enumerate_devices()` (once at startup for
+        role-uniqueness validation) — 4 total `EnumV2()` calls in a normal
+        boot. The existing `_sdk_lifecycle_lock` serializes these calls but
+        does nothing to stop a *second* one from crashing. The log's
+        timeline matches exactly: the crash follows
+        `get_preview_camera(0): device owned by role 'guide'` — guide's
+        `connect()` firing the call that broke the already-exhausted
+        `__initlib()`, with the corrupted ctypes state then segfaulting on
+        the next real native SDK call (`PullImageV4`). Note: `toupcam.py`
+        here is an ordinary pip-installed vendor SDK dependency, **not**
+        `resources/camera_adapter/` (the externally-synced module covered
+        by the do-not-edit rule) — the fix belongs entirely in our own code.
+      - **Fix**: new `_enum_devices(tc)` helper in `managed.py` caches
+        `EnumV2()`'s result at module level after the first call; both
+        `connect()` and `enumerate_devices()` now go through it instead of
+        calling `tc.Toupcam.EnumV2()` directly. No change to device
+        *selection* logic — just avoids redundant SDK calls, matching the
+        existing precedent of caching hardware-descriptor state for the
+        process lifetime (`runtime.py`'s `_role_cameras`/`_filter_wheel`).
+      - **Testing-quality fix (explicitly requested)**: the full suite was
+        green through M10-053...057 and never caught this, because every
+        test mocks `toupcam` at the Python boundary — a `MagicMock`
+        tolerates unlimited calls, so nothing asserted *how many times*
+        `EnumV2()` was invoked. New
+        `tests/unit/adapters/touptek/test_managed_enum_cache.py` pins the
+        actual fixable contract instead: `EnumV2()` must be called at most
+        once per process regardless of how many cameras/roles/enumeration
+        calls happen. Confirmed all 4 new tests fail (`call_count == 2`)
+        against the pre-fix code before implementing the cache, proving
+        they catch the exact gap that let this ship.
+      - Full unit suite green (same pre-existing `test_logging.py` flake,
+        unrelated). **Cannot be verified locally** (no real ToupTek SDK on
+        the Windows dev box) — flag for Pi verification: restart normally
+        with all three cameras configured and confirm no `AttributeError:
+        _fields_ is final` / segfault appears in `server.log`.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

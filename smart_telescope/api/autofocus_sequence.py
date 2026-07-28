@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..domain.focus_metric import multi_star_hfd
+from ..ports.camera import CaptureAbortedError
 from ..ports.focuser import FocuserPort
 from ..services import live_analysis_shim
 from ..services.hardware_coordinator import CommandConflictError, HardwareCommandCoordinator
@@ -249,7 +250,16 @@ def frame_metrics(req: FrameMetricsRequest) -> FrameMetricsResponse:
     the caller's own terrestrial/sky toggle decides whether to call this)."""
     camera_index = deps.resolve_camera_index(req.camera_index, req.camera_role)
     camera = deps.get_preview_camera(camera_index)
-    frame = camera.capture(req.exposure)
+    try:
+        frame = camera.capture(req.exposure)
+    except CaptureAbortedError:
+        # This camera is shared with other consumers (e.g. a /ws/preview
+        # connection on the same camera_index) that can legitimately abort
+        # an in-flight capture that has nothing to do with this request
+        # (M10-055). The frontend already polls this endpoint on a timer and
+        # silently ignores a failed tick, so a clean retryable status is
+        # enough — no need to retry server-side.
+        raise HTTPException(status_code=503, detail="Camera capture aborted — try again")
     hfd = multi_star_hfd(frame.pixels)
 
     stars_found: int | None = None

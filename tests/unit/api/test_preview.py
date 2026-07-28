@@ -135,7 +135,17 @@ class TestWsPreviewParams:
 
 
 class TestWsPreviewSingleOwner:
-    def test_second_connection_aborts_the_first(self) -> None:
+    def test_second_connection_never_aborts_the_shared_camera(self) -> None:
+        # M10-055: abort_capture() must NEVER be called on supersession. The
+        # camera object is shared with unrelated direct-capture callers on
+        # the same camera_index (e.g. POST /api/autofocus/frame_metrics) —
+        # a real Pi log showed abort_capture() here killing an in-flight
+        # frame_metrics() capture with an unhandled 500, purely because it
+        # happened to be running at the same moment as a supersession. The
+        # old connection must still stop (see
+        # test_superseded_connection_closes_with_clean_code) but only via the
+        # "superseded" flag, never by forcibly aborting whatever capture is
+        # currently in flight on the shared camera.
         cam = _make_cam()
         with patch("smart_telescope.api.deps.get_preview_camera", return_value=cam):
             client = TestClient(app)
@@ -145,9 +155,7 @@ class TestWsPreviewSingleOwner:
 
                 with client.websocket_connect("/ws/preview?camera_index=0") as ws2:
                     ws2.receive_bytes()
-                    # the new connection for the same camera_index must have
-                    # signaled the old one to stop instead of racing it
-                    cam.abort_capture.assert_called()
+                    cam.abort_capture.assert_not_called()
 
     def test_different_camera_indexes_do_not_interact(self) -> None:
         cam = _make_cam()

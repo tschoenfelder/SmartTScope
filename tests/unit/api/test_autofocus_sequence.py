@@ -266,3 +266,17 @@ class TestFrameMetrics:
                 "exposure": 1.0, "camera_role": "nope",
             })
         assert r.status_code == 422
+
+    def test_aborted_capture_returns_503_not_500(self) -> None:
+        # M10-055: a real Pi log showed this capture aborted with an
+        # unhandled 500 when a concurrent /ws/preview supersession on the
+        # same camera_index called abort_capture() on the shared camera —
+        # nothing to do with this request. Must degrade to a clean, retryable
+        # 503 instead of an unhandled exception.
+        from smart_telescope.ports.camera import CaptureAbortedError
+
+        cam = MagicMock(spec=CameraPort)
+        cam.capture.side_effect = CaptureAbortedError("capture aborted")
+        with patch.object(deps, "get_preview_camera", return_value=cam):
+            r = client.post("/api/autofocus/frame_metrics", json={"exposure": 1.0})
+        assert r.status_code == 503

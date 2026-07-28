@@ -150,10 +150,15 @@ async def ws_preview(
             "— signaling it to stop before this one proceeds (M10-05x)",
             camera_index,
         )
-        try:
-            camera.abort_capture()
-        except Exception:
-            pass
+        # M10-055: do NOT call camera.abort_capture() here. The camera object
+        # is shared with unrelated direct-capture callers on the same
+        # camera_index (e.g. POST /api/autofocus/frame_metrics) that have no
+        # relationship to this WS supersession — a real Pi log showed
+        # abort_capture() here killing an in-flight frame_metrics() capture
+        # with an unhandled CaptureAbortedError/500, purely because it
+        # happened to be running at the same moment. The old connection still
+        # notices "superseded" and exits cleanly on its own next loop
+        # iteration (bounded by at most one more capture cycle) without this.
     _my_owner = {"superseded": False}
     _active_preview_owner[camera_index] = _my_owner
 

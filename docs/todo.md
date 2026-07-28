@@ -3496,6 +3496,40 @@ histogram ceiling until it ships upstream.
       - Full unit suite green (same pre-existing `test_logging.py` flake,
         unrelated).
 
+- [x] M10-055 M10-053's `abort_capture()` collateral-damaged an unrelated
+      endpoint sharing the same camera (user report + a fresh Pi
+      `server.log` showing an unhandled 500). `[P1 · Cameras]`
+      - **Root cause (confirmed directly from the pasted log)**: right after
+        a `/ws/preview` supersession fired (M10-053), `POST
+        /api/autofocus/frame_metrics` (the Autofocus screen's periodic
+        direct-capture HFD readout — not a `/ws/preview` connection at all)
+        failed with an unhandled `CaptureAbortedError` → 500. `main` is a
+        shared, role-owned camera object; M10-053's supersession path called
+        `camera.abort_capture()` unconditionally, which aborts *whatever*
+        capture happens to be in flight on that camera regardless of who
+        started it — in this case, an unrelated `frame_metrics()` call that
+        happened to be running at the same moment.
+      - **Fix**: removed the `camera.abort_capture()` call from
+        `smart_telescope/api/preview.py`'s supersession path entirely. The
+        superseded connection still notices `_my_owner["superseded"]` and
+        exits cleanly (code 1000, per M10-054) on its own next loop
+        iteration — bounded by at most one more capture cycle instead of
+        instant, but with zero risk of aborting an unrelated caller's
+        capture. Also hardened `POST /api/autofocus/frame_metrics`
+        (`smart_telescope/api/autofocus_sequence.py`) to catch
+        `CaptureAbortedError` and return a clean, retryable 503 instead of
+        an unhandled 500 — matching the existing pattern already used in
+        `api/collimation.py`'s `/selftest/camera` — as defense in depth
+        against any *other* legitimate `abort_capture()` caller in the app
+        (autogain cancellation, guide-stream stop) colliding with this same
+        shared-camera endpoint in the future.
+      - TDD: `tests/unit/api/test_preview.py`'s
+        `test_second_connection_never_aborts_the_shared_camera` (renamed
+        from `test_second_connection_aborts_the_first`, assertion inverted)
+        and new `tests/unit/api/test_autofocus_sequence.py::TestFrameMetrics::test_aborted_capture_returns_503_not_500`.
+      - Full unit suite green (same pre-existing `test_logging.py` flake,
+        unrelated).
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

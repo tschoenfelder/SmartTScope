@@ -6395,3 +6395,40 @@ mechanism.
 TDD: new test_superseded_connection_closes_with_clean_code asserts
 WebSocketDisconnect.code == 1000 for the superseded side. Full unit suite
 green (same pre-existing test_logging.py flake, unrelated).
+
+2026-07-28 — M10-055: M10-053's abort_capture() collateral-damaged an
+unrelated endpoint. User updated the Pi to the M10-054 build and pasted a
+fresh server.log from a normal restart. Right after a /ws/preview
+supersession fired as designed, POST /api/autofocus/frame_metrics (the
+Autofocus screen's periodic direct-capture HFD readout -- not a
+/ws/preview connection at all) failed with an unhandled
+CaptureAbortedError -> 500, visible in the traceback the user pasted.
+
+Root cause: main is a shared, role-owned camera object. M10-053's
+supersession path called camera.abort_capture() unconditionally to
+unblock the old connection quickly -- but abort_capture() aborts whatever
+capture happens to be in flight on that camera, regardless of who started
+it. In this case it killed an unrelated frame_metrics() call that
+happened to be running on the same camera at the same moment, something
+neither the original M10-053 investigation nor its unit tests exercised
+(the mock camera in those tests has no other concurrent consumer).
+
+Fixed by removing the abort_capture() call from
+smart_telescope/api/preview.py's supersession path entirely. The
+superseded connection still notices it's been superseded and exits
+cleanly (code 1000, per M10-054) on its own next loop iteration -- bounded
+by at most one more capture cycle instead of instant, trading a small,
+bounded delay for zero risk of aborting an unrelated caller's capture.
+Also hardened POST /api/autofocus/frame_metrics to catch
+CaptureAbortedError and return a clean, retryable 503 instead of an
+unhandled 500 -- matching the existing pattern already used in
+api/collimation.py's /selftest/camera -- as defense in depth against any
+other legitimate abort_capture() caller in the app (autogain cancellation,
+guide-stream stop) colliding with this same shared-camera endpoint in the
+future.
+
+TDD: test_second_connection_aborts_the_first renamed to
+test_second_connection_never_aborts_the_shared_camera with its assertion
+inverted, plus a new test_aborted_capture_returns_503_not_500 in
+test_autofocus_sequence.py. Full unit suite green (same pre-existing
+test_logging.py flake, unrelated).

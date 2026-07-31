@@ -232,18 +232,6 @@ class SmartTouptekCamera(CameraPort):
         try:
             self._cam.put_ExpoTime(max(1, int(exposure_seconds * 1_000_000)))
             raw_u16 = self._capture_raw(exposure_seconds + self._timeout_extra_s)
-            if self._capture_mode == "snap":
-                # M10-05x diagnostic: a frozen-buffer symptom was seen on the
-                # only camera using this mode (GPCMOS02000KPA) — mean/percentile
-                # ADU identical across many frames despite exposure/gain
-                # changes reaching the hardware. This checks whether the SDK
-                # ever actually fires STILLIMAGE for snap-triggered captures,
-                # since PullImageV4's `still` flag depends on it.
-                _log.info(
-                    "SmartTouptekCamera(%s): snap-mode capture event=0x%04X still=%s",
-                    self._logical_name, self._last_event or 0,
-                    self._last_event == _EVENT_STILLIMAGE,
-                )
             if self._pixel_shift < 0:
                 self._pixel_shift = _detect_pixel_shift(raw_u16)
             shift = max(0, self._pixel_shift)
@@ -432,6 +420,8 @@ class SmartTouptekCamera(CameraPort):
         return self._index, None
 
     def _resolve_capture_mode(self) -> str:
+        # Since M10-060, this label is metadata only (FITS CAPMODE header) —
+        # every camera pulls frames the same way regardless of its value.
         if self._capture_mode_requested != "auto":
             return self._capture_mode_requested
         name = _normalise_camera_name(f"{self._logical_name} {self._model_selector or ''}")
@@ -524,35 +514,29 @@ class SmartTouptekCamera(CameraPort):
             raise TimeoutError(f"No frame received within {timeout_s:.1f}s")
         if self._capture_error is not None:
             raise self._capture_error
-        # M10-056 REVERTED (M10-057): forcing still=True for "snap" mode was
-        # a wrong hypothesis — a real Pi log showed PullImageV4(bStill=1)
-        # fail on every single guide-camera capture with SDK error
-        # -2147483638 (0x8000000A), a 100% failure rate, worse than the
-        # original frozen-frame bug. This camera is driven via Trigger(1)
-        # (a software-triggered streaming capture), not a real Snap()-family
-        # call, so the SDK genuinely has no still-image buffer ready when
-        # bStill=1 is requested — forcing the flag doesn't change how the
-        # capture was actually triggered. Back to depending on the fired
-        # event; the frozen-frame bug (mean/percentile ADU identical across
-        # frames) is open again pending a correctly-diagnosed fix — see
-        # docs/todo.md M10-057.
-        return self._pull_pixels(still=self._last_event == _EVENT_STILLIMAGE)
+        # M10-060: "snap" mode used to pull frames via PullImageV4 with a
+        # `still` flag depending on which event fired. Two rounds of hardware
+        # testing (M10-056/M10-057) proved this camera (GPCMOS02000KPA) never
+        # performs a genuine SDK still-image capture — it's driven by
+        # Trigger(1), the exact same software-triggered streaming mechanism
+        # as every "indi-stream-trigger" camera (see _prepare_capture_mode,
+        # which already treats every capture_mode identically). PullImageV4
+        # was therefore the wrong API regardless of the still flag's value —
+        # likely explanation for the original frozen-frame bug (identical
+        # mean/percentile ADU across frames): it doesn't reliably surface the
+        # latest video-callback-delivered frame the way PullImageWithRowPitchV2
+        # does. There is now a single pull implementation for every camera.
+        return self._pull_pixels()
 
-    def _pull_pixels(self, still: bool = False) -> np.ndarray:
+    def _pull_pixels(self) -> np.ndarray:
         if self._cam is None or self._tc is None:
             raise RuntimeError("_pull_pixels: camera handle not open — camera closed or disconnected")
         bytes_per_pixel = 2 if self._bit_depth > 8 else 1
         buffer = ctypes.create_string_buffer(self._width * self._height * bytes_per_pixel)
-        if self._capture_mode == "snap":
-            info = self._tc.ToupcamFrameInfoV4()
-            self._cam.PullImageV4(buffer, 1 if still else 0, self._bit_depth, -1, info)
-            width = int(getattr(info, "width", 0) or self._width)
-            height = int(getattr(info, "height", 0) or self._height)
-        else:
-            info = self._tc.ToupcamFrameInfoV2()
-            self._cam.PullImageWithRowPitchV2(buffer, self._bit_depth, -1, info)
-            width = int(getattr(info, "width", 0) or self._width)
-            height = int(getattr(info, "height", 0) or self._height)
+        info = self._tc.ToupcamFrameInfoV2()
+        self._cam.PullImageWithRowPitchV2(buffer, self._bit_depth, -1, info)
+        width = int(getattr(info, "width", 0) or self._width)
+        height = int(getattr(info, "height", 0) or self._height)
         dtype = np.uint16 if bytes_per_pixel == 2 else np.uint8
         pixels = np.frombuffer(buffer, dtype=dtype, count=width * height).reshape((height, width))
         if pixels.dtype != np.uint16:

@@ -65,17 +65,11 @@ class TestDefaultOffset:
 # ── _default_capture_mode ─────────────────────────────────────────────────────
 
 class TestDefaultCaptureMode:
-    def test_mono_tec_returns_stream(self):
-        assert _default_capture_mode(has_mono=True, has_tec=True) == "indi-stream-trigger"
-
-    def test_mono_no_tec_returns_snap(self):
-        assert _default_capture_mode(has_mono=True, has_tec=False) == "snap"
-
-    def test_colour_tec_returns_snap(self):
-        assert _default_capture_mode(has_mono=False, has_tec=True) == "snap"
-
-    def test_colour_no_tec_returns_snap(self):
-        assert _default_capture_mode(has_mono=False, has_tec=False) == "snap"
+    def test_always_returns_stream_trigger(self):
+        # M10-060: "snap" pulled frames via a separate, hardware-unsound path
+        # (PullImageV4) that never matched how any deployed camera is actually
+        # driven. Every new camera now gets the one working capture mode.
+        assert _default_capture_mode() == "indi-stream-trigger"
 
 
 # ── generate_toml_snippet ─────────────────────────────────────────────────────
@@ -136,10 +130,18 @@ class TestGenerateTomlSnippet:
         s = self._make(has_mono=True, has_tec=True)
         assert "indi-stream-trigger" in s
 
-    def test_guide_cam_uses_snap_mode(self):
+    def test_guide_cam_uses_stream_trigger_mode(self):
         s = self._make(model_name="GPCMOS02000KPA", has_mono=True, has_tec=False,
                        suggested_role="guide")
-        assert "snap" in s
+        assert "indi-stream-trigger" in s
+
+    def test_guide_cam_setup_profile_is_default(self):
+        # Non-mono/non-TEC cameras (guide-type) still get setup_profile
+        # "default", not "indi" — that decision must not be tied to
+        # capture_mode now that capture_mode is metadata-only.
+        s = self._make(model_name="GPCMOS02000KPA", has_mono=True, has_tec=False,
+                       suggested_role="guide")
+        assert "setup_profile" not in s
 
     def test_guide_cam_offset_is_10(self):
         s = self._make(model_name="GPCMOS02000KPA", has_mono=True, has_tec=False)

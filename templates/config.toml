@@ -29,7 +29,12 @@ dew_control_port = ""   # e.g. "/dev/ttyUSB_DEWCONTROL0"   (future use)
 # model        — SDK display-name substring, case-insensitive.
 # camera_id    — optional USB serial number for unambiguous matching.
 # backend      — "native" (ToupTek SDK) is the only supported value today.
-# capture_mode — "snap" (single-frame) | "indi-stream-trigger" (stream+SW trigger)
+# capture_mode — FITS CAPMODE header label only (M10-060): every camera pulls
+#                frames the same way regardless of this value now. Historically
+#                "snap" selected a separate PullImageV4 pull path, but that was
+#                proven wrong for every camera actually deployed here (frozen
+#                frames / SDK errors on GPCMOS02000KPA — see wiki/log.md
+#                M10-056/M10-057/M10-060). Use "indi-stream-trigger".
 # setup_profile— "default" | "indi"  (INDI-mode cameras need "indi" profile)
 # startup_delay_s — seconds to wait after Open() before issuing commands (OAG/USB-hub cameras)
 # prime_attempts  — take N throwaway frames on connect to flush sensor artefacts (0=disabled)
@@ -49,7 +54,7 @@ bit_depth     = 16
 [cameras.guide]
 model         = "GPCMOS02000KPA"
 backend       = "native"
-capture_mode  = "snap"
+capture_mode  = "indi-stream-trigger"
 gain          = 101
 offset_lcg    = 10
 offset_hcg    = 10

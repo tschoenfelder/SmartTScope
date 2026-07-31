@@ -32,11 +32,11 @@ def _default_offset(model_name: str) -> int:
     return 150
 
 
-def _default_capture_mode(has_mono: bool, has_tec: bool) -> str:
-    """Monochrome TEC cameras are typically main imaging cameras; suggest streaming."""
-    if has_mono and has_tec:
-        return "indi-stream-trigger"
-    return "snap"
+def _default_capture_mode() -> str:
+    """FITS CAPMODE header label only (M10-060) — every camera now pulls frames
+    the same way regardless of this value. "snap" used to select a separate,
+    hardware-unsound pull path and is no longer suggested for new cameras."""
+    return "indi-stream-trigger"
 
 
 def generate_toml_snippet(
@@ -53,10 +53,10 @@ def generate_toml_snippet(
     table with inline guidance comments.
     """
     offset = _default_offset(model_name)
-    capture_mode = _default_capture_mode(has_mono, has_tec)
+    capture_mode = _default_capture_mode()
     telescope = first_telescope or "c8"
     focuser = "onstep" if (has_mono and has_tec) else ""
-    setup_profile = "indi" if capture_mode == "indi-stream-trigger" else "default"
+    setup_profile = "indi" if (has_mono and has_tec) else "default"
 
     lines = [
         f"# Newly detected camera: {model_name}",

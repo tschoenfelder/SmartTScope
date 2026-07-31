@@ -6590,3 +6590,51 @@ the first panel's label settled on "superseded by a newer preview
 connection" and stayed there -- no reconnect attempt, camera not stolen
 back -- for at least 4s past the old 3s reconnect delay, with zero
 console errors.
+
+2026-07-31 — M10-060: guide-camera frozen-frame bug (reopened since
+M10-057) fixed by unifying the two frame-pull implementations into one.
+User report: the guide panel stayed pinned on stale stats (1920x1080 px,
+1.27'x59.8', 4.00s, gain 400) without adopting autogain's exposure/gain
+changes -- the same symptom M10-057 left open, plus the user's own
+diagnosis: "the single frames shouldn't use separate implementations."
+
+Root cause: SmartTouptekCamera's _pull_pixels() branched on capture_mode
+-- "snap" (guide's config) pulled via PullImageV4/ToupcamFrameInfoV4 with
+a still flag, every other camera via PullImageWithRowPitchV2/
+ToupcamFrameInfoV2. M10-057 already proved _EVENT_STILLIMAGE never fires
+for GPCMOS02000KPA -- it's driven by Trigger(1), the exact same
+software-triggered mechanism as every "indi-stream-trigger" camera
+(_prepare_capture_mode() already treats every capture_mode identically at
+the trigger level). PullImageV4 was therefore the wrong pull API for this
+camera regardless of the still flag's value -- it doesn't reliably return
+the latest video-callback-delivered frame the way PullImageWithRowPitchV2
+does, which is the most likely explanation for the frozen mean/percentile
+ADU across frames despite exposure/gain genuinely reaching the hardware.
+
+Fixed by deleting the "snap" pull branch entirely: _pull_pixels() is now
+one implementation for every camera, no still flag. capture_mode remains
+only as FITS CAPMODE header metadata -- templates/config.toml's guide
+entry now reads capture_mode = "indi-stream-trigger" (was "snap"; the
+live Pi config at ~/.SmartTScope/config.toml still says "snap" and should
+be updated too, though it's now harmless since the value no longer
+changes behavior). camera_config_suggestion.py no longer ever suggests
+"snap" for newly detected cameras, and its setup_profile suggestion now
+keys off has_mono/has_tec directly instead of the capture_mode string
+(they'd been incorrectly coupled).
+
+Rewrote test_managed_capture.py (the old tests pinned the now-removed
+still-flag branching) to assert _pull_pixels() takes no arguments and
+always calls PullImageWithRowPitchV2, never PullImageV4/
+ToupcamFrameInfoV4, regardless of capture_mode or which SDK event fired.
+Updated test_camera_config_suggestion.py to match. Full unit suite green.
+Cannot be verified locally (no real ToupTek SDK on the Windows dev box) --
+needs Pi verification: confirm guide's mean_adu/p99_adu actually change
+frame-to-frame as autogain adjusts exposure/gain.
+
+Noted but out of scope: the "legacy" ToupcamCamera adapter
+(adapters/touptek/camera.py, used only for secondary/non-role preview
+cameras and a deprecated TOUPTEK_INDEX env var path) has its own
+independent capture()/PullImageV4 implementation -- a second duplicate
+beyond the one just removed. Left untouched since it's not in the guide
+role's path and touching it isn't needed to fix this bug; flagged for
+future cleanup.

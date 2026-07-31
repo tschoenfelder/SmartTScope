@@ -3687,6 +3687,58 @@ histogram ceiling until it ships upstream.
         (no reconnect attempt, no camera stolen back) at least 4 s past the
         old 3 s reconnect delay, with zero console errors.
 
+- [x] M10-060 Guide-camera frozen-frame bug (open since M10-053/M10-056/
+      M10-057) — root cause found: two separate frame-pull implementations
+      existed for what is really one capture mechanism. `[P1 · Cameras]`
+      - **User report**: guide panel stayed pinned on stale stats ("1920×1080
+        px 1.27′×59.8′, 4.00 s gain 400") without adopting autogain's
+        exposure/gain changes — the same frozen-frame symptom reopened after
+        M10-057's revert. User's own diagnosis pointed at the right place:
+        "the single frames shouldn't use separate implementations."
+      - **Root cause**: `_pull_pixels()` branched on `capture_mode`: "snap"
+        pulled via `PullImageV4`/`ToupcamFrameInfoV4` with a `still` flag,
+        every other mode via `PullImageWithRowPitchV2`/`ToupcamFrameInfoV2`.
+        M10-057 already proved `_EVENT_STILLIMAGE` never fires for
+        GPCMOS02000KPA (guide) — it's driven by `Trigger(1)`, identical to
+        every "indi-stream-trigger" camera (`_prepare_capture_mode()` already
+        treats all capture modes the same at the trigger level). `PullImageV4`
+        was therefore the wrong API for this camera under any `still` value:
+        it doesn't reliably surface the latest video-callback-delivered frame
+        the way `PullImageWithRowPitchV2` does, which explains the frozen
+        mean/percentile ADU across frames despite exposure/gain reaching the
+        hardware.
+      - **Fix**: removed the "snap" pull path entirely. `_pull_pixels()` is
+        now a single implementation for every camera
+        (`PullImageWithRowPitchV2`/`ToupcamFrameInfoV2`, no `still` flag).
+        `capture_mode` is kept only as FITS `CAPMODE` header metadata —
+        `templates/config.toml`'s guide entry now reads
+        `capture_mode = "indi-stream-trigger"` (was `"snap"`; live Pi config
+        at `~/.SmartTScope/config.toml` is unaffected by this repo template
+        change but should be updated too since "snap" no longer means
+        anything functionally). `camera_config_suggestion.py`'s
+        `_default_capture_mode()` no longer ever suggests "snap" for new
+        cameras; `setup_profile` suggestion now keys off `has_mono`/`has_tec`
+        directly instead of the capture_mode string.
+      - Rewrote `tests/unit/adapters/touptek/test_managed_capture.py`
+        (old tests pinned the now-removed still-flag branching) to assert
+        `_pull_pixels()` takes no arguments and always calls
+        `PullImageWithRowPitchV2`, never `PullImageV4`/`ToupcamFrameInfoV4`,
+        regardless of `capture_mode` or which event fired. Updated
+        `tests/unit/domain/test_camera_config_suggestion.py` to match the
+        new always-"indi-stream-trigger" default and the decoupled
+        `setup_profile` logic.
+      - Full unit suite green. **Needs Pi verification**: confirm guide's
+        `mean_adu`/`p99_adu` actually change frame-to-frame as autogain
+        adjusts exposure/gain, and that the Compare screen's guide panel
+        stops showing stale stats.
+      - Known remaining duplicate implementation (not touched, out of scope):
+        the "legacy" `ToupcamCamera` (`smart_telescope/adapters/touptek/
+        camera.py`, used only for secondary/non-role preview cameras and a
+        deprecated `TOUPTEK_INDEX` env var path) has its own independent
+        `capture()`/`PullImageV4` implementation, unrelated to any role
+        camera's behavior. Flagged for future cleanup if it's ever exercised
+        by a real bug.
+
 **Open parameters (config defaults, tune later):** star-count threshold for
 STAR_CHECK; max setup exposure (5 s proposal); focus-quality threshold; polar-align
 gating role (main).

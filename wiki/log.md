@@ -4,6 +4,46 @@ Append-only record of all wiki operations.
 
 ---
 
+## 2026-09-01 — GUARDRAIL — set_park_position() removed permanently, not just uncalled
+
+User: "Pls. remove all code that tries to set a new park or home position.
+Keep for the future, that this is never allowed as long not explicitly
+requested by the product owner." Third time this exact capability has come
+up (M9-022 auto-called it, a later session added a `POST
+/api/mount/set_park_position` endpoint for explicit user confirmation — see
+2026-07-08 "CORRECTION" entry below; both were reverted) — this time the
+method itself is gone, not just its call sites, so there's nothing left to
+accidentally wire back up.
+
+Removed:
+- `MountPort.set_park_position()` (`smart_telescope/ports/mount.py`) — was a
+  concrete, non-abstract default (`return False`), replaced with a guardrail
+  comment. `get_park_position()` (read-only, used for status display) is
+  untouched.
+- `OnStepMount.set_park_position()` override (`smart_telescope/adapters/onstep/mount.py`,
+  previously SYNC.md REQ-2) — delegated to upstream
+  `set_park_position_from_current(confirmed_safe=True, allow_at_home=True)`.
+  Upstream's method itself is untouched and still reachable directly on the
+  adapter instance; only the `MountPort`-facing wrapper is gone.
+- No other override existed (`MockMount` never had one; nothing in `api/`,
+  `services/`, or the static JS/HTML called it — confirmed by grep before
+  removing).
+
+Updated `tests/unit/services/test_observing_service.py`'s
+`TestConfirmHome::test_start_home_runs_sequence_and_accept_advances` (its
+`deps.mount.set_park_position.assert_not_called()` line no longer resolves
+against `Mock(spec=MountPort)` once the method is gone from the ABC — replaced
+with a comment; the removal itself is now the guard). `docs/todo.md` REQ-2 and
+`SYNC.md`'s REQ-2 table row updated to match current state.
+
+Guardrail recorded in three places for future sessions: a comment on
+`MountPort` in `ports/mount.py`, the `SYNC.md` REQ-2 entry, and this log
+entry — setting a new park/home position (port method, adapter override, API
+endpoint, or UI control) must not be reintroduced anywhere in this app unless
+the product owner explicitly asks for it in that session.
+
+---
+
 ## 2026-07-11 — RECLASSIFICATION — REQ-1/REQ-ST-001/003/006 reworked per user direction
 
 Follow-up to the same day's v0.3.1 research entry (below). User gave concrete

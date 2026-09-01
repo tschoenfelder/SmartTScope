@@ -131,13 +131,17 @@ class MountPort(ABC):
         """Return the stored park position, or None if the adapter doesn't support it."""
         return None
 
-    def set_park_position(self) -> bool:
-        """Save the current mount position as the park position.
-
-        Must be called once from the desired park position before park() will
-        be accepted by OnStep (:hS# on LX200).  Returns True on success.
-        """
-        return False
+    # Deliberately no set_park_position()/set_home_position() here (removed
+    # 2026-09-01, previously REQ-2). Two earlier sessions each wired an
+    # automatic "save current position as park" call into the home/park flow
+    # and each had to be reverted — see wiki/log.md 2026-06-14 "CRITICAL:
+    # remove auto_set_park" — because it silently overwrote the park/home
+    # position the user deliberately set in OnStep's own EEPROM (:hS#/:hF#
+    # from the hand controller or another tool, outside this app entirely).
+    # Do NOT re-add a method or endpoint that sets a new park/home position,
+    # in this port, an adapter, or the API/UI, unless the product owner
+    # explicitly asks for it in that session -- this is a standing product
+    # decision, not an oversight to "helpfully" fix.
 
     @abstractmethod
     def go_home(self) -> None:

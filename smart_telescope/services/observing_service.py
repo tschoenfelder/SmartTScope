@@ -494,13 +494,15 @@ class ObservingService:
         # already have cleared to something else by the time a second,
         # independent query runs (see home_sequence()'s docstring).
         #
-        # Deliberately does NOT call mount.set_park_position() here. A prior
-        # session tried exactly that (auto-setting park = home after every
-        # home) and reverted it — see wiki/log.md 2026-06-14 "CRITICAL: remove
-        # auto_set_park": it silently overwrites the user's deliberately
-        # configured EEPROM park position. Park position must only be set by
-        # explicit user action — there is currently no such action anywhere
-        # in this app at all (removed again in a later session; see wiki/log.md).
+        # Deliberately does NOT call mount.set_park_position() here -- that
+        # method doesn't even exist on MountPort any more (removed
+        # 2026-09-01). A prior session tried exactly this (auto-setting
+        # park = home after every home) and reverted it — see wiki/log.md
+        # 2026-06-14 "CRITICAL: remove auto_set_park": it silently overwrites
+        # the user's deliberately configured EEPROM park position. Setting a
+        # new park/home position is a standing product decision: never do it
+        # anywhere in this app unless the product owner explicitly asks for
+        # it in that session.
         # M9-032: register the command with DeviceStateService — this clears a
         # sticky AT_HOME left over from an earlier confirmed home (which would
         # otherwise promote UNPARKED readings to AT_HOME for the whole slew)

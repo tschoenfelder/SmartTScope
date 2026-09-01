@@ -255,7 +255,7 @@ Prerequisite: ONS31-001..007 (wheel bump, install, diff, override removal audit)
 - [ ] REQ-1: ~~`move(direction, move_ms)` at slew rate in `OnStepMount`~~ — **reclassified
       2026-07-11, not an upstream ask; see LOCAL-001** — interim currently delegates to
       `mechanical_manual_move()` (docs previously said `guide()`, which was stale)
-- [ ] REQ-2: `get_park_position() → MountPosition | None` and `set_park_position() → bool` — **stays in SmartTScope shim** (v0.3.0 already has `set_park_position_from_current()` and `get_stored_park_position()`; these two wrappers adapt to `MountPort` signatures)
+- [ ] REQ-2: `get_park_position() → MountPosition | None` — **stays in SmartTScope shim** (v0.3.0 already has `get_stored_park_position()`; this wrapper adapts to `MountPort`'s signature). `set_park_position() → bool` was removed 2026-09-01 — setting a new park/home position is a standing product decision, never to be re-added without an explicit product-owner request; see SYNC.md's REQ-2 entry and the guardrail comment on `MountPort` in `ports/mount.py`.
 - [ ] REQ-3: ~~Sticky AT_HOME state tracking in adapter~~ — **satisfied 2026-07-15 via
       decoded `at_home` flag (ONS31-101)**; upstream exposes HOME as
       `last_decoded_status["at_home"]` (mechanical `:GU#` H flag, deliberately not an enum

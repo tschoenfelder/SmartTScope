@@ -536,10 +536,8 @@ class OnStepMount(_BaseOnStepMount, MountPort):
             return False
         return bool(result.ok)
 
-    def set_park_position(self) -> bool:
-        # REQ-2 (permanent MountPort adapter): maps the simple bool-returning
-        # interface to upstream set_park_position_from_current().
-        # allow_at_home=True because SmartTScope's park workflow sets
-        # park = home position after a HOME slew.
-        result = self.set_park_position_from_current(confirmed_safe=True, allow_at_home=True)
-        return bool(result.ok)
+    # No set_park_position() override here (removed 2026-09-01, previously
+    # REQ-2) -- see ports/mount.py's MountPort docstring comment for why.
+    # Upstream's own set_park_position_from_current() is still reachable
+    # directly on this instance for a future explicit, product-owner-approved
+    # feature; it is just not exposed through MountPort/the app.

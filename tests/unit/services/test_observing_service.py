@@ -120,7 +120,9 @@ class TestConfirmHome:
         # Setting the park position must never be automatic here — see
         # wiki/log.md 2026-06-14 "CRITICAL: remove auto_set_park": it silently
         # overwrites the user's deliberately configured EEPROM park position.
-        deps.mount.set_park_position.assert_not_called()
+        # set_park_position() no longer exists on MountPort at all (removed
+        # 2026-09-01) — there is nothing left on `deps.mount` to assert
+        # wasn't called; this comment is the guard now.
 
         snap = svc.handle_intent(IT.CONFIRM_HOME, deps)
         assert snap["phase"] == P.POLAR_ALIGN.value

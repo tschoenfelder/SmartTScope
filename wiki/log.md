@@ -6678,3 +6678,13 @@ independent capture()/PullImageV4 implementation -- a second duplicate
 beyond the one just removed. Left untouched since it's not in the guide
 role's path and touching it isn't needed to fix this bug; flagged for
 future cleanup.
+
+## 2026-09-30 — PLAN/DOCS — CollimationGuideTool audit restructuring started (#50–#55, #48, open HIGH issues)
+
+Architecture/testing audit (structure 6/10, change safety 4/10) turned into
+issues #50–#55. CollimationGuideTool `615f44f`: CONTRIBUTING.md now defines a
+tiered test pyramid with a risk-based minimum gate, deterministic-time,
+duplicated-knowledge, proof-manifest and issue-scoped agent ownership rules;
+AGENTS.md adds mandatory application layering (panel -> service -> port ->
+adapter). New tracker `CollimationGuideTool/docs/restructuring-tasks.md`
+(S0..S8). No Raspberry Pi rollout until the restructuring is finished.

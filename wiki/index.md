@@ -121,3 +121,7 @@ Table of contents for the SmartTelescope knowledge base.
 - **Stage 3 archive tagging done:** 📁 buttons next to GoTo, Solve, and AF in Stage 3; `POST /api/collimation/archive/tag` stores metadata-only JSON entries; Stage 3 includes a collapsible Archive Browser; tag entries shown with "tag" label (no Replay); `_s3CheckArchiveEnabled()` called on stage enter
 - **Measurement metrics done:** `assistant.status` now exposes full donut/spike/star detail in `last_measurement` (error_magnitude_px, error_fraction, is_collimated, focus_error_px, crossing_error_rms_px, fwhm_px); wizard card shows a quantitative metrics row with colour-coded error %; Frame Archive Browser card in Stage 4 shows past sessions, frame tables, and side-by-side replay comparison
 - **Mount AT_HOME + park flow done:** `MountState.AT_HOME`; two-phase sticky gate (`_home_cmd_issued` + `_home_slew_seen`) prevents premature HOME display — UNPARKED is only promoted to AT_HOME after SLEWING is observed then ends; `park_sequence` auto-sends `:hS#` + `:hP#` when AT_HOME (Home→Park with no extra steps); stops any active slew via `:Q#` before parking when not in home context; `MountPort.set_park_position()` non-abstract default; `OnStepMount` overrides with `:hS#`; blue "Home" badge; `_STATE_LABEL` display mapping in `mount.js`
+
+## CollimationGuideTool restructuring
+
+- [restructuring-tasks](../CollimationGuideTool/docs/restructuring-tasks.md) — tracker for the audit follow-up (#50–#55, #48, open HIGH issues): task contracts, status, done log, field-only assumptions

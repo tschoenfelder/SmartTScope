@@ -6688,3 +6688,14 @@ duplicated-knowledge, proof-manifest and issue-scoped agent ownership rules;
 AGENTS.md adds mandatory application layering (panel -> service -> port ->
 adapter). New tracker `CollimationGuideTool/docs/restructuring-tasks.md`
 (S0..S8). No Raspberry Pi rollout until the restructuring is finished.
+
+## 2026-10-01 — DEVELOP — CollimationGuideTool restructuring: S1, S3a, S2, S6.0 shipped (no Pi rollout)
+
+CollimationGuideTool: `54db82c` #50 test tiers + changed-module gate + parallel CI;
+`645846e` #53 part A injectable clock (#13 deterministic); `4f1e393` #54 proof
+manifests (`scripts/prove.py <issue>`); `787ceed` + `5d2255f` S6.0 — Mount Align
+now moves the real OnStep mount (production adapter refuses timed pulses; moves
+are angular from the first step, ≥30″ floor, no partial screen moves). Each
+change passed an independent adversarial review. Next: S4 (#51 simulators) and
+S6.0c (Stop during a GOTO freezes the UI). Tracker:
+`CollimationGuideTool/docs/restructuring-tasks.md`.

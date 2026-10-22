@@ -6719,3 +6719,11 @@ S6.9 gave the last duplicated defaults one owner (`45012da`) and added after-mea
 #54, #55 and #13 closed. Open HIGH issues (#15, #21, #29–#33, #35, #37, #39, #43, #44, #46, #49) stay open
 as field-verify, tracked by `CollimationGuideTool/docs/field-verify-checklist.md`. Pi still at `9cea2e9`;
 sync waits for the user's go-ahead.
+
+## 2026-10-23 — DEPLOY — CollimationGuideTool synced to the Pi after the restructuring
+
+With the user's go-ahead: rasppi3 `~/astro_sw/CollimationGuideTool` reset to `origin/main` (`daefd76`, was
+`9cea2e9`); the published OnStepAdapter 0.5.0 wheel force-reinstalled (sha256 `2420ba1c…` ok, build check
+`0.5.0 True True True`); headless import and the real config load checked (one `pulse_ms` warning, as
+expected). indiserver untouched. Rig tests follow `CollimationGuideTool/docs/field-verify-checklist.md`.
+Filed OnStepAdapter#26 (cancellable `park()`); a bare tracking-off request is not filed (user decision).

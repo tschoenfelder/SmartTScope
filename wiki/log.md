@@ -6711,3 +6711,11 @@ and the dead timed-move path removed. Field incident 07d37da6 (nudge refused wit
 fixed on main and regression-tested; the Pi still runs the pre-restructuring `9cea2e9`. Full release gate
 green locally: 3495 passed, coverage 96.23 %. New: `docs/field-verify-checklist.md`. Pending: issue
 evidence comments, then the user's go-ahead for the Pi sync and for two OnStepAdapter requests.
+
+## 2026-10-22 — DEVELOP — CollimationGuideTool audit issues closed (#48, #50–#55, #13)
+
+S6.9 gave the last duplicated defaults one owner (`45012da`) and added after-measurements (component tier
+801 s → 174 s; CI fast job 15:14 → 5:06). Evidence comments posted per checkbox and #48, #50, #51, #52, #53,
+#54, #55 and #13 closed. Open HIGH issues (#15, #21, #29–#33, #35, #37, #39, #43, #44, #46, #49) stay open
+as field-verify, tracked by `CollimationGuideTool/docs/field-verify-checklist.md`. Pi still at `9cea2e9`;
+sync waits for the user's go-ahead.

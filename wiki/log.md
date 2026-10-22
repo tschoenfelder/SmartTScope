@@ -6699,3 +6699,15 @@ are angular from the first step, ≥30″ floor, no partial screen moves). Each
 change passed an independent adversarial review. Next: S4 (#51 simulators) and
 S6.0c (Stop during a GOTO freezes the UI). Tracker:
 `CollimationGuideTool/docs/restructuring-tasks.md`.
+
+## 2026-10-22 — DEVELOP — CollimationGuideTool restructuring S1–S6.8d complete; S8 close-out (no Pi rollout yet)
+
+All restructuring steps are on `main` (CollimationGuideTool `af1f9c3`), each adversarially reviewed and CI
+green. Since the last entry: S4 simulators, S3b fake time, S6.0b–e (angular reacquisition, Stop during a
+GOTO, OnStepAdapter 0.5.0 guide pulses), S6.1–S6.7 service extractions, S7 proof manifests for the HIGH
+issues, and S6.8a–d: one mount-motion executor (one motion at a time, no per-move emergency stop),
+Astronomical Mount Align via guide pulses while tracking, focuser Stop and a global "Stop mount" button,
+and the dead timed-move path removed. Field incident 07d37da6 (nudge refused without camera frames) is
+fixed on main and regression-tested; the Pi still runs the pre-restructuring `9cea2e9`. Full release gate
+green locally: 3495 passed, coverage 96.23 %. New: `docs/field-verify-checklist.md`. Pending: issue
+evidence comments, then the user's go-ahead for the Pi sync and for two OnStepAdapter requests.

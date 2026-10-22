@@ -125,3 +125,5 @@ Table of contents for the SmartTelescope knowledge base.
 ## CollimationGuideTool restructuring
 
 - [restructuring-tasks](../CollimationGuideTool/docs/restructuring-tasks.md) — tracker for the audit follow-up (#50–#55, #48, open HIGH issues): task contracts, status, done log, field-only assumptions
+- [field-verify-checklist](../CollimationGuideTool/docs/field-verify-checklist.md) — every hardware-only assumption from the proof manifests, ordered as a rig session plan (Pi upgrade, daytime Terrestrial, supervised night Astronomical)
+- [movement-paths](../CollimationGuideTool/docs/quality/movement-paths.md) — S6.8 inventory of every mount/focuser motion path and its findings (fixed in S6.8a–d)

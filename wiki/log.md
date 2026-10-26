@@ -6727,3 +6727,14 @@ With the user's go-ahead: rasppi3 `~/astro_sw/CollimationGuideTool` reset to `or
 `0.5.0 True True True`); headless import and the real config load checked (one `pulse_ms` warning, as
 expected). indiserver untouched. Rig tests follow `CollimationGuideTool/docs/field-verify-checklist.md`.
 Filed OnStepAdapter#26 (cancellable `park()`); a bare tracking-off request is not filed (user decision).
+
+## 2026-10-27 — FEATURE/FIX — CollimationGuideTool: terrestrial autofocus (#56) and centre cross (#57)
+
+Field reports from 2026-10-25 (diagnostics 402eabde, f0bc314b, 4c5677d0) were analysed off-rig.
+- **#56 fix.** Terrestrial autofocus did not focus a mast against the sky. The Focus panel's "Artificial star" button was a second, hand-toggled owner of the target type (now display-only). The terrestrial metric also mistook sensor noise for motion (89 % of tiles), so its curve was flat.
+- **New metric.** Binned, noise-calibrated motion test, score from the strongest static detail above the noise floor. Each position uses distinct fresh frames. When clipped highlights dominate, the exposure steps down; if that is not enough, the result is `highlights_clipped`.
+- **Review and status.** Three adversarial review rounds, final APPROVE. On main `f77501d`, CI green. #56 stays open for the rig check.
+- **#57 done.** A green 2 px centre cross on both camera screens (`0db0b72`, `a2adf5a`); issue closed.
+- **#58 filed.** Artificial-star autofocus with 4 over-exposed stars: the detector split them into 785 sources. Starts after #56.
+- **User decisions.** Large test data stays local (`local_test_data/`, tests skip in CI). Mutation testing only when asked.
+- **Pi.** Still at `daefd76`; the sync waits for the user.
